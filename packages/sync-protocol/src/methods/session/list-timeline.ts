@@ -11,9 +11,11 @@ export const ParamsSchema = z.object({
 });
 export const ResultSchema = z.object({
   sessionId: z.string(),
+  before: z.string().optional(),
   entries: z.array(typedUnknown<SessionTimelineEntry>()),
   nextCursor: z.string().optional(),
   hasMore: z.boolean(),
+  liveState: typedUnknown<import("@tiller/shared").SessionLiveStateSnapshot>().optional(),
 });
 export type Params = z.infer<typeof ParamsSchema>;
 export type Result = z.infer<typeof ResultSchema>;

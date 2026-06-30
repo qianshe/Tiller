@@ -64,9 +64,16 @@ function createSessionRuntimeStore(): SessionServicesOptions["sessionRuntimeStor
   };
 }
 
+function createSessionPlanStore(): SessionServicesOptions["sessionPlanStore"] {
+  return {
+    get: () => undefined,
+    replace: (_sessionId, plan) => plan,
+    remove: () => undefined,
+  };
+}
+
 function createSessionTimelineStore(): SessionServicesOptions["sessionTimelineStore"] {
   return {
-    append: () => [],
     replace: () => [],
     list: () => [],
     listPage: () => ({ entries: [], hasMore: false }),
@@ -91,6 +98,7 @@ test("createHelmRuntimeComposition owns runtime maps queue and services", () => 
     sessionArtifactStore: createSessionArtifactStore(),
     sessionAttachmentStore: createSessionAttachmentStore(),
     sessionRuntimeStore: createSessionRuntimeStore(),
+    sessionPlanStore: createSessionPlanStore(),
     sessionTimelineStore: createSessionTimelineStore(),
     sessionUpdateStore: createSessionUpdateStore(),
     getAgents: () => [],

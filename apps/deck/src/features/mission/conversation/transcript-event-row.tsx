@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type {
+  SessionLiveCompactionState,
   SessionTimelineContextCompactionEntry,
   SessionTimelineHistoryGapEntry,
   SessionTimelineResumedEntry,
 } from "@tiller/shared";
-import { AlertTriangle, ChevronDown, FileText, PlayCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, FileText, LoaderCircle, PlayCircle } from "lucide-react";
 import { cn } from "../../../shared/utils/cn";
 
 const TRANSCRIPT_ROW_CLASS =
@@ -46,6 +47,29 @@ export function TranscriptEventRow(props: {
   return null;
 }
 
+export function LiveCompactionStateRow(props: {
+  state: SessionLiveCompactionState;
+}) {
+  return (
+    <div className={TRANSCRIPT_ROW_CLASS}>
+      <span aria-hidden="true" />
+      <section className={TRANSCRIPT_SURFACE_CLASS}>
+        <div className="flex min-w-0 items-start gap-2">
+          <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary" />
+          <div className="min-w-0 flex-1">
+            <div className="text-xs font-medium text-foreground">
+              正在压缩上下文...
+            </div>
+            <p className="mt-0.5 text-xs leading-[1.5] text-muted-foreground">
+              完成后会基于压缩后的上下文继续回复。
+            </p>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function ContextCompactionRow({
   entry,
 }: {
@@ -54,6 +78,7 @@ function ContextCompactionRow({
   const [open, setOpen] = useState(false);
   const summaryText = entry.summaryText?.trim() ||
     "早期对话历史已压缩以节省上下文空间。";
+  const canExpandSummary = entry.detailsVisibility !== "hidden" && Boolean(entry.summaryText?.trim());
 
   return (
     <div className={TRANSCRIPT_ROW_CLASS}>
@@ -70,30 +95,38 @@ function ContextCompactionRow({
                 早期对话已收敛为系统摘要
               </span>
             </div>
-            {open ? (
-              <div className="mt-1 whitespace-pre-wrap text-[12.5px] leading-[1.6] text-muted-foreground">
-                {summaryText}
-              </div>
-            ) : (
-              <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                {summarizeTranscriptPreview(summaryText)}
-              </p>
-            )}
-          </div>
-          <button
-            type="button"
-            className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
-            aria-label={open ? "收起摘要" : "展开摘要"}
-            onClick={() => setOpen((current) => !current)}
-          >
-            <span>{open ? "收起摘要" : "展开摘要"}</span>
-            <ChevronDown
-              className={cn(
-                "size-3 transition-transform duration-150",
-                open && "rotate-180",
+            {canExpandSummary
+              ? (open ? (
+                <div className="mt-1 whitespace-pre-wrap text-[12.5px] leading-[1.6] text-muted-foreground">
+                  {summaryText}
+                </div>
+              ) : (
+                <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                  {summarizeTranscriptPreview(summaryText)}
+                </p>
+              ))
+              : (
+                <p className="mt-1 text-xs leading-[1.5] text-muted-foreground">
+                  早期对话已压缩，后续回复将基于压缩后的上下文继续。
+                </p>
               )}
-            />
-          </button>
+          </div>
+          {canExpandSummary ? (
+            <button
+              type="button"
+              className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
+              aria-label={open ? "收起摘要" : "展开摘要"}
+              onClick={() => setOpen((current) => !current)}
+            >
+              <span>{open ? "收起摘要" : "展开摘要"}</span>
+              <ChevronDown
+                className={cn(
+                  "size-3 transition-transform duration-150",
+                  open && "rotate-180",
+                )}
+              />
+            </button>
+          ) : null}
         </div>
       </section>
     </div>

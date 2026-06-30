@@ -284,7 +284,7 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
         return markSessionHistoryEntriesLoading(current, messageSessionIds);
       });
       messageSessionIds.forEach((sessionId) => {
-        void dispatch(client, "session/list_messages", {
+        void dispatch(client, "session/list_timeline", {
           sessionId,
           limit: DEFAULT_MESSAGE_PAGE_LIMIT,
         });

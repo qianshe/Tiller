@@ -13,6 +13,9 @@ export type HandlerSessionContext = Pick<
   | "sessionAttachmentStore"
   | "sessionRuntimeStore"
   | "sessionTimelineStore"
+  | "sessionTimelineWorkers"
+  | "sessionTimelineDispatcher"
+  | "sessionLiveStateStore"
   | "sessionUpdateStore"
   | "liveMessageBuffer"
   | "promptQueue"
@@ -39,6 +42,7 @@ export type HandlerSessionContext = Pick<
   | "persistRuntimeDescriptor"
   | "refreshAuthoritativeSessionHistory"
   | "readSessionPlan"
+  | "readSessionLiveState"
   | "updateSessionSummary"
   | "persistSessionMessage"
   | "publishDiffUpdate"
@@ -57,6 +61,9 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   sessionAttachmentStore: unknown;
   sessionRuntimeStore: unknown;
   sessionTimelineStore: unknown;
+  sessionTimelineWorkers?: unknown;
+  sessionTimelineDispatcher?: unknown;
+  sessionLiveStateStore?: unknown;
   sessionUpdateStore: unknown;
   liveMessageBuffer: unknown;
   promptQueue: unknown;
@@ -84,6 +91,7 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   persistRuntimeDescriptor: AnyFunction;
   refreshAuthoritativeSessionHistory: AnyFunction;
   readSessionPlan?: AnyFunction;
+  readSessionLiveState?: AnyFunction;
   updateSessionSummary: AnyFunction;
   persistSessionMessage: AnyFunction;
   publishDiffUpdate: AnyFunction;
@@ -112,6 +120,9 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         sessionAttachmentStore: options.sessionAttachmentStore,
         sessionRuntimeStore: options.sessionRuntimeStore,
         sessionTimelineStore: options.sessionTimelineStore,
+        sessionTimelineWorkers: options.sessionTimelineWorkers,
+        sessionTimelineDispatcher: options.sessionTimelineDispatcher,
+        sessionLiveStateStore: options.sessionLiveStateStore,
         sessionUpdateStore: options.sessionUpdateStore,
         liveMessageBuffer: options.liveMessageBuffer,
         promptQueue: options.promptQueue,
@@ -139,6 +150,7 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         persistRuntimeDescriptor: options.persistRuntimeDescriptor,
         refreshAuthoritativeSessionHistory: options.refreshAuthoritativeSessionHistory,
         readSessionPlan: options.readSessionPlan,
+        readSessionLiveState: options.readSessionLiveState,
         updateSessionSummary: options.updateSessionSummary,
         persistSessionMessage: options.persistSessionMessage,
         publishDiffUpdate: options.publishDiffUpdate,

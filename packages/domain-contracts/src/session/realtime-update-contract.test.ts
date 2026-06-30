@@ -11,6 +11,13 @@ type ContractCommand = { id: string; label: string };
 type ContractSummary = { id: string; status: "running" };
 type ContractQueue = { items: string[] };
 type ContractPlan = { entries: Array<{ content: string; status: "pending" | "in_progress" | "completed" }> };
+type ContractTranscriptEntry = {
+  kind: "context_compaction";
+  id: string;
+  timestamp: string;
+  updatedAt: string;
+  replayCompleteness: "compacted";
+};
 
 type ContractUpdate = SessionRealtimeUpdate<
   ContractMessage,
@@ -23,7 +30,8 @@ type ContractUpdate = SessionRealtimeUpdate<
   ContractCommand,
   ContractSummary,
   ContractQueue,
-  ContractPlan
+  ContractPlan,
+  ContractTranscriptEntry
 >;
 
 const realtimeUpdateContractSamples = [
@@ -50,7 +58,23 @@ const realtimeUpdateContractSamples = [
   { kind: "commands_available", commands: [{ id: "test", label: "Run tests" }] },
   { kind: "session_updated", session: { id: "s1", status: "running" } },
   { kind: "prompt_queue", queue: { items: ["q1"] } },
+  {
+    kind: "compaction_state",
+    phase: "started",
+    source: "provider",
+    timestamp: "2026-06-28T00:00:00.000Z",
+  },
   { kind: "plan_update", plan: { entries: [{ content: "Wire ACP plan", status: "in_progress" }] } },
+  {
+    kind: "transcript_event",
+    entry: {
+      kind: "context_compaction",
+      id: "compaction-1",
+      timestamp: "2026-06-28T00:00:00.000Z",
+      updatedAt: "2026-06-28T00:00:00.000Z",
+      replayCompleteness: "compacted",
+    },
+  },
 ] satisfies ContractUpdate[];
 
 void realtimeUpdateContractSamples;

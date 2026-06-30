@@ -47,6 +47,25 @@ export function splitMissionToolCalls(toolCalls: AgentToolCall[]) {
   };
 }
 
+export function shouldAutoScrollSessionBody({
+  stickToBottom,
+  historyLoading = false,
+  historyRevealLocked = false,
+  previousHistoryLoading = false,
+  allowAfterInitialHistoryLoad = false,
+}: {
+  stickToBottom?: boolean;
+  historyLoading?: boolean;
+  historyRevealLocked?: boolean;
+  previousHistoryLoading?: boolean;
+  allowAfterInitialHistoryLoad?: boolean;
+}) {
+  return stickToBottom !== false &&
+    !historyLoading &&
+    !historyRevealLocked &&
+    (!previousHistoryLoading || allowAfterInitialHistoryLoad);
+}
+
 export function resolveSessionStatusTone(status: SessionSummary["status"]): "active" | "idle" | "warning" | "danger" | "primary" {
   switch (status) {
     case "running":

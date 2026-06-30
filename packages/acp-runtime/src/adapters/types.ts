@@ -56,6 +56,13 @@ export type AcpSessionUpdateProjectionContext = {
   now?: string;
 };
 
+export type AcpToolCallNormalizationContext = {
+  toolCall: AgentToolCall;
+  update: unknown;
+};
+
+export type AcpCompactionDetailsVisibility = "hidden";
+
 export const SUPPRESS_SESSION_UPDATE = { kind: "suppress-session-update" } as const;
 
 export type AcpSessionUpdateProjection = SessionRuntimeEvent | typeof SUPPRESS_SESSION_UPDATE;
@@ -78,6 +85,8 @@ export type AcpAgentAdapter = {
   resolveCleanup(context: AcpCleanupContext): ProviderCleanupPlan;
   resolveRequestTimeout?(context: AcpRequestTimeoutContext): number | undefined;
   mapSessionUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
+  normalizeToolCall?(context: AcpToolCallNormalizationContext): AgentToolCall;
+  resolveCompactionDetailsVisibility?(): AcpCompactionDetailsVisibility | undefined;
   readTranscriptPlan?(context: AcpHistoryContext): AgentPlan | null;
   readTranscriptMessages?(context: AcpHistoryContext): AgentMessage[];
 };

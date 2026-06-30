@@ -7,8 +7,11 @@ import type {
   CommandChunk,
   FileDiffSummary,
   RuntimeSessionSummary,
+  SessionLiveStateSnapshot,
   SessionConfigOption,
   SessionPromptQueueSnapshot,
+  SessionTimelineEntry,
+  SessionTimelineTranscriptEventEntry,
 } from "@tiller/shared";
 import type { SessionRealtimeUpdate as DomainSessionRealtimeUpdate } from "@tiller/domain-contracts";
 
@@ -28,7 +31,10 @@ export type DeckSessionRealtimeUpdate =
       AvailableCommand,
       RuntimeSessionSummary,
       SessionPromptQueueSnapshot,
-      AgentPlan
+      AgentPlan,
+      SessionTimelineTranscriptEventEntry,
+      SessionTimelineEntry,
+      SessionLiveStateSnapshot
     >
   | { kind: "restore_replay_cached" };
 

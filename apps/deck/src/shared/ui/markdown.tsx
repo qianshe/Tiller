@@ -71,7 +71,7 @@ const markdownComponents: Components = {
     return (
       <h1
         {...props}
-        className={[className, "markdown-heading my-1.5 text-[15px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading my-1.5 text-[14.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -83,7 +83,7 @@ const markdownComponents: Components = {
     return (
       <h2
         {...props}
-        className={[className, "markdown-heading my-1.5 text-[14px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading my-1.5 text-[13.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -95,7 +95,7 @@ const markdownComponents: Components = {
     return (
       <h3
         {...props}
-        className={[className, "markdown-heading my-1 text-[13px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading my-1 text-[12.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -107,7 +107,7 @@ const markdownComponents: Components = {
     return (
       <h4
         {...props}
-        className={[className, "markdown-heading my-1 text-[12.5px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading my-1 text-[12px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -119,7 +119,7 @@ const markdownComponents: Components = {
     return (
       <h5
         {...props}
-        className={[className, "markdown-heading my-1 text-[12.5px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading my-1 text-[12px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -131,7 +131,7 @@ const markdownComponents: Components = {
     return (
       <h6
         {...props}
-        className={[className, "markdown-heading my-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"]
+        className={[className, "markdown-heading my-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -217,7 +217,7 @@ const markdownComponents: Components = {
     return (
       <th
         {...props}
-        className="markdown-table-head border-b border-border-ghost bg-surface-emphasis px-2.5 py-1.5 text-left text-[11px] font-semibold text-muted-foreground"
+        className="markdown-table-head border-b border-border-ghost bg-surface-emphasis px-2.5 py-1.5 text-left text-[10.5px] font-semibold text-muted-foreground"
       >
         {children}
       </th>
@@ -227,7 +227,7 @@ const markdownComponents: Components = {
     return (
       <td
         {...props}
-        className="markdown-table-cell border-t border-border-ghost px-2.5 py-1.5 align-top text-[12.5px] text-foreground"
+        className="markdown-table-cell border-t border-border-ghost px-2.5 py-1.5 align-top text-[12px] text-foreground"
       >
         {children}
       </td>
@@ -236,7 +236,7 @@ const markdownComponents: Components = {
   table({ children, node: _node, ...props }) {
     return (
       <div className="markdown-table-scroll max-w-full overflow-x-auto overflow-y-hidden rounded-md border border-border-ghost">
-        <table {...props} className="w-full min-w-max border-collapse text-left text-[12.5px]">
+        <table {...props} className="w-full min-w-max border-collapse text-left text-[12px]">
           {children}
         </table>
       </div>
@@ -265,7 +265,7 @@ export const MarkdownMessage = memo(function MarkdownMessage({
   const normalizedText = useMemo(() => normalizeMarkdownMessageText(text), [text]);
 
   return (
-    <div className="markdown-message space-y-2 text-[12.5px] leading-[1.5] text-foreground">
+    <div className="markdown-message space-y-2 text-[12px] leading-[1.5] text-foreground">
       <ReactMarkdown
         components={markdownComponents}
         remarkPlugins={markdownRemarkPlugins}
@@ -456,7 +456,7 @@ function MarkdownCodeBlock({
   }
 
   return (
-    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[var(--markdown-code-bg)] text-[12.5px] text-[var(--markdown-code-fg)] shadow-sm">
+    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[var(--markdown-code-bg)] text-[12px] text-[var(--markdown-code-fg)] shadow-sm">
       <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-border-ghost bg-[var(--markdown-code-head)] px-3 py-1.5 text-xs text-muted-foreground">
         <span>{highlightedCode?.language ?? language ?? "text"}</span>
         <button

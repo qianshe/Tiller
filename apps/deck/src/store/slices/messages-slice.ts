@@ -4,7 +4,7 @@ import type {
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
-  SessionTranscriptStatus,
+  SessionLiveCompactionState,
   SessionTimelineEntry,
 } from "@tiller/shared";
 import type { StateCreator } from "zustand";
@@ -14,18 +14,22 @@ export type MessageHistoryState = Record<
   {
     nextCursor?: string;
     hasMore: boolean;
-    timelineNextCursor?: string;
-    timelineHasMore?: boolean;
     loading: boolean;
   }
 >;
 
 type Updater<T> = T | ((current: T) => T);
 
+export type SessionTimelineDeliveryState = {
+  latestDeliverySequence: number;
+  reloadRequired: boolean;
+};
+
 export type MessagesSlice = {
   messages: Record<string, AgentMessage[]>;
   sessionTimeline: Record<string, SessionTimelineEntry[]>;
-  transcriptStatusBySession: Record<string, SessionTranscriptStatus | undefined>;
+  sessionTimelineDeliveryState: Record<string, SessionTimelineDeliveryState | undefined>;
+  sessionCompactionStates: Record<string, SessionLiveCompactionState | undefined>;
   messageHistoryState: MessageHistoryState;
   outputs: Record<string, CommandChunk[]>;
   toolCalls: Record<string, AgentToolCall[]>;
@@ -34,8 +38,11 @@ export type MessagesSlice = {
   diffs: Record<string, FileDiffSummary[]>;
   setMessages: (updater: Updater<Record<string, AgentMessage[]>>) => void;
   setSessionTimeline: (updater: Updater<Record<string, SessionTimelineEntry[]>>) => void;
-  setTranscriptStatusBySession: (
-    updater: Updater<Record<string, SessionTranscriptStatus | undefined>>,
+  setSessionTimelineDeliveryState: (
+    updater: Updater<Record<string, SessionTimelineDeliveryState | undefined>>,
+  ) => void;
+  setSessionCompactionStates: (
+    updater: Updater<Record<string, SessionLiveCompactionState | undefined>>,
   ) => void;
   setMessageHistoryState: (updater: Updater<MessageHistoryState>) => void;
   setOutputs: (updater: Updater<Record<string, CommandChunk[]>>) => void;
@@ -50,7 +57,8 @@ export type MessagesSlice = {
 export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
   messages: {},
   sessionTimeline: {},
-  transcriptStatusBySession: {},
+  sessionTimelineDeliveryState: {},
+  sessionCompactionStates: {},
   messageHistoryState: {},
   outputs: {},
   toolCalls: {},
@@ -66,11 +74,18 @@ export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
       sessionTimeline:
         typeof updater === "function" ? updater(state.sessionTimeline) : updater,
     })),
-  setTranscriptStatusBySession: (updater) =>
+  setSessionTimelineDeliveryState: (updater) =>
     set((state) => ({
-      transcriptStatusBySession:
+      sessionTimelineDeliveryState:
         typeof updater === "function"
-          ? updater(state.transcriptStatusBySession)
+          ? updater(state.sessionTimelineDeliveryState)
+          : updater,
+    })),
+  setSessionCompactionStates: (updater) =>
+    set((state) => ({
+      sessionCompactionStates:
+        typeof updater === "function"
+          ? updater(state.sessionCompactionStates)
           : updater,
     })),
   setMessageHistoryState: (updater) =>

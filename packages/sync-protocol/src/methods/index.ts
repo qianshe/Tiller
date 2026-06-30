@@ -26,9 +26,7 @@ import * as sessionNew from "./session/new";
 import * as sessionDraft from "./session/draft";
 import * as sessionDiscardDraft from "./session/discard-draft";
 import * as sessionList from "./session/list";
-import * as sessionListMessages from "./session/list-messages";
 import * as sessionListTimeline from "./session/list-timeline";
-import * as sessionListUpdates from "./session/list-updates";
 import * as sessionGetArtifacts from "./session/get-artifacts";
 import * as sessionCheckResume from "./session/check-resume";
 import * as sessionResume from "./session/resume";
@@ -88,9 +86,7 @@ const METHOD_DESCRIPTORS = {
   [sessionDraft.method]: sessionDraft.descriptor,
   [sessionDiscardDraft.method]: sessionDiscardDraft.descriptor,
   [sessionList.method]: sessionList.descriptor,
-  [sessionListMessages.method]: sessionListMessages.descriptor,
   [sessionListTimeline.method]: sessionListTimeline.descriptor,
-  [sessionListUpdates.method]: sessionListUpdates.descriptor,
   [sessionGetArtifacts.method]: sessionGetArtifacts.descriptor,
   [sessionCheckResume.method]: sessionCheckResume.descriptor,
   [sessionResume.method]: sessionResume.descriptor,
@@ -152,9 +148,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionDraft.method,
   sessionDiscardDraft.method,
   sessionList.method,
-  sessionListMessages.method,
   sessionListTimeline.method,
-  sessionListUpdates.method,
   sessionGetArtifacts.method,
   sessionCheckResume.method,
   sessionResume.method,

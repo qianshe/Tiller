@@ -84,6 +84,7 @@ export {
   resolveAcpAgentAdapter,
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
+  resolveAdapterCompactionDetailsVisibility,
   readAdapterTranscriptMessages,
   readAdapterTranscriptPlan,
   resolveAdapterRequestTimeout,

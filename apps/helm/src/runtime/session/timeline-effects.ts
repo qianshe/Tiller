@@ -1,10 +1,16 @@
-import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionTimelineEntry,
+  SessionTimelineTranscriptEventEntry,
+} from "@tiller/shared";
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
   sortSessionTimelineEntries,
 } from "@tiller/shared";
 import type { HelmHandlerContext } from "../../handlers/context";
+import { upsertSessionCompactionEntry } from "../../sessions/compaction-entry";
 
 export function persistTimelineMessage(
   context: HelmHandlerContext,
@@ -13,9 +19,6 @@ export function persistTimelineMessage(
 ) {
   if (!context.sessionTimelineStore) {
     return undefined;
-  }
-  if (typeof context.sessionTimelineStore.upsertMessage === "function") {
-    return context.sessionTimelineStore.upsertMessage(sessionId, message);
   }
   const entries = context.sessionTimelineStore.list(sessionId);
   appendMessageToSessionTimeline(entries, message);
@@ -30,12 +33,30 @@ export function persistTimelineToolCall(
   if (!context.sessionTimelineStore) {
     return undefined;
   }
-  if (typeof context.sessionTimelineStore.upsertToolCall === "function") {
-    return context.sessionTimelineStore.upsertToolCall(sessionId, toolCall);
-  }
   const entries = context.sessionTimelineStore.list(sessionId);
   appendToolCallToSessionTimeline(entries, toolCall);
   return replaceTimelineEntries(context, sessionId, entries, resolveToolCallEntryId(toolCall));
+}
+
+export function persistTimelineTranscriptEvent(
+  context: HelmHandlerContext,
+  sessionId: string,
+  entry: SessionTimelineTranscriptEventEntry,
+): SessionTimelineTranscriptEventEntry | undefined {
+  if (!context.sessionTimelineStore) {
+    return undefined;
+  }
+  const entries = context.sessionTimelineStore.list(sessionId);
+  const storedEntry = entry.kind === "context_compaction"
+    ? upsertSessionCompactionEntry(entries, entry)
+    : upsertTranscriptEventEntry(entries, entry);
+  const persisted = replaceTimelineEntries(context, sessionId, entries, storedEntry.id);
+  return persisted &&
+      (persisted.kind === "context_compaction" ||
+        persisted.kind === "session_resumed" ||
+        persisted.kind === "history_gap")
+    ? persisted
+    : undefined;
 }
 
 function replaceTimelineEntries(
@@ -61,6 +82,19 @@ function resolveToolCallEntryId(toolCall: AgentToolCall) {
     return stripThinkingSuffix(sourceId) ?? stripThinkingSuffix(toolCall.id) ?? sourceId;
   }
   return `tool:${toolCall.id}`;
+}
+
+function upsertTranscriptEventEntry(
+  entries: SessionTimelineEntry[],
+  entry: SessionTimelineTranscriptEventEntry,
+) {
+  const existingIndex = entries.findIndex((candidate: SessionTimelineEntry) => candidate.id === entry.id);
+  if (existingIndex === -1) {
+    entries.push(entry);
+    return entry;
+  }
+  entries[existingIndex] = entry;
+  return entry;
 }
 
 function stripThinkingSuffix(value: string) {

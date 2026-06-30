@@ -7,6 +7,7 @@ import type {
   AgentToolCall,
   PermissionRequest,
   SessionConfigOption,
+  SessionPromptQueueSnapshot,
   SessionSummary,
   SessionTimelineEntry,
   TrustedDeviceSummary,
@@ -47,8 +48,10 @@ function resetStore() {
     statuses: {},
     messages: {},
     sessionTimeline: {},
+    sessionTimelineDeliveryState: {},
     sessionCompactionStates: {},
     messageHistoryState: {},
+    promptQueues: {},
     outputs: {},
     toolCalls: {},
     sessionPlans: {},
@@ -60,7 +63,6 @@ function resetStore() {
     approvalToastQueue: [],
     trustedDevices: [],
     pairingFeedback: "",
-    transcriptStatusBySession: {},
   } as any);
 }
 
@@ -124,82 +126,129 @@ test("session creation results refresh ACP connection inventory when runtime is 
   assert.deepEqual(dispatched, ["agent/connections"]);
 });
 
-test("session/list_messages replaces initial loaded history instead of mixing with local fragments", () => {
-  resetStore();
-  const localFragment: AgentMessage = {
-    id: "session-1-msg-s0",
-    role: "assistant",
-    text: "本地 thinking replay 片段",
-    timestamp: "2026-05-17T10:00:00.000Z",
-  };
-  const loadedHistory: AgentMessage = {
-    id: "provider-1#p0",
-    role: "assistant",
-    text: "服务端历史消息",
-    timestamp: "2026-05-17T10:01:00.000Z",
-  };
-  useDeckStore.setState({
-    messages: { "session-1": [localFragment] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedHistory],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().messages["session-1"], [loadedHistory]);
-});
-
-test("session/list_messages replaces initial timeline instead of mixing stale entries", () => {
+test("session/list_timeline replaces the canonical timeline and applies live state", () => {
   resetStore();
   const staleEntry: SessionTimelineEntry = {
     id: "stale-assistant",
     kind: "assistant_message",
-    chunks: [
-      {
-        id: "stale-assistant:content",
-        kind: "content",
-        text: "刷新前残留回复",
-        timestamp: "2026-05-17T09:59:00.000Z",
-      },
-    ],
-    timestamp: "2026-05-17T09:59:00.000Z",
-    updatedAt: "2026-05-17T09:59:00.000Z",
+    chunks: [],
+    timestamp: "2026-06-29T09:59:00.000Z",
+    updatedAt: "2026-06-29T09:59:00.000Z",
+    sequence: 1,
   };
-  const loadedEntry: SessionTimelineEntry = {
+  const authoritativeEntry: SessionTimelineEntry = {
     id: "loaded-assistant",
     kind: "assistant_message",
     chunks: [
       {
         id: "loaded-assistant:content",
         kind: "content",
-        text: "刷新后权威回复",
-        timestamp: "2026-05-17T10:01:00.000Z",
+        text: "canonical reply",
+        timestamp: "2026-06-29T10:00:00.000Z",
+        sequence: 2,
       },
     ],
-    timestamp: "2026-05-17T10:01:00.000Z",
-    updatedAt: "2026-05-17T10:01:00.000Z",
+    timestamp: "2026-06-29T10:00:00.000Z",
+    updatedAt: "2026-06-29T10:00:00.000Z",
+    sequence: 2,
+  };
+  const livePlan: AgentPlan = {
+    entries: [{ content: "Review batch pipeline", priority: "medium", status: "in_progress" }],
+    updatedAt: "2026-06-29T10:00:01.000Z",
+  };
+  const livePromptQueue: SessionPromptQueueSnapshot = {
+    sessionId: "session-1",
+    queued: [{
+      id: "queued-1",
+      sessionId: "session-1",
+      text: "follow-up",
+      clientMessageId: "client-queued-1",
+      createdAt: "2026-06-29T10:00:02.000Z",
+      updatedAt: "2026-06-29T10:00:02.000Z",
+      status: "queued",
+    }],
   };
   useDeckStore.setState({
     sessionTimeline: { "session-1": [staleEntry] },
   });
 
   const handled = applySessionResult(
-    "session/list_messages",
+    "session/list_timeline",
     {
       sessionId: "session-1",
-      messages: [],
-      timeline: [loadedEntry],
-      timelineHasMore: false,
+      entries: [authoritativeEntry],
       hasMore: false,
+      liveState: {
+        plan: livePlan,
+        promptQueue: livePromptQueue,
+        compactionState: {
+          phase: "started",
+          source: "provider",
+          timestamp: "2026-06-29T10:00:03.000Z",
+        },
+      },
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.deepEqual(state.sessionTimeline["session-1"]?.map((entry) => entry.id), ["loaded-assistant"]);
+  assert.deepEqual(state.sessionPlans["session-1"], livePlan);
+  assert.deepEqual(state.promptQueues["session-1"], livePromptQueue);
+  assert.deepEqual(state.sessionCompactionStates["session-1"], {
+    phase: "started",
+    source: "provider",
+    timestamp: "2026-06-29T10:00:03.000Z",
+  });
+  assert.deepEqual(state.messageHistoryState["session-1"], {
+    nextCursor: undefined,
+    hasMore: false,
+    loading: false,
+  });
+});
+
+test("session/list_timeline prepends older canonical history pages", () => {
+  resetStore();
+  const olderEntry: SessionTimelineEntry = {
+    id: "older-user",
+    kind: "user_message",
+    message: {
+      id: "older-user",
+      role: "user",
+      text: "older question",
+      timestamp: "2026-06-29T09:58:00.000Z",
+      sequence: 1,
+    },
+    timestamp: "2026-06-29T09:58:00.000Z",
+    updatedAt: "2026-06-29T09:58:00.000Z",
+    sequence: 1,
+  };
+  const newerEntry: SessionTimelineEntry = {
+    id: "newer-assistant",
+    kind: "assistant_message",
+    chunks: [],
+    timestamp: "2026-06-29T10:00:00.000Z",
+    updatedAt: "2026-06-29T10:00:00.000Z",
+    sequence: 2,
+  };
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": [newerEntry] },
+    messageHistoryState: {
+      "session-1": { nextCursor: "cursor-1", hasMore: true, loading: true },
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/list_timeline",
+    {
+      sessionId: "session-1",
+      before: "cursor-1",
+      entries: [olderEntry],
+      nextCursor: "cursor-2",
+      hasMore: true,
     },
     "helm-1",
     true,
@@ -209,11 +258,216 @@ test("session/list_messages replaces initial timeline instead of mixing stale en
   assert.equal(handled, true);
   assert.deepEqual(
     useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["loaded-assistant"],
+    ["older-user", "newer-assistant"],
   );
+  assert.deepEqual(useDeckStore.getState().messageHistoryState["session-1"], {
+    nextCursor: "cursor-2",
+    hasMore: true,
+    loading: false,
+  });
 });
 
-test("session transcript_event updates upsert compaction timeline entries by id", () => {
+test("session user_message updates append chat history without mutating canonical timeline", () => {
+  resetStore();
+  const existingTimeline: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "existing",
+          timestamp: "2026-06-29T10:00:00.000Z",
+          sequence: 1,
+        },
+      ],
+      timestamp: "2026-06-29T10:00:00.000Z",
+      updatedAt: "2026-06-29T10:00:00.000Z",
+      sequence: 1,
+    },
+  ];
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": existingTimeline },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "user_message",
+        message: {
+          id: "user-1",
+          role: "user",
+          text: "hello",
+          timestamp: "2026-06-29T10:00:01.000Z",
+          sequence: 2,
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], existingTimeline);
+  assert.equal(useDeckStore.getState().messages["session-1"]?.[0]?.id, "user-1");
+});
+
+test("session timeline_batch requests an authoritative reload when delivery sequence gaps", () => {
+  resetStore();
+  const dispatched: Array<{ method: string; params: unknown }> = [];
+  const context = createSessionEventContext({
+    rpcClientRef: { current: { socket: { readyState: 1 } } },
+    dispatch: async (_client: unknown, method: string, params: unknown) => {
+      dispatched.push({ method, params });
+    },
+  });
+
+  const firstHandled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: false,
+          deliverySequence: 1,
+          lastSequence: 1,
+          entries: [
+            {
+              id: "assistant-1",
+              kind: "assistant_message",
+              chunks: [],
+              timestamp: "2026-06-29T10:00:00.000Z",
+              updatedAt: "2026-06-29T10:00:00.000Z",
+              sequence: 1,
+            },
+          ],
+        },
+      },
+    },
+    context,
+  );
+  const gapHandled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: false,
+          deliverySequence: 3,
+          lastSequence: 3,
+          entries: [
+            {
+              id: "tool:1",
+              kind: "tool_call",
+              toolCall: {
+                id: "1",
+                kind: "read",
+                title: "Read",
+                status: "completed",
+                timestamp: "2026-06-29T10:00:01.000Z",
+                updatedAt: "2026-06-29T10:00:01.000Z",
+                sequence: 2,
+              },
+              timestamp: "2026-06-29T10:00:01.000Z",
+              updatedAt: "2026-06-29T10:00:01.000Z",
+              sequence: 2,
+            },
+          ],
+        },
+      },
+    },
+    context,
+  );
+
+  assert.equal(firstHandled, true);
+  assert.equal(gapHandled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
+    ["assistant-1"],
+  );
+  assert.deepEqual(dispatched, [
+    {
+      method: "session/list_timeline",
+      params: { sessionId: "session-1", limit: 20 },
+    },
+  ]);
+});
+
+test("session live_state snapshots replace plan, prompt queue, and compaction live state", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessionPlans: {
+      "session-1": {
+        entries: [{ content: "Old plan", priority: "medium", status: "completed" }],
+        updatedAt: "2026-06-29T09:00:00.000Z",
+      },
+    },
+    promptQueues: {
+      "session-1": {
+        sessionId: "session-1",
+        queued: [{
+          id: "queued-old",
+          sessionId: "session-1",
+          text: "old",
+          clientMessageId: "client-queued-old",
+          createdAt: "2026-06-29T09:00:00.000Z",
+          updatedAt: "2026-06-29T09:00:00.000Z",
+          status: "queued",
+        }],
+      },
+    },
+    sessionCompactionStates: {
+      "session-1": {
+        phase: "started",
+        source: "heuristic",
+        timestamp: "2026-06-29T09:00:00.000Z",
+      },
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "live_state",
+        snapshot: {
+          promptQueue: {
+            sessionId: "session-1",
+            queued: [{
+              id: "queued-new",
+              sessionId: "session-1",
+              text: "new",
+              clientMessageId: "client-queued-new",
+              createdAt: "2026-06-29T10:00:00.000Z",
+              updatedAt: "2026-06-29T10:00:00.000Z",
+              status: "queued",
+            }],
+          },
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessionPlans["session-1"], undefined);
+  assert.deepEqual(useDeckStore.getState().promptQueues["session-1"], {
+    sessionId: "session-1",
+    queued: [{
+      id: "queued-new",
+      sessionId: "session-1",
+      text: "new",
+      clientMessageId: "client-queued-new",
+      createdAt: "2026-06-29T10:00:00.000Z",
+      updatedAt: "2026-06-29T10:00:00.000Z",
+      status: "queued",
+    }],
+  });
+  assert.equal(useDeckStore.getState().sessionCompactionStates["session-1"], undefined);
+});
+
+test("session transcript_event does not mutate canonical timeline entries directly", () => {
   resetStore();
   useDeckStore.setState({
     sessionTimeline: {
@@ -253,11 +507,11 @@ test("session transcript_event updates upsert compaction timeline entries by id"
   const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
   assert.equal(handled, true);
   assert.equal(entry?.kind, "context_compaction");
-  assert.equal(entry?.kind === "context_compaction" ? entry.summaryText : undefined, "Updated compact summary");
-  assert.equal(entry?.kind === "context_compaction" ? entry.detailsVisibility : undefined, "hidden");
+  assert.equal(entry?.kind === "context_compaction" ? entry.summaryText : undefined, "Earlier compact summary");
+  assert.equal(entry?.kind === "context_compaction" ? entry.detailsVisibility : undefined, "expandable");
 });
 
-test("session transcript_event merges an authoritative compaction summary into the anchored placeholder row", () => {
+test("session transcript_event leaves anchored timeline rows untouched until canonical reload", () => {
   resetStore();
   useDeckStore.setState({
     sessionTimeline: {
@@ -338,13 +592,13 @@ test("session transcript_event merges an authoritative compaction summary into t
   assert.equal(compactionEntries.length, 1);
   assert.deepEqual(timeline.map((entry) => entry.id), [
     "user-1",
-    "authoritative-compaction",
+    "synthetic-compaction",
     "resume:session-1:assistant-1",
     "assistant-1",
   ]);
   assert.equal(
     compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].summaryText : undefined,
-    "This session is being continued from a previous conversation that ran out of context.",
+    undefined,
   );
 });
 
@@ -388,67 +642,25 @@ test("session compaction_state updates keep only live started markers", () => {
   assert.equal(useDeckStore.getState().sessionCompactionStates["session-1"], undefined);
 });
 
-test("session/list_messages keeps artifact tool calls when initial history returns late", () => {
+test("session/get_artifacts preserves existing canonical timeline reference", () => {
   resetStore();
-  const loadedEntry: SessionTimelineEntry = {
-    id: "loaded-assistant",
-    kind: "assistant_message",
-    chunks: [
-      {
-        id: "loaded-assistant:content",
-        kind: "content",
-        text: "服务端历史回复",
-        timestamp: "2026-05-17T10:00:00.000Z",
-        sequence: 1,
-      },
-    ],
-    timestamp: "2026-05-17T10:00:00.000Z",
-    updatedAt: "2026-05-17T10:00:00.000Z",
-    sequence: 1,
+  const toolCallsRef = { current: {} as Record<string, AgentToolCall[]> };
+  const mergeSessionToolCalls = (sessionId: string, incoming: AgentToolCall[]) => {
+    useDeckStore.getState().setToolCalls((current) => {
+      const nextSessionToolCalls = [...(current[sessionId] ?? [])];
+      for (const toolCall of incoming) {
+        const index = nextSessionToolCalls.findIndex((entry) => entry.id === toolCall.id);
+        if (index === -1) {
+          nextSessionToolCalls.push(toolCall);
+        } else {
+          nextSessionToolCalls[index] = toolCall;
+        }
+      }
+      const next = { ...current, [sessionId]: nextSessionToolCalls };
+      toolCallsRef.current = next;
+      return next;
+    });
   };
-  const artifactToolCall: SessionTimelineEntry = {
-    id: "tool:call-1",
-    kind: "tool_call",
-    toolCall: {
-      id: "call-1",
-      kind: "shell",
-      title: "Shell",
-      status: "completed",
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:01.000Z",
-      sequence: 2,
-    },
-    timestamp: "2026-05-17T10:00:01.000Z",
-    updatedAt: "2026-05-17T10:00:01.000Z",
-    sequence: 2,
-  };
-  useDeckStore.setState({
-    sessionTimeline: { "session-1": [loadedEntry, artifactToolCall] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: [loadedEntry],
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(
-    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["loaded-assistant", "tool:call-1"],
-  );
-});
-
-test("session/get_artifacts keeps existing timeline reference for unchanged tool calls", () => {
-  resetStore();
   const toolCall: AgentToolCall = {
     id: "call-1",
     kind: "shell",
@@ -482,15 +694,39 @@ test("session/get_artifacts keeps existing timeline reference for unchanged tool
     },
     "helm-1",
     true,
-    createSessionEventContext(),
+    createSessionEventContext({
+      toolCallsRef,
+      mergeSessionToolCalls,
+    }),
   );
 
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().sessionTimeline["session-1"], existingTimeline);
+  assert.deepEqual(
+    useDeckStore.getState().toolCalls["session-1"]?.map((entry) => entry.id),
+    ["call-1"],
+  );
 });
 
-test("session/get_artifacts waits for initial history before projecting tool calls", () => {
+test("session/get_artifacts updates live tool calls before initial canonical history finishes loading", () => {
   resetStore();
+  const toolCallsRef = { current: {} as Record<string, AgentToolCall[]> };
+  const mergeSessionToolCalls = (sessionId: string, incoming: AgentToolCall[]) => {
+    useDeckStore.getState().setToolCalls((current) => {
+      const nextSessionToolCalls = [...(current[sessionId] ?? [])];
+      for (const toolCall of incoming) {
+        const index = nextSessionToolCalls.findIndex((entry) => entry.id === toolCall.id);
+        if (index === -1) {
+          nextSessionToolCalls.push(toolCall);
+        } else {
+          nextSessionToolCalls[index] = toolCall;
+        }
+      }
+      const next = { ...current, [sessionId]: nextSessionToolCalls };
+      toolCallsRef.current = next;
+      return next;
+    });
+  };
   const toolCall: AgentToolCall = {
     id: "call-1",
     kind: "shell",
@@ -518,1067 +754,39 @@ test("session/get_artifacts waits for initial history before projecting tool cal
     },
     "helm-1",
     true,
-    createSessionEventContext(),
+    createSessionEventContext({
+      toolCallsRef,
+      mergeSessionToolCalls,
+    }),
   );
 
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().sessionTimeline["session-1"], undefined);
-});
-
-test("session/list_messages preserves richer cached tool metadata", () => {
-  resetStore();
-  const richToolCall: AgentToolCall = {
-    id: "call-1",
-    kind: "shell",
-    title: "Shell",
-    status: "completed",
-    output: "stdout",
-    timestamp: "2026-05-17T10:00:01.000Z",
-    updatedAt: "2026-05-17T10:00:01.000Z",
-    sequence: 2,
-  };
-  const rawToolCall: AgentToolCall = {
-    ...richToolCall,
-    kind: "tool",
-    title: "Tool call call-1",
-  };
-  useDeckStore.setState({
-    sessionTimeline: {
-      "session-1": [{
-        id: "tool:call-1",
-        kind: "tool_call",
-        toolCall: richToolCall,
-        timestamp: richToolCall.timestamp,
-        updatedAt: richToolCall.updatedAt,
-        sequence: richToolCall.sequence,
-      }],
-    },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: [{
-        id: "tool:call-1",
-        kind: "tool_call",
-        toolCall: rawToolCall,
-        timestamp: rawToolCall.timestamp,
-        updatedAt: rawToolCall.updatedAt,
-        sequence: rawToolCall.sequence,
-      }],
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
-
-  assert.equal(handled, true);
-  assert.equal(entry?.kind, "tool_call");
-  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "shell");
-  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.title : undefined, "Shell");
-});
-
-test("session/list_messages lets richer running tool metadata reopen a stale completed row", () => {
-  resetStore();
-  const currentToolCall: AgentToolCall = {
-    id: "call-1",
-    kind: "tool",
-    title: "Tool call call-1",
-    status: "completed",
-    timestamp: "2026-06-20T10:00:01.000Z",
-    updatedAt: "2026-06-20T10:00:01.000Z",
-    sequence: 2,
-  };
-  const incomingToolCall: AgentToolCall = {
-    ...currentToolCall,
-    kind: "write",
-    title: "Write",
-    status: "running",
-    updatedAt: "2026-06-20T10:00:02.000Z",
-    input: JSON.stringify({
-      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
-    }),
-  };
-
-  useDeckStore.setState({
-    sessionTimeline: {
-      "session-1": [{
-        id: "tool:call-1",
-        kind: "tool_call",
-        toolCall: currentToolCall,
-        timestamp: currentToolCall.timestamp,
-        updatedAt: currentToolCall.updatedAt,
-        sequence: currentToolCall.sequence,
-      }],
-    },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: [{
-        id: "tool:call-1",
-        kind: "tool_call",
-        toolCall: incomingToolCall,
-        timestamp: incomingToolCall.timestamp,
-        updatedAt: incomingToolCall.updatedAt,
-        sequence: incomingToolCall.sequence,
-      }],
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
-
-  assert.equal(handled, true);
-  assert.equal(entry?.kind, "tool_call");
-  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.status : undefined, "running");
-  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "write");
-  assert.equal(
-    entry?.kind === "tool_call" ? entry.toolCall.input : undefined,
-    JSON.stringify({
-      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
-    }),
-  );
-});
-
-test("session/list_messages keeps richer split timeline when equivalent coarse history arrives later", () => {
-  resetStore();
-  const toolCall: AgentToolCall = {
-    id: "call-1",
-    kind: "shell",
-    title: "Shell",
-    status: "completed",
-    timestamp: "2026-05-17T10:00:02.000Z",
-    updatedAt: "2026-05-17T10:00:02.000Z",
-    sequence: 3,
-  };
-  const splitTimeline: SessionTimelineEntry[] = [
-    {
-      id: "user-1",
-      kind: "user_message",
-      message: {
-        id: "user-1",
-        role: "user",
-        text: "开始",
-        timestamp: "2026-05-17T10:00:00.000Z",
-        sequence: 1,
-      },
-      timestamp: "2026-05-17T10:00:00.000Z",
-      updatedAt: "2026-05-17T10:00:00.000Z",
-      sequence: 1,
-    },
-    {
-      id: "assistant-1",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-1:content",
-        kind: "content",
-        text: "先检查。",
-        timestamp: "2026-05-17T10:00:01.000Z",
-        sequence: 2,
-      }],
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:01.000Z",
-      sequence: 2,
-    },
-    {
-      id: "tool:call-1",
-      kind: "tool_call",
-      toolCall,
-      timestamp: "2026-05-17T10:00:02.000Z",
-      updatedAt: "2026-05-17T10:00:02.000Z",
-      sequence: 3,
-    },
-    {
-      id: "assistant-1#p1",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-1:content:4",
-        kind: "content",
-        text: "再总结。",
-        timestamp: "2026-05-17T10:00:03.000Z",
-        sequence: 4,
-      }],
-      timestamp: "2026-05-17T10:00:03.000Z",
-      updatedAt: "2026-05-17T10:00:03.000Z",
-      sequence: 4,
-    },
-  ];
-  const coarseTimeline: SessionTimelineEntry[] = [
-    splitTimeline[0]!,
-    {
-      id: "assistant-1",
-      kind: "assistant_message",
-      chunks: [
-        ...(splitTimeline[1]!.kind === "assistant_message" ? splitTimeline[1]!.chunks : []),
-        ...(splitTimeline[3]!.kind === "assistant_message" ? splitTimeline[3]!.chunks : []),
-      ],
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:03.000Z",
-      sequence: 2,
-    },
-    splitTimeline[2]!,
-  ];
-  useDeckStore.setState({
-    sessionTimeline: { "session-1": splitTimeline },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: coarseTimeline,
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], splitTimeline);
-});
-
-test("session/list_messages keeps split timeline when coarse history coalesces assistant text and drops tool sequences", () => {
-  resetStore();
-  const firstTool: AgentToolCall = {
-    id: "call-1",
-    kind: "shell",
-    title: "Shell 1",
-    status: "completed",
-    timestamp: "2026-05-17T10:00:02.000Z",
-    updatedAt: "2026-05-17T10:00:02.000Z",
-    sequence: 3,
-  };
-  const secondTool: AgentToolCall = {
-    id: "call-2",
-    kind: "read",
-    title: "Read 2",
-    status: "completed",
-    timestamp: "2026-05-17T10:00:04.000Z",
-    updatedAt: "2026-05-17T10:00:04.000Z",
-    sequence: 5,
-  };
-  const splitTimeline: SessionTimelineEntry[] = [
-    {
-      id: "user-1",
-      kind: "user_message",
-      message: {
-        id: "user-1",
-        role: "user",
-        text: "开始",
-        timestamp: "2026-05-17T10:00:00.000Z",
-        sequence: 1,
-      },
-      timestamp: "2026-05-17T10:00:00.000Z",
-      updatedAt: "2026-05-17T10:00:00.000Z",
-      sequence: 1,
-    },
-    {
-      id: "assistant-turn",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-turn:content",
-        kind: "content",
-        text: "先检查。",
-        timestamp: "2026-05-17T10:00:01.000Z",
-        sequence: 2,
-      }],
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:01.000Z",
-      sequence: 2,
-    },
-    {
-      id: "tool:call-1",
-      kind: "tool_call",
-      toolCall: firstTool,
-      timestamp: firstTool.timestamp,
-      updatedAt: firstTool.updatedAt,
-      sequence: firstTool.sequence,
-    },
-    {
-      id: "assistant-turn#p1",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-turn:content:4",
-        kind: "content",
-        text: "再读取。",
-        timestamp: "2026-05-17T10:00:03.000Z",
-        sequence: 4,
-      }],
-      timestamp: "2026-05-17T10:00:03.000Z",
-      updatedAt: "2026-05-17T10:00:03.000Z",
-      sequence: 4,
-    },
-    {
-      id: "tool:call-2",
-      kind: "tool_call",
-      toolCall: secondTool,
-      timestamp: secondTool.timestamp,
-      updatedAt: secondTool.updatedAt,
-      sequence: secondTool.sequence,
-    },
-    {
-      id: "assistant-turn#p2",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-turn:content:6",
-        kind: "content",
-        text: "最后总结。",
-        timestamp: "2026-05-17T10:00:05.000Z",
-        sequence: 6,
-      }],
-      timestamp: "2026-05-17T10:00:05.000Z",
-      updatedAt: "2026-05-17T10:00:05.000Z",
-      sequence: 6,
-    },
-  ];
-  const coarseTimeline: SessionTimelineEntry[] = [
-    splitTimeline[0]!,
-    {
-      id: "assistant-turn",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-turn:content",
-        kind: "content",
-        text: "先检查。再读取。最后总结。",
-        timestamp: "2026-05-17T10:00:01.000Z",
-        sequence: 2,
-      }],
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:05.000Z",
-      sequence: 2,
-    },
-    {
-      id: "tool:call-1",
-      kind: "tool_call",
-      toolCall: { ...firstTool, sequence: undefined },
-      timestamp: firstTool.timestamp,
-      updatedAt: firstTool.updatedAt,
-    },
-    {
-      id: "tool:call-2",
-      kind: "tool_call",
-      toolCall: { ...secondTool, sequence: undefined },
-      timestamp: secondTool.timestamp,
-      updatedAt: secondTool.updatedAt,
-    },
-  ];
-  useDeckStore.setState({
-    sessionTimeline: { "session-1": splitTimeline },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: coarseTimeline,
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], splitTimeline);
-});
-
-test("session/list_messages preserves active local timeline entries when initial history returns late", () => {
-  resetStore();
-  const loadedEntry: SessionTimelineEntry = {
-    id: "loaded-assistant",
-    kind: "assistant_message",
-    chunks: [
-      {
-        id: "loaded-assistant:content",
-        kind: "content",
-        text: "服务端历史回复",
-        timestamp: "2026-05-17T10:01:00.000Z",
-      },
-    ],
-    timestamp: "2026-05-17T10:01:00.000Z",
-    updatedAt: "2026-05-17T10:01:00.000Z",
-  };
-  const liveEntry: SessionTimelineEntry = {
-    id: "live-assistant",
-    kind: "assistant_message",
-    chunks: [
-      {
-        id: "live-assistant:content",
-        kind: "content",
-        text: "实时流式回复",
-        timestamp: "2026-05-17T10:02:00.000Z",
-        streaming: true,
-      },
-    ],
-    timestamp: "2026-05-17T10:02:00.000Z",
-    updatedAt: "2026-05-17T10:02:00.000Z",
-    streaming: true,
-  };
-  useDeckStore.setState({
-    sessionTimeline: { "session-1": [liveEntry] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: [loadedEntry],
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
   assert.deepEqual(
-    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["loaded-assistant", "live-assistant"],
+    useDeckStore.getState().toolCalls["session-1"]?.map((entry) => entry.id),
+    ["call-1"],
   );
 });
 
-test("session/list_messages stores unified timeline entries when provided by Helm", () => {
+test("session/get_artifacts keeps canonical timeline untouched while refreshing live tool activity", () => {
   resetStore();
-  const loadedUser: AgentMessage = {
-    id: "user-1",
-    role: "user",
-    text: "开始",
-    timestamp: "2026-05-24T10:00:00.000Z",
-    sequence: 1,
+  const toolCallsRef = { current: {} as Record<string, AgentToolCall[]> };
+  const mergeSessionToolCalls = (sessionId: string, incoming: AgentToolCall[]) => {
+    useDeckStore.getState().setToolCalls((current) => {
+      const nextSessionToolCalls = [...(current[sessionId] ?? [])];
+      for (const toolCall of incoming) {
+        const index = nextSessionToolCalls.findIndex((entry) => entry.id === toolCall.id);
+        if (index === -1) {
+          nextSessionToolCalls.push(toolCall);
+        } else {
+          nextSessionToolCalls[index] = toolCall;
+        }
+      }
+      const next = { ...current, [sessionId]: nextSessionToolCalls };
+      toolCallsRef.current = next;
+      return next;
+    });
   };
-  const timeline: SessionTimelineEntry[] = [
-    {
-      id: "user-1",
-      kind: "user_message",
-      message: loadedUser,
-      timestamp: loadedUser.timestamp,
-      updatedAt: loadedUser.timestamp,
-      sequence: 1,
-    },
-    {
-      id: "assistant-1",
-      kind: "assistant_message",
-      chunks: [
-        {
-          id: "assistant-1:thinking",
-          kind: "thinking",
-          text: "先思考",
-          title: "Thinking",
-          status: "completed",
-          timestamp: "2026-05-24T10:00:01.000Z",
-          updatedAt: "2026-05-24T10:00:01.000Z",
-          sequence: 2,
-        },
-        {
-          id: "assistant-1:content",
-          kind: "content",
-          text: "完成",
-          timestamp: "2026-05-24T10:00:02.000Z",
-          sequence: 3,
-        },
-      ],
-      timestamp: "2026-05-24T10:00:01.000Z",
-      updatedAt: "2026-05-24T10:00:02.000Z",
-      sequence: 2,
-    },
-  ];
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedUser],
-      timeline,
-      transcriptStatus: {
-        source: "local",
-        replayCompleteness: "compacted",
-        integrity: "local-prefix-preserved",
-        runtimeRestoreState: "history-only",
-      },
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(
-    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.kind),
-    ["user_message", "assistant_message"],
-  );
-  assert.deepEqual(
-    (useDeckStore.getState() as any).transcriptStatusBySession?.["session-1"],
-    {
-      source: "local",
-      replayCompleteness: "compacted",
-      integrity: "local-prefix-preserved",
-      runtimeRestoreState: "history-only",
-    },
-  );
-});
-
-test("session/list_messages preserves provided timeline order with partial sequence data", () => {
-  resetStore();
-  const loadedUser: AgentMessage = {
-    id: "user-1",
-    role: "user",
-    text: "开始",
-    timestamp: "2026-05-24T10:00:30.000Z",
-    sequence: 1,
-  };
-  const timeline: SessionTimelineEntry[] = [
-    {
-      id: "user-1",
-      kind: "user_message",
-      message: loadedUser,
-      timestamp: loadedUser.timestamp,
-      updatedAt: loadedUser.timestamp,
-      sequence: 1,
-    },
-    {
-      id: "assistant-1",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-1:thinking",
-        kind: "thinking",
-        text: "先思考",
-        title: "Thinking",
-        status: "completed",
-        timestamp: "2026-05-24T10:00:10.000Z",
-        updatedAt: "2026-05-24T10:00:10.000Z",
-      }],
-      timestamp: "2026-05-24T10:00:10.000Z",
-      updatedAt: "2026-05-24T10:00:10.000Z",
-    },
-    {
-      id: "tool:tool-1",
-      kind: "tool_call",
-      toolCall: {
-        id: "tool-1",
-        kind: "read",
-        title: "Read",
-        status: "completed",
-        timestamp: "2026-05-24T10:00:20.000Z",
-        updatedAt: "2026-05-24T10:00:20.000Z",
-      },
-      timestamp: "2026-05-24T10:00:20.000Z",
-      updatedAt: "2026-05-24T10:00:20.000Z",
-    },
-    {
-      id: "assistant-1#p0",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-1#p0:content",
-        kind: "content",
-        text: "完成",
-        timestamp: "2026-05-24T10:00:40.000Z",
-        sequence: 2,
-      }],
-      timestamp: "2026-05-24T10:00:40.000Z",
-      updatedAt: "2026-05-24T10:00:40.000Z",
-      sequence: 2,
-    },
-  ];
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedUser],
-      timeline,
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(
-    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["user-1", "assistant-1", "tool:tool-1", "assistant-1#p0"],
-  );
-});
-
-test("session/list_messages applies timeline-only pages without replacing legacy messages", () => {
-  resetStore();
-  const existingMessage: AgentMessage = {
-    id: "message-existing",
-    role: "assistant",
-    text: "当前正文",
-    timestamp: "2026-05-24T10:00:10.000Z",
-  };
-  const unexpectedMessage: AgentMessage = {
-    id: "message-unexpected",
-    role: "assistant",
-    text: "不应替换当前正文",
-    timestamp: "2026-05-24T10:00:20.000Z",
-  };
-  const timeline: SessionTimelineEntry[] = [
-    {
-      id: "older-assistant",
-      kind: "assistant_message",
-      chunks: [
-        {
-          id: "older-assistant:content",
-          kind: "content",
-          text: "更早的时间线正文",
-          timestamp: "2026-05-24T09:59:00.000Z",
-          sequence: 1,
-        },
-      ],
-      timestamp: "2026-05-24T09:59:00.000Z",
-      updatedAt: "2026-05-24T09:59:00.000Z",
-      sequence: 1,
-    },
-  ];
-  useDeckStore.setState({
-    messages: { "session-1": [existingMessage] },
-    messageHistoryState: {
-      "session-1": {
-        nextCursor: "legacy-message-cursor",
-        hasMore: false,
-        timelineNextCursor: "timeline-cursor-1",
-        timelineHasMore: true,
-        loading: true,
-      },
-    },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [unexpectedMessage],
-      timeline,
-      timelineBefore: "timeline-cursor-1",
-      timelineNextCursor: "timeline-cursor-0",
-      timelineHasMore: false,
-      nextCursor: "unexpected-message-cursor",
-      hasMore: true,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  const state = useDeckStore.getState();
-  assert.equal(handled, true);
-  assert.deepEqual(state.messages["session-1"], [existingMessage]);
-  assert.deepEqual(
-    state.sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["older-assistant"],
-  );
-  assert.deepEqual(state.messageHistoryState["session-1"], {
-    nextCursor: "legacy-message-cursor",
-    hasMore: false,
-    timelineNextCursor: "timeline-cursor-0",
-    timelineHasMore: false,
-    loading: false,
-  });
-});
-
-test("session/list_messages preserves local user prompts when loaded history omits users", () => {
-  resetStore();
-  const localUser: AgentMessage = {
-    id: "client-user-1",
-    role: "user",
-    text: "为什么 session 里看不到用户消息？",
-    timestamp: "2026-05-24T10:00:00.000Z",
-  };
-  const loadedAssistant: AgentMessage = {
-    id: "provider-assistant-1#p0",
-    role: "assistant",
-    text: "我来定位原因。",
-    timestamp: "2026-05-24T10:01:00.000Z",
-  };
-  useDeckStore.setState({
-    messages: { "session-1": [localUser] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedAssistant],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().messages["session-1"], [
-    localUser,
-    loadedAssistant,
-  ]);
-});
-
-test("session/list_messages prefers the authoritative compacted timeline over a richer local replay", () => {
-  resetStore();
-  useDeckStore.setState({
-    sessionTimeline: {
-      "session-1": [
-        {
-          id: "current-user",
-          kind: "user_message",
-          message: {
-            id: "current-user",
-            role: "user",
-            text: "结束任务",
-            timestamp: "2026-06-18T14:01:49.292Z",
-            sequence: 256,
-          },
-          timestamp: "2026-06-18T14:01:49.292Z",
-          updatedAt: "2026-06-18T14:01:49.292Z",
-          sequence: 256,
-        },
-        {
-          id: "assistant-part-1",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "assistant-part-1:content",
-              kind: "content",
-              text: "好的，我来完成剩余的",
-              timestamp: "2026-06-18T14:02:15.000Z",
-              sequence: 275,
-            },
-          ],
-          timestamp: "2026-06-18T14:02:15.000Z",
-          updatedAt: "2026-06-18T14:02:15.000Z",
-          sequence: 275,
-        },
-        {
-          id: "assistant-part-2",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "assistant-part-2:content",
-              kind: "content",
-              text: "两处改动然后收尾。",
-              timestamp: "2026-06-18T14:02:16.000Z",
-              sequence: 276,
-            },
-          ],
-          timestamp: "2026-06-18T14:02:16.000Z",
-          updatedAt: "2026-06-18T14:02:16.000Z",
-          sequence: 276,
-        },
-      ],
-    },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [
-        {
-          id: "compaction-summary",
-          role: "user",
-          text: "This session is being continued from a previous conversation that ran out of context.",
-          timestamp: "2026-06-18T14:05:25.193Z",
-        },
-        {
-          id: "previous-user",
-          role: "user",
-          text: "完成了嘛？",
-          timestamp: "2026-06-18T14:05:25.197Z",
-        },
-        {
-          id: "provider-current-user",
-          role: "user",
-          text: "结束任务",
-          timestamp: "2026-06-18T14:01:49.292Z",
-          sequence: 256,
-        },
-        {
-          id: "provider-current-assistant",
-          role: "assistant",
-          text: "好的，我来完成剩余的两处改动然后收尾。",
-          timestamp: "2026-06-18T14:02:16.000Z",
-          sequence: 276,
-        },
-      ],
-      timeline: [
-        {
-          id: "current-user",
-          kind: "user_message",
-          message: {
-            id: "current-user",
-            role: "user",
-            text: "结束任务",
-            timestamp: "2026-06-18T14:01:49.292Z",
-            sequence: 256,
-          },
-          timestamp: "2026-06-18T14:01:49.292Z",
-          updatedAt: "2026-06-18T14:01:49.292Z",
-          sequence: 256,
-        },
-        {
-          id: "provider-current-assistant",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "provider-current-assistant:content",
-              kind: "content",
-              text: "好的，我来完成剩余的两处改动然后收尾。",
-              timestamp: "2026-06-18T14:02:16.000Z",
-              sequence: 276,
-            },
-          ],
-          timestamp: "2026-06-18T14:02:16.000Z",
-          updatedAt: "2026-06-18T14:02:16.000Z",
-          sequence: 276,
-        },
-      ],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  const nextTimeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
-  assert.equal(handled, true);
-  assert.deepEqual(nextTimeline.map((entry) => entry.id), [
-    "current-user",
-    "provider-current-assistant",
-  ]);
-});
-
-test("session/list_messages replaces stale local compaction placement with authoritative transcript entries", () => {
-  resetStore();
-  useDeckStore.setState({
-    sessionTimeline: {
-      "session-1": [
-        {
-          id: "current-user",
-          kind: "user_message",
-          message: {
-            id: "current-user",
-            role: "user",
-            text: "结束任务",
-            timestamp: "2026-06-28T00:00:00.000Z",
-            sequence: 1,
-          },
-          timestamp: "2026-06-28T00:00:00.000Z",
-          updatedAt: "2026-06-28T00:00:00.000Z",
-          sequence: 1,
-        },
-        {
-          id: "assistant-part-1",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "assistant-part-1:content",
-              kind: "content",
-              text: "好的，我来",
-              timestamp: "2026-06-28T00:00:02.000Z",
-              sequence: 2,
-            },
-          ],
-          timestamp: "2026-06-28T00:00:02.000Z",
-          updatedAt: "2026-06-28T00:00:02.000Z",
-          sequence: 2,
-        },
-        {
-          id: "assistant-part-2",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "assistant-part-2:content",
-              kind: "content",
-              text: "继续处理。",
-              timestamp: "2026-06-28T00:00:03.000Z",
-              sequence: 3,
-            },
-          ],
-          timestamp: "2026-06-28T00:00:03.000Z",
-          updatedAt: "2026-06-28T00:00:03.000Z",
-          sequence: 3,
-        },
-        {
-          id: "stale-compaction-end",
-          kind: "context_compaction",
-          summaryText: "This session is being continued from a previous conversation that ran out of context.",
-          detailsVisibility: "expandable",
-          timestamp: "2026-06-28T00:00:10.000Z",
-          updatedAt: "2026-06-28T00:00:10.000Z",
-          replayCompleteness: "compacted",
-        },
-      ],
-    },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [
-        {
-          id: "provider-current-user",
-          role: "user",
-          text: "结束任务",
-          timestamp: "2026-06-28T00:00:00.000Z",
-          sequence: 1,
-        },
-        {
-          id: "provider-current-assistant",
-          role: "assistant",
-          text: "好的，我来继续处理。",
-          timestamp: "2026-06-28T00:00:03.000Z",
-          sequence: 3,
-        },
-      ],
-      timeline: [
-        {
-          id: "current-user",
-          kind: "user_message",
-          message: {
-            id: "current-user",
-            role: "user",
-            text: "结束任务",
-            timestamp: "2026-06-28T00:00:00.000Z",
-            sequence: 1,
-          },
-          timestamp: "2026-06-28T00:00:00.000Z",
-          updatedAt: "2026-06-28T00:00:00.000Z",
-          sequence: 1,
-        },
-        {
-          id: "authoritative-compaction",
-          kind: "context_compaction",
-          summaryText: "This session is being continued from a previous conversation that ran out of context.",
-          detailsVisibility: "expandable",
-          timestamp: "2026-06-28T00:00:01.000Z",
-          updatedAt: "2026-06-28T00:00:01.000Z",
-          replayCompleteness: "compacted",
-        },
-        {
-          id: "resume:session-1:provider-current-assistant",
-          kind: "session_resumed",
-          restoreMethod: "session/load",
-          timestamp: "2026-06-28T00:00:03.000Z",
-          updatedAt: "2026-06-28T00:00:03.000Z",
-          replayCompleteness: "compacted",
-        },
-        {
-          id: "provider-current-assistant",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "provider-current-assistant:content",
-              kind: "content",
-              text: "好的，我来继续处理。",
-              timestamp: "2026-06-28T00:00:03.000Z",
-              sequence: 3,
-            },
-          ],
-          timestamp: "2026-06-28T00:00:03.000Z",
-          updatedAt: "2026-06-28T00:00:03.000Z",
-          sequence: 3,
-        },
-      ],
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(
-    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
-    [
-      "current-user",
-      "authoritative-compaction",
-      "resume:session-1:provider-current-assistant",
-      "provider-current-assistant",
-    ],
-  );
-});
-
-test("session/list_messages preserves local user attachments represented by provider history", () => {
-  resetStore();
-  const localUser: AgentMessage = {
-    id: "client-user-with-image",
-    role: "user",
-    text: "请看这张图",
-    timestamp: "2026-05-24T10:00:00.000Z",
-    sequence: 1,
-    attachments: [
-      {
-        type: "image",
-        data: "aW1hZ2U=",
-        mimeType: "image/png",
-        name: "screenshot.png",
-      },
-    ],
-  };
-  const providerUser: AgentMessage = {
-    id: "provider-user-1",
-    role: "user",
-    text: "请看这张图",
-    timestamp: "2026-05-24T10:00:01.000Z",
-    sequence: 1,
-  };
-  useDeckStore.setState({
-    messages: { "session-1": [localUser] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [providerUser],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().messages["session-1"], [
-    {
-      ...providerUser,
-      id: localUser.id,
-      timestamp: localUser.timestamp,
-      attachments: localUser.attachments,
-    },
-  ]);
-});
-
-test("session/get_artifacts projects active tool calls into the unified timeline", () => {
-  resetStore();
   const existingAssistant: SessionTimelineEntry = {
     id: "assistant-1",
     kind: "assistant_message",
@@ -1630,16 +838,19 @@ test("session/get_artifacts projects active tool calls into the unified timeline
     },
     "helm-1",
     true,
-    createSessionEventContext(),
+    createSessionEventContext({
+      toolCallsRef,
+      mergeSessionToolCalls,
+    }),
   );
 
   const timeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
-  const toolEntries = timeline.filter((entry) => entry.kind === "tool_call");
+  const liveToolCalls = useDeckStore.getState().toolCalls["session-1"] ?? [];
   assert.equal(handled, true);
-  assert.deepEqual(timeline.map((entry) => entry.id), ["assistant-1", "tool:call-1"]);
-  assert.equal(toolEntries.length, 1);
-  assert.equal(toolEntries[0]?.kind === "tool_call" ? toolEntries[0].toolCall.status : undefined, "running");
-  assert.equal(toolEntries[0]?.kind === "tool_call" ? toolEntries[0].toolCall.output : undefined, "stdout");
+  assert.deepEqual(timeline.map((entry) => entry.id), ["assistant-1"]);
+  assert.deepEqual(liveToolCalls.map((toolCall) => toolCall.id), ["tool-command-1", "call-1"]);
+  assert.equal(liveToolCalls.find((toolCall) => toolCall.id === "tool-command-1")?.output, "stdout");
+  assert.equal(liveToolCalls.find((toolCall) => toolCall.id === "call-1")?.status, "running");
 });
 
 test("session/get_artifacts stores returned session plans", () => {
@@ -1700,44 +911,6 @@ test("session/get_artifacts preserves existing session plans when plan is omitte
 
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().sessionPlans["session-1"], plan);
-});
-
-test("session/list_messages preserves live streaming messages when initial history returns late", () => {
-  resetStore();
-  const loadedHistory: AgentMessage = {
-    id: "provider-1#p0",
-    role: "assistant",
-    text: "服务端历史消息",
-    timestamp: "2026-05-17T10:01:00.000Z",
-  };
-  const liveStreaming: AgentMessage = {
-    id: "session-1-msg-s1",
-    role: "assistant",
-    text: "实时流式消息",
-    timestamp: "2026-05-17T10:02:00.000Z",
-    streaming: true,
-  };
-  useDeckStore.setState({
-    messages: { "session-1": [liveStreaming] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedHistory],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().messages["session-1"], [
-    loadedHistory,
-    liveStreaming,
-  ]);
 });
 
 test("session prompt creation clears consumed draft metadata from model options", () => {

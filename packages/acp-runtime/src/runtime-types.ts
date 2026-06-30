@@ -10,6 +10,8 @@ import type {
   CommandChunk,
   FileDiffSummary,
   PermissionRequest,
+  SessionCompactionPhase,
+  SessionCompactionSource,
   SessionReasoningEffort,
   SessionStatus,
   WorktreeSummary,
@@ -33,6 +35,14 @@ export type SessionRuntimeEvent =
   | {
       type: "message";
       message: AgentMessage;
+    }
+  | {
+      type: "compaction";
+      phase: SessionCompactionPhase;
+      source: SessionCompactionSource;
+      timestamp: string;
+      summaryText?: string;
+      messageId?: string;
     }
   | {
       type: "permission-request";

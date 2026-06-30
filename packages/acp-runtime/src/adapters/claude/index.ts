@@ -1,5 +1,6 @@
 import type { AcpAgentAdapter } from "../types";
 import { isCommandNamed, resolveDefaultLaunch, resolveUnsupportedCleanup } from "../shared";
+import { normalizeClaudeToolCall } from "./tool-calls";
 import { createClaudePlanUpdateMapper } from "./plan-events";
 import { readClaudeTranscriptMessagesFromDisk } from "./transcript/history";
 import { readClaudeTranscriptPlanFromDisk } from "./transcript/plan";
@@ -9,7 +10,12 @@ const CLAUDE_ACP_COMMANDS = ["claude-acp", "claude-agent-acp", "claude-code-acp"
 export function createClaudeAcpAdapter(): AcpAgentAdapter {
   return {
     id: "claude",
-    isMatch: (provider) => provider.id === "claude-acp" || provider.id === "claude-agent-acp" || CLAUDE_ACP_COMMANDS.some((command) => isCommandNamed(provider.command, command)),
+    isMatch: (provider) =>
+      provider.id === "claude" ||
+      provider.id === "claudecode" ||
+      provider.id === "claude-acp" ||
+      provider.id === "claude-agent-acp" ||
+      CLAUDE_ACP_COMMANDS.some((command) => isCommandNamed(provider.command, command)),
     resolveLaunch: (provider, context) => {
       const launch = resolveDefaultLaunch(provider, context);
       return {
@@ -25,6 +31,7 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
     resolveCapabilities: (_provider, _initializeResult, detected) => detected,
     resolveCleanup: ({ provider }) => resolveUnsupportedCleanup(provider),
     mapSessionUpdate: createClaudePlanUpdateMapper(),
+    normalizeToolCall: ({ toolCall, update }) => normalizeClaudeToolCall(toolCall, update),
     readTranscriptPlan: ({ runtimeSessionId, cwd }) =>
       readClaudeTranscriptPlanFromDisk({ runtimeSessionId, cwd }),
     readTranscriptMessages: ({ runtimeSessionId, cwd }) =>

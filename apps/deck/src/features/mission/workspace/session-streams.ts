@@ -75,6 +75,7 @@ export function buildSessionStreamHydrationPlan({
       !messageHistoryState[sessionId] ||
       hasIncompleteCachedMessageHistory({
         cachedMessages: messagesBySession?.[sessionId],
+        cachedTimelineEntries: sessionTimelineBySession?.[sessionId],
         // `sessionTimelineBySession[sessionId] = []` means this runtime already asked
         // Helm for timeline data and got an explicit empty result. Retrying forever on
         // every render turns that steady state into an idle fetch loop.
@@ -134,11 +135,13 @@ function needsPlanHydration({
 
 function hasIncompleteCachedMessageHistory({
   cachedMessages,
+  cachedTimelineEntries,
   hasTimelineCache,
   historyState,
   session,
 }: {
   cachedMessages: Pick<AgentMessage, "id" | "role">[] | undefined;
+  cachedTimelineEntries: SessionTimelineEntry[] | undefined;
   hasTimelineCache: boolean;
   historyState: HistoryState | undefined;
   session: SessionSummary | undefined;
@@ -146,7 +149,12 @@ function hasIncompleteCachedMessageHistory({
   if (!session || !historyState || historyState.loading || historyState.hasMore) {
     return false;
   }
-  const cachedUserCount = cachedMessages?.filter((message) => message.role === "user").length ?? 0;
+  const cachedUserCount = Math.max(
+    cachedMessages?.filter((message) => message.role === "user").length ?? 0,
+    cachedTimelineEntries?.filter((entry) =>
+      entry.kind === "user_message" && entry.message.role === "user"
+    ).length ?? 0,
+  );
   return session.messageCount > cachedUserCount ||
     (!hasTimelineCache && Boolean(cachedMessages?.length || session.messageCount > 0));
 }

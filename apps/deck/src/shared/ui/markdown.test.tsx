@@ -24,6 +24,7 @@ test("markdown tables render inside a responsive scroll wrapper", () => {
   assert.match(html, /min-w-max/);
   assert.match(html, /markdown-table-head/);
   assert.match(html, /markdown-table-cell/);
+  assert.match(html, /text-\[12px\]/);
   assert.doesNotMatch(html, /whitespace-normal/);
   assert.doesNotMatch(html, /break-words/);
 });
@@ -81,8 +82,8 @@ test("markdown headings stay message-sized instead of using browser default disp
   );
 
   assert.match(html, /markdown-heading/);
-  assert.match(html, /text-\[15px\]/);
-  assert.match(html, /text-\[14px\]/);
+  assert.match(html, /text-\[14\.5px\]/);
+  assert.match(html, /text-\[13\.5px\]/);
 });
 
 test("assistant markdown text inserts paragraph breaks at ACP boundary markers", () => {
@@ -163,7 +164,7 @@ test("markdown message container owns top-level block spacing", () => {
 
   assert.match(
     html,
-    /<div class="markdown-message[^"]*space-y-2[^"]*text-\[12\.5px\][^"]*leading-\[1\.5\][^"]*">/,
+    /<div class="markdown-message[^"]*space-y-2[^"]*text-\[12px\][^"]*leading-\[1\.5\][^"]*">/,
   );
 });
 

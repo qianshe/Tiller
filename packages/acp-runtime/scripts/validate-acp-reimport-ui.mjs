@@ -130,7 +130,7 @@ async function setup() {
       ...state,
       statePath,
       sessionId,
-      beforeBackendTimeline: summarizeTimeline(before.timeline),
+      beforeBackendTimeline: summarizeTimeline(before.entries),
     };
     await writeFile(statePath, JSON.stringify(nextState, null, 2), "utf8");
     console.log(JSON.stringify(nextState, null, 2));
@@ -148,7 +148,7 @@ async function reimport(statePath) {
       sessionId: state.sessionId,
       limit: 100,
     });
-    const after = await rpc.request("session/list_messages", {
+    const after = await rpc.request("session/list_timeline", {
       sessionId: state.sessionId,
       limit: 100,
     });
@@ -162,10 +162,10 @@ async function reimport(statePath) {
       acpCalls: agentLog.map((entry) => entry.event),
       reimportResultTimeline: summarizeTimeline(reimported.timeline),
       reimportPlanEntries: (reimported.plan?.entries ?? []).map((entry) => entry.content),
-      afterBackendTimeline: summarizeTimeline(after.timeline),
+      afterBackendTimeline: summarizeTimeline(after.entries),
       afterArtifactsPlanEntries: (artifacts.plan?.entries ?? []).map((entry) => entry.content),
-      usedAdapterAfterReimport: JSON.stringify(after.timeline).includes("ADAPTER assistant after tool"),
-      usedAcpAfterReimport: JSON.stringify(after.timeline).includes("ACP assistant after tool"),
+      usedAdapterAfterReimport: JSON.stringify(after.entries).includes("ADAPTER assistant after tool"),
+      usedAcpAfterReimport: JSON.stringify(after.entries).includes("ACP assistant after tool"),
     };
     await writeFile(statePath, JSON.stringify(result, null, 2), "utf8");
     console.log(JSON.stringify(result, null, 2));
@@ -466,8 +466,8 @@ async function waitForHttp(port) {
 
 async function waitForLiveTimeline(rpc, sessionId) {
   return await waitFor(async () => {
-    const list = await rpc.request("session/list_messages", { sessionId, limit: 100 });
-    return JSON.stringify(list.timeline).includes("ACP assistant after tool")
+    const list = await rpc.request("session/list_timeline", { sessionId, limit: 100 });
+    return JSON.stringify(list.entries).includes("ACP assistant after tool")
       ? list
       : null;
   }, 30000, "live ACP prompt persistence");

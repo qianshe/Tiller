@@ -1,8 +1,6 @@
 export type MessageHistoryEntry = {
   nextCursor?: string;
   hasMore: boolean;
-  timelineNextCursor?: string;
-  timelineHasMore?: boolean;
   loading: boolean;
 };
 
@@ -20,12 +18,10 @@ export function resolveConversationHistoryFlags(
     return undefined;
   }
   const hasLoadableMessages = Boolean(messageState?.hasMore && messageState.nextCursor);
-  const hasLoadableTimeline = Boolean(messageState?.timelineHasMore && messageState.timelineNextCursor);
   const hasLoadableActivities = Boolean(activityState?.hasMore && activityState.nextCursor);
   return {
-    hasMore: hasLoadableMessages || hasLoadableTimeline,
-    canLoadMore: hasLoadableMessages || hasLoadableTimeline || hasLoadableActivities,
-    ...(hasLoadableTimeline ? { timelineHasMore: true } : {}),
+    hasMore: hasLoadableMessages,
+    canLoadMore: hasLoadableMessages || hasLoadableActivities,
     loading: Boolean(messageState?.loading || activityState?.loading),
   };
 }
@@ -40,7 +36,7 @@ export function buildConversationBootstrapPlan({
   activityPageLimit: number;
 }) {
   return {
-    listMessages: { sessionId, limit: messagePageLimit },
+    listTimeline: { sessionId, limit: messagePageLimit },
     getArtifacts: { sessionId, limit: activityPageLimit },
   };
 }
@@ -58,16 +54,15 @@ export function buildConversationPaginationPlan({
   messageState?: MessageHistoryEntry;
   activityState?: ActivityHistoryEntry;
 }) {
-  const canPageMessages = messageState &&
+  const canPageTimeline = messageState &&
     !messageState.loading &&
-    ((messageState.hasMore && messageState.nextCursor) ||
-      (messageState.timelineHasMore && messageState.timelineNextCursor));
-  const listMessages = canPageMessages
+    messageState.hasMore &&
+    Boolean(messageState.nextCursor);
+  const listTimeline = canPageTimeline
     ? {
         sessionId,
         limit: messagePageLimit,
-        before: messageState.hasMore ? messageState.nextCursor : undefined,
-        timelineBefore: messageState.timelineHasMore ? messageState.timelineNextCursor : undefined,
+        before: messageState.nextCursor,
       }
     : undefined;
   const getArtifacts = activityState &&
@@ -76,18 +71,16 @@ export function buildConversationPaginationPlan({
     activityState.nextCursor
       ? { sessionId, limit: activityPageLimit, before: activityState.nextCursor }
       : undefined;
-  return { listMessages, getArtifacts };
+  return { listTimeline, getArtifacts };
 }
 
 export function shouldProjectArtifactsIntoTimeline({
   messageHistoryLoading,
   messageHasMore,
-  timelineHasMore,
   isLiveUpdate,
 }: {
   messageHistoryLoading: boolean;
   messageHasMore: boolean;
-  timelineHasMore: boolean;
   isLiveUpdate: boolean;
 }): boolean {
   if (isLiveUpdate) {
@@ -96,7 +89,7 @@ export function shouldProjectArtifactsIntoTimeline({
   if (messageHistoryLoading) {
     return false;
   }
-  if (messageHasMore || timelineHasMore) {
+  if (messageHasMore) {
     return false;
   }
   return true;

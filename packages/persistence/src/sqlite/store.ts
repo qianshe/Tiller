@@ -2,6 +2,7 @@ import { copyFileSync, cpSync, existsSync, readdirSync, statSync } from "node:fs
 import { basename, extname, join } from "node:path";
 import type {
   AgentMessage,
+  AgentPlan,
   AgentToolCall,
   AgentToolCallKind,
   CommandChunk,
@@ -170,6 +171,26 @@ export function createSqliteSessionRuntimeStore(dbPath: string) {
     },
     remove(sessionId: string) {
       db.prepare("DELETE FROM session_runtimes WHERE session_id = ?").run(sessionId);
+    },
+    close() {
+      db.close();
+    },
+  };
+}
+
+export function createSqliteSessionPlanStore(dbPath: string) {
+  const db = openSessionDatabase(dbPath);
+
+  return {
+    get(sessionId: string) {
+      return getSessionPlan(db, sessionId);
+    },
+    replace(sessionId: string, plan: AgentPlan) {
+      replaceSessionPlan(db, sessionId, plan);
+      return plan;
+    },
+    remove(sessionId: string) {
+      db.prepare("DELETE FROM session_plans WHERE session_id = ?").run(sessionId);
     },
     close() {
       db.close();
@@ -568,6 +589,19 @@ function getRuntimeDescriptor(db: DatabaseSync, sessionId: string) {
   return row ? parseJson<StoredSessionRuntimeDescriptor>(row.payload_json) : null;
 }
 
+function getSessionPlan(db: DatabaseSync, sessionId: string) {
+  const row = db
+    .prepare(
+      `
+    SELECT payload_json
+    FROM session_plans
+    WHERE session_id = ?
+  `,
+    )
+    .get(sessionId) as { payload_json: string } | undefined;
+  return row ? parseJson<AgentPlan>(row.payload_json) ?? undefined : undefined;
+}
+
 function upsertRuntimeDescriptor(db: DatabaseSync, descriptor: StoredSessionRuntimeDescriptor) {
   db.prepare(
     `
@@ -582,6 +616,20 @@ function upsertRuntimeDescriptor(db: DatabaseSync, descriptor: StoredSessionRunt
     descriptor.lastSeenAt,
     descriptor.state,
     JSON.stringify(descriptor),
+  );
+}
+
+function replaceSessionPlan(db: DatabaseSync, sessionId: string, plan: AgentPlan) {
+  db.prepare(
+    `
+    INSERT OR REPLACE INTO session_plans(
+      session_id, updated_at, payload_json
+    ) VALUES (?, ?, ?)
+  `,
+  ).run(
+    sessionId,
+    plan.updatedAt,
+    JSON.stringify(plan),
   );
 }
 

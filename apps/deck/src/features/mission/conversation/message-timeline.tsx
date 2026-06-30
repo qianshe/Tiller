@@ -1,14 +1,17 @@
 import { memo, useCallback } from "react";
-import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionLiveCompactionState,
+  SessionTimelineEntry,
+} from "@tiller/shared";
 import { resolveConversationHistoryFlags } from "../history/model";
 import { PlainMessages } from "./plain-messages";
 
 type MessageHistoryState = {
-  canLoadMore?: boolean;
   nextCursor?: string;
   hasMore: boolean;
-  timelineNextCursor?: string;
-  timelineHasMore?: boolean;
+  canLoadMore?: boolean;
   loading: boolean;
 };
 
@@ -28,6 +31,7 @@ type MissionMessageTimelineProps = {
   assistantHandoffBusy?: boolean;
   onHandoffAssistantMessage?: (assistantBlockText: string) => void;
   expandedMessageIds: ReadonlySet<string>;
+  liveCompactionState?: SessionLiveCompactionState;
   boundaryTimestamps?: string[];
   historyStateBySession: Record<string, MessageHistoryState | undefined>;
   activityHistoryStateBySession?: Record<string, MessageHistoryState | undefined>;
@@ -50,6 +54,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   assistantHandoffBusy = false,
   onHandoffAssistantMessage,
   expandedMessageIds,
+  liveCompactionState,
   boundaryTimestamps = [],
   historyStateBySession,
   activityHistoryStateBySession = {},
@@ -80,6 +85,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       onHandoffAssistantMessage={onHandoffAssistantMessage}
       emptyText={copy.waitingForAgent}
       expandedMessageIds={expandedMessageIds}
+      liveCompactionState={liveCompactionState}
       boundaryTimestamps={boundaryTimestamps}
       historyState={historyState}
       onLoadOlderMessages={loadOlderMessages}

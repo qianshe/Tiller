@@ -17,10 +17,10 @@ test("activity-only history remains loadable without advertising message context
 test("both message and activity cursors contribute to flags", () => {
   assert.deepEqual(
     resolveConversationHistoryFlags(
-      { hasMore: true, nextCursor: "m1", timelineHasMore: true, timelineNextCursor: "t1", loading: false },
+      { hasMore: true, nextCursor: "m1", loading: false },
       { hasMore: true, nextCursor: "a1", loading: false },
     ),
-    { hasMore: true, canLoadMore: true, timelineHasMore: true, loading: false },
+    { hasMore: true, canLoadMore: true, loading: false },
   );
 });
 
@@ -33,10 +33,10 @@ test("pagination plan carries all three cursors from one state snapshot", () => 
     sessionId: "s1",
     messagePageLimit: 96,
     activityPageLimit: 96,
-    messageState: { hasMore: true, nextCursor: "l1", timelineHasMore: true, timelineNextCursor: "t1", loading: false },
+    messageState: { hasMore: true, nextCursor: "t1", loading: false },
     activityState: { hasMore: true, nextCursor: "a1", loading: false },
   });
-  assert.deepEqual(plan.listMessages, { sessionId: "s1", limit: 96, before: "l1", timelineBefore: "t1" });
+  assert.deepEqual(plan.listTimeline, { sessionId: "s1", limit: 96, before: "t1" });
   assert.deepEqual(plan.getArtifacts, { sessionId: "s1", limit: 96, before: "a1" });
 });
 
@@ -48,7 +48,7 @@ test("pagination plan returns undefined when no cursors are loadable", () => {
     messageState: { hasMore: false, loading: false },
     activityState: { hasMore: false, loading: false },
   });
-  assert.equal(plan.listMessages, undefined);
+  assert.equal(plan.listTimeline, undefined);
   assert.equal(plan.getArtifacts, undefined);
 });
 
@@ -59,14 +59,14 @@ test("pagination plan blocks when message state is loading", () => {
     activityPageLimit: 96,
     messageState: { hasMore: true, nextCursor: "c1", loading: true },
   });
-  assert.equal(plan.listMessages, undefined);
+  assert.equal(plan.listTimeline, undefined);
 });
 
 test("bootstrap plan carries the initial message and artifact page requests", () => {
   assert.deepEqual(
     buildConversationBootstrapPlan({ sessionId: "s1", messagePageLimit: 96, activityPageLimit: 96 }),
     {
-      listMessages: { sessionId: "s1", limit: 96 },
+      listTimeline: { sessionId: "s1", limit: 96 },
       getArtifacts: { sessionId: "s1", limit: 96 },
     },
   );
@@ -77,7 +77,6 @@ test("artifact projection is blocked while message history is still incomplete",
     shouldProjectArtifactsIntoTimeline({
       messageHistoryLoading: false,
       messageHasMore: true,
-      timelineHasMore: false,
       isLiveUpdate: false,
     }),
     false,
@@ -89,7 +88,6 @@ test("artifact projection is blocked while message history is loading", () => {
     shouldProjectArtifactsIntoTimeline({
       messageHistoryLoading: true,
       messageHasMore: false,
-      timelineHasMore: false,
       isLiveUpdate: false,
     }),
     false,
@@ -101,7 +99,6 @@ test("historical artifact hydration allowed even when timeline already has entri
     shouldProjectArtifactsIntoTimeline({
       messageHistoryLoading: false,
       messageHasMore: false,
-      timelineHasMore: false,
       isLiveUpdate: false,
     }),
     true,
@@ -113,7 +110,6 @@ test("historical artifact hydration allowed when timeline is empty and history i
     shouldProjectArtifactsIntoTimeline({
       messageHistoryLoading: false,
       messageHasMore: false,
-      timelineHasMore: false,
       isLiveUpdate: false,
     }),
     true,
@@ -125,7 +121,6 @@ test("live tool updates can still project into an existing assistant timeline", 
     shouldProjectArtifactsIntoTimeline({
       messageHistoryLoading: false,
       messageHasMore: false,
-      timelineHasMore: false,
       isLiveUpdate: true,
     }),
     true,

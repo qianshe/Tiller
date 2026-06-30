@@ -1,10 +1,5 @@
 import type { MutableRefObject } from "react";
 import type { AgentPlan, AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
-import {
-  appendMessageToSessionTimeline,
-  appendToolCallToSessionTimeline,
-  sortSessionTimelineEntries,
-} from "@tiller/shared";
 import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
 import { stripRedundantAttachmentData } from "./helpers";
@@ -54,7 +49,6 @@ export function applyActivityUpdate(
           toolBoundaryTimes,
         ),
       }));
-      appendMessageTimelineEntry(store, sessionId, message);
       if (shouldApplyMessageToSessionSummary(message)) {
         store.setSessions((current) =>
           current.map((session) =>
@@ -81,7 +75,6 @@ export function applyActivityUpdate(
       {
         const toolCall = commandChunkToToolCall(chunk);
         mergeSessionToolCalls(sessionId, [toolCall]);
-        appendToolCallTimelineEntry(store, sessionId, toolCall);
       }
       return true;
     }
@@ -91,14 +84,11 @@ export function applyActivityUpdate(
       if (isAlreadySettled) {
         const runningSnapshot = { ...toolCall, status: "running" as const };
         mergeSessionToolCalls(sessionId, [runningSnapshot]);
-        appendToolCallTimelineEntry(store, sessionId, runningSnapshot);
         requestAnimationFrame(() => {
           mergeSessionToolCalls(sessionId, [toolCall]);
-          appendToolCallTimelineEntry(useDeckStore.getState(), sessionId, toolCall);
         });
       } else {
         mergeSessionToolCalls(sessionId, [toolCall]);
-        appendToolCallTimelineEntry(store, sessionId, toolCall);
       }
       return true;
     }
@@ -137,43 +127,6 @@ function mergeSessionPlanUpdate(
     ...current,
     [sessionId]: incoming,
   };
-}
-
-function isAgentPlanComplete(plan: AgentPlan | undefined) {
-  if (!plan?.entries.length) {
-    return false;
-  }
-  return plan.entries.every((entry) => entry.status === "completed");
-}
-
-function appendMessageTimelineEntry(
-  store: DeckStore,
-  sessionId: string,
-  message: AgentMessage,
-) {
-  store.setSessionTimeline((current) => {
-    const entries = [...(current[sessionId] ?? [])];
-    appendMessageToSessionTimeline(entries, message);
-    return {
-      ...current,
-      [sessionId]: sortSessionTimelineEntries(entries),
-    };
-  });
-}
-
-function appendToolCallTimelineEntry(
-  store: DeckStore,
-  sessionId: string,
-  toolCall: AgentToolCall,
-) {
-  store.setSessionTimeline((current) => {
-    const entries = [...(current[sessionId] ?? [])];
-    appendToolCallToSessionTimeline(entries, toolCall);
-    return {
-      ...current,
-      [sessionId]: sortSessionTimelineEntries(entries),
-    };
-  });
 }
 
 function clearActiveThinkingToolCalls(

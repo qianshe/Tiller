@@ -1,10 +1,10 @@
-import type { AcpRuntimeProviderConfig, AgentCapabilities } from "@tiller/shared";
+import type { AcpRuntimeProviderConfig, AgentCapabilities, AgentToolCall } from "@tiller/shared";
 import { createClaudeAcpAdapter } from "./claude/index";
 import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
 import { createOpenClawAcpAdapter } from "./openclaw/index";
 import { createOpenCodeAcpAdapter } from "./opencode/index";
-import type { AcpAgentAdapter, AcpHistoryContext, AcpLaunchContext, AcpSessionUpdateProjectionContext } from "./types";
+import type { AcpAgentAdapter, AcpCompactionDetailsVisibility, AcpHistoryContext, AcpLaunchContext, AcpSessionUpdateProjectionContext, AcpToolCallNormalizationContext } from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createOpenCodeAcpAdapter(),
@@ -47,12 +47,48 @@ export function mapAdapterSessionUpdate(
     : null;
 }
 
+export function normalizeAdapterToolCall(
+  provider: AcpRuntimeProviderConfig | undefined,
+  providerId: string | undefined,
+  context: AcpToolCallNormalizationContext,
+): AgentToolCall {
+  const resolvedProvider = provider ?? inferProviderFromId(providerId);
+  if (!resolvedProvider) {
+    return context.toolCall;
+  }
+  return resolveAcpAgentAdapter(resolvedProvider).normalizeToolCall?.(context) ?? context.toolCall;
+}
+
+export function resolveAdapterCompactionDetailsVisibility(
+  providerId: string | undefined,
+): AcpCompactionDetailsVisibility | undefined {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return undefined;
+  }
+  return resolveAcpAgentAdapter(provider).resolveCompactionDetailsVisibility?.();
+}
+
 export function readAdapterTranscriptPlan(context: AcpHistoryContext) {
   return resolveAcpAgentAdapter(context.provider).readTranscriptPlan?.(context) ?? null;
 }
 
 export function readAdapterTranscriptMessages(context: AcpHistoryContext) {
   return resolveAcpAgentAdapter(context.provider).readTranscriptMessages?.(context) ?? [];
+}
+
+function inferProviderFromId(providerId: string | undefined): AcpRuntimeProviderConfig | undefined {
+  const id = providerId?.trim();
+  if (!id) {
+    return undefined;
+  }
+  return {
+    id,
+    name: id,
+    command: id,
+    transport: "stdio",
+    protocol: "acp",
+  };
 }
 
 export { createClaudeAcpAdapter } from "./claude/index";
@@ -63,4 +99,4 @@ export { createOpenCodeAcpAdapter } from "./opencode/index";
 export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode/index";
 export { resolveAdapterPluginManifest } from "./plugin-loader";
 export { SUPPRESS_SESSION_UPDATE } from "./types";
-export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";
+export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpCompactionDetailsVisibility, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, AcpToolCallNormalizationContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";

@@ -173,7 +173,7 @@ test("applySessionUpdate routes agent_message notifications into activity state 
   );
 });
 
-test("applySessionUpdate projects agent_message notifications into the unified timeline", () => {
+test("applySessionUpdate keeps agent_message notifications out of the canonical timeline", () => {
   resetStore();
   const message: AgentMessage = {
     id: "m1",
@@ -193,14 +193,8 @@ test("applySessionUpdate projects agent_message notifications into the unified t
   );
 
   assert.equal(handled, true);
-  const timeline = useDeckStore.getState().sessionTimeline.s1 ?? [];
-  assert.deepEqual(timeline.map((entry) => entry.kind), ["assistant_message"]);
-  assert.deepEqual(
-    timeline[0]?.kind === "assistant_message"
-      ? timeline[0].chunks.map((chunk) => chunk.kind)
-      : [],
-    ["content"],
-  );
+  assert.equal(useDeckStore.getState().messages.s1?.[0]?.text, "hello from rpc");
+  assert.deepEqual(useDeckStore.getState().sessionTimeline.s1 ?? [], []);
 });
 
 test("applySessionUpdate caches available commands by session and agent", () => {

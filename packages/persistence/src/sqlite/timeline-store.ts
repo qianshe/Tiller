@@ -8,7 +8,11 @@ import {
 } from "@tiller/shared";
 import { normalizePageLimit } from "../pagination";
 import {
+  buildSessionTimelineMessageGroupAnchors,
+  decodeSessionTimelineOrderCursor,
+  encodeSessionTimelineOrderCursor,
   pageSessionTimeline,
+  type SessionTimelinePositionedEntry,
   type SessionTimelinePageOptions,
 } from "../timeline-store";
 import {
@@ -16,11 +20,16 @@ import {
   runTransaction,
   type DatabaseSync,
 } from "./core";
+import type { SessionTimelineStore } from "../session-stores";
+import { createSqliteTimelineMessageAnchorIndex } from "./timeline-message-anchor-index";
 
-export function createSqliteSessionTimelineStore(dbPath: string) {
+export function createSqliteSessionTimelineStore(
+  dbPath: string,
+): SessionTimelineStore & { close(): void } {
   const db = openSessionDatabase(dbPath);
+  const anchorIndex = createSqliteTimelineMessageAnchorIndex(db);
 
-  return {
+  const store = {
     append(sessionId: string, entry: SessionTimelineEntry) {
       upsertSessionTimelineEntry(db, sessionId, entry);
       return listSessionTimelineEntries(db, sessionId);
@@ -55,15 +64,19 @@ export function createSqliteSessionTimelineStore(dbPath: string) {
       return listSessionTimelineEntries(db, sessionId);
     },
     listPage(sessionId: string, options: SessionTimelinePageOptions = {}) {
-      return listSessionTimelinePage(db, sessionId, options);
+      return listSessionTimelinePage(db, anchorIndex, sessionId, options);
     },
     remove(sessionId: string) {
-      db.prepare("DELETE FROM session_timeline_entries WHERE session_id = ?").run(sessionId);
+      runTransaction(db, () => {
+        db.prepare("DELETE FROM session_timeline_entries WHERE session_id = ?").run(sessionId);
+        anchorIndex.removeSession(sessionId);
+      });
     },
     close() {
       db.close();
     },
   };
+  return store as SessionTimelineStore & { close(): void };
 }
 
 const DEFAULT_TIMELINE_PAGE_LIMIT = 50;
@@ -78,6 +91,18 @@ type TimelineRow = {
 
 function listSessionTimelinePage(
   db: DatabaseSync,
+  anchorIndex: ReturnType<typeof createSqliteTimelineMessageAnchorIndex>,
+  sessionId: string,
+  options: SessionTimelinePageOptions,
+) {
+  if (options.window === "message") {
+    return listSessionTimelineMessageWindowPage(db, anchorIndex, sessionId, options);
+  }
+  return listSessionTimelineEntryWindowPage(db, sessionId, options);
+}
+
+function listSessionTimelineEntryWindowPage(
+  db: DatabaseSync,
   sessionId: string,
   options: SessionTimelinePageOptions,
 ) {
@@ -86,24 +111,20 @@ function listSessionTimelinePage(
     DEFAULT_TIMELINE_PAGE_LIMIT,
     MAX_TIMELINE_PAGE_LIMIT,
   );
-  const entryLimit = options.window === "message"
-    ? normalizePageLimit(options.entryLimit, MAX_TIMELINE_PAGE_LIMIT, MAX_TIMELINE_PAGE_LIMIT)
-    : limit;
-  const candidateLimit = Math.max(limit, entryLimit);
-  const before = decodeOrderCursor(options.before);
-  const rows = queryTimelinePageRows(db, sessionId, before?.position, candidateLimit + 1);
-  const hasOlderRows = rows.length > candidateLimit;
-  const candidateRows = rows.slice(0, candidateLimit).reverse();
+  const before = decodeSessionTimelineOrderCursor(options.before);
+  const rows = queryTimelinePageRows(db, sessionId, before?.position, limit + 1);
+  const hasOlderRows = rows.length > limit;
+  const candidateRows = rows.slice(0, limit).reverse();
   const entries = candidateRows
     .map((row) => parseJson<SessionTimelineEntry>(row.payload_json))
     .filter(isNotNull)
     .map(normalizePersistedTimelineEntry);
-  const page = pageSessionTimeline(entries, { ...options, before: undefined });
-  const hasMore = hasOlderRows || page.hasMore;
   return {
-    entries: page.entries,
-    nextCursor: hasMore ? encodeOrderCursor(resolvePageStartRow(candidateRows, page.entries)) : undefined,
-    hasMore,
+    entries,
+    nextCursor: hasOlderRows
+      ? encodeSessionTimelineOrderCursor(candidateRows[0]?.position, candidateRows[0]?.id)
+      : undefined,
+    hasMore: hasOlderRows,
   };
 }
 
@@ -134,30 +155,95 @@ function queryTimelinePageRows(
   return db.prepare(sql).all(...params) as TimelineRow[];
 }
 
-function resolvePageStartRow(rows: TimelineRow[], entries: SessionTimelineEntry[]) {
-  const firstEntry = entries[0];
-  if (!firstEntry) {
-    return undefined;
+function listSessionTimelineMessageWindowPage(
+  db: DatabaseSync,
+  anchorIndex: ReturnType<typeof createSqliteTimelineMessageAnchorIndex>,
+  sessionId: string,
+  options: SessionTimelinePageOptions,
+) {
+  const limit = normalizePageLimit(
+    options.limit,
+    DEFAULT_TIMELINE_PAGE_LIMIT,
+    MAX_TIMELINE_PAGE_LIMIT,
+  );
+  ensureSessionTimelineMessageAnchors(db, anchorIndex, sessionId);
+  const before = decodeSessionTimelineOrderCursor(options.before);
+  const currentAnchor = before
+    ? anchorIndex.getAnchor(sessionId, before.position, before.id)
+    : undefined;
+  const anchors = anchorIndex.listNewestAnchors(sessionId, before?.position, limit + 1);
+  if (!anchors.length) {
+    return listSessionTimelineEntryWindowPage(db, sessionId, {
+      ...options,
+      window: "entry",
+      before: currentAnchor
+        ? encodeSessionTimelineOrderCursor(currentAnchor.startPosition, currentAnchor.groupId)
+        : options.before,
+    });
   }
-  return rows.find((row) => row.id === firstEntry.id);
+  const hasMore = anchors.length > limit;
+  const selected = anchors.slice(0, limit);
+  const oldestAnchor = selected.at(-1);
+  if (!oldestAnchor) {
+    return { entries: [], hasMore: false };
+  }
+  const rows = queryTimelineRangeRows(
+    db,
+    sessionId,
+    oldestAnchor.startPosition,
+    currentAnchor?.startPosition,
+  );
+  return {
+    entries: rows
+      .map((row) => parseJson<SessionTimelineEntry>(row.payload_json))
+      .filter(isNotNull)
+      .map(normalizePersistedTimelineEntry),
+    nextCursor: hasMore
+      ? encodeSessionTimelineOrderCursor(oldestAnchor.anchorPosition, oldestAnchor.groupId)
+      : undefined,
+    hasMore,
+  };
 }
 
-function encodeOrderCursor(row: TimelineRow | undefined) {
-  return row ? `${ORDER_CURSOR_PREFIX}\t${row.position}\t${row.id}` : undefined;
+function queryTimelineRangeRows(
+  db: DatabaseSync,
+  sessionId: string,
+  startInclusive: number,
+  beforeExclusive?: number,
+) {
+  const sql = beforeExclusive === undefined
+    ? `
+      SELECT id, position, payload_json
+      FROM session_timeline_entries
+      WHERE session_id = ? AND position >= ?
+      ORDER BY position ASC, id ASC
+    `
+    : `
+      SELECT id, position, payload_json
+      FROM session_timeline_entries
+      WHERE session_id = ? AND position >= ? AND position < ?
+      ORDER BY position ASC, id ASC
+    `;
+  const params = beforeExclusive === undefined
+    ? [sessionId, startInclusive]
+    : [sessionId, startInclusive, beforeExclusive];
+  return db.prepare(sql).all(...params) as TimelineRow[];
 }
 
-function decodeOrderCursor(cursor: string | undefined) {
-  if (!cursor) {
-    return null;
+function ensureSessionTimelineMessageAnchors(
+  db: DatabaseSync,
+  anchorIndex: ReturnType<typeof createSqliteTimelineMessageAnchorIndex>,
+  sessionId: string,
+) {
+  if (anchorIndex.listNewestAnchors(sessionId, undefined, 1).length > 0) {
+    return;
   }
-  const [prefix, position] = cursor.split("\t");
-  if (prefix !== ORDER_CURSOR_PREFIX || !position) {
-    return null;
+  const anchors = buildSessionTimelineMessageGroupAnchors(
+    listPositionedSessionTimelineEntries(db, sessionId),
+  );
+  if (anchors.length > 0) {
+    anchorIndex.replaceSessionAnchors(sessionId, anchors);
   }
-  const parsedPosition = Number.parseInt(position, 10);
-  return Number.isFinite(parsedPosition) && parsedPosition >= 0
-    ? { position: parsedPosition }
-    : null;
 }
 
 function listSessionTimelineEntries(db: DatabaseSync, sessionId: string) {
@@ -175,6 +261,30 @@ function listSessionTimelineEntries(db: DatabaseSync, sessionId: string) {
     .map((row) => parseJson<SessionTimelineEntry>(row.payload_json))
     .filter(isNotNull)
     .map(normalizePersistedTimelineEntry);
+}
+
+function listPositionedSessionTimelineEntries(
+  db: DatabaseSync,
+  sessionId: string,
+): SessionTimelinePositionedEntry[] {
+  const rows = db.prepare(
+    `
+      SELECT position, payload_json
+      FROM session_timeline_entries
+      WHERE session_id = ?
+      ORDER BY position ASC, id ASC
+    `,
+  ).all(sessionId) as Array<{ position: number; payload_json: string }>;
+  return rows
+    .map((row) => ({
+      position: row.position,
+      entry: parseJson<SessionTimelineEntry>(row.payload_json),
+    }))
+    .filter((row): row is { position: number; entry: SessionTimelineEntry } => row.entry !== null)
+    .map((row) => ({
+      position: row.position,
+      entry: normalizePersistedTimelineEntry(row.entry),
+    }));
 }
 
 function upsertSessionTimelineMessage(
@@ -328,6 +438,7 @@ function upsertSessionTimelineEntry(
       .get(sessionId) as { position: number | null } | undefined;
     const position = existing?.position ?? ((maxPosition?.position ?? -1) + 1);
     insertSessionTimelineEntry(db, sessionId, entry, position);
+    replaceSessionTimelineMessageAnchors(db, sessionId);
   });
 }
 
@@ -363,6 +474,7 @@ function replaceSessionTimelineEntries(
         JSON.stringify(entry),
       );
     }
+    replaceSessionTimelineMessageAnchors(db, sessionId);
   });
 }
 
@@ -393,6 +505,14 @@ function insertSessionTimelineEntry(
     resolveEntryUpdatedAt(entry),
     isTranscriptEventEntry(entry) ? null : (entry.sequence ?? null),
     JSON.stringify(entry),
+  );
+}
+
+function replaceSessionTimelineMessageAnchors(db: DatabaseSync, sessionId: string) {
+  const anchorIndex = createSqliteTimelineMessageAnchorIndex(db);
+  anchorIndex.replaceSessionAnchors(
+    sessionId,
+    buildSessionTimelineMessageGroupAnchors(listPositionedSessionTimelineEntries(db, sessionId)),
   );
 }
 

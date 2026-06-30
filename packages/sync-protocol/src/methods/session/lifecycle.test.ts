@@ -4,7 +4,6 @@ import * as sessionDraft from "./draft";
 import * as sessionDiscardDraft from "./discard-draft";
 import * as sessionNew from "./new";
 import * as sessionList from "./list";
-import * as sessionListMessages from "./list-messages";
 import * as sessionListTimeline from "./list-timeline";
 import * as sessionGetArtifacts from "./get-artifacts";
 import * as sessionCheckResume from "./check-resume";
@@ -21,24 +20,6 @@ import * as debugReimportHistory from "../debug/reimport-history";
 test("session/new requires project cwd and agent", () => {
   assert.equal(sessionNew.method, "session/new");
   sessionNew.ParamsSchema.parse({ projectId: "p1", cwd: "D:/repo", agentId: "a1" });
-});
-
-test("session/list_messages accepts transcriptStatus metadata", () => {
-  const result = sessionListMessages.ResultSchema.parse({
-    sessionId: "session-1",
-    messages: [],
-    timeline: [],
-    transcriptStatus: {
-      source: "local",
-      replayCompleteness: "compacted",
-      integrity: "local-prefix-preserved",
-      runtimeRestoreState: "history-only",
-    },
-    hasMore: false,
-    timelineHasMore: false,
-  });
-
-  assert.equal(result.transcriptStatus?.integrity, "local-prefix-preserved");
 });
 
 test("session/draft returns runtime draft metadata", () => {
@@ -89,36 +70,6 @@ test("session/list returns paginated session summaries", () => {
   sessionList.ResultSchema.parse({ sessions: [] });
 });
 
-test("session/list_messages requires sessionId", () => {
-  assert.equal(sessionListMessages.method, "session/list_messages");
-  assert.throws(() => sessionListMessages.ParamsSchema.parse({}));
-  assert.deepEqual(
-    sessionListMessages.ParamsSchema.parse({
-      sessionId: "s1",
-      timelineBefore: "order\t1\ttimeline-1",
-    }),
-    { sessionId: "s1", timelineBefore: "order\t1\ttimeline-1" },
-  );
-  const result = sessionListMessages.ResultSchema.parse({
-    sessionId: "s1",
-    messages: [],
-    timeline: [
-      {
-        id: "timeline-1",
-        kind: "assistant_message",
-        chunks: [],
-        timestamp: "2026-05-24T10:00:00.000Z",
-        updatedAt: "2026-05-24T10:00:00.000Z",
-      },
-    ],
-    timelineNextCursor: "order\t1\ttimeline-1",
-    timelineHasMore: true,
-    timelineBefore: "order\t2\ttimeline-2",
-  });
-  assert.equal(result.timeline?.[0]?.id, "timeline-1");
-  assert.equal(result.timelineHasMore, true);
-});
-
 test("session/list_timeline returns paginated canonical timeline entries", () => {
   assert.equal(sessionListTimeline.method, "session/list_timeline");
   assert.throws(() => sessionListTimeline.ParamsSchema.parse({}));
@@ -126,6 +77,7 @@ test("session/list_timeline returns paginated canonical timeline entries", () =>
   sessionListTimeline.ParamsSchema.parse({ sessionId: "s1", limit: 20, before: "order\t5\tentry-5" });
   const result = sessionListTimeline.ResultSchema.parse({
     sessionId: "s1",
+    before: "order\t5\tentry-5",
     entries: [
       {
         id: "assistant-1",
@@ -138,9 +90,17 @@ test("session/list_timeline returns paginated canonical timeline entries", () =>
     ],
     nextCursor: "order\t1\tassistant-1",
     hasMore: true,
+    liveState: {
+      compactionState: {
+        phase: "started",
+        source: "provider",
+        timestamp: "2026-06-29T10:00:02.000Z",
+      },
+    },
   });
   assert.equal(result.entries.length, 1);
   assert.equal(result.hasMore, true);
+  assert.equal(result.liveState?.compactionState?.phase, "started");
 });
 
 test("session/get_artifacts returns outputs/diffs/toolCalls arrays", () => {

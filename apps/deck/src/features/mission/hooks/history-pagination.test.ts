@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { useHistoryPagination } from "./history-pagination.js";
 
-test("loadOlderMessages requests timeline pages with the independent timeline cursor", () => {
+test("loadOlderMessages requests timeline pages with the canonical history cursor", () => {
   const originalWebSocket = (globalThis as any).WebSocket;
   (globalThis as any).WebSocket = { OPEN: 1 };
 
@@ -10,10 +10,8 @@ test("loadOlderMessages requests timeline pages with the independent timeline cu
     const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
     let messageHistoryState = {
       "session-1": {
-        nextCursor: "legacy-message-cursor",
-        hasMore: false,
-        timelineNextCursor: "timeline-cursor-1",
-        timelineHasMore: true,
+        nextCursor: "timeline-cursor-1",
+        hasMore: true,
         loading: false,
       },
     };
@@ -48,17 +46,16 @@ test("loadOlderMessages requests timeline pages with the independent timeline cu
 
     assert.deepEqual(dispatched, [
       {
-        method: "session/list_messages",
+        method: "session/list_timeline",
         params: {
           sessionId: "session-1",
           limit: 20,
-          before: undefined,
-          timelineBefore: "timeline-cursor-1",
+          before: "timeline-cursor-1",
         },
       },
     ]);
     assert.equal(messageHistoryState["session-1"].loading, true);
-    assert.equal(messageHistoryState["session-1"].timelineNextCursor, "timeline-cursor-1");
+    assert.equal(messageHistoryState["session-1"].nextCursor, "timeline-cursor-1");
   } finally {
     (globalThis as any).WebSocket = originalWebSocket;
   }

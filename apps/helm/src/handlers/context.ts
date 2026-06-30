@@ -18,6 +18,7 @@ import type {
   SessionConfigOption,
   SessionConfigOptionValue,
   SessionHistoryReimportResult,
+  SessionLiveStateSnapshot,
   SessionReasoningEffort,
   SessionSummary,
   TrustedDeviceSummary,
@@ -26,6 +27,9 @@ import type {
 import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 import type { SessionPromptQueueManager } from "../runtime/session/prompt-queue";
+import type { SessionTimelineDispatcher } from "../runtime/session-timeline/dispatcher";
+import type { SessionLiveStateStore } from "../runtime/session-timeline/live-state-store";
+import type { SessionTimelineWorkerRegistry } from "../runtime/session-timeline/worker-registry";
 import type { TillerLogger } from "../logging/logger";
 
 export type SessionRecord = {
@@ -107,6 +111,9 @@ export type HelmHandlerContext = {
   sessionAttachmentStore: any;
   sessionRuntimeStore: any;
   sessionTimelineStore: any;
+  sessionTimelineWorkers?: SessionTimelineWorkerRegistry;
+  sessionTimelineDispatcher?: SessionTimelineDispatcher;
+  sessionLiveStateStore?: SessionLiveStateStore;
   sessionUpdateStore: any;
   liveMessageBuffer: LiveMessageBuffer;
   promptQueue: SessionPromptQueueManager;
@@ -213,6 +220,7 @@ export type HelmHandlerContext = {
   ) => void;
   refreshAuthoritativeSessionHistory: (sessionId: string) => Promise<void>;
   readSessionPlan?: (sessionId: string) => AgentPlan | undefined;
+  readSessionLiveState?: (sessionId: string) => SessionLiveStateSnapshot | undefined;
   reimportSessionHistory: (
     sessionId: string,
     options?: { limit?: number },

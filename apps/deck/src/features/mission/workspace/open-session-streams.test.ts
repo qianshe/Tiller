@@ -187,7 +187,6 @@ test("markSessionHistoryEntriesLoading marks existing entries as loading", () =>
     "session-1": {
       nextCursor: "cursor-1",
       hasMore: true,
-      timelineHasMore: true,
       loading: false,
     },
   };
@@ -198,7 +197,6 @@ test("markSessionHistoryEntriesLoading marks existing entries as loading", () =>
   assert.deepEqual(next["session-1"], {
     nextCursor: "cursor-1",
     hasMore: true,
-    timelineHasMore: true,
     loading: true,
   });
   assert.deepEqual(next["session-2"], {

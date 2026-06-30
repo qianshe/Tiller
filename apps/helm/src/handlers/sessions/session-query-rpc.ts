@@ -1,32 +1,10 @@
+import { isFallbackToolCallTitle, pageSessionArtifacts } from "@tiller/persistence";
+import type { AgentToolCall, CommandChunk, FileDiffSummary, SessionSummary } from "@tiller/shared";
 import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
-import { isFallbackToolCallTitle, pageSessionTimeline } from "@tiller/persistence";
-import {
-  buildSessionTimelineFromLegacy,
-  injectTranscriptBoundaryEvents,
-  looksLikeCompactionCompletedMessage,
-  looksLikeCompactionLifecycleMessage,
-  looksLikeContinuationSummary,
-  resolveTimelineRepresentedUserMessageIds,
-  splitSessionTimelineAssistantEntriesAtBoundaries,
-} from "@tiller/shared";
-import type {
-  AgentMessage,
-  AgentToolCall,
-  SessionSummary,
-  SessionTimelineEntry,
-  SessionTranscriptStatus,
-  SessionUpdateRecord,
-} from "@tiller/shared";
-import { reduceSessionUpdateRecords } from "../../runtime/session-updates/records";
 import { broadcastSessionUpdate } from "../../rpc/notifications";
-import { buildSessionCompactionEntry } from "../../sessions/compaction-entry";
+import { projectLegacySessionHistoryFromTimeline } from "../../runtime/session-timeline/legacy-projection.js";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
-
-const TIMELINE_ENTRY_PAGE_LIMIT = 96;
-const TIMELINE_ORDER_CURSOR_PREFIX = "order";
-const TIMELINE_UPDATE_REPAIR_PAGE_LIMIT = 200;
-const TIMELINE_UPDATE_REPAIR_RECORD_LIMIT = 1_000;
 
 function logSessionDebug(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
   if (context.logger) {
@@ -92,44 +70,17 @@ export function unsubscribeSession(params: { sessionId: string }, context: HelmH
   };
 }
 
-// Deck consumes old session history through paged windows only. ACP restore replay may
-// repair Helm's local cache, but it must not push a full historical transcript to Deck.
-export async function listMessages(
-  params: { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
-  context: HelmHandlerContext,
-) {
-  await context.refreshAuthoritativeSessionHistory(params.sessionId);
-  repairProviderToolCalls(params.sessionId, context);
-  const page = context.sessionMessageStore.listPage(params.sessionId, {
-    limit: params.limit,
-    before: params.before,
-  });
-  const timelinePage = listSessionTimelinePage(params, context, page.messages);
-  const transcriptStatus = resolveTranscriptStatus(page.messages, params.before, params.timelineBefore);
-  return {
-    sessionId: params.sessionId,
-    messages: page.messages,
-    timeline: timelinePage.entries,
-    transcriptStatus,
-    timelineNextCursor: timelinePage.nextCursor,
-    timelineHasMore: timelinePage.hasMore,
-    nextCursor: page.nextCursor,
-    hasMore: page.hasMore,
-    before: params.before,
-    timelineBefore: params.timelineBefore,
-  };
-}
-
 export async function getArtifacts(
   params: { sessionId: string; limit?: number; before?: string },
   context: HelmHandlerContext,
 ) {
-  await context.refreshAuthoritativeSessionHistory(params.sessionId);
   repairProviderToolCalls(params.sessionId, context);
-  const artifacts = context.sessionArtifactStore.getPage(params.sessionId, {
+  await context.refreshAuthoritativeSessionHistory(params.sessionId);
+  const persistedArtifacts = context.sessionArtifactStore.getPage(params.sessionId, {
     limit: params.limit,
     before: params.before,
   });
+  const artifacts = resolveArtifactHistoryPage(params.sessionId, persistedArtifacts, params, context);
   const diffs = await context.hydrateDiffsFromWorktreeGit(params.sessionId, artifacts.diffs);
   const plan = context.readSessionPlan?.(params.sessionId);
   return {
@@ -150,20 +101,25 @@ export async function reimportHistory(
   return context.reimportSessionHistory(params.sessionId, { limit: params.limit });
 }
 
-export function listTimeline(
+export async function listTimeline(
   params: { sessionId: string; limit?: number; before?: string },
   context: HelmHandlerContext,
 ) {
+  repairProviderToolCalls(params.sessionId, context);
+  await context.refreshAuthoritativeSessionHistory(params.sessionId);
   const page = context.sessionTimelineStore.listPage(params.sessionId, {
-    limit: params.limit ?? TIMELINE_ENTRY_PAGE_LIMIT,
+    limit: params.limit,
     before: params.before,
     window: "message",
   });
+  const liveState = context.readSessionLiveState?.(params.sessionId);
   return {
     sessionId: params.sessionId,
+    before: params.before,
     entries: page.entries,
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
+    ...(liveState ? { liveState } : {}),
   };
 }
 
@@ -240,21 +196,12 @@ function notifyCurrentSocketPromptQueueSnapshot(
 }
 
 function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext) {
-  const summary = resolveSessionSummary(sessionId, context);
-  const providerId = summary?.agentId;
-  if (!providerId || !context.sessionArtifactStore?.replaceToolCalls) {
+  if (!context.sessionArtifactStore?.replaceToolCalls) {
     return;
   }
 
   const artifacts = context.sessionArtifactStore.get(sessionId);
-  const repairedToolCalls = artifacts.toolCalls.map((toolCall: AgentToolCall) =>
-    repairCompletedThinkingToolCall(
-      summary,
-      repairLegacySubagentToolCall(
-        repairProviderToolCall(sessionId, providerId, toolCall),
-      ),
-    ),
-  );
+  const repairedToolCalls = repairSessionToolCalls(sessionId, artifacts.toolCalls, context);
   if (!hasToolCallChanges(artifacts.toolCalls, repairedToolCalls)) {
     return;
   }
@@ -262,982 +209,54 @@ function repairProviderToolCalls(sessionId: string, context: HelmHandlerContext)
   context.sessionArtifactStore.replaceToolCalls(sessionId, repairedToolCalls);
 }
 
-function listSessionTimelinePage(
-  params: { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
-  context: HelmHandlerContext,
-  visibleMessages: AgentMessage[] = [],
-) {
-  if (!context.sessionTimelineStore) {
-    return { entries: [], hasMore: false };
-  }
-
-  const page = resolveRawTimelinePage(params, context, visibleMessages);
-  const projected = projectArtifactToolCallMetadata(params.sessionId, context, page.entries);
-  const persistedEntries = projected ?? page.entries;
-  if (projected) {
-    context.sessionTimelineStore.replace?.(params.sessionId, projected);
-  }
-  return {
-    ...page,
-    entries: injectTranscriptBoundaryEntries(params, visibleMessages, persistedEntries, context),
-  };
-}
-
-function resolveRawTimelinePage(
-  params: { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
-  context: HelmHandlerContext,
-  visibleMessages: AgentMessage[],
-) {
-  const options = {
-    entryLimit: TIMELINE_ENTRY_PAGE_LIMIT,
-    limit: params.limit,
-    before: params.timelineBefore ?? params.before,
-    window: "message" as const,
-  };
-  const shouldResolveCompactionBootstrap = !options.before &&
-    Boolean(resolveCompactionBoundary(visibleMessages));
-  let listedTimeline: SessionTimelineEntry[] | undefined;
-  const getListedTimeline = () =>
-    listedTimeline ??= splitSessionTimelineAssistantEntriesAtBoundaries(
-      context.sessionTimelineStore!.list?.(params.sessionId) ?? [],
-    );
-  const persistedPage = context.sessionTimelineStore!.listPage?.(params.sessionId, options);
-  const normalizedPersistedPage = persistedPage
-    ? {
-        ...persistedPage,
-        entries: splitSessionTimelineAssistantEntriesAtBoundaries(persistedPage.entries),
-      }
-    : undefined;
-  const persistedCompactionBootstrapPage = !options.before && normalizedPersistedPage
-    ? resolvePersistedCompactionTranscriptBootstrapPage(getListedTimeline(), options)
-    : undefined;
-  const repairedPersistedTimeline = !options.before && normalizedPersistedPage
-    ? repairTimelineFromSessionUpdates(params.sessionId, context, normalizedPersistedPage.entries)
-    : undefined;
-  if (repairedPersistedTimeline) {
-    const stored = context.sessionTimelineStore!.replace(params.sessionId, repairedPersistedTimeline);
-    return pageTimelineEntries(stored, visibleMessages, options);
-  }
-  if (persistedPage && shouldResolveCompactionBootstrap) {
-    const compactionBootstrapPage = resolveCompactionBootstrapTimelinePage(
-      getListedTimeline(),
-      visibleMessages,
-      options,
-    );
-    if (compactionBootstrapPage) {
-      return compactionBootstrapPage;
-    }
-  }
-  if (normalizedPersistedPage && isAuthoritativeTimelinePage(normalizedPersistedPage, options.before)) {
-    if (shouldPreferPersistedCompactionBootstrapPage(
-      persistedCompactionBootstrapPage,
-      normalizedPersistedPage,
-    )) {
-      return persistedCompactionBootstrapPage;
-    }
-    if (
-      options.before ||
-      !isTimelineMissingVisibleHistoryAnchors(normalizedPersistedPage.entries, visibleMessages)
-    ) {
-      return normalizedPersistedPage;
-    }
-  }
-
-  const existing = persistedPage
-    ? []
-    : getListedTimeline();
-  const repairedExistingTimeline = !options.before && existing.length
-    ? repairTimelineFromSessionUpdates(params.sessionId, context, existing)
-    : undefined;
-  if (repairedExistingTimeline) {
-    const stored = context.sessionTimelineStore!.replace(params.sessionId, repairedExistingTimeline);
-    return pageTimelineEntries(stored, visibleMessages, options);
-  }
-  if (
-    existing.length &&
-    (
-      options.before ||
-      !isTimelineMissingVisibleHistoryAnchors(existing, visibleMessages)
-    )
-  ) {
-    return pageTimelineEntries(existing, visibleMessages, options);
-  }
-
-  const rebuilt = rebuildSessionTimelineFromLegacy(params.sessionId, context);
-  if (!rebuilt.length) {
-    return persistedPage ?? { entries: [], hasMore: false };
-  }
-
-  const stored = context.sessionTimelineStore!.replace(params.sessionId, rebuilt);
-  return pageTimelineEntries(stored, visibleMessages, options);
-}
-
-function pageTimelineEntries(
-  entries: SessionTimelineEntry[],
-  visibleMessages: AgentMessage[],
-  options: { entryLimit?: number; limit?: number; before?: string; window?: "entry" | "message" },
-) {
-  return resolveCompactionBootstrapTimelinePage(entries, visibleMessages, options) ??
-    resolvePersistedCompactionTranscriptBootstrapPage(entries, options) ??
-    pageSessionTimeline(entries, options);
-}
-
-function resolveCompactionBootstrapTimelinePage(
-  entries: SessionTimelineEntry[],
-  visibleMessages: AgentMessage[],
-  options: { entryLimit?: number; before?: string },
-) {
-  if (options.before) {
-    return undefined;
-  }
-  const compactionBoundary = resolveCompactionBoundary(visibleMessages);
-  if (!compactionBoundary) {
-    return undefined;
-  }
-  const resumedAnchorIndex = entries.findIndex((entry) =>
-    timelineEntryRepresentsMessage(entry, compactionBoundary.resumedMessage)
-  );
-  if (resumedAnchorIndex === -1) {
-    return undefined;
-  }
-  const endIndex = findLastTimelineMessageAnchorIndex(
-    entries,
-    visibleMessages,
-    resumedAnchorIndex,
-  );
-  if (endIndex === -1) {
-    return undefined;
-  }
-  const startIndex = findPreviousTimelineMessageAnchorIndex(
-    entries,
-    resumedAnchorIndex,
-    compactionBoundary.prefaceMessages,
-  );
-  if (startIndex === -1) {
-    return undefined;
-  }
-  const page = buildCompactionBootstrapPage(entries, {
-    startIndex,
-    resumedAnchorIndex,
-    endIndex,
-    entryLimit: Math.max(options.entryLimit ?? TIMELINE_ENTRY_PAGE_LIMIT, 1),
-  });
-  if (!page) {
-    return undefined;
-  }
-  return {
-    entries: page.entries,
-    nextCursor: page.hasMore
-      ? encodeTimelineOrderCursor(page.cursorPosition, entries[page.cursorPosition]?.id)
-      : undefined,
-    hasMore: page.hasMore,
-  };
-}
-
-function resolvePersistedCompactionTranscriptBootstrapPage(
-  entries: SessionTimelineEntry[],
-  options: { entryLimit?: number; before?: string },
-) {
-  if (options.before) {
-    return undefined;
-  }
-  const compactionIndex = findLatestCompactionEntryIndex(entries);
-  if (compactionIndex === -1) {
-    return undefined;
-  }
-  const resumedAnchorIndex = findResumedAnchorIndexAfterCompaction(entries, compactionIndex);
-  if (resumedAnchorIndex === -1) {
-    return undefined;
-  }
-  const endIndex = findLastTimelineMessageAnchorIndex(entries, [], resumedAnchorIndex);
-  if (endIndex === -1 || endIndex <= resumedAnchorIndex) {
-    return undefined;
-  }
-  const page = buildCompactionBootstrapPage(entries, {
-    startIndex: compactionIndex,
-    resumedAnchorIndex,
-    endIndex,
-    entryLimit: Math.max(options.entryLimit ?? TIMELINE_ENTRY_PAGE_LIMIT, 1),
-  });
-  if (!page) {
-    return undefined;
-  }
-  return {
-    entries: page.entries,
-    nextCursor: page.hasMore
-      ? encodeTimelineOrderCursor(page.cursorPosition, entries[page.cursorPosition]?.id)
-      : undefined,
-    hasMore: page.hasMore,
-  };
-}
-
-function shouldPreferPersistedCompactionBootstrapPage(
-  bootstrapPage: { entries: SessionTimelineEntry[] } | undefined,
-  persistedPage: { entries: SessionTimelineEntry[] },
-) {
-  if (!bootstrapPage) {
-    return false;
-  }
-  const latestCompactionEntry = bootstrapPage.entries.find((entry) => entry.kind === "context_compaction");
-  if (!latestCompactionEntry) {
-    return false;
-  }
-  return !persistedPage.entries.some((entry) => entry.id === latestCompactionEntry.id);
-}
-
-function findLatestCompactionEntryIndex(entries: SessionTimelineEntry[]) {
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    if (entries[index]?.kind === "context_compaction") {
-      return index;
-    }
-  }
-  return -1;
-}
-
-function findResumedAnchorIndexAfterCompaction(
-  entries: SessionTimelineEntry[],
-  compactionIndex: number,
-) {
-  for (let index = compactionIndex + 1; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (!entry) {
-      continue;
-    }
-    if (entry.kind === "session_resumed") {
-      return index;
-    }
-    if (isTimelineMessageAnchor(entry)) {
-      return index;
-    }
-  }
-  return -1;
-}
-
-function findLastTimelineMessageAnchorIndex(
-  entries: SessionTimelineEntry[],
-  visibleMessages: AgentMessage[],
-  minimumIndex: number,
-) {
-  if (!visibleMessages.length) {
-    for (let entryIndex = entries.length - 1; entryIndex >= minimumIndex; entryIndex -= 1) {
-      if (isTimelineMessageAnchor(entries[entryIndex]!)) {
-        return entryIndex;
-      }
-    }
-    return -1;
-  }
-  for (let messageIndex = visibleMessages.length - 1; messageIndex >= 0; messageIndex -= 1) {
-    const message = visibleMessages[messageIndex];
-    if (!message) {
-      continue;
-    }
-    for (let entryIndex = entries.length - 1; entryIndex >= minimumIndex; entryIndex -= 1) {
-      if (timelineEntryRepresentsMessage(entries[entryIndex]!, message)) {
-        return entryIndex;
-      }
-    }
-  }
-  return -1;
-}
-
-function buildCompactionBootstrapPage(
-  entries: SessionTimelineEntry[],
-  options: {
-    startIndex: number;
-    resumedAnchorIndex: number;
-    endIndex: number;
-    entryLimit: number;
+function resolveArtifactHistoryPage(
+  sessionId: string,
+  artifacts: {
+    outputs: CommandChunk[];
+    diffs: FileDiffSummary[];
+    toolCalls: AgentToolCall[];
+    nextCursor?: string;
+    hasMore: boolean;
   },
-) {
-  const candidateEntries = entries.slice(options.startIndex, options.endIndex + 1);
-  if (candidateEntries.length === 0) {
-    return undefined;
-  }
-  if (candidateEntries.length <= options.entryLimit) {
-    return {
-      entries: candidateEntries,
-      cursorPosition: options.startIndex,
-      hasMore: options.startIndex > 0,
-    };
-  }
-
-  const preservedEntries = options.startIndex === options.resumedAnchorIndex
-    ? [entries[options.startIndex]!]
-    : [entries[options.startIndex]!, entries[options.resumedAnchorIndex]!];
-  const tailBudget = Math.max(options.entryLimit - preservedEntries.length, 0);
-  const tailStartIndex = tailBudget > 0
-    ? Math.max(options.resumedAnchorIndex + 1, options.endIndex + 1 - tailBudget)
-    : options.endIndex + 1;
-  const tailEntries = tailStartIndex <= options.endIndex
-    ? entries.slice(tailStartIndex, options.endIndex + 1)
-    : [];
-
-  return {
-    // Preserve the compaction edge, then keep the latest contiguous tail within the entry cap.
-    entries: [...preservedEntries, ...tailEntries],
-    cursorPosition: tailStartIndex <= options.endIndex ? tailStartIndex : options.resumedAnchorIndex,
-    hasMore: (tailStartIndex <= options.endIndex ? tailStartIndex : options.resumedAnchorIndex) > 0,
-  };
-}
-
-type CompactionBoundary = {
-  summaryMessage: AgentMessage;
-  summaryText?: string;
-  resumedMessage: AgentMessage;
-  prefaceMessages: AgentMessage[];
-};
-
-function resolveContinuationSummaryBoundary(messages: AgentMessage[]) {
-  return resolveContinuationSummaryBoundaryFromIndex(messages, 0)?.boundary;
-}
-
-function resolveContinuationSummaryBoundaryFromIndex(
-  messages: AgentMessage[],
-  startIndex: number,
-): { boundary: CompactionBoundary; nextIndex: number } | undefined {
-  const markerIndex = messages.findIndex((message, index) =>
-    index >= startIndex && looksLikeContinuationSummary(message.text)
-  );
-  if (markerIndex === -1) {
-    return undefined;
-  }
-  const prefaceMessages: AgentMessage[] = [];
-  for (let index = markerIndex; index < messages.length; index += 1) {
-    const message = messages[index];
-    if (!message) {
-      continue;
-    }
-    if (index > markerIndex && typeof message.sequence === "number") {
-      return {
-        boundary: {
-          summaryMessage: messages[markerIndex]!,
-          summaryText: messages[markerIndex]!.text,
-          resumedMessage: message,
-          prefaceMessages,
-        },
-        nextIndex: index,
-      };
-    }
-    prefaceMessages.push(message);
-  }
-  return undefined;
-}
-
-function resolveCompactionBoundary(messages: AgentMessage[]) {
-  return resolveCompactionBoundaries(messages)[0];
-}
-
-function resolveCompactionBoundaries(messages: AgentMessage[]) {
-  const boundaries: CompactionBoundary[] = [];
-  for (let index = 0; index < messages.length; index += 1) {
-    const continuationBoundary = resolveContinuationSummaryBoundaryFromIndex(messages, index);
-    if (continuationBoundary && continuationBoundary.nextIndex >= index) {
-      boundaries.push(continuationBoundary.boundary);
-      index = continuationBoundary.nextIndex - 1;
-      continue;
-    }
-    const explicitBoundary = resolveExplicitCompactionLifecycleBoundaryFromIndex(messages, index);
-    if (explicitBoundary && explicitBoundary.nextIndex >= index) {
-      boundaries.push(explicitBoundary.boundary);
-      index = explicitBoundary.nextIndex - 1;
-    }
-  }
-  return boundaries;
-}
-
-function resolveExplicitCompactionLifecycleBoundary(messages: AgentMessage[]) {
-  return resolveExplicitCompactionLifecycleBoundaryFromIndex(messages, 0)?.boundary;
-}
-
-function resolveExplicitCompactionLifecycleBoundaryFromIndex(
-  messages: AgentMessage[],
-  startIndex: number,
-): { boundary: CompactionBoundary; nextIndex: number } | undefined {
-  const completedIndex = messages.findIndex((message, index) =>
-    index >= startIndex && looksLikeCompactionCompletedMessage(message.text)
-  );
-  if (completedIndex === -1) {
-    return undefined;
-  }
-  let boundaryStartIndex = completedIndex;
-  while (boundaryStartIndex > startIndex) {
-    const previousMessage = messages[boundaryStartIndex - 1];
-    if (!previousMessage || !looksLikeCompactionLifecycleMessage(previousMessage.text)) {
-      break;
-    }
-    boundaryStartIndex -= 1;
-  }
-  const prefaceMessages: AgentMessage[] = [];
-  let resolvedSummaryText: string | undefined;
-  for (let index = boundaryStartIndex; index < messages.length; index += 1) {
-    const message = messages[index];
-    if (!message) {
-      continue;
-    }
-    if (index > completedIndex && looksLikeContinuationSummary(message.text)) {
-      resolvedSummaryText ??= message.text;
-      prefaceMessages.push(message);
-      continue;
-    }
-    if (index > completedIndex && !looksLikeCompactionLifecycleMessage(message.text)) {
-      return {
-        boundary: {
-          summaryMessage: messages[completedIndex]!,
-          summaryText: resolvedSummaryText,
-          resumedMessage: message,
-          prefaceMessages,
-        },
-        nextIndex: index,
-      };
-    }
-    prefaceMessages.push(message);
-  }
-  return undefined;
-}
-
-function injectTranscriptBoundaryEntries(
-  params: { sessionId: string; before?: string; timelineBefore?: string },
-  visibleMessages: AgentMessage[],
-  entries: SessionTimelineEntry[],
+  params: { limit?: number; before?: string },
   context: HelmHandlerContext,
 ) {
-  if (params.before || params.timelineBefore) {
-    return entries;
+  if (artifacts.outputs.length || artifacts.toolCalls.length) {
+    return artifacts;
   }
-  const boundaries = resolveCompactionBoundaries(visibleMessages);
-  if (!boundaries.length) {
-    return entries;
+  const timeline = context.sessionTimelineStore?.list?.(sessionId) ?? [];
+  if (!timeline.length) {
+    return artifacts;
   }
-  let nextEntries = [...entries];
-  for (const boundary of boundaries) {
-    nextEntries = reconcileTranscriptBoundaryEntries(
-      nextEntries,
-      boundary,
-      params.sessionId,
-      context,
-    );
-  }
-  return nextEntries;
-}
-
-function reconcileTranscriptBoundaryEntries(
-  entries: SessionTimelineEntry[],
-  boundary: CompactionBoundary,
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
-  const resumedAnchorIndex = entries.findIndex((entry) =>
-    timelineEntryRepresentsMessage(entry, boundary.resumedMessage)
-  );
-  if (resumedAnchorIndex === -1) {
-    return entries;
-  }
-  const syntheticCompactionEntry = buildSessionCompactionEntry({
-    sessionId,
-    context,
-    summaryMessageId: boundary.summaryMessage.id,
-    summaryText: boundary.summaryText,
-    timestamp: boundary.summaryMessage.timestamp,
+  const projected = projectLegacySessionHistoryFromTimeline(timeline);
+  return pageSessionArtifacts({
+    outputs: projected.outputs,
+    diffs: artifacts.diffs,
+    toolCalls: repairSessionToolCalls(sessionId, projected.toolCalls, context),
+  }, {
+    limit: params.limit,
+    before: params.before,
   });
-  const resumedEntry = {
-    kind: "session_resumed" as const,
-    id: `resume:${sessionId}:${boundary.resumedMessage.id}`,
-    restoreMethod: "session/load" as const,
-    timestamp: boundary.resumedMessage.timestamp,
-    updatedAt: boundary.resumedMessage.timestamp,
-    replayCompleteness: "compacted" as const,
-  };
-  const nextEntries = [...entries];
-  const existingCompactionIndex = findMatchingCompactionBoundaryIndex(
-    nextEntries,
-    boundary,
-    resumedAnchorIndex,
-  );
-  const detachedCompactionEntry = existingCompactionIndex === -1
-    ? findDetachedCompactionBoundaryEntry(sessionId, context, boundary)
-    : undefined;
-  const anchoredCompactionEntry = existingCompactionIndex === -1
-    ? detachedCompactionEntry
-      ? mergeBoundaryCompactionEntry(detachedCompactionEntry, syntheticCompactionEntry)
-      : syntheticCompactionEntry
-    : mergeBoundaryCompactionEntry(
-        nextEntries.splice(existingCompactionIndex, 1)[0] as Extract<SessionTimelineEntry, { kind: "context_compaction" }>,
-        syntheticCompactionEntry,
-      );
-  const existingResumeIndex = nextEntries.findIndex((entry) => entry.id === resumedEntry.id);
-  if (existingResumeIndex !== -1) {
-    nextEntries.splice(existingResumeIndex, 1);
-  }
-  const insertIndex = nextEntries.findIndex((entry) =>
-    timelineEntryRepresentsMessage(entry, boundary.resumedMessage)
-  );
-  if (insertIndex === -1) {
-    return entries;
-  }
-  nextEntries.splice(insertIndex, 0, anchoredCompactionEntry, resumedEntry);
-  return nextEntries;
 }
 
-function findDetachedCompactionBoundaryEntry(
+function repairSessionToolCalls(
   sessionId: string,
-  context: HelmHandlerContext,
-  boundary: CompactionBoundary,
-) {
-  const persistedEntries = context.sessionTimelineStore?.list?.(sessionId) ?? [];
-  if (!persistedEntries.length) {
-    return undefined;
-  }
-  const resumedAnchorIndex = persistedEntries.findIndex((entry: SessionTimelineEntry) =>
-    timelineEntryRepresentsMessage(entry, boundary.resumedMessage)
-  );
-  const matchIndex = findMatchingCompactionBoundaryIndex(
-    persistedEntries,
-    boundary,
-    resumedAnchorIndex === -1 ? persistedEntries.length : resumedAnchorIndex,
-  );
-  const entry = matchIndex === -1 ? undefined : persistedEntries[matchIndex];
-  return entry?.kind === "context_compaction" ? entry : undefined;
-}
-
-function findMatchingCompactionBoundaryIndex(
-  entries: SessionTimelineEntry[],
-  boundary: CompactionBoundary,
-  resumedAnchorIndex: number,
-) {
-  const compactionIndexes = entries.flatMap((entry, index) =>
-    entry.kind === "context_compaction" ? [index] : []
-  );
-  const exactSummaryIdIndex = entries.findIndex((entry) =>
-    entry.kind === "context_compaction" &&
-    entry.summaryMessageId === boundary.summaryMessage.id
-  );
-  if (exactSummaryIdIndex !== -1) {
-    return exactSummaryIdIndex;
-  }
-  for (let index = resumedAnchorIndex - 1; index >= 0; index -= 1) {
-    const entry = entries[index];
-    if (entry?.kind === "context_compaction") {
-      return index;
-    }
-    if (entry && isTimelineMessageAnchor(entry)) {
-      break;
-    }
-  }
-  if (compactionIndexes.length === 1) {
-    return compactionIndexes[0] ?? -1;
-  }
-  const boundaryTime = Date.parse(boundary.summaryMessage.timestamp);
-  let bestIndex = -1;
-  let bestDelta = Number.POSITIVE_INFINITY;
-  for (let index = 0; index < entries.length; index += 1) {
-    const entry = entries[index];
-    if (entry?.kind !== "context_compaction") {
-      continue;
-    }
-    const entryTime = Date.parse(entry.timestamp);
-    const delta = Number.isFinite(entryTime) && Number.isFinite(boundaryTime)
-      ? Math.abs(boundaryTime - entryTime)
-      : 0;
-    if (Number.isFinite(delta) && delta <= 5 * 60 * 1000 && delta < bestDelta) {
-      bestDelta = delta;
-      bestIndex = index;
-    }
-  }
-  return bestIndex;
-}
-
-function mergeBoundaryCompactionEntry(
-  current: Extract<SessionTimelineEntry, { kind: "context_compaction" }>,
-  incoming: ReturnType<typeof buildSessionCompactionEntry>,
-) {
-  return {
-    ...current,
-    ...incoming,
-    id: current.id,
-    timestamp: current.timestamp,
-    updatedAt: incoming.updatedAt ?? incoming.timestamp ?? current.updatedAt,
-    summaryMessageId: incoming.summaryMessageId ?? current.summaryMessageId,
-    summaryText: incoming.summaryText ?? current.summaryText,
-    detailsVisibility: incoming.detailsVisibility ?? current.detailsVisibility,
-  };
-}
-
-function findPreviousTimelineMessageAnchorIndex(
-  entries: SessionTimelineEntry[],
-  resumedAnchorIndex: number,
-  prefaceMessages: AgentMessage[],
-) {
-  for (let index = resumedAnchorIndex - 1; index >= 0; index -= 1) {
-    if (
-      isTimelineMessageAnchor(entries[index]) &&
-      !prefaceMessages.some((message) => timelineEntryRepresentsMessage(entries[index]!, message))
-    ) {
-      return index;
-    }
-  }
-  return -1;
-}
-
-function timelineEntryRepresentsMessage(entry: SessionTimelineEntry, message: AgentMessage) {
-  if (message.role === "assistant") {
-    return entry.kind === "assistant_message" && assistantEntryRepresentsMessage(entry, message);
-  }
-  const expectedKind = message.role === "user" ? "user_message" : "system_message";
-  if (entry.kind !== expectedKind) {
-    return false;
-  }
-  if (entry.message.id === message.id || entry.id === message.id) {
-    return true;
-  }
-  if (entry.message.text.trim() !== message.text.trim()) {
-    return false;
-  }
-  const entrySequence = entry.message.sequence ?? entry.sequence;
-  if (typeof entrySequence === "number" && typeof message.sequence === "number") {
-    return entrySequence === message.sequence;
-  }
-  return entry.message.timestamp === message.timestamp || entry.timestamp === message.timestamp;
-}
-
-function assistantEntryRepresentsMessage(
-  entry: Extract<SessionTimelineEntry, { kind: "assistant_message" }>,
-  message: AgentMessage,
-) {
-  if (entry.id === message.id) {
-    return true;
-  }
-  let cumulativeText = "";
-  for (const chunk of entry.chunks) {
-    if (chunk.kind !== "content") {
-      continue;
-    }
-    cumulativeText += chunk.text;
-    if (representsAssistantMessage({
-      text: cumulativeText.trim(),
-      timestamp: chunk.timestamp,
-      sequence: chunk.sequence,
-    }, message)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function encodeTimelineOrderCursor(position: number, id: string | undefined) {
-  return id ? `${TIMELINE_ORDER_CURSOR_PREFIX}\t${position}\t${id}` : undefined;
-}
-
-function repairTimelineFromSessionUpdates(
-  sessionId: string,
-  context: HelmHandlerContext,
-  entries: SessionTimelineEntry[],
-) {
-  if (!shouldInspectSessionUpdateRepair(entries) || !context.sessionUpdateStore?.listPage) {
-    return undefined;
-  }
-  const replayed = rebuildSessionTimelineFromUpdates(sessionId, context);
-  return shouldReplaceTimelineWithUpdateReplay(entries, replayed) ? replayed : undefined;
-}
-
-function shouldInspectSessionUpdateRepair(entries: SessionTimelineEntry[]) {
-  const hasAssistantContent = entries.some((entry) =>
-    entry.kind === "assistant_message" &&
-    entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.trim())
-  );
-  if (!hasAssistantContent) {
-    return false;
-  }
-  return entries.some((entry) => entry.kind === "tool_call") ||
-    !entries.some((entry) =>
-      entry.kind === "context_compaction" ||
-      entry.kind === "session_resumed" ||
-      entry.kind === "history_gap"
-    );
-}
-
-function rebuildSessionTimelineFromUpdates(
-  sessionId: string,
+  toolCalls: AgentToolCall[],
   context: HelmHandlerContext,
 ) {
-  const records = listSessionUpdateRecordsForRepair(sessionId, context);
-  if (!records.length) {
-    return [];
+  const summary = resolveSessionSummary(sessionId, context);
+  const providerId = summary?.agentId;
+  if (!providerId || !summary) {
+    return toolCalls;
   }
-  return splitSessionTimelineAssistantEntriesAtBoundaries(
-    reduceSessionUpdateRecords(records).entries,
+  return toolCalls.map((toolCall) =>
+    repairCompletedThinkingToolCall(
+      summary,
+      repairLegacySubagentToolCall(
+        repairProviderToolCall(sessionId, providerId, toolCall),
+      ),
+    ),
   );
-}
-
-function listSessionUpdateRecordsForRepair(
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
-  const records: SessionUpdateRecord[] = [];
-  let before: string | undefined;
-  do {
-    const page = context.sessionUpdateStore.listPage(sessionId, {
-      limit: TIMELINE_UPDATE_REPAIR_PAGE_LIMIT,
-      before,
-    });
-    records.push(...(page.updates ?? []));
-    before = page.hasMore ? page.nextCursor : undefined;
-  } while (before && records.length < TIMELINE_UPDATE_REPAIR_RECORD_LIMIT);
-  return records
-    .slice(0, TIMELINE_UPDATE_REPAIR_RECORD_LIMIT)
-    .sort((left, right) => left.sequence - right.sequence);
-}
-
-function shouldReplaceTimelineWithUpdateReplay(
-  current: SessionTimelineEntry[],
-  replayed: SessionTimelineEntry[],
-) {
-  const replayedHasTranscriptEvents = replayed.some((entry) =>
-    entry.kind === "context_compaction" ||
-    entry.kind === "session_resumed" ||
-    entry.kind === "history_gap"
-  );
-  if (!replayed.length || (!shouldInspectSessionUpdateRepair(replayed) && !replayedHasTranscriptEvents)) {
-    return false;
-  }
-  const currentSequences = collectAssistantContentSequences(current);
-  if (
-    Array.from(collectAssistantContentSequences(replayed))
-      .some((sequence) => !currentSequences.has(sequence))
-  ) {
-    return true;
-  }
-  if (replayedHasTranscriptEventsMissingFromCurrent(current, replayed)) {
-    return true;
-  }
-  return replayedHasStrongerToolMetadata(current, replayed);
-}
-
-function replayedHasTranscriptEventsMissingFromCurrent(
-  current: SessionTimelineEntry[],
-  replayed: SessionTimelineEntry[],
-) {
-  const currentTranscriptIds = new Set(
-    current
-      .filter((entry) =>
-        entry.kind === "context_compaction" ||
-        entry.kind === "session_resumed" ||
-        entry.kind === "history_gap"
-      )
-      .map((entry) => entry.id),
-  );
-  return replayed.some((entry) =>
-    (
-      entry.kind === "context_compaction" ||
-      entry.kind === "session_resumed" ||
-      entry.kind === "history_gap"
-    ) &&
-    !currentTranscriptIds.has(entry.id)
-  );
-}
-
-function replayedHasStrongerToolMetadata(
-  current: SessionTimelineEntry[],
-  replayed: SessionTimelineEntry[],
-) {
-  const currentToolCalls = indexTimelineToolCalls(current);
-  for (const entry of replayed) {
-    if (entry.kind !== "tool_call") {
-      continue;
-    }
-    const currentTool = currentToolCalls.get(entry.toolCall.id) ??
-      (entry.toolCall.commandId ? currentToolCalls.get(entry.toolCall.commandId) : undefined);
-    if (!currentTool) {
-      return true;
-    }
-    if (isStrongerReplayedToolCall(entry.toolCall, currentTool)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-function indexTimelineToolCalls(entries: SessionTimelineEntry[]) {
-  const index = new Map<string, AgentToolCall>();
-  for (const entry of entries) {
-    if (entry.kind !== "tool_call") {
-      continue;
-    }
-    index.set(entry.toolCall.id, entry.toolCall);
-    if (entry.toolCall.commandId) {
-      index.set(entry.toolCall.commandId, entry.toolCall);
-    }
-  }
-  return index;
-}
-
-function isStrongerReplayedToolCall(replayed: AgentToolCall, current: AgentToolCall) {
-  return toolMetadataRank(replayed.kind) > toolMetadataRank(current.kind) ||
-    (isWeakTimelineToolCallTitle(current.title, current) && !isWeakTimelineToolCallTitle(replayed.title, replayed)) ||
-    (!current.input && Boolean(replayed.input)) ||
-    (!current.output && Boolean(replayed.output));
-}
-
-function isWeakTimelineToolCallTitle(title: string, toolCall: AgentToolCall) {
-  const normalizedTitle = title.trim().toLowerCase();
-  return !normalizedTitle ||
-    isFallbackToolCallTitle(title) ||
-    normalizedTitle === toolCall.id.toLowerCase() ||
-    normalizedTitle === toolCall.commandId?.toLowerCase();
-}
-
-function toolMetadataRank(kind: AgentToolCall["kind"]) {
-  const ranks: Record<AgentToolCall["kind"], number> = {
-    unknown: 0,
-    tool: 1,
-    think: 2,
-    todo: 2,
-    fetch: 2,
-    search: 3,
-    read: 3,
-    write: 3,
-    shell: 3,
-    skill: 3,
-    subagent: 3,
-    mcp: 4,
-  };
-  return ranks[kind];
-}
-
-function collectAssistantContentSequences(entries: SessionTimelineEntry[]) {
-  const sequences = new Set<number>();
-  for (const entry of entries) {
-    if (entry.kind !== "assistant_message") {
-      continue;
-    }
-    for (const chunk of entry.chunks) {
-      if (chunk.kind === "content" && typeof chunk.sequence === "number") {
-        sequences.add(chunk.sequence);
-      }
-    }
-  }
-  return sequences;
-}
-
-function isAuthoritativeTimelinePage(
-  page: { entries: SessionTimelineEntry[]; hasMore: boolean },
-  before: string | undefined,
-) {
-  return Boolean(before) || page.hasMore || page.entries.length > 0;
-}
-
-function isTimelineMissingVisibleUserAnchors(
-  entries: SessionTimelineEntry[],
-  visibleMessages: AgentMessage[],
-) {
-  const visibleUsers = visibleMessages.filter(isVisibleUserMessage);
-  if (!visibleUsers.length) {
-    return false;
-  }
-  const representedUserIds = resolveTimelineRepresentedUserMessageIds(entries, visibleUsers);
-  return representedUserIds.size < visibleUsers.length;
-}
-
-function isTimelineMissingVisibleHistoryAnchors(
-  entries: SessionTimelineEntry[],
-  visibleMessages: AgentMessage[],
-) {
-  return isTimelineMissingVisibleUserAnchors(entries, visibleMessages) ||
-    isTimelineMissingVisibleAssistantToolBoundaries(entries, visibleMessages);
-}
-
-function isTimelineMissingVisibleAssistantToolBoundaries(
-  entries: SessionTimelineEntry[],
-  visibleMessages: AgentMessage[],
-) {
-  if (
-    !entries.some((entry) => entry.kind === "assistant_message") ||
-    !entries.some((entry) => entry.kind === "tool_call")
-  ) {
-    return false;
-  }
-  const visibleAssistantMessages = visibleMessages.filter(isVisibleAssistantMessage);
-  if (!visibleAssistantMessages.length) {
-    return false;
-  }
-  const representedSnapshots = collectTimelineAssistantContentSnapshots(entries);
-  return visibleAssistantMessages.some((message) =>
-    !representedSnapshots.some((snapshot) => representsAssistantMessage(snapshot, message))
-  );
-}
-
-function isVisibleUserMessage(message: AgentMessage) {
-  return message.role === "user" && Boolean(message.text.trim());
-}
-
-function isVisibleAssistantMessage(message: AgentMessage) {
-  return message.role === "assistant" && Boolean(message.text.trim());
-}
-
-type AssistantContentSnapshot = {
-  text: string;
-  timestamp: string;
-  sequence?: number;
-};
-
-function collectTimelineAssistantContentSnapshots(
-  entries: SessionTimelineEntry[],
-): AssistantContentSnapshot[] {
-  const snapshots: AssistantContentSnapshot[] = [];
-  const cumulativeTextByEntryKey = new Map<string, string>();
-  for (const entry of entries) {
-    if (entry.kind !== "assistant_message") {
-      continue;
-    }
-    const entryKey = resolveAssistantSnapshotEntryKey(entry.id);
-    let cumulativeText = cumulativeTextByEntryKey.get(entryKey) ?? "";
-    for (const chunk of entry.chunks) {
-      if (chunk.kind !== "content") {
-        continue;
-      }
-      cumulativeText += chunk.text;
-      snapshots.push({
-        text: cumulativeText.trim(),
-        timestamp: chunk.timestamp,
-        sequence: chunk.sequence,
-      });
-    }
-    cumulativeTextByEntryKey.set(entryKey, cumulativeText);
-  }
-  return snapshots;
-}
-
-function resolveAssistantSnapshotEntryKey(entryId: string) {
-  return entryId.replace(/#p\d+$/u, "");
-}
-
-function representsAssistantMessage(
-  snapshot: AssistantContentSnapshot,
-  message: AgentMessage,
-) {
-  if (snapshot.text !== message.text.trim()) {
-    return false;
-  }
-  if (
-    typeof snapshot.sequence === "number" &&
-    typeof message.sequence === "number"
-  ) {
-    return snapshot.sequence === message.sequence;
-  }
-  return snapshot.timestamp === message.timestamp;
-}
-
-function rebuildSessionTimelineFromLegacy(sessionId: string, context: HelmHandlerContext) {
-  const messages = context.sessionMessageStore.list?.(sessionId) ?? [];
-  const artifacts = context.sessionArtifactStore?.get?.(sessionId) ?? {
-    outputs: [],
-    diffs: [],
-    toolCalls: [],
-  };
-  return buildSessionTimelineFromLegacy({
-    messages,
-    outputs: artifacts.outputs,
-    toolCalls: artifacts.toolCalls,
-  });
 }
 
 function resolveSessionSummary(sessionId: string, context: HelmHandlerContext): SessionSummary | undefined {
@@ -1331,32 +350,6 @@ function parseJsonRecord(input: string | undefined) {
   }
 }
 
-function projectArtifactToolCallMetadata(
-  sessionId: string,
-  context: HelmHandlerContext,
-  entries: SessionTimelineEntry[],
-): SessionTimelineEntry[] | undefined {
-  const hasWeakToolCalls = entries.some((entry) =>
-    entry.kind === "tool_call" && (entry as unknown as { toolCall: AgentToolCall }).toolCall.kind === "tool",
-  );
-  if (!hasWeakToolCalls) return undefined;
-  const artifacts = context.sessionArtifactStore?.get?.(sessionId);
-  if (!artifacts?.toolCalls?.length) return undefined;
-  const index = new Map<string, AgentToolCall>(artifacts.toolCalls.map((tc: AgentToolCall) => [tc.id, tc]));
-  let changed = false;
-  const repaired = entries.map((entry) => {
-    if (entry.kind !== "tool_call") return entry;
-    const tc = (entry as unknown as { toolCall: AgentToolCall }).toolCall;
-    const stronger = index.get(tc.id);
-    if (!stronger || !isStrongerReplayedToolCall(stronger, tc)) return entry;
-    changed = true;
-    return { ...entry, toolCall: { ...tc, kind: stronger.kind, title: stronger.title } };
-  });
-  if (!changed) return undefined;
-  context.sessionTimelineStore?.replace?.(sessionId, repaired);
-  return repaired;
-}
-
 function hasToolCallChanges(left: AgentToolCall[], right: AgentToolCall[]) {
   if (left.length !== right.length) {
     return true;
@@ -1372,46 +365,4 @@ function hasToolCallChanges(left: AgentToolCall[], right: AgentToolCall[]) {
       item.updatedAt !== next.updatedAt
     );
   });
-}
-
-function hasTimelineMessageAnchor(entries: SessionTimelineEntry[]) {
-  return entries.some((entry) => isTimelineMessageAnchor(entry));
-}
-
-function isTimelineMessageAnchor(entry: SessionTimelineEntry | undefined) {
-  if (!entry) {
-    return false;
-  }
-  return (
-    entry.kind === "user_message" ||
-    entry.kind === "system_message" ||
-    (entry.kind === "assistant_message" && entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.trim()))
-  );
-}
-
-function resolveTranscriptStatus(
-  visibleMessages: AgentMessage[],
-  before: string | undefined,
-  timelineBefore: string | undefined,
-): SessionTranscriptStatus {
-  const hasCompaction = visibleMessages.some((message) =>
-    looksLikeContinuationSummary(message.text) ||
-    looksLikeCompactionLifecycleMessage(message.text)
-  );
-
-  if (!hasCompaction || before || timelineBefore) {
-    return {
-      source: "local",
-      replayCompleteness: "none",
-      integrity: "complete",
-      runtimeRestoreState: "history-only",
-    };
-  }
-
-  return {
-    source: "local",
-    replayCompleteness: "compacted",
-    integrity: "local-prefix-preserved",
-    runtimeRestoreState: "history-only",
-  };
 }

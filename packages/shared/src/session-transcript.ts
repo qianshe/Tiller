@@ -1,4 +1,6 @@
 export type SessionReplayCompleteness = "full" | "compacted" | "unknown" | "none";
+export type SessionCompactionPhase = "started" | "completed";
+export type SessionCompactionSource = "provider" | "heuristic";
 
 export type SessionTranscriptIntegrity =
   | "complete"
@@ -24,6 +26,7 @@ export type SessionTimelineContextCompactionEntry = {
   id: string;
   summaryMessageId?: string;
   summaryText?: string;
+  detailsVisibility?: "hidden" | "expandable";
   timestamp: string;
   updatedAt: string;
   replayCompleteness: Exclude<SessionReplayCompleteness, "none">;
@@ -50,6 +53,12 @@ export type SessionTimelineTranscriptEventEntry =
   | SessionTimelineContextCompactionEntry
   | SessionTimelineResumedEntry
   | SessionTimelineHistoryGapEntry;
+
+export type SessionLiveCompactionState = {
+  phase: Extract<SessionCompactionPhase, "started">;
+  source: SessionCompactionSource;
+  timestamp: string;
+};
 
 export function isTranscriptEventEntry(
   entry: { kind: string },

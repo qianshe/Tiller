@@ -1,5 +1,6 @@
 import type {
   AgentMessage,
+  AgentPlan,
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
@@ -53,10 +54,13 @@ export type SessionRuntimeStore = {
   remove: (sessionId: string) => void;
 };
 
+export type SessionPlanStore = {
+  get: (sessionId: string) => AgentPlan | undefined;
+  replace: (sessionId: string, plan: AgentPlan) => AgentPlan;
+  remove: (sessionId: string) => void;
+};
+
 export type SessionTimelineStore = {
-  append: (sessionId: string, entry: SessionTimelineEntry) => SessionTimelineEntry[];
-  upsertMessage?: (sessionId: string, message: AgentMessage) => SessionTimelineEntry | undefined;
-  upsertToolCall?: (sessionId: string, toolCall: AgentToolCall) => SessionTimelineEntry | undefined;
   replace: (sessionId: string, entries: SessionTimelineEntry[]) => SessionTimelineEntry[];
   list: (sessionId: string) => SessionTimelineEntry[];
   listPage: (sessionId: string, options?: SessionTimelinePageOptions) => SessionTimelinePage;
@@ -77,6 +81,7 @@ export type SessionStores = {
   sessionArtifactStore: SessionArtifactStore;
   sessionAttachmentStore: SessionAttachmentStore;
   sessionRuntimeStore: SessionRuntimeStore;
+  sessionPlanStore: SessionPlanStore;
   sessionTimelineStore: SessionTimelineStore;
   sessionUpdateStore: SessionUpdateStore;
 };

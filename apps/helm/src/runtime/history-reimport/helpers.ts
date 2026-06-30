@@ -10,6 +10,7 @@ import type {
 } from "@tiller/shared";
 import { buildSessionTimelineFromLegacy } from "@tiller/shared";
 import { mergeAuthoritativeMessagesWithLocalUserPrompts } from "../../sessions/provider-history-sync.js";
+import { projectLegacySessionHistoryFromTimeline } from "../session-timeline/legacy-projection.js";
 
 type MessagePage = {
   messages: AgentMessage[];
@@ -44,6 +45,26 @@ type ReimportTimelineStore = {
   list?(sessionId: string): SessionTimelineEntry[];
   replace(sessionId: string, entries: SessionTimelineEntry[]): SessionTimelineEntry[];
 };
+
+export function resolveLegacyHistoryBaseline(input: {
+  messages: AgentMessage[];
+  artifacts: {
+    outputs: CommandChunk[];
+    diffs: FileDiffSummary[];
+    toolCalls: AgentToolCall[];
+  };
+  timeline: SessionTimelineEntry[];
+}) {
+  const projected = projectLegacySessionHistoryFromTimeline(input.timeline);
+  return {
+    messages: input.messages.length ? input.messages : projected.messages,
+    artifacts: {
+      outputs: input.artifacts.outputs.length ? input.artifacts.outputs : projected.outputs,
+      diffs: input.artifacts.diffs,
+      toolCalls: input.artifacts.toolCalls.length ? input.artifacts.toolCalls : projected.toolCalls,
+    },
+  };
+}
 
 export function chooseRecoverySummary(
   summary: SessionSummary,

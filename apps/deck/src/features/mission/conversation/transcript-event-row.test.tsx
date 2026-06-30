@@ -64,3 +64,23 @@ test("transcript history gap rows keep warning semantics without bright cards", 
   assert.doesNotMatch(html, /bg-red-50/);
   assert.doesNotMatch(html, /border-red-400/);
 });
+
+test("transcript compaction rows can hide summary details for providers that only expose the boundary marker", () => {
+  const html = renderToStaticMarkup(
+    createElement(TranscriptEventRow, {
+      entry: {
+        kind: "context_compaction",
+        id: "compaction-hidden",
+        summaryText: "This session is being continued from a previous conversation that ran out of context.",
+        timestamp: "2026-06-18T13:55:25.193Z",
+        updatedAt: "2026-06-18T13:55:25.193Z",
+        replayCompleteness: "compacted",
+        detailsVisibility: "hidden",
+      },
+    }),
+  );
+
+  assert.match(html, /上下文已压缩/);
+  assert.doesNotMatch(html, /展开摘要/);
+  assert.doesNotMatch(html, /收起摘要/);
+});

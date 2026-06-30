@@ -1,10 +1,15 @@
-import type { SessionTimelineEntry } from "@tiller/shared";
+import type {
+  SessionLiveStateSnapshot,
+  SessionTimelineEntry,
+} from "@tiller/shared";
 
 export type SessionTimelineHistoryPage = {
   sessionId: string;
+  before?: string;
   entries: SessionTimelineEntry[];
   nextCursor?: string;
   hasMore: boolean;
+  liveState?: SessionLiveStateSnapshot;
 };
 
 export type LoadSessionTimelineHistoryOptions = {

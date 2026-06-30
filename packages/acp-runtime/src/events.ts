@@ -1,10 +1,12 @@
+import {
+  looksLikeCompactionCompletedMessage,
+  looksLikeCompactionStartedMessage,
+  looksLikeContinuationSummary,
+} from "@tiller/shared";
 import type { AcpRuntimeProviderConfig, AgentToolCall, SessionStatus } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "./runtime-types";
-import { mapAdapterSessionUpdate, SUPPRESS_SESSION_UPDATE } from "./adapters";
+import { mapAdapterSessionUpdate, normalizeAdapterToolCall, SUPPRESS_SESSION_UPDATE } from "./adapters";
 import type { AcpSessionUpdateProjection } from "./adapters";
-import { normalizeClaudeToolCall } from "./adapters/claude/tool-calls";
-import { normalizeCodexToolCall } from "./adapters/codex/tool-calls";
-import { normalizeOpenCodeToolCall } from "./adapters/opencode/tool-calls";
 import { extractAvailableCommands } from "./available-command-events";
 import { extractCommandChunk, extractPermissionRequest } from "./command-events";
 import { extractSessionConfigOptions, resolveSessionConfigState } from "./config-events";
@@ -28,20 +30,12 @@ function timestamp() {
 }
 
 function normalizeProviderToolCall(
+  provider: AcpRuntimeProviderConfig | undefined,
   providerId: string | undefined,
   toolCall: AgentToolCall,
   update: any,
 ) {
-  if (providerId === "opencode") {
-    return normalizeOpenCodeToolCall(toolCall, update);
-  }
-  if (providerId === "codex") {
-    return normalizeCodexToolCall(toolCall, update);
-  }
-  if (providerId === "claudecode" || providerId === "claude") {
-    return normalizeClaudeToolCall(toolCall, update);
-  }
-  return toolCall;
+  return normalizeAdapterToolCall(provider, providerId, { toolCall, update });
 }
 
 export function mapSessionUpdateNotification(
@@ -69,6 +63,26 @@ export function mapSessionUpdateNotification(
         type: "tool-call",
         toolCall: thinkingToolCall,
       },
+    };
+  }
+
+  const adapterEvent = mapAdapterSessionUpdate(options.provider, {
+    sessionId,
+    updateType,
+    update,
+  });
+  if (isSuppressedAdapterSessionUpdate(adapterEvent)) {
+    return null;
+  }
+  if (adapterEvent) {
+    return { sessionId, event: adapterEvent };
+  }
+
+  const compactionEvent = extractCompactionEvent(sessionId, updateType, update, text);
+  if (compactionEvent) {
+    return {
+      sessionId,
+      event: compactionEvent,
     };
   }
 
@@ -121,25 +135,13 @@ export function mapSessionUpdateNotification(
     };
   }
 
-  const adapterEvent = mapAdapterSessionUpdate(options.provider, {
-    sessionId,
-    updateType,
-    update,
-  });
-  if (isSuppressedAdapterSessionUpdate(adapterEvent)) {
-    return null;
-  }
-  if (adapterEvent) {
-    return { sessionId, event: adapterEvent };
-  }
-
   const explicitToolCall = extractToolCall(sessionId, updateType, update);
   if (explicitToolCall) {
     return {
       sessionId,
       event: {
         type: "tool-call",
-        toolCall: normalizeProviderToolCall(options.providerId, explicitToolCall, update),
+        toolCall: normalizeProviderToolCall(options.provider, options.providerId, explicitToolCall, update),
       },
     };
   }
@@ -253,6 +255,37 @@ function resolveMessageId(sessionId: string, update: any) {
   );
 }
 
+function extractCompactionEvent(
+  sessionId: string,
+  updateType: string | undefined,
+  update: any,
+  extractedText: string | null,
+): Extract<SessionRuntimeEvent, { type: "compaction" }> | null {
+  const text = extractedText?.trim() || "";
+  const explicitPhase = resolveExplicitCompactionPhase(updateType, update, text);
+  if (explicitPhase) {
+    return {
+      type: "compaction",
+      phase: explicitPhase,
+      source: "provider",
+      timestamp: resolveEventTimestamp(update),
+      summaryText: explicitPhase === "completed" ? resolveCompactionSummaryText(update, text) : undefined,
+      messageId: explicitPhase === "completed" ? resolveMessageId(sessionId, update) : undefined,
+    };
+  }
+  if (!text || !looksLikeContinuationSummary(text)) {
+    return null;
+  }
+  return {
+    type: "compaction",
+    phase: "completed",
+    source: "heuristic",
+    timestamp: resolveEventTimestamp(update),
+    summaryText: text,
+    messageId: resolveMessageId(sessionId, update),
+  };
+}
+
 function resolveThinkingMessageId(sessionId: string, update: any) {
   return (
     stringFrom(update.messageId ?? update.message_id ?? update.message?.id ?? update.id) ??
@@ -294,6 +327,104 @@ function stringFrom(value: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+function recordFrom(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : {};
+}
+
+function resolveExplicitCompactionPhase(
+  updateType: string | undefined,
+  update: any,
+  text: string,
+) {
+  const record = recordFrom(update);
+  const compaction = recordFrom(record.compaction);
+  const candidatePhase = normalizeCompactionPhase(
+    compaction.phase ??
+      record.phase ??
+      record.compactionPhase ??
+      record.compaction_phase ??
+      record.status,
+  );
+  if (candidatePhase && isCompactionRelatedUpdateType(updateType)) {
+    return candidatePhase;
+  }
+  if (isCompactionStartedText(text)) {
+    return "started";
+  }
+  if (isCompactionCompletedText(text)) {
+    return "completed";
+  }
+  return isCompactionRelatedUpdateType(updateType)
+    ? normalizeCompactionPhase(updateType)
+    : null;
+}
+
+function normalizeCompactionPhase(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) {
+    return null;
+  }
+  if (
+    normalized === "started" ||
+    normalized === "starting" ||
+    normalized === "running" ||
+    normalized === "compacting" ||
+    normalized === "compaction_started" ||
+    normalized === "compaction-started"
+  ) {
+    return "started";
+  }
+  if (
+    normalized === "completed" ||
+    normalized === "complete" ||
+    normalized === "done" ||
+    normalized === "finished" ||
+    normalized === "compaction_completed" ||
+    normalized === "compaction-completed"
+  ) {
+    return "completed";
+  }
+  return null;
+}
+
+function isCompactionRelatedUpdateType(updateType: string | undefined) {
+  if (!updateType) {
+    return false;
+  }
+  return /(?:^|[_./-])compaction(?:$|[_./-])|^compacting(?:$|[_./-])/iu.test(updateType);
+}
+
+function isCompactionStartedText(text: string) {
+  return looksLikeCompactionStartedMessage(text);
+}
+
+function isCompactionCompletedText(text: string) {
+  return looksLikeCompactionCompletedMessage(text);
+}
+
+function resolveEventTimestamp(update: any) {
+  return stringFrom(update?.timestamp ?? update?.message?.timestamp) ?? timestamp();
+}
+
+function resolveCompactionSummaryText(update: any, text: string) {
+  const record = recordFrom(update);
+  const compaction = recordFrom(record.compaction);
+  const summary = extractTextContent(
+    compaction.summaryText ??
+      compaction.summary_text ??
+      compaction.summary ??
+      record.summaryText ??
+      record.summary_text ??
+      record.summary,
+  );
+  return summary?.trim() || (looksLikeContinuationSummary(text) ? text : undefined);
 }
 
 

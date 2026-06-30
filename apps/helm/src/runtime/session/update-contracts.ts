@@ -8,6 +8,7 @@ import type {
   FileDiffSummary,
   RuntimeSessionSummary,
   SessionConfigOption,
+  SessionLiveStateSnapshot,
   SessionPromptQueueSnapshot,
   SessionTimelineBatch,
   SessionTimelineEntry,
@@ -74,7 +75,7 @@ export type SessionTranscriptEventUpdate = DomainSessionTranscriptEventUpdate<
 
 export type SessionTimelineBatchUpdate = DomainSessionTimelineBatchUpdate<SessionTimelineEntry>;
 
-export type SessionLiveStateUpdate = DomainSessionLiveStateUpdate<import("../../runtime/session-timeline/live-state-store").SessionLiveStateSnapshot>;
+export type SessionLiveStateUpdate = DomainSessionLiveStateUpdate<SessionLiveStateSnapshot>;
 
 export type SessionRealtimeUpdate = DomainSessionRealtimeUpdate<
   AgentMessage,
@@ -90,5 +91,5 @@ export type SessionRealtimeUpdate = DomainSessionRealtimeUpdate<
   AgentPlan,
   SessionTimelineTranscriptEventEntry,
   SessionTimelineEntry,
-  import("../../runtime/session-timeline/live-state-store").SessionLiveStateSnapshot
+  SessionLiveStateSnapshot
 >;

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type {
+  AgentPlan,
   AgentMessage,
   AgentToolCall,
   CommandChunk,
@@ -19,6 +20,9 @@ import {
   seedLiveEventSequenceForSession,
 } from "./events.js";
 import { createLiveMessageBuffer } from "./live-message-buffer.js";
+import { createSessionTimelineDispatcher } from "./session-timeline/dispatcher.js";
+import { createSessionLiveStateStore } from "./session-timeline/live-state-store.js";
+import { createSessionTimelineWorkerRegistry } from "./session-timeline/worker-registry.js";
 
 type TestContextCapture = {
   broadcasts: unknown[];
@@ -83,6 +87,7 @@ function createTestContext(
   capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] },
   sessionId = "session-1",
   summaryPatch: Partial<SessionSummary> = {},
+  options: { useCanonicalPipeline?: boolean } = {},
 ): HelmHandlerContext {
   const summary: SessionSummary = {
     id: sessionId,
@@ -101,8 +106,59 @@ function createTestContext(
   };
   const logger = createCapturedLogger(capture, logs);
   const agentId = summaryPatch.agentId ?? "opencode";
+  const sessionTimelineStore = {
+    append: (_sessionId: string, entry: SessionTimelineEntry) => {
+      capture.timelineEntries = [
+        ...(capture.timelineEntries ?? []).filter((candidate) => candidate.id !== entry.id),
+        entry,
+      ];
+      return capture.timelineEntries;
+    },
+    replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+      capture.timelineEntries = entries;
+      return entries;
+    },
+    applyBatch: (_sessionId: string, batch: import("@tiller/shared").SessionTimelineBatch) => {
+      if (batch.replace) {
+        capture.timelineEntries = batch.entries;
+        return batch.entries;
+      }
+      const byId = new Map((capture.timelineEntries ?? []).map((entry) => [entry.id, entry]));
+      for (const entry of batch.entries) {
+        byId.set(entry.id, entry);
+      }
+      capture.timelineEntries = [...byId.values()];
+      return capture.timelineEntries;
+    },
+    list: () => capture.timelineEntries ?? [],
+    listPage: () => ({
+      entries: capture.timelineEntries ?? [],
+      hasMore: false,
+    }),
+    remove: () => {
+      capture.timelineEntries = [];
+    },
+  };
+  const sessionTimelineWorkers = createSessionTimelineWorkerRegistry();
+  const sessionLiveStateStore = createSessionLiveStateStore();
+  const sessionTimelineDispatcher = createSessionTimelineDispatcher({
+    store: sessionTimelineStore as unknown as import("@tiller/persistence").SessionTimelineStore,
+    publish: (targetSessionId, batch) => {
+      capture.detailBroadcasts.push({
+        sessionId: targetSessionId,
+        method: "session/update",
+        params: {
+          sessionId: targetSessionId,
+          update: {
+            kind: "timeline_batch",
+            batch,
+          },
+        },
+      });
+    },
+  });
 
-  return {
+  const baseContext = {
     sessions: new Map([
       [
         sessionId,
@@ -148,27 +204,7 @@ function createTestContext(
       appendOutput: () => undefined,
       appendToolCall: () => undefined,
     },
-    sessionTimelineStore: {
-      append: (_sessionId: string, entry: SessionTimelineEntry) => {
-        capture.timelineEntries = [
-          ...(capture.timelineEntries ?? []).filter((candidate) => candidate.id !== entry.id),
-          entry,
-        ];
-        return capture.timelineEntries;
-      },
-      replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
-        capture.timelineEntries = entries;
-        return entries;
-      },
-      list: () => capture.timelineEntries ?? [],
-      listPage: () => ({
-        entries: capture.timelineEntries ?? [],
-        hasMore: false,
-      }),
-      remove: () => {
-        capture.timelineEntries = [];
-      },
-    },
+    sessionTimelineStore,
     sessionUpdateStore: {
       append: (update: SessionUpdateRecord) => {
         capture.sessionUpdates = [...(capture.sessionUpdates ?? []), update];
@@ -176,7 +212,15 @@ function createTestContext(
     },
     publishDiffUpdate: async () => undefined,
     hydrateSessionSummary: (item: SessionSummary) => item,
-  } as unknown as HelmHandlerContext;
+  } as Record<string, unknown>;
+
+  if (options.useCanonicalPipeline) {
+    baseContext.sessionTimelineWorkers = sessionTimelineWorkers;
+    baseContext.sessionLiveStateStore = sessionLiveStateStore;
+    baseContext.sessionTimelineDispatcher = sessionTimelineDispatcher;
+  }
+
+  return baseContext as HelmHandlerContext;
 }
 
 test("live event sequence resumes above persisted timeline sequences", () => {
@@ -256,6 +300,89 @@ test("runtime compaction started only broadcasts transient compaction state", ()
   assert.equal(compactionStateUpdate?.params?.update?.source, "provider");
   assert.equal(transcriptUpdate, undefined);
   assert.equal(capture.timelineEntries?.length ?? 0, 0);
+});
+
+test("runtime assistant messages publish canonical timeline batches when the pipeline is available", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-message", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-canonical-message",
+    {
+      type: "message",
+      message: {
+        id: "assistant-1",
+        role: "assistant",
+        text: "hello canonical timeline",
+        timestamp: "2026-06-29T00:00:01.000Z",
+        streaming: true,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  ) as { params?: { update?: { batch?: import("@tiller/shared").SessionTimelineBatch } } } | undefined;
+  const agentMessageUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "agent_message"
+  );
+
+  assert.ok(timelineBatchUpdate?.params?.update?.batch);
+  assert.equal(agentMessageUpdate, undefined);
+  assert.equal(timelineBatchUpdate?.params?.update?.batch?.entries[0]?.kind, "assistant_message");
+});
+
+test("runtime plan updates publish live_state snapshots when the pipeline is available", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-plan", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-canonical-plan",
+    {
+      type: "plan-update",
+      plan: {
+        updatedAt: "2026-06-29T00:00:02.000Z",
+        entries: [{
+          content: "do the thing",
+          priority: "high",
+          status: "in_progress",
+        }],
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const liveStateUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "live_state"
+  ) as { params?: { update?: { snapshot?: { plan?: AgentPlan } } } } | undefined;
+  const legacyPlanUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "plan_update"
+  );
+
+  assert.ok(liveStateUpdate?.params?.update?.snapshot?.plan);
+  assert.equal(legacyPlanUpdate, undefined);
+  assert.equal(
+    liveStateUpdate?.params?.update?.snapshot?.plan?.entries[0]?.content,
+    "do the thing",
+  );
 });
 
 test("runtime compaction completed clears live state and persists a transcript compaction event", () => {

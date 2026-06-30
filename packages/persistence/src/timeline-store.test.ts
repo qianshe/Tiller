@@ -9,6 +9,12 @@ import { buildSessionTimelineFromLegacy } from "@tiller/shared";
 import { createSqliteSessionTimelineStore } from "./sqlite/timeline-store";
 import { pageSessionTimeline } from "./timeline-store";
 
+type InternalSqliteTimelineStore = ReturnType<typeof createSqliteSessionTimelineStore> & {
+  append(sessionId: string, entry: SessionTimelineEntry): SessionTimelineEntry[];
+  upsertMessage(sessionId: string, message: AgentMessage): SessionTimelineEntry | undefined;
+  upsertToolCall(sessionId: string, toolCall: AgentToolCall): SessionTimelineEntry | undefined;
+};
+
 const BASE_TIME = "2026-05-30T10:00:00.000Z";
 const { DatabaseSync } = createRequire(import.meta.url)(
   "node:sqlite",
@@ -38,7 +44,7 @@ function toolCall(
 test("sqlite timeline append updates an existing entry without moving its persisted position", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
-  const store = createSqliteSessionTimelineStore(dbPath);
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
 
   try {
     store.append("session-1", {
@@ -87,7 +93,7 @@ test("sqlite timeline append updates an existing entry without moving its persis
 test("sqlite timeline upsertMessage updates one entry without moving its persisted position", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
-  const store = createSqliteSessionTimelineStore(dbPath);
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
 
   try {
     store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "first", sequence: 1 }));
@@ -126,7 +132,7 @@ test("sqlite timeline upsertMessage updates one entry without moving its persist
 test("sqlite timeline upsertMessage updates one entry in a 20k-entry fixture", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-large-"));
   const dbPath = join(tempDir, "sessions.sqlite");
-  const store = createSqliteSessionTimelineStore(dbPath);
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
 
   try {
     const entries: SessionTimelineEntry[] = Array.from({ length: 20_000 }, (_, index) => ({
@@ -173,7 +179,7 @@ test("sqlite timeline upsertMessage updates one entry in a 20k-entry fixture", (
 test("sqlite timeline upsertToolCall merges thinking into one assistant entry", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
-  const store = createSqliteSessionTimelineStore(dbPath);
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
 
   try {
     store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", sequence: 2 }));
@@ -276,7 +282,7 @@ test("pageSessionTimeline drops later replay duplicates with reset-or-equal sequ
 test("sqlite timeline upsertMessage splits assistant entries across tool boundaries", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
-  const store = createSqliteSessionTimelineStore(dbPath);
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
 
   try {
     store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "先说明。", sequence: 1 }));
@@ -323,7 +329,7 @@ test("sqlite timeline upsertMessage splits assistant entries across tool boundar
 test("sqlite timeline listPage returns the newest page in display order with a position cursor", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
-  const store = createSqliteSessionTimelineStore(dbPath);
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
 
   try {
     const entries: SessionTimelineEntry[] = Array.from({ length: 5 }, (_, index) => ({
@@ -351,6 +357,78 @@ test("sqlite timeline listPage returns the newest page in display order with a p
     assert.deepEqual(older.entries.map((entry) => entry.id), ["assistant-1", "assistant-2"]);
     assert.equal(older.nextCursor, "order\t1\tassistant-1");
     assert.equal(older.hasMore, true);
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("sqlite timeline message-window paging keeps transcript boundaries with the owning message group", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
+
+  try {
+    store.replace("session-1", [
+      {
+        id: "older-user",
+        kind: "user_message",
+        message: message({ id: "older-user", role: "user", text: "older", sequence: 1 }),
+        timestamp: at(1),
+        updatedAt: at(1),
+        sequence: 1,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        summaryText: "continued from previous conversation",
+        detailsVisibility: "expandable",
+        timestamp: at(2),
+        updatedAt: at(2),
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "resume-1",
+        kind: "session_resumed",
+        restoreMethod: "session/load",
+        timestamp: at(3),
+        updatedAt: at(3),
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "current-user",
+        kind: "user_message",
+        message: message({ id: "current-user", role: "user", text: "current", sequence: 4 }),
+        timestamp: at(4),
+        updatedAt: at(4),
+        sequence: 4,
+      },
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-1:content",
+          kind: "content",
+          text: "answer",
+          timestamp: at(5),
+          sequence: 5,
+        }],
+        timestamp: at(5),
+        updatedAt: at(5),
+        sequence: 5,
+      },
+    ]);
+
+    const latest = store.listPage("session-1", { limit: 2, window: "message" });
+    const older = store.listPage("session-1", { limit: 2, window: "message", before: latest.nextCursor });
+
+    assert.deepEqual(
+      latest.entries.map((entry) => entry.id),
+      ["compaction-1", "resume-1", "current-user", "assistant-1"],
+    );
+    assert.equal(latest.hasMore, true);
+    assert.deepEqual(older.entries.map((entry) => entry.id), ["older-user"]);
+    assert.equal(older.hasMore, false);
   } finally {
     store.close();
     rmSync(tempDir, { force: true, recursive: true });

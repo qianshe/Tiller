@@ -22,6 +22,7 @@ export {
   type SessionArtifactStore,
   type SessionAttachmentStore,
   type SessionMessageStore,
+  type SessionPlanStore,
   type SessionRuntimeStore,
   type SessionSummaryStore,
   type SessionUpdateStore,

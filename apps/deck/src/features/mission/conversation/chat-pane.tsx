@@ -4,6 +4,7 @@ import type {
   AgentToolCall,
   PermissionDecision,
   PermissionRequest,
+  SessionLiveCompactionState,
   SessionPromptQueueSnapshot,
   SessionSummary,
   SessionTimelineEntry,
@@ -17,6 +18,7 @@ import type {
 } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
+import { useDeckStore } from "../../../store";
 import { MissionMessageTimeline } from "./message-timeline";
 import { MissionPermissionDrawer } from "./permission-drawer";
 import { MissionQueuedPrompts } from "./queued-prompts";
@@ -24,7 +26,11 @@ import type { MissionToolLoadingState } from "./tool-loading";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
-import { resolveSessionStreamContentLength, splitMissionToolCalls } from "./chat-pane-model";
+import {
+  resolveSessionStreamContentLength,
+  shouldAutoScrollSessionBody,
+  splitMissionToolCalls,
+} from "./chat-pane-model";
 import { resolveChatSessionToolLoading } from "./chat-session-state";
 import {
   createAgentPlanDismissalKey,
@@ -49,10 +55,15 @@ type MissionProjectOption = {
 
 // 距底部小于该像素阈值时视为"贴底"，流式与工具加载才自动跟随；超过则尊重用户上滑。
 const STICK_TO_BOTTOM_THRESHOLD = 80;
+const PLAIN_HISTORY_REVEAL_LOCK_DATASET_KEY = "plainHistoryRevealLock";
 const EMPTY_MESSAGES: AgentMessage[] = [];
 const EMPTY_TIMELINE_ITEMS: SessionTimelineEntry[] = [];
 const EMPTY_TOOL_CALLS: AgentToolCall[] = [];
 const EMPTY_PENDING_APPROVALS: MissionPendingApproval[] = [];
+
+function isPlainHistoryRevealLocked(body: HTMLElement | null) {
+  return body?.dataset[PLAIN_HISTORY_REVEAL_LOCK_DATASET_KEY] === "true";
+}
 
 type HistoryState = {
   hasMore: boolean;
@@ -203,6 +214,7 @@ export function MissionChatPane({
   onDeleteQueuedPrompt,
   children,
 }: MissionChatPaneProps) {
+  const sessionCompactionStates = useDeckStore((state) => state.sessionCompactionStates);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const sessionGridRef = useRef<HTMLDivElement | null>(null);
@@ -242,7 +254,9 @@ export function MissionChatPane({
   });
   const singleSession = openSessions[0];
   const visibleSessionStreamCounts = openSessions
-    .map((session) => `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionTimelineById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}`)
+    .map((session) =>
+      `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionTimelineById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}:${sessionCompactionStates[session.id] ? 1 : 0}`
+    )
     .join("|");
   const [dragOver, setDragOver] = useState(false);
   const sessionDragType = "application/x-tiller-session-id";
@@ -357,10 +371,13 @@ export function MissionChatPane({
     };
   }, [chatMainRef, openSessions.length, shouldLockChatMainScroll]);
 
-  const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number; contentLength: number }>>({});
+  const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number; contentLength: number; historyLoading: boolean; compactionCount: number }>>({});
   const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
   const sessionBodyStickToBottomRef = useRef<Record<string, boolean>>({});
   const recordSessionBodyScroll = useCallback((sessionId: string, body: HTMLDivElement) => {
+    if (isPlainHistoryRevealLocked(body)) {
+      return;
+    }
     sessionBodyScrollPositionRef.current[sessionId] = {
       scrollTop: body.scrollTop,
       scrollHeight: body.scrollHeight,
@@ -385,7 +402,8 @@ export function MissionChatPane({
       return;
     }
     const changedSessionIds: string[] = [];
-    const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number; contentLength: number }> = {};
+    const previousSnapshot = sessionBodyScrollSnapshotRef.current;
+    const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number; contentLength: number; historyLoading: boolean; compactionCount: number }> = {};
 
     openSessions.forEach((session) => {
       const sessionMessages =
@@ -397,13 +415,24 @@ export function MissionChatPane({
       const timelineCount = sessionTimelineById[session.id]?.length ?? 0;
       const messageCount = sessionMessages?.length ?? 0;
       const toolCallCount = sessionToolCalls?.length ?? 0;
+      const compactionCount = sessionCompactionStates[session.id] ? 1 : 0;
+      const historyLoading = Boolean(
+        messageHistoryState[session.id]?.loading ||
+        activityHistoryState[session.id]?.loading,
+      );
       const contentLength = resolveSessionStreamContentLength({
         messages: sessionMessages,
         timeline: sessionTimelineById[session.id],
         toolCalls: sessionToolCalls,
-      });
-      const previous = sessionBodyScrollSnapshotRef.current[session.id];
-      nextSnapshot[session.id] = { messageCount: Math.max(messageCount, timelineCount), toolCallCount, contentLength };
+      }) + compactionCount;
+      const previous = previousSnapshot[session.id];
+      nextSnapshot[session.id] = {
+        messageCount: Math.max(messageCount, timelineCount),
+        toolCallCount,
+        contentLength,
+        historyLoading,
+        compactionCount,
+      };
       if (!previous) {
         if (messageCount > 0 || timelineCount > 0 || toolCallCount > 0) {
           changedSessionIds.push(session.id);
@@ -413,7 +442,8 @@ export function MissionChatPane({
       if (
         previous.messageCount !== Math.max(messageCount, timelineCount) ||
         previous.toolCallCount !== toolCallCount ||
-        previous.contentLength !== contentLength
+        previous.contentLength !== contentLength ||
+        previous.compactionCount !== compactionCount
       ) {
         changedSessionIds.push(session.id);
       }
@@ -430,8 +460,27 @@ export function MissionChatPane({
         if (!body) {
           return;
         }
-        // 仅当用户当前贴底（未手动上滑）时才跟随到最新内容。
-        if (sessionBodyStickToBottomRef.current[sessionId] === false) {
+        const current = nextSnapshot[sessionId];
+        const previous = previousSnapshot[sessionId];
+        const allowAfterInitialHistoryLoad = Boolean(
+          previous?.historyLoading &&
+          !current?.historyLoading &&
+          (previous.messageCount ?? 0) === 0 &&
+          (previous.toolCallCount ?? 0) === 0 &&
+          (previous.contentLength ?? 0) === 0 &&
+          (
+            (current?.messageCount ?? 0) > 0 ||
+            (current?.toolCallCount ?? 0) > 0 ||
+            (current?.contentLength ?? 0) > 0
+          ),
+        );
+        if (!shouldAutoScrollSessionBody({
+          stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
+          historyLoading: current?.historyLoading,
+          historyRevealLocked: isPlainHistoryRevealLocked(body),
+          previousHistoryLoading: previous?.historyLoading,
+          allowAfterInitialHistoryLoad,
+        })) {
           return;
         }
         body.scrollTop = body.scrollHeight;
@@ -446,11 +495,13 @@ export function MissionChatPane({
     scrollChangedBodies();
     const frame = window.requestAnimationFrame(scrollChangedBodies);
     const timeout = window.setTimeout(scrollChangedBodies, 180);
+    const lateTimeout = window.setTimeout(scrollChangedBodies, 900);
     return () => {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
+      window.clearTimeout(lateTimeout);
     };
-  }, [activeSessionId, activeSessionMessages, activeSessionToolCalls, chatMainRef, openSessions, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
+  }, [activeSessionId, activeSessionMessages, activeSessionToolCalls, activityHistoryState, chatMainRef, messageHistoryState, openSessions, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
 
   useEffect(() => {
     if (!shouldAnchorActiveParallelCard || !activeSessionId) {
@@ -481,6 +532,65 @@ export function MissionChatPane({
       window.clearTimeout(lateTimeout);
     };
   }, [activeSessionId, chatMainRef, openSessions.length, shouldAnchorActiveParallelCard]);
+
+  useEffect(() => {
+    const chatMain = chatMainRef.current;
+    const ResizeObserverCtor = window.ResizeObserver;
+    if (!chatMain || !ResizeObserverCtor) {
+      return;
+    }
+    const observer = new ResizeObserverCtor((entries) => {
+      for (const entry of entries) {
+        const content = entry.target;
+        if (!(content instanceof HTMLElement)) {
+          continue;
+        }
+        const sessionId = content.dataset.sessionCardContent;
+        if (!sessionId) {
+          continue;
+        }
+        const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
+        if (!body) {
+          continue;
+        }
+        const historyLoading = Boolean(
+          messageHistoryState[sessionId]?.loading ||
+          activityHistoryState[sessionId]?.loading,
+        );
+        if (!shouldAutoScrollSessionBody({
+          stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
+          historyLoading,
+          historyRevealLocked: isPlainHistoryRevealLocked(body),
+        })) {
+          continue;
+        }
+        body.scrollTop = body.scrollHeight;
+        sessionBodyScrollPositionRef.current[sessionId] = {
+          scrollTop: body.scrollTop,
+          scrollHeight: body.scrollHeight,
+        };
+        sessionBodyStickToBottomRef.current[sessionId] = true;
+      }
+    });
+    openSessions.forEach((session) => {
+      const content = chatMain.querySelector<HTMLElement>(`[data-session-card-content="${CSS.escape(session.id)}"]`);
+      if (content) {
+        observer.observe(content);
+      }
+    });
+    return () => observer.disconnect();
+  }, [
+    activeSessionId,
+    activeSessionMessages,
+    activeSessionToolCalls,
+    activityHistoryState,
+    chatMainRef,
+    messageHistoryState,
+    openSessions,
+    sessionMessagesById,
+    sessionToolCallsById,
+    visibleSessionStreamCounts,
+  ]);
 
   return (
     <div className={className} style={style} data-mission-mobile-pane="chat" data-testid="mission-chat-pane">
@@ -662,6 +772,7 @@ export function MissionChatPane({
                     (session.id === activeSessionId ? activeSessionMessages : EMPTY_MESSAGES)
                   }
                   timelineItems={sessionTimelineById[session.id] ?? EMPTY_TIMELINE_ITEMS}
+                  liveCompactionState={sessionCompactionStates[session.id]}
                   sessionToolCalls={
                     sessionToolCallsById[session.id] ??
                     (session.id === activeSessionId ? activeSessionToolCalls : EMPTY_TOOL_CALLS)
@@ -754,6 +865,7 @@ type MissionChatSessionCardProps = {
   session: SessionSummary;
   sessionMessages: AgentMessage[];
   sessionToolCalls: AgentToolCall[];
+  liveCompactionState?: SessionLiveCompactionState;
   showPermissionWorktree: boolean;
   showThinking: boolean;
   showThinkingToggle: boolean;
@@ -795,6 +907,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   session,
   sessionMessages,
   sessionToolCalls,
+  liveCompactionState,
   showPermissionWorktree,
   showThinking,
   showThinkingToggle,
@@ -901,6 +1014,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
             )
           }
           expandedMessageIds={expandedMessageIds}
+          liveCompactionState={liveCompactionState}
           historyStateBySession={historyStateBySession}
           activityHistoryStateBySession={activityHistoryStateBySession}
           onLoadOlderMessages={onLoadOlderMessages}

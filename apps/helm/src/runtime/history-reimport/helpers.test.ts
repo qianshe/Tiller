@@ -15,6 +15,7 @@ import {
   findAcpReplayCoverageGap,
   readReimportedHistoryPage,
   recoverUserPromptFromSessionSummary,
+  resolveLegacyHistoryBaseline,
   sanitizeRecoveredHistorySequenceResets,
 } from "./helpers.js";
 
@@ -229,6 +230,87 @@ test("readReimportedHistoryPage preserves existing replay timeline instead of re
       "tool_call:2",
     ],
   );
+});
+
+test("resolveLegacyHistoryBaseline falls back to canonical timeline when legacy mirrors are empty", () => {
+  const timeline: SessionTimelineEntry[] = [
+    {
+      id: "user-1",
+      kind: "user_message",
+      message: {
+        id: "user-1",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-05-28T00:00:00.000Z",
+        sequence: 1,
+      },
+      timestamp: "2026-05-28T00:00:00.000Z",
+      updatedAt: "2026-05-28T00:00:00.000Z",
+      sequence: 1,
+    },
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:content",
+        kind: "content",
+        text: "好的",
+        timestamp: "2026-05-28T00:00:01.000Z",
+        sequence: 2,
+      }],
+      timestamp: "2026-05-28T00:00:01.000Z",
+      updatedAt: "2026-05-28T00:00:01.000Z",
+      sequence: 2,
+    },
+    {
+      id: "tool:cmd-1",
+      kind: "tool_call",
+      toolCall: {
+        id: "cmd-1",
+        commandId: "cmd-1",
+        kind: "shell",
+        title: "Shell",
+        status: "completed",
+        output: "ok",
+        stream: "stdout",
+        timestamp: "2026-05-28T00:00:02.000Z",
+        updatedAt: "2026-05-28T00:00:03.000Z",
+        sequence: 3,
+      },
+      timestamp: "2026-05-28T00:00:02.000Z",
+      updatedAt: "2026-05-28T00:00:03.000Z",
+      sequence: 3,
+    },
+  ];
+
+  const baseline = resolveLegacyHistoryBaseline({
+    messages: [],
+    artifacts: {
+      outputs: [],
+      diffs: [{ path: "file.ts", status: "modified", additions: 1, deletions: 0 }],
+      toolCalls: [],
+    },
+    timeline,
+  });
+
+  assert.deepEqual(
+    baseline.messages.map((message) => [message.id, message.text]),
+    [
+      ["user-1", "继续"],
+      ["assistant-1", "好的"],
+    ],
+  );
+  assert.deepEqual(
+    baseline.artifacts.toolCalls.map((toolCall) => toolCall.id),
+    ["cmd-1"],
+  );
+  assert.deepEqual(
+    baseline.artifacts.outputs.map((output) => [output.commandId, output.text]),
+    [["cmd-1", "ok"]],
+  );
+  assert.deepEqual(baseline.artifacts.diffs, [
+    { path: "file.ts", status: "modified", additions: 1, deletions: 0 },
+  ]);
 });
 
 test("sanitizeRecoveredHistorySequenceResets clears stale low sequences after a later timestamp gap", () => {

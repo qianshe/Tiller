@@ -14,6 +14,7 @@ import {
   resolveAcpAgentAdapter,
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
+  resolveAdapterCompactionDetailsVisibility,
   resolveAdapterRequestTimeout,
   resolveAdapterPluginManifest,
   readAdapterTranscriptMessages,
@@ -278,6 +279,12 @@ test("resolveAdapterCleanupPlan delegates provider-native cleanup to adapters", 
     message: "OpenClaw does not expose remote session deletion yet.",
   });
   assert.equal(resolveAdapterCleanupPlan({ id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" }, "runtime-1").kind, "unsupported");
+});
+
+test("resolveAdapterCompactionDetailsVisibility keeps provider-specific compaction UI policy behind adapters", () => {
+  assert.equal(resolveAdapterCompactionDetailsVisibility("codex"), "hidden");
+  assert.equal(resolveAdapterCompactionDetailsVisibility("claude-acp"), undefined);
+  assert.equal(resolveAdapterCompactionDetailsVisibility(undefined), undefined);
 });
 
 test("resolvePreferredAgentId normalizes configured display agents", () => {

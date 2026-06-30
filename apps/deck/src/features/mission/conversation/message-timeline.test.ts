@@ -5,7 +5,7 @@ import { resolveConversationHistoryState } from "./message-timeline.js";
 test("conversation history only advertises more context when a cursor is loadable", () => {
   assert.deepEqual(
     resolveConversationHistoryState(
-      { hasMore: true, timelineHasMore: true, loading: false },
+      { hasMore: true, loading: false },
       { hasMore: true, loading: false },
     ),
     { hasMore: false, canLoadMore: false, loading: false },
@@ -14,14 +14,13 @@ test("conversation history only advertises more context when a cursor is loadabl
   assert.deepEqual(
     resolveConversationHistoryState(
       {
-        hasMore: false,
-        timelineHasMore: true,
-        timelineNextCursor: "timeline-cursor",
+        hasMore: true,
+        nextCursor: "timeline-cursor",
         loading: false,
       },
       undefined,
     ),
-    { hasMore: true, canLoadMore: true, timelineHasMore: true, loading: false },
+    { hasMore: true, canLoadMore: true, loading: false },
   );
 
   assert.deepEqual(

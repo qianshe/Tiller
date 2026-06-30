@@ -22,15 +22,20 @@ import {
   type PositionedSessionTimelineEntry,
 } from "../timeline-block-codec";
 import {
-  pageSessionTimeline,
+  buildSessionTimelineMessageGroupAnchors,
+  decodeSessionTimelineOrderCursor,
+  encodeSessionTimelineOrderCursor,
+  type SessionTimelinePositionedEntry,
   type SessionTimelinePageOptions,
 } from "../timeline-store";
+import type { SessionTimelineStore } from "../session-stores";
 import { openSessionDatabase } from "./core";
 import {
   createSqliteTimelineBlockIndex,
   type TimelineBlockRecord,
   type TimelineBlockState,
 } from "./timeline-block-index";
+import { createSqliteTimelineMessageAnchorIndex } from "./timeline-message-anchor-index";
 
 export type SqliteTimelineBlockStoreOptions = {
   dbPath: string;
@@ -43,11 +48,13 @@ export type SqliteTimelineBlockStoreOptions = {
 
 const DEFAULT_TIMELINE_PAGE_LIMIT = 50;
 const MAX_TIMELINE_PAGE_LIMIT = 200;
-const ORDER_CURSOR_PREFIX = "order";
 
-export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStoreOptions) {
+export function createSqliteTimelineBlockStore(
+  options: SqliteTimelineBlockStoreOptions,
+): SessionTimelineStore & { close(): void } {
   const db = openSessionDatabase(options.dbPath);
   const index = createSqliteTimelineBlockIndex(db);
+  const anchorIndex = createSqliteTimelineMessageAnchorIndex(db);
   const blockRootPath = options.blockRootPath;
   const maxBlockBytes = Math.max(1, options.maxBlockBytes);
   const maxBlockEntries = Math.max(1, options.maxBlockEntries);
@@ -68,6 +75,7 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
           writeBlockFile(nextBlock, entries);
           index.upsertBlock(nextBlock);
           index.replaceBlockEntries(nextBlock.id, blockEntryRecords(sessionId, nextBlock.id, entries));
+          replaceSessionTimelineMessageAnchors(sessionId);
           return normalizeTimelineEntry(entry);
         }
       }
@@ -78,6 +86,7 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
     const positioned = positionEntry(position, normalizeTimelineEntry(entry));
     if (!openBlock) {
       writeNewOpenBlock(sessionId, [positioned]);
+      replaceSessionTimelineMessageAnchors(sessionId);
       return positioned.payload;
     }
 
@@ -97,6 +106,7 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
       index.upsertBlock(sealed);
       index.replaceBlockEntries(sealed.id, blockEntryRecords(sessionId, sealed.id, openEntries));
       writeNewOpenBlock(sessionId, [positioned]);
+      replaceSessionTimelineMessageAnchors(sessionId);
       return positioned.payload;
     }
 
@@ -112,6 +122,7 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
     writeBlockFile(nextOpen, candidateEntries);
     index.upsertBlock(nextOpen);
     index.replaceBlockEntries(nextOpen.id, blockEntryRecords(sessionId, nextOpen.id, candidateEntries));
+    replaceSessionTimelineMessageAnchors(sessionId);
     return positioned.payload;
   }
 
@@ -201,6 +212,44 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
     return result;
   }
 
+  function readPositionedEntriesInRange(
+    sessionId: string,
+    startInclusive: number,
+    beforeExclusive?: number,
+  ) {
+    const result: PositionedSessionTimelineEntry[] = [];
+    let blockBefore = beforeExclusive;
+    while (true) {
+      const blocks = index.listNewestBlocks(sessionId, blockBefore, 50);
+      if (!blocks.length) {
+        break;
+      }
+      let exhaustedRange = false;
+      for (const block of blocks) {
+        if (block.lastPosition < startInclusive) {
+          exhaustedRange = true;
+          break;
+        }
+        const entries = readBlockEntries(block).filter((entry) =>
+          entry.position >= startInclusive &&
+          (beforeExclusive === undefined || entry.position < beforeExclusive)
+        );
+        if (entries.length > 0) {
+          result.push(...entries);
+        }
+      }
+      if (exhaustedRange) {
+        break;
+      }
+      const oldestBlock = blocks.at(-1);
+      if (!oldestBlock || oldestBlock.firstPosition <= startInclusive) {
+        break;
+      }
+      blockBefore = oldestBlock.firstPosition;
+    }
+    return result.sort((left, right) => left.position - right.position);
+  }
+
   function replaceBlocksForSession(sessionId: string, entries: SessionTimelineEntry[]) {
     const sorted = sortSessionTimelineEntries(entries).map(normalizeTimelineEntry);
     const built = buildBlockSet(sessionId, sorted);
@@ -231,6 +280,15 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
       try {
         renameSync(tempSessionPath, sessionPath);
         index.replaceBlocks(sessionId, built.blocks.map((block) => block.record), built.entryRecords);
+        anchorIndex.replaceSessionAnchors(
+          sessionId,
+          buildSessionTimelineMessageGroupAnchors(
+            built.positionedEntries.map((entry) => ({
+              position: entry.position,
+              entry: entry.payload,
+            })),
+          ),
+        );
         if (existsSync(backupPath)) {
           rmSync(backupPath, { force: true, recursive: true });
         }
@@ -254,9 +312,11 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
   function buildBlockSet(sessionId: string, entries: SessionTimelineEntry[]) {
     const blocks: Array<{ record: TimelineBlockRecord; entries: PositionedSessionTimelineEntry[] }> = [];
     const entryRecords: ReturnType<typeof blockEntryRecords> = [];
+    const positionedEntries: PositionedSessionTimelineEntry[] = [];
     let current: PositionedSessionTimelineEntry[] = [];
     entries.forEach((entry, position) => {
       const positioned = positionEntry(position, entry);
+      positionedEntries.push(positioned);
       const candidate = [...current, positioned];
       if (current.length > 0 && exceedsOpenBlockLimit(candidate)) {
         blocks.push(createBuiltBlock(sessionId, current, "sealed"));
@@ -271,7 +331,7 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
     for (const block of blocks) {
       entryRecords.push(...blockEntryRecords(sessionId, block.record.id, block.entries));
     }
-    return { blocks, entryRecords };
+    return { blocks, entryRecords, positionedEntries };
   }
 
   function createBuiltBlock(
@@ -321,30 +381,74 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
   }
 
   function listPage(sessionId: string, pageOptions: SessionTimelinePageOptions = {}) {
+    if (pageOptions.window === "message") {
+      return listMessageWindowPage(sessionId, pageOptions);
+    }
+    return listEntryWindowPage(sessionId, pageOptions);
+  }
+
+  function listEntryWindowPage(sessionId: string, pageOptions: SessionTimelinePageOptions = {}) {
     const limit = normalizePageLimit(
       pageOptions.limit,
       DEFAULT_TIMELINE_PAGE_LIMIT,
       MAX_TIMELINE_PAGE_LIMIT,
     );
-    const entryLimit = pageOptions.window === "message"
-      ? normalizePageLimit(pageOptions.entryLimit, MAX_TIMELINE_PAGE_LIMIT, MAX_TIMELINE_PAGE_LIMIT)
-      : limit;
-    const candidateLimit = Math.max(limit, entryLimit);
-    const before = decodeOrderCursor(pageOptions.before);
-    const newest = readNewestPositionedEntries(sessionId, before?.position, candidateLimit + 1);
-    const hasOlderRows = newest.length > candidateLimit;
-    const candidateRows = newest.slice(0, candidateLimit).reverse();
+    const before = decodeSessionTimelineOrderCursor(pageOptions.before);
+    const newest = readNewestPositionedEntries(sessionId, before?.position, limit + 1);
+    const hasOlderRows = newest.length > limit;
+    const candidateRows = newest.slice(0, limit).reverse();
     const entries = candidateRows.map((row) => normalizeTimelineEntry(row.payload));
-    const page = pageSessionTimeline(entries, { ...pageOptions, before: undefined });
-    const hasMore = hasOlderRows || page.hasMore;
     return {
-      entries: page.entries,
-      nextCursor: hasMore ? encodeOrderCursor(resolvePageStartRow(candidateRows, page.entries)) : undefined,
+      entries,
+      nextCursor: hasOlderRows
+        ? encodeSessionTimelineOrderCursor(candidateRows[0]?.position, candidateRows[0]?.id)
+        : undefined,
+      hasMore: hasOlderRows,
+    };
+  }
+
+  function listMessageWindowPage(sessionId: string, pageOptions: SessionTimelinePageOptions = {}) {
+    const limit = normalizePageLimit(
+      pageOptions.limit,
+      DEFAULT_TIMELINE_PAGE_LIMIT,
+      MAX_TIMELINE_PAGE_LIMIT,
+    );
+    ensureSessionTimelineMessageAnchors(sessionId);
+    const before = decodeSessionTimelineOrderCursor(pageOptions.before);
+    const currentAnchor = before
+      ? anchorIndex.getAnchor(sessionId, before.position, before.id)
+      : undefined;
+    const anchors = anchorIndex.listNewestAnchors(sessionId, before?.position, limit + 1);
+    if (!anchors.length) {
+      return listEntryWindowPage(sessionId, {
+        ...pageOptions,
+        window: "entry",
+        before: currentAnchor
+          ? encodeSessionTimelineOrderCursor(currentAnchor.startPosition, currentAnchor.groupId)
+          : pageOptions.before,
+      });
+    }
+    const hasMore = anchors.length > limit;
+    const selected = anchors.slice(0, limit);
+    const oldestAnchor = selected.at(-1);
+    if (!oldestAnchor) {
+      return { entries: [], hasMore: false };
+    }
+    const positioned = readPositionedEntriesInRange(
+      sessionId,
+      oldestAnchor.startPosition,
+      currentAnchor?.startPosition,
+    );
+    return {
+      entries: positioned.map((entry) => normalizeTimelineEntry(entry.payload)),
+      nextCursor: hasMore
+        ? encodeSessionTimelineOrderCursor(oldestAnchor.anchorPosition, oldestAnchor.groupId)
+        : undefined,
       hasMore,
     };
   }
 
-  return {
+  const store = {
     append(sessionId: string, entry: SessionTimelineEntry) {
       upsertEntry(sessionId, entry);
       return this.list(sessionId);
@@ -388,6 +492,7 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
     listPage,
     remove(sessionId: string) {
       index.removeSession(sessionId);
+      anchorIndex.removeSession(sessionId);
       const sessionPath = join(blockRootPath, encodeSessionId(sessionId));
       rmSync(sessionPath, { force: true, recursive: true });
     },
@@ -395,6 +500,7 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
       db.close();
     },
   };
+  return store as SessionTimelineStore & { close(): void };
 
   function readExistingEntry(sessionId: string, entryId: string) {
     const location = index.getEntryLocation(sessionId, entryId);
@@ -402,6 +508,25 @@ export function createSqliteTimelineBlockStore(options: SqliteTimelineBlockStore
     return block
       ? readBlockEntries(block).find((entry) => entry.id === entryId)?.payload
       : undefined;
+  }
+
+  function ensureSessionTimelineMessageAnchors(sessionId: string) {
+    if (anchorIndex.listNewestAnchors(sessionId, undefined, 1).length > 0) {
+      return;
+    }
+    replaceSessionTimelineMessageAnchors(sessionId);
+  }
+
+  function replaceSessionTimelineMessageAnchors(sessionId: string) {
+    const anchors = buildSessionTimelineMessageGroupAnchors(
+      readNewestPositionedEntries(sessionId, undefined, Number.MAX_SAFE_INTEGER)
+        .reverse()
+        .map((entry) => ({
+          position: entry.position,
+          entry: normalizeTimelineEntry(entry.payload),
+        })) satisfies SessionTimelinePositionedEntry[],
+    );
+    anchorIndex.replaceSessionAnchors(sessionId, anchors);
   }
 }
 
@@ -472,33 +597,4 @@ function createStorageKey(sessionId: string, blockId: string) {
 
 function encodeSessionId(sessionId: string) {
   return encodeURIComponent(sessionId).replace(/[!'()*]/gu, (value) => `%${value.codePointAt(0)?.toString(16).toUpperCase()}`);
-}
-
-function encodeOrderCursor(row: PositionedSessionTimelineEntry | undefined) {
-  return row ? `${ORDER_CURSOR_PREFIX}\t${row.position}\t${row.id}` : undefined;
-}
-
-function decodeOrderCursor(cursor: string | undefined) {
-  if (!cursor) {
-    return null;
-  }
-  const [prefix, position] = cursor.split("\t");
-  if (prefix !== ORDER_CURSOR_PREFIX || !position) {
-    return null;
-  }
-  const parsedPosition = Number.parseInt(position, 10);
-  return Number.isFinite(parsedPosition) && parsedPosition >= 0
-    ? { position: parsedPosition }
-    : null;
-}
-
-function resolvePageStartRow(
-  rows: PositionedSessionTimelineEntry[],
-  entries: SessionTimelineEntry[],
-) {
-  const firstEntry = entries[0];
-  if (!firstEntry) {
-    return undefined;
-  }
-  return rows.find((row) => row.id === firstEntry.id);
 }

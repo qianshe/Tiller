@@ -21,7 +21,6 @@ import { promptSession } from "./prompt-rpc";
 import {
   checkResume,
   getArtifacts,
-  listMessages,
   listSessions,
   listTimeline,
   reimportHistory,
@@ -29,7 +28,6 @@ import {
   subscribeSession,
   unsubscribeSession,
 } from "./session-query-rpc";
-import { listSessionUpdates } from "./session-updates-rpc";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 
 export { resolveProjectSessionWorktree } from "./session-worktree";
@@ -46,18 +44,8 @@ export async function handleSessionRpcRequest(
       return subscribeSession(params as { sessionId: string }, context);
     case "session/unsubscribe":
       return unsubscribeSession(params as { sessionId: string }, context);
-    case "session/list_messages":
-      return listMessages(
-        params as { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
-        context,
-      );
     case "session/list_timeline":
       return listTimeline(
-        params as { sessionId: string; limit?: number; before?: string },
-        context,
-      );
-    case "session/list_updates":
-      return listSessionUpdates(
         params as { sessionId: string; limit?: number; before?: string },
         context,
       );

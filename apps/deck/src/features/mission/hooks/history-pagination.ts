@@ -87,10 +87,10 @@ export function useHistoryPagination({
       messageState: messageHistoryState[sessionId],
       activityState: activityHistoryState[sessionId],
     });
-    if (!client || (!plan.listMessages && !plan.getArtifacts)) {
+    if (!client || (!plan.listTimeline && !plan.getArtifacts)) {
       return;
     }
-    if (plan.listMessages) {
+    if (plan.listTimeline) {
       setMessageHistoryState((current) => ({
         ...current,
         [sessionId]: {
@@ -99,7 +99,7 @@ export function useHistoryPagination({
           loading: true,
         },
       }));
-      void dispatch(client, "session/list_messages", plan.listMessages);
+      void dispatch(client, "session/list_timeline", plan.listTimeline);
     }
     if (plan.getArtifacts) {
       loadOlderActivities(sessionId);

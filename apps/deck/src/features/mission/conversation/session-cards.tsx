@@ -292,6 +292,15 @@ export function SessionCard({
   }, [onDismissCompletedPlan, plan, planKey, session.id]);
 
   useEffect(() => {
+    if (plan && isAgentPlanComplete(plan) && onDismissCompletedPlan) {
+      const timer = setTimeout(() => {
+        onDismissCompletedPlan(session.id, createAgentPlanDismissalKey(plan));
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [plan, onDismissCompletedPlan, session.id]);
+
+  useEffect(() => {
     if (
       (dockPanelPreference === "promptQueue" && !hasPromptQueueDock) ||
       (dockPanelPreference === "plan" && !hasPlanDock)

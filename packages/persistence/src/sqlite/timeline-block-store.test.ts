@@ -8,6 +8,18 @@ import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/
 import { createSqliteSessionTimelineStore } from "./timeline-store";
 import { createSqliteTimelineBlockStore } from "./timeline-block-store";
 
+type InternalTimelineBlockStore = ReturnType<typeof createSqliteTimelineBlockStore> & {
+  append(sessionId: string, entry: SessionTimelineEntry): SessionTimelineEntry[];
+  upsertMessage(sessionId: string, message: AgentMessage): SessionTimelineEntry | undefined;
+  upsertToolCall(sessionId: string, toolCall: AgentToolCall): SessionTimelineEntry | undefined;
+};
+
+type InternalTimelineRowStore = ReturnType<typeof createSqliteSessionTimelineStore> & {
+  append(sessionId: string, entry: SessionTimelineEntry): SessionTimelineEntry[];
+  upsertMessage(sessionId: string, message: AgentMessage): SessionTimelineEntry | undefined;
+  upsertToolCall(sessionId: string, toolCall: AgentToolCall): SessionTimelineEntry | undefined;
+};
+
 const BASE_TIME = "2026-06-01T00:00:00.000Z";
 const { DatabaseSync } = createRequire(import.meta.url)(
   "node:sqlite",
@@ -45,7 +57,7 @@ function toolCall(
   };
 }
 
-function withStore(run: (params: { store: ReturnType<typeof createSqliteTimelineBlockStore>; dbPath: string; blockRootPath: string }) => void) {
+function withStore(run: (params: { store: InternalTimelineBlockStore; dbPath: string; blockRootPath: string }) => void) {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-block-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
   const blockRootPath = join(tempDir, "timeline-blocks");
@@ -54,7 +66,7 @@ function withStore(run: (params: { store: ReturnType<typeof createSqliteTimeline
     blockRootPath,
     maxBlockBytes: 4096,
     maxBlockEntries: 2,
-  });
+  }) as InternalTimelineBlockStore;
   try {
     run({ store, dbPath, blockRootPath });
   } finally {
@@ -97,7 +109,7 @@ test("timeline block store seals by byte threshold", () => {
     blockRootPath: join(tempDir, "timeline-blocks"),
     maxBlockBytes: 1,
     maxBlockEntries: 100,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
     store.append("session-1", assistantEntry(0));
@@ -165,7 +177,7 @@ test("timeline block store paginates older entries within the same block", () =>
     blockRootPath: join(tempDir, "timeline-blocks"),
     maxBlockBytes: 4096,
     maxBlockEntries: 10,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
     for (let index = 0; index < 5; index += 1) {
@@ -232,7 +244,7 @@ test("timeline block store recovers when an indexed block file is missing", () =
     blockRootPath,
     maxBlockBytes: 4096,
     maxBlockEntries: 2,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
     store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "first", sequence: 1 }));
@@ -264,7 +276,7 @@ test("timeline block store keeps previous session data when replace fails while 
     blockRootPath,
     maxBlockBytes: 4096,
     maxBlockEntries: 1,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
     store.replace("session-1", [assistantEntry(0)]);
@@ -276,7 +288,7 @@ test("timeline block store keeps previous session data when replace fails while 
       maxBlockBytes: 4096,
       maxBlockEntries: 1,
       testFailureAfterTempBlockWrites: 1,
-    });
+    }) as InternalTimelineBlockStore;
     try {
       assert.throws(
         () => failingStore.replace("session-1", [assistantEntry(1), assistantEntry(2)]),
@@ -297,13 +309,13 @@ test("timeline block store keeps previous session data when replace fails while 
 
 test("timeline block store matches sqlite row store page contract", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-block-contract-"));
-  const rowStore = createSqliteSessionTimelineStore(join(tempDir, "rows.sqlite"));
+  const rowStore = createSqliteSessionTimelineStore(join(tempDir, "rows.sqlite")) as InternalTimelineRowStore;
   const blockStore = createSqliteTimelineBlockStore({
     dbPath: join(tempDir, "blocks.sqlite"),
     blockRootPath: join(tempDir, "timeline-blocks"),
     maxBlockBytes: 4096,
     maxBlockEntries: 2,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
     const entries = Array.from({ length: 5 }, (_, index) => assistantEntry(index));

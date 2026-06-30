@@ -11,11 +11,12 @@ test("createSessionServices exposes the runtime service graph without starting p
   const services = createSessionServices({
     sessions: new Map(),
     permissionIndex: new Map(),
-    sessionStore: {} as never,
+    sessionStore: { list: () => [] } as never,
     sessionMessageStore: {} as never,
     sessionArtifactStore: {} as never,
     sessionAttachmentStore: {} as never,
     sessionRuntimeStore: {} as never,
+    sessionPlanStore: {} as never,
     sessionTimelineStore: {} as never,
     sessionUpdateStore: {} as never,
     getAgents: () => [],

@@ -91,3 +91,45 @@ test("resolveSessionStreamContentLength grows as streamed text and tool output g
 
   assert.equal(resolveSessionStreamContentLength({}), 0);
 });
+
+test("shouldAutoScrollSessionBody suppresses auto-follow during history restore windows", async () => {
+  const model = await import("./chat-pane-model.js") as Record<string, unknown>;
+  assert.equal(typeof model.shouldAutoScrollSessionBody, "function");
+  const shouldAutoScrollSessionBody = model.shouldAutoScrollSessionBody as (input: {
+    stickToBottom?: boolean;
+    historyLoading?: boolean;
+    historyRevealLocked?: boolean;
+    previousHistoryLoading?: boolean;
+    allowAfterInitialHistoryLoad?: boolean;
+  }) => boolean;
+
+  assert.equal(
+    shouldAutoScrollSessionBody({ stickToBottom: false, historyLoading: false }),
+    false,
+  );
+  assert.equal(
+    shouldAutoScrollSessionBody({ stickToBottom: true, historyLoading: true }),
+    false,
+  );
+  assert.equal(
+    shouldAutoScrollSessionBody({ stickToBottom: true, previousHistoryLoading: true, historyLoading: false }),
+    false,
+  );
+  assert.equal(
+    shouldAutoScrollSessionBody({
+      stickToBottom: true,
+      previousHistoryLoading: true,
+      historyLoading: false,
+      allowAfterInitialHistoryLoad: true,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldAutoScrollSessionBody({ stickToBottom: true, historyLoading: false, historyRevealLocked: true }),
+    false,
+  );
+  assert.equal(
+    shouldAutoScrollSessionBody({ stickToBottom: true, historyLoading: false, historyRevealLocked: false }),
+    true,
+  );
+});

@@ -1,9 +1,4 @@
-import type { AgentPlan, SessionPromptQueueSnapshot } from "@tiller/shared";
-
-export type SessionLiveStateSnapshot = {
-  plan?: AgentPlan;
-  promptQueue?: SessionPromptQueueSnapshot;
-};
+import type { SessionLiveStateSnapshot } from "@tiller/shared";
 
 export type SessionLiveStateStore = {
   get(sessionId: string): SessionLiveStateSnapshot | undefined;

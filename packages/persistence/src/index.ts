@@ -1,5 +1,6 @@
 export * from "./artifact-store";
 export * from "./attachment-store";
+export * from "./artifact-store";
 export * from "./legacy-json-loader";
 export * from "./message-store";
 export * from "./normalize";
@@ -13,6 +14,7 @@ export * from "./timeline-store";
 export {
   createSqliteSessionArtifactStore,
   createSqliteSessionMessageStore,
+  createSqliteSessionPlanStore,
   createSqliteSessionRuntimeStore,
   createSqliteSessionStore,
   initializeSqliteSessionStore,

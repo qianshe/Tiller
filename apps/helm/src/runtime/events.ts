@@ -11,6 +11,7 @@ import {
   persistTimelineTranscriptEvent,
 } from "./session/timeline-effects";
 import { emitFirstHelmPromptTrace } from "./prompt-trace";
+import { routeSessionRuntimeEvent } from "./session-timeline/event-router";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
@@ -122,6 +123,35 @@ export function allocateLiveEventSequence(sessionId: string) {
 
 function nextLiveEventSequence(sessionId: string) {
   return allocateLiveEventSequence(sessionId);
+}
+
+function hasCanonicalTimelinePipeline(
+  context: HelmHandlerContext,
+): context is HelmHandlerContext & Required<Pick<
+  HelmHandlerContext,
+  "sessionTimelineWorkers" | "sessionTimelineDispatcher" | "sessionLiveStateStore"
+>> {
+  return Boolean(
+    context.sessionTimelineWorkers &&
+      context.sessionTimelineDispatcher &&
+      context.sessionLiveStateStore,
+  );
+}
+
+function routeCanonicalTimelineEvent(
+  sessionId: string,
+  event: SessionRuntimeEvent,
+  context: HelmHandlerContext & Required<Pick<
+    HelmHandlerContext,
+    "sessionTimelineWorkers" | "sessionTimelineDispatcher" | "sessionLiveStateStore"
+  >>,
+) {
+  return routeSessionRuntimeEvent(sessionId, event, {
+    workers: context.sessionTimelineWorkers,
+    liveStateStore: context.sessionLiveStateStore,
+    dispatcher: context.sessionTimelineDispatcher,
+    context,
+  });
 }
 
 export function nextLiveEventSequenceForTest(sessionId: string) {
@@ -307,7 +337,11 @@ export function handleRuntimeEvent(
       } else {
         const finalizedThinking = finalizeActiveRuntimeThinking(sessionId);
         if (finalizedThinking) {
-          publishRuntimeToolCall(context, sessionId, finalizedThinking);
+          if (hasCanonicalTimelinePipeline(context)) {
+            routeCanonicalTimelineEvent(sessionId, { type: "tool-call", toolCall: finalizedThinking }, context);
+          } else {
+            publishRuntimeToolCall(context, sessionId, finalizedThinking);
+          }
         }
       }
       logRuntimeInfo(context, "runtime.status.changed", {
@@ -335,25 +369,43 @@ export function handleRuntimeEvent(
           return;
         }
         flushIgnoredUserEchoSummary(sessionId, context);
+        if (hasCanonicalTimelinePipeline(context)) {
+          persistRuntimeSessionUpdate(sessionId, event, context);
+          context.persistSessionMessage(sessionId, event.message);
+          context.updateSessionSummary(sessionId, (current) =>
+            applyUserPromptToSummary(current, event.message.text, event.message.timestamp),
+          );
+          routeCanonicalTimelineEvent(sessionId, event, context);
+          return;
+        }
         publishRuntimeUserMessage(sessionId, event.message, context);
         return;
       }
       const message = {
         ...event.message,
         id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
-        sequence: nextLiveEventSequence(sessionId),
       };
-      persistRuntimeSessionUpdate(sessionId, { ...event, message }, context, message.sequence);
       emitFirstHelmPromptTrace(context, {
         sessionId,
         phase: "helm.runtime.first_message",
         meta: { chars: message.text.length },
       });
       clearActiveRuntimeThinking(sessionId);
+      if (hasCanonicalTimelinePipeline(context)) {
+        persistRuntimeSessionUpdate(sessionId, { ...event, message }, context);
+        context.updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, message));
+        routeCanonicalTimelineEvent(sessionId, { ...event, message }, context);
+        return;
+      }
+      const orderedMessage = {
+        ...message,
+        sequence: nextLiveEventSequence(sessionId),
+      };
+      persistRuntimeSessionUpdate(sessionId, { ...event, message: orderedMessage }, context, orderedMessage.sequence);
       if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
         flushLiveAssistantMessage(sessionId, context);
       }
-      const bufferedMessage = context.liveMessageBuffer.append(sessionId, message);
+      const bufferedMessage = context.liveMessageBuffer.append(sessionId, orderedMessage);
       createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "agent_message",
         message: bufferedMessage,
@@ -361,9 +413,13 @@ export function handleRuntimeEvent(
       });
       return;
     case "compaction":
+      persistRuntimeSessionUpdate(sessionId, event, context);
+      if (hasCanonicalTimelinePipeline(context)) {
+        routeCanonicalTimelineEvent(sessionId, event, context);
+        return;
+      }
       flushLiveAssistantMessage(sessionId, context);
       startNextAssistantResponseSegment(sessionId);
-      persistRuntimeSessionUpdate(sessionId, event, context);
       createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "compaction_state",
         phase: event.phase,
@@ -408,6 +464,10 @@ export function handleRuntimeEvent(
     case "plan-update":
       persistRuntimeSessionUpdate(sessionId, event, context);
       logRuntimePlanUpdate(sessionId, event, context);
+      if (hasCanonicalTimelinePipeline(context)) {
+        routeCanonicalTimelineEvent(sessionId, event, context);
+        return;
+      }
       createSessionEventPublisher(context).sessionUpdate(sessionId, {
         kind: "plan_update",
         plan: event.plan,
@@ -420,16 +480,36 @@ export function handleRuntimeEvent(
         meta: { kind: event.toolCall.kind },
       });
       if (event.toolCall.kind === "think") {
-        const toolCall = normalizeRuntimeThinkingToolCall(sessionId, {
+        const toolCall = normalizeRuntimeThinkingToolCall(sessionId, event.toolCall);
+        if (hasCanonicalTimelinePipeline(context)) {
+          persistRuntimeSessionUpdate(sessionId, { ...event, toolCall }, context);
+          routeCanonicalTimelineEvent(sessionId, { ...event, toolCall }, context);
+          return;
+        }
+        const orderedThinkingToolCall = {
+          ...toolCall,
+          sequence: nextLiveEventSequence(sessionId),
+        };
+        persistRuntimeSessionUpdate(
+          sessionId,
+          { ...event, toolCall: orderedThinkingToolCall },
+          context,
+          orderedThinkingToolCall.sequence,
+        );
+        publishRuntimeToolCall(context, sessionId, orderedThinkingToolCall);
+        return;
+      }
+      bumpAssistantStreamSegment(sessionId);
+      if (hasCanonicalTimelinePipeline(context)) {
+        persistRuntimeSessionUpdate(sessionId, event, context);
+        routeCanonicalTimelineEvent(sessionId, event, context);
+        publishRuntimeToolCall(context, sessionId, {
           ...event.toolCall,
           sequence: nextLiveEventSequence(sessionId),
         });
-        persistRuntimeSessionUpdate(sessionId, { ...event, toolCall }, context, toolCall.sequence);
-        publishRuntimeToolCall(context, sessionId, toolCall);
         return;
       }
       flushLiveAssistantMessage(sessionId, context);
-      bumpAssistantStreamSegment(sessionId);
       const orderedToolCall = {
         ...event.toolCall,
         sequence: nextLiveEventSequence(sessionId),
@@ -448,8 +528,29 @@ export function handleRuntimeEvent(
         phase: "helm.runtime.first_command_output",
         meta: { commandId: event.chunk.commandId, stream: event.chunk.stream },
       });
-      flushLiveAssistantMessage(sessionId, context);
       bumpAssistantStreamSegment(sessionId);
+      if (hasCanonicalTimelinePipeline(context)) {
+        persistRuntimeSessionUpdate(sessionId, event, context);
+        routeCanonicalTimelineEvent(sessionId, event, context);
+        const orderedChunkForArtifacts = {
+          ...event.chunk,
+          sequence: nextLiveEventSequence(sessionId),
+        };
+        recordCommandOutputSummary(sessionId, event.chunk, orderedChunkForArtifacts.sequence);
+        publishRuntimeCommandOutput(
+          context,
+          sessionId,
+          orderedChunkForArtifacts,
+          event.toolCall
+            ? {
+                ...event.toolCall,
+                sequence: orderedChunkForArtifacts.sequence,
+              }
+            : undefined,
+        );
+        return;
+      }
+      flushLiveAssistantMessage(sessionId, context);
       const orderedChunk = {
         ...event.chunk,
         sequence: nextLiveEventSequence(sessionId),

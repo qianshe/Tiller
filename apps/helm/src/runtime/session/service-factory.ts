@@ -37,6 +37,9 @@ import { createSessionResumeService } from "./resume-service";
 import { createSessionDiffHydrationService } from "./diff-hydration";
 import { createSessionSummaryHydrationService } from "./summary-hydration";
 import { createRuntimeDescriptorService } from "../descriptor-service";
+import { createSessionTimelineDispatcher } from "../session-timeline/dispatcher";
+import { createSessionLiveStateStore } from "../session-timeline/live-state-store";
+import { createSessionTimelineWorkerRegistry } from "../session-timeline/worker-registry";
 import {
   clearRecoveredArtifactTimelineSequences,
   chooseRecoverySummary,
@@ -44,6 +47,7 @@ import {
   preservePreviousUserPromptsAfterReimport,
   readReimportedHistoryPage,
   recoverUserPromptFromSessionSummary,
+  resolveLegacyHistoryBaseline,
   sanitizeRecoveredHistorySequenceResets,
 } from "../history-reimport/helpers";
 import { resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary } from "./worktree-resolution";
@@ -78,6 +82,7 @@ export type SessionServicesOptions = {
   sessionArtifactStore: HelmSessionStores["sessionArtifactStore"];
   sessionAttachmentStore: HelmSessionStores["sessionAttachmentStore"];
   sessionRuntimeStore: HelmSessionStores["sessionRuntimeStore"];
+  sessionPlanStore: HelmSessionStores["sessionPlanStore"];
   sessionTimelineStore: HelmSessionStores["sessionTimelineStore"];
   sessionUpdateStore: HelmSessionStores["sessionUpdateStore"];
   getAgents: () => AcpAgentProvider[];
@@ -167,6 +172,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionArtifactStore: options.sessionArtifactStore,
     sessionAttachmentStore: options.sessionAttachmentStore,
     sessionRuntimeStore: options.sessionRuntimeStore,
+    sessionPlanStore: options.sessionPlanStore,
     sessionTimelineStore: options.sessionTimelineStore,
     sessionUpdateStore: options.sessionUpdateStore,
     getAgents: options.getAgents,
@@ -175,6 +181,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logInfo: options.logInfo,
     logError: options.logError,
   });
+  providerHistory.migrateLegacySessionHistory();
   const diffHydration = createSessionDiffHydrationService({
     sessions: options.sessions,
     sessionStore: options.sessionStore,
@@ -193,6 +200,17 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
   const runtimeDescriptorService = createRuntimeDescriptorService({
     sessionRuntimeStore: options.sessionRuntimeStore,
     getAgents: options.getAgents,
+  });
+  const sessionTimelineWorkers = createSessionTimelineWorkerRegistry();
+  const sessionLiveStateStore = createSessionLiveStateStore();
+  const sessionTimelineDispatcher = createSessionTimelineDispatcher({
+    store: options.sessionTimelineStore,
+    publish: (sessionId, batch) => {
+      createSessionEventPublisher(options.createHandlerContext()).sessionUpdate(sessionId, {
+        kind: "timeline_batch",
+        batch,
+      });
+    },
   });
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
@@ -251,10 +269,15 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     }
     const recoverySummary = chooseRecoverySummary(summary, storedSummary);
 
-    const previousMessages = options.sessionMessageStore.list(sessionId);
-    const previousArtifacts = options.sessionArtifactStore.get(sessionId);
-    const previousPlan = providerHistory.readSessionPlan(sessionId);
     const previousTimeline = options.sessionTimelineStore.list(sessionId);
+    const previousBaseline = resolveLegacyHistoryBaseline({
+      messages: options.sessionMessageStore.list(sessionId),
+      artifacts: options.sessionArtifactStore.get(sessionId),
+      timeline: previousTimeline,
+    });
+    const previousMessages = previousBaseline.messages;
+    const previousArtifacts = previousBaseline.artifacts;
+    const previousPlan = providerHistory.readSessionPlan(sessionId);
     const restorePreviousLocalHistory = () => {
       options.sessionMessageStore.replace(sessionId, previousMessages);
       options.sessionArtifactStore.remove(sessionId);
@@ -495,7 +518,11 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     reimportSessionHistory,
     refreshAuthoritativeSessionHistory: providerHistory.refreshAuthoritativeSessionHistory,
     readSessionPlan: providerHistory.readSessionPlan,
+    readSessionLiveState: sessionLiveStateStore.get,
     scheduleDeckClientDraftDiscard: runtimeDraftRegistry.scheduleDeckClientDraftDiscard,
+    sessionLiveStateStore,
+    sessionTimelineDispatcher,
+    sessionTimelineWorkers,
     startSessionResume: sessionResume.startSessionResume,
     takeRuntimeDraft: runtimeDraftRegistry.takeRuntimeDraft,
     updateSessionSummary,

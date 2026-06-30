@@ -1,4 +1,5 @@
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { SessionLiveStateSnapshot } from "@tiller/shared";
 import type { HelmHandlerContext } from "../../handlers/context";
 import type { SessionTimelineWorkerRegistry } from "./worker-registry";
 import type { SessionLiveStateStore } from "./live-state-store";
@@ -31,8 +32,14 @@ export function routeSessionRuntimeEvent(
     }
     case "compaction": {
       if (event.phase === "started") {
-        deps.liveStateStore.patch(sessionId, {});
-        broadcastCompactionState(sessionId, event, deps.context);
+        const snapshot = deps.liveStateStore.patch(sessionId, {
+          compactionState: {
+            phase: "started",
+            source: event.source,
+            timestamp: event.timestamp,
+          },
+        });
+        publishLiveState(sessionId, snapshot, deps.context);
         return "live_state" as const;
       }
       const worker = deps.workers.forSession(sessionId);
@@ -41,12 +48,17 @@ export function routeSessionRuntimeEvent(
       for (const batch of batches) {
         deps.dispatcher.dispatch(sessionId, batch);
       }
-      broadcastCompactionState(sessionId, event, deps.context);
+      const snapshot = deps.liveStateStore.patch(sessionId, {
+        compactionState: undefined,
+      });
+      publishLiveState(sessionId, snapshot, deps.context);
       return "timeline" as const;
     }
-    case "plan-update":
-      deps.liveStateStore.patch(sessionId, { plan: event.plan });
+    case "plan-update": {
+      const snapshot = deps.liveStateStore.patch(sessionId, { plan: event.plan });
+      publishLiveState(sessionId, snapshot, deps.context);
       return "live_state" as const;
+    }
     case "permission-request":
     case "diff-update":
     case "error":
@@ -61,16 +73,13 @@ export function routeSessionRuntimeEvent(
   }
 }
 
-function broadcastCompactionState(
+function publishLiveState(
   sessionId: string,
-  event: Extract<SessionRuntimeEvent, { type: "compaction" }>,
+  snapshot: SessionLiveStateSnapshot,
   context: HelmHandlerContext,
 ) {
   createSessionEventPublisher(context).sessionUpdate(sessionId, {
-    kind: "compaction_state",
-    phase: event.phase,
-    source: event.source,
-    timestamp: event.timestamp,
-    summaryText: event.summaryText,
+    kind: "live_state",
+    snapshot,
   });
 }

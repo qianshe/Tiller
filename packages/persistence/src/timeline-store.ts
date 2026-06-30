@@ -1,5 +1,10 @@
-import type { SessionTimelineBatch, SessionTimelineEntry } from "@tiller/shared";
-import { isLaterReplayDuplicate, normalizeComparableReplayText, sortAssistantTimelineChunks } from "@tiller/shared";
+import type { SessionTimelineBatch } from "@tiller/shared";
+import {
+  isLaterReplayDuplicate,
+  normalizeComparableReplayText,
+  sortAssistantTimelineChunks,
+  type SessionTimelineEntry,
+} from "@tiller/shared";
 import { normalizePageLimit } from "./pagination";
 
 export type SessionTimelinePageOptions = {
@@ -13,6 +18,19 @@ export type SessionTimelinePage = {
   entries: SessionTimelineEntry[];
   nextCursor?: string;
   hasMore: boolean;
+};
+
+export type SessionTimelinePositionedEntry = {
+  position: number;
+  entry: SessionTimelineEntry;
+};
+
+export type SessionTimelineMessageGroupAnchor = {
+  groupId: string;
+  groupKind: "user" | "assistant";
+  anchorPosition: number;
+  startPosition: number;
+  anchorTimestamp: string;
 };
 
 const DEFAULT_TIMELINE_PAGE_LIMIT = 50;
@@ -147,22 +165,14 @@ function toReplayDuplicateTimelineObservation(
 
 function resolveMessageWindowAnchorIndexes(entries: SessionTimelineEntry[]) {
   const indexes: number[] = [];
-  let previousAssistantGroupKey: string | undefined;
+  const seenGroupIds = new Set<string>();
   entries.forEach((entry, index) => {
-    if (entry.kind === "user_message" || entry.kind === "system_message") {
-      indexes.push(index);
-      previousAssistantGroupKey = undefined;
+    const groupId = resolveSessionTimelineMessageGroupId(entry);
+    if (!groupId || seenGroupIds.has(groupId)) {
       return;
     }
-    if (isAssistantContentWindowAnchor(entry)) {
-      const groupKey = assistantMessageWindowGroupKey(entry);
-      if (groupKey !== previousAssistantGroupKey) {
-        indexes.push(index);
-      }
-      previousAssistantGroupKey = groupKey;
-      return;
-    }
-    previousAssistantGroupKey = undefined;
+    seenGroupIds.add(groupId);
+    indexes.push(index);
   });
   return indexes;
 }
@@ -184,13 +194,16 @@ function providerParagraphMessageBase(id: string) {
   return /^(?<base>.+)#p\d+$/u.exec(id)?.groups?.base;
 }
 
-function encodeOrderCursor(position: number | undefined, id: string | undefined) {
+export function encodeSessionTimelineOrderCursor(
+  position: number | undefined,
+  id: string | undefined,
+) {
   return Number.isInteger(position) && id
     ? `${ORDER_CURSOR_PREFIX}\t${position}\t${id}`
     : undefined;
 }
 
-function decodeOrderCursor(cursor: string | undefined) {
+export function decodeSessionTimelineOrderCursor(cursor: string | undefined) {
   if (!cursor) {
     return null;
   }
@@ -204,10 +217,80 @@ function decodeOrderCursor(cursor: string | undefined) {
     : null;
 }
 
+export function resolveSessionTimelineMessageGroupId(entry: SessionTimelineEntry) {
+  return resolveSessionTimelineMessageGroup(entry)?.groupId;
+}
+
+export function buildSessionTimelineMessageGroupAnchors(
+  positionedEntries: SessionTimelinePositionedEntry[],
+): SessionTimelineMessageGroupAnchor[] {
+  const anchors: SessionTimelineMessageGroupAnchor[] = [];
+  const seenGroupIds = new Set<string>();
+  let pendingTranscriptStart: number | undefined;
+
+  for (const { position, entry } of positionedEntries) {
+    if (isTranscriptPrefixEntry(entry)) {
+      pendingTranscriptStart ??= position;
+      continue;
+    }
+
+    const group = resolveSessionTimelineMessageGroup(entry);
+    if (!group) {
+      pendingTranscriptStart = undefined;
+      continue;
+    }
+    if (seenGroupIds.has(group.groupId)) {
+      pendingTranscriptStart = undefined;
+      continue;
+    }
+    seenGroupIds.add(group.groupId);
+    anchors.push({
+      groupId: group.groupId,
+      groupKind: group.groupKind,
+      anchorPosition: position,
+      startPosition: pendingTranscriptStart ?? position,
+      anchorTimestamp: group.anchorTimestamp,
+    });
+    pendingTranscriptStart = undefined;
+  }
+
+  return anchors;
+}
+
+function resolveSessionTimelineMessageGroup(entry: SessionTimelineEntry) {
+  if (entry.kind === "user_message") {
+    return {
+      groupId: entry.id,
+      groupKind: "user" as const,
+      anchorTimestamp: entry.message.timestamp,
+    };
+  }
+  if (!isAssistantContentWindowAnchor(entry)) {
+    return undefined;
+  }
+  return {
+    groupId: assistantMessageWindowGroupKey(entry),
+    groupKind: "assistant" as const,
+    anchorTimestamp:
+      entry.chunks.find((chunk) => chunk.kind === "content" && chunk.text.trim())?.timestamp ??
+      entry.timestamp,
+  };
+}
+
+function isTranscriptPrefixEntry(entry: SessionTimelineEntry) {
+  return entry.kind === "context_compaction" ||
+    entry.kind === "session_resumed" ||
+    entry.kind === "history_gap";
+}
+
 function resolvePageEndIndex(entries: SessionTimelineEntry[], cursor: string | undefined) {
-  const orderCursor = decodeOrderCursor(cursor);
+  const orderCursor = decodeSessionTimelineOrderCursor(cursor);
   if (!orderCursor) {
     return entries.length;
   }
   return Math.max(0, Math.min(orderCursor.position, entries.length));
+}
+
+function encodeOrderCursor(position: number | undefined, id: string | undefined) {
+  return encodeSessionTimelineOrderCursor(position, id);
 }

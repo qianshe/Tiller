@@ -171,10 +171,10 @@ test("collapsed plain-text user messages use a three-line visual clamp without a
 test("assistant markdown uses readable prose styling without paragraph marker bullets", () => {
   assert.doesNotMatch(plainMessagesSource, /markdown-paragraph\]:before/);
   assert.doesNotMatch(plainMessagesSource, /before:bg-green-500/);
-  assert.match(markdownSource, /markdown-message space-y-1\.5 text-\[12\.5px\] leading-\[1\.5\]/);
-  assert.match(markdownSource, /markdown-heading my-1\.5 text-\[15px\]/);
-  assert.match(markdownSource, /className="my-1\.5 list-disc space-y-0\.5 pl-4/);
-  assert.match(markdownSource, /markdown-table-cell border-t border-border-ghost px-2\.5 py-1\.5 align-top text-\[12\.5px\] text-foreground/);
+  assert.match(markdownSource, /markdown-message space-y-2 text-\[12px\] leading-\[1\.5\]/);
+  assert.match(markdownSource, /markdown-heading my-1\.5 text-\[14\.5px\]/);
+  assert.match(markdownSource, /className="my-1\.5 list-disc space-y-1 pl-4/);
+  assert.match(markdownSource, /markdown-table-cell border-t border-border-ghost px-2\.5 py-1\.5 align-top text-\[12px\] text-foreground/);
   assert.match(markdownSource, /className="markdown-code-block overflow-hidden/);
   assert.match(markdownSource, /className="overflow-x-auto/);
   assert.match(markdownSource, /className="not-prose flex items-center justify-between/);

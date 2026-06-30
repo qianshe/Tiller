@@ -16,7 +16,9 @@ export function publishRuntimeToolCall(
     toolCall,
     artifacts?.toolCalls?.find((item) => item.id === toolCall.id),
   );
-  persistTimelineToolCall(context, sessionId, mergedToolCall);
+  if (!context.sessionTimelineWorkers || !context.sessionTimelineDispatcher || !context.sessionLiveStateStore) {
+    persistTimelineToolCall(context, sessionId, mergedToolCall);
+  }
   createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "tool_call",
     toolCall: mergedToolCall,

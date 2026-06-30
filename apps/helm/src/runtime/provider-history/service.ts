@@ -4,10 +4,12 @@ import type {
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
+  SessionTimelineEntry,
   SessionUpdateRecord,
   SessionSummary,
   WorktreeSummary,
 } from "@tiller/shared";
+import { buildSessionTimelineFromLegacy } from "@tiller/shared";
 import type { SessionRecord } from "../session/services";
 import type { SessionAttachmentStore, StoredSessionRuntimeDescriptor } from "../../sessions/facade";
 import type { TillerLogger } from "../../logging/logger";
@@ -17,6 +19,7 @@ type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
   replace(sessionId: string, messages: AgentMessage[]): void;
   append(sessionId: string, message: AgentMessage): void;
+  remove?(sessionId: string): void;
 };
 
 type SessionArtifactStore = {
@@ -25,6 +28,7 @@ type SessionArtifactStore = {
     outputs: CommandChunk[];
     diffs: FileDiffSummary[];
   };
+  replaceOutputs?(sessionId: string, outputs: CommandChunk[]): void;
   replaceToolCalls(sessionId: string, toolCalls: AgentToolCall[]): void;
 };
 
@@ -33,12 +37,20 @@ type SessionRuntimeStore = {
   upsert(descriptor: StoredSessionRuntimeDescriptor): void;
 };
 
+type SessionPlanStore = {
+  get(sessionId: string): AgentPlan | undefined;
+  replace(sessionId: string, plan: AgentPlan): AgentPlan;
+  remove(sessionId: string): void;
+};
+
 type SessionTimelineStore = {
-  replace(sessionId: string, entries: unknown[]): unknown[];
+  list?(sessionId: string): SessionTimelineEntry[];
+  replace(sessionId: string, entries: SessionTimelineEntry[]): SessionTimelineEntry[];
 };
 
 type SessionUpdateStore = {
   replaceSession(sessionId: string, updates: SessionUpdateRecord[]): void;
+  remove?(sessionId: string): void;
   listPage?(
     sessionId: string,
     options: { limit?: number; before?: string },
@@ -52,6 +64,7 @@ type ProviderHistoryServiceOptions = {
   sessionArtifactStore: SessionArtifactStore;
   sessionAttachmentStore?: SessionAttachmentStore;
   sessionRuntimeStore: SessionRuntimeStore;
+  sessionPlanStore: SessionPlanStore;
   sessionTimelineStore?: SessionTimelineStore;
   sessionUpdateStore?: SessionUpdateStore;
   getAgents(): unknown[];
@@ -79,14 +92,89 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     if (cached) {
       return cached;
     }
-    const restored = readSessionPlanFromUpdates(sessionId);
-    if (restored) {
-      providerHistoryPlans.set(sessionId, restored);
+    const stored = options.sessionPlanStore.get(sessionId);
+    if (isVisibleAgentPlan(stored)) {
+      providerHistoryPlans.set(sessionId, stored);
+      return stored;
     }
-    return restored;
+    return undefined;
   }
 
-  function readSessionPlanFromUpdates(sessionId: string) {
+  function recordProviderHistoryPlan(sessionId: string, plan: AgentPlan | undefined) {
+    if (isVisibleAgentPlan(plan)) {
+      providerHistoryPlans.set(sessionId, plan);
+      options.sessionPlanStore.replace(sessionId, plan);
+      return;
+    }
+    providerHistoryPlans.delete(sessionId);
+    options.sessionPlanStore.remove(sessionId);
+  }
+
+  function migrateLegacySessionHistory() {
+    const sessionIds = new Set<string>([
+      ...options.sessionStore.list().map((summary) => summary.id),
+      ...options.sessions.keys(),
+    ]);
+    for (const sessionId of sessionIds) {
+      const timelineState = materializeLegacyCanonicalTimeline(sessionId);
+      materializeLegacySessionPlan(sessionId);
+      if (!options.sessions.has(sessionId) && timelineState !== "missing") {
+        purgeLegacyHistoricalSessionRecords(sessionId);
+      }
+    }
+  }
+
+  async function refreshAuthoritativeSessionHistory(sessionId: string) {
+    // ACP session/load replay is the only authoritative external history
+    // source. Passive list/artifact reads must not inspect provider files.
+    // Legacy local stores are still safe to materialize into canonical
+    // timeline storage once so subsequent reads stay pure-canonical.
+    materializeLegacyCanonicalTimeline(sessionId);
+  }
+
+  function materializeLegacyCanonicalTimeline(sessionId: string): "ready" | "empty" | "missing" {
+    if (!options.sessionTimelineStore) {
+      return "missing";
+    }
+    const existingTimeline = options.sessionTimelineStore?.list?.(sessionId) ?? [];
+    if (existingTimeline.length > 0) {
+      return "ready";
+    }
+    const artifacts = options.sessionArtifactStore.get(sessionId);
+    const history = buildSessionTimelineFromLegacy({
+      messages: options.sessionMessageStore.list(sessionId),
+      outputs: artifacts.outputs,
+      toolCalls: artifacts.toolCalls,
+    });
+    if (history.length === 0) {
+      return "empty";
+    }
+    options.sessionTimelineStore?.replace(sessionId, history);
+    return "ready";
+  }
+
+  function materializeLegacySessionPlan(sessionId: string) {
+    if (isVisibleAgentPlan(options.sessionPlanStore.get(sessionId))) {
+      return;
+    }
+    const restored = readLegacySessionPlanFromUpdates(sessionId);
+    if (!restored) {
+      return;
+    }
+    options.sessionPlanStore.replace(sessionId, restored);
+    providerHistoryPlans.set(sessionId, restored);
+  }
+
+  function purgeLegacyHistoricalSessionRecords(sessionId: string) {
+    // Diffs still live in the artifact store. Only clear the legacy mirrors
+    // that can now be reconstructed from canonical timeline + plan storage.
+    options.sessionMessageStore.remove?.(sessionId);
+    options.sessionArtifactStore.replaceOutputs?.(sessionId, []);
+    options.sessionArtifactStore.replaceToolCalls(sessionId, []);
+    options.sessionUpdateStore?.remove?.(sessionId);
+  }
+
+  function readLegacySessionPlanFromUpdates(sessionId: string) {
     let before: string | undefined;
     while (true) {
       const page = options.sessionUpdateStore?.listPage?.(sessionId, { limit: 200, before });
@@ -104,25 +192,13 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     }
   }
 
-  function recordProviderHistoryPlan(sessionId: string, plan: AgentPlan | undefined) {
-    if (isVisibleAgentPlan(plan)) {
-      providerHistoryPlans.set(sessionId, plan);
-      return;
-    }
-    providerHistoryPlans.delete(sessionId);
-  }
-
-  async function refreshAuthoritativeSessionHistory(_sessionId: string) {
-    // ACP session/load replay is the only authoritative external history
-    // source. Passive list/artifact reads must not inspect provider files.
-  }
-
   function resetRefresh(sessionId: string) {
     providerHistoryPlans.delete(sessionId);
   }
 
   return {
     hasHistoryContent,
+    migrateLegacySessionHistory,
     readSessionPlan,
     recordSessionPlan: recordProviderHistoryPlan,
     refreshAuthoritativeSessionHistory,

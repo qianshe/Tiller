@@ -1,6 +1,7 @@
 export {
   createSqliteSessionArtifactStore,
   createSqliteSessionMessageStore,
+  createSqliteSessionPlanStore,
   createSqliteSessionRuntimeStore,
   createSqliteSessionStore,
   initializeSqliteSessionStore,

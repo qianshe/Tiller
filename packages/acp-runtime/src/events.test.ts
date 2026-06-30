@@ -106,6 +106,78 @@ test("mapSessionUpdateNotification maps user text chunks into Tiller message eve
   assert.equal(mapped.event.message.text, "中午好");
 });
 
+test("mapSessionUpdateNotification maps explicit compaction progress chunks into live compaction events", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_compaction_live",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "msg_compaction_started",
+        content: { type: "text", text: "Compacting..." },
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped?.sessionId, "sess_compaction_live");
+  assert.equal(mapped?.event.type, "compaction");
+  if (mapped?.event.type !== "compaction") {
+    throw new Error("Expected compaction event");
+  }
+  assert.equal(mapped.event.phase, "started");
+  assert.equal(mapped.event.source, "provider");
+});
+
+test("mapSessionUpdateNotification maps continuation summaries into completed compaction events", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_compaction_completed",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        messageId: "msg_compaction_completed",
+        content: {
+          type: "text",
+          text: "This session is being continued from a previous conversation that ran out of context.",
+        },
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "compaction");
+  if (mapped?.event.type !== "compaction") {
+    throw new Error("Expected compaction event");
+  }
+  assert.equal(mapped.event.phase, "completed");
+  assert.equal(mapped.event.source, "heuristic");
+  assert.equal(
+    mapped.event.summaryText,
+    "This session is being continued from a previous conversation that ran out of context.",
+  );
+});
+
+test("mapSessionUpdateNotification does not treat ordinary compacting text as a compaction lifecycle signal", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_compaction_plain_text",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "msg_compaction_plain_text",
+        content: { type: "text", text: "We are compacting the output format for readability." },
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "message");
+});
+
 test("mapSessionUpdateNotification preserves snake_case message ids", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
@@ -841,7 +913,7 @@ test("mapSessionUpdateNotification classifies explicit source subagent kinds", (
   assert.equal(mapped.event.toolCall.title, "delegate_task");
 });
 
-test("mapSessionUpdateNotification keeps Claude task tool calls out of subagent classification", () => {
+test("mapSessionUpdateNotification classifies Claude Task tool with subagent_type as subagent", () => {
   const mapped = mapSessionUpdateNotification(
     {
       jsonrpc: "2.0",
@@ -865,7 +937,75 @@ test("mapSessionUpdateNotification keeps Claude task tool calls out of subagent 
   if (mapped?.event.type !== "tool-call") {
     throw new Error("Expected tool-call event");
   }
-  assert.notEqual(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "Task");
+});
+
+test("mapSessionUpdateNotification classifies Claude ACP Task tool with provider config as subagent", () => {
+  const provider = {
+    id: "claude-acp",
+    name: "Claude Agent",
+    command: "claude-agent-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-acp-task-tool",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-claude-acp-task-tool",
+          toolName: "Task",
+          title: "Task",
+          status: "in_progress",
+          rawInput: { prompt: "Inspect session flow", subagent_type: "Explore" },
+        },
+      },
+    },
+    { provider, providerId: provider.id },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "Task");
+});
+
+test("mapSessionUpdateNotification classifies Claude ACP history repair tool calls from provider id", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-acp-history-task-tool",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-claude-acp-history-task-tool",
+            kind: "tool",
+            title: "Task",
+            input: JSON.stringify({ prompt: "Inspect session flow" }),
+            status: "completed",
+            timestamp: "2026-06-28T00:00:00.000Z",
+            updatedAt: "2026-06-28T00:00:01.000Z",
+          },
+          rawInput: { prompt: "Inspect session flow", subagent_type: "Explore" },
+        },
+      },
+    },
+    { providerId: "claude-acp" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
   assert.equal(mapped.event.toolCall.title, "Task");
 });
 
