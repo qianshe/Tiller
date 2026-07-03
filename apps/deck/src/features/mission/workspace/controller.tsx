@@ -1,4 +1,4 @@
-import type { AgentMessage, FileDiffSummary, SessionSummary } from "@tiller/shared";
+import type { AgentMessage, SessionSummary } from "@tiller/shared";
 import { useState, useCallback, useEffect } from "react";
 import {
   canGenerateAssistantHandoff,
@@ -41,6 +41,7 @@ import {
   formatInspectorWorktreeSummaryLabel,
 } from "./worktree-summary";
 import { joinClassNames } from "../utils/session-render-state";
+import { reconcileMissionDiffs, shouldPrimeGitGraphLoad } from "./git-sync";
 
 export function MissionWorktree(props: any) {
   const {
@@ -687,11 +688,7 @@ export function MissionWorktree(props: any) {
     }
 
     const currentGraph = gitGraphByWorktree[activeGitCwd];
-    if (
-      currentGraph?.loading ||
-      currentGraph?.lastUpdated ||
-      (currentGraph && currentGraph.commits.length > 0)
-    ) {
+    if (!shouldPrimeGitGraphLoad(currentGraph)) {
       return;
     }
 
@@ -1145,56 +1142,4 @@ export function MissionWorktree(props: any) {
       </ResizablePanelGroup>{" "}
     </MissionPage>
   );
-}
-
-function reconcileMissionDiffs(
-  sessionDiffs: FileDiffSummary[],
-  gitStatusFiles:
-    | Array<{
-        path: string;
-        indexStatus: string;
-        worktreeStatus: string;
-      }>
-    | undefined,
-) {
-  if (!gitStatusFiles) {
-    return [];
-  }
-  if (!gitStatusFiles.length) {
-    return [];
-  }
-
-  const diffsByPath = new Map(
-    sessionDiffs.map((diff) => [normalizeMissionDiffPath(diff.path), diff] as const),
-  );
-
-  return gitStatusFiles.map((file) => {
-    const normalizedPath = normalizeMissionDiffPath(file.path);
-    const existingDiff = diffsByPath.get(normalizedPath);
-    if (existingDiff) {
-      return existingDiff;
-    }
-    return {
-      path: file.path,
-      status: mapGitStatusToDiffStatus(file.indexStatus, file.worktreeStatus),
-      additions: 0,
-      deletions: 0,
-      patch: "",
-    } satisfies FileDiffSummary;
-  });
-}
-
-function mapGitStatusToDiffStatus(indexStatus: string, worktreeStatus: string): FileDiffSummary["status"] {
-  const combinedStatus = `${indexStatus}${worktreeStatus}`;
-  if (combinedStatus.includes("A") || combinedStatus.includes("?")) {
-    return "added";
-  }
-  if (combinedStatus.includes("D")) {
-    return "deleted";
-  }
-  return "modified";
-}
-
-function normalizeMissionDiffPath(path: string) {
-  return path.replace(/\\/g, "/");
 }

@@ -4,6 +4,7 @@ import { basename, join } from "node:path";
 import { promisify } from "node:util";
 import { saveProjectYaml } from "@tiller/agent-registry";
 import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
+import { normalizeDiffPath, readWorktreeGitDiffs } from "../../sessions/facade";
 
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;
@@ -305,7 +306,26 @@ export async function getProjectGitStatus(cwd: string) {
 
   const clean = files.length === 0;
 
-  return { branch, clean, files };
+  if (clean) {
+    return { branch, clean, files };
+  }
+
+  const gitDiffs = await readWorktreeGitDiffs(cwd);
+  const gitDiffsByPath = new Map(
+    gitDiffs.map((file) => [normalizeDiffPath(file.path), file] as const),
+  );
+
+  const detailedFiles = files.map((file) => {
+    const detail = gitDiffsByPath.get(normalizeDiffPath(file.path));
+    return {
+      ...file,
+      additions: detail?.additions ?? 0,
+      deletions: detail?.deletions ?? 0,
+      ...(detail?.patch ? { patch: detail.patch } : {}),
+    };
+  });
+
+  return { branch, clean, files: detailedFiles };
 }
 
 export async function commitProjectGitChanges(

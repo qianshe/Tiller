@@ -182,6 +182,59 @@ test("config RPC rejects git graph requests for another project's worktree", asy
   assert.equal(result.message, "Working directory is not part of this project");
 });
 
+test("config RPC git status returns diff details for modified files", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-status-details-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "README.md"), "one\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "init"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "README.md"), "one\ntwo\n", "utf8");
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  const result = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+  }, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) => items.find((project) => project.id === id),
+  } as any) as {
+    ok: boolean;
+    files: Array<{
+      path: string;
+      additions?: number;
+      deletions?: number;
+      patch?: string;
+    }>;
+  };
+
+  assert.equal(result.ok, true);
+  const readme = result.files.find((file) => file.path === "README.md");
+  assert.equal(readme?.additions, 1);
+  assert.equal(readme?.deletions, 0);
+  assert.match(readme?.patch ?? "", /diff --git a\/README\.md b\/README\.md/);
+});
+
 test("config RPC git graph binds refs only to decorated commits", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-graph-refs-"));
   const repoPath = join(tempRoot, "repo");

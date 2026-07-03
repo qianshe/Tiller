@@ -13,6 +13,9 @@ export const GitStatusFileSchema = z.object({
   indexStatus: z.string(), // M/A/D/R/C/?
   worktreeStatus: z.string(), // M/A/D/R/C/?
   originalPath: z.string().optional(), // for renames
+  additions: z.number().optional(),
+  deletions: z.number().optional(),
+  patch: z.string().optional(),
 });
 
 export const ResultSchema = z.object({
