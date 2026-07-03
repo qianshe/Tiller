@@ -73,6 +73,16 @@ export function shouldAutoScrollSessionBody({
     (!previousHistoryLoading || allowAfterInitialHistoryLoad);
 }
 
+export function pruneSessionCardScrollState<T>(
+  state: Record<string, T>,
+  openSessionIds: ReadonlyArray<string>,
+) {
+  const openIds = new Set(openSessionIds);
+  return Object.fromEntries(
+    Object.entries(state).filter(([sessionId]) => openIds.has(sessionId)),
+  ) as Record<string, T>;
+}
+
 export function resolveSessionStatusTone(status: SessionSummary["status"]): "active" | "idle" | "warning" | "danger" | "primary" {
   switch (status) {
     case "running":

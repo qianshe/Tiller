@@ -64,7 +64,7 @@ export function repairCompactionBootstrapTimeline(
     resolveTrailingCompactionReplayBoundary(input.timeline, input.messages) ??
     resolveLegacyResumeBoundary(input.timeline, existingResumed);
   if (!boundary) {
-    return null;
+    return repairTimelineOnlyTrailingCompactionCluster(input.timeline);
   }
 
   const existingCompaction = findMatchingCompactionEntry(input.timeline, boundary);
@@ -109,6 +109,38 @@ export function repairCompactionBootstrapTimeline(
     : {
         entries: nextEntries,
         synthesizedBoundary: !input.timeline.some((entry) => entry.kind === "context_compaction"),
+      };
+}
+
+function repairTimelineOnlyTrailingCompactionCluster(
+  timeline: CompactionBootstrapTimelineEntry[],
+): RepairCompactionTimelineResult | null {
+  const trailingCluster = findTrailingReplayCompactionCluster(timeline);
+  if (!trailingCluster.length) {
+    return null;
+  }
+
+  const baseTimeline = timeline
+    .slice(0, timeline.length - trailingCluster.length)
+    .filter((entry): entry is SessionTimelineEntry => entry.kind !== "session_resumed");
+  const anchorEntry = findFirstNonTranscriptEntry(baseTimeline);
+  if (!anchorEntry) {
+    return null;
+  }
+
+  const nextEntries = sortSessionTimelineEntries([
+    ...baseTimeline,
+    ...normalizeTrailingCompactionCluster({
+      entries: trailingCluster,
+      anchorTimestamp: anchorEntry.timestamp,
+    }),
+  ]);
+
+  return sameTimelineEntryOrder(timeline, nextEntries)
+    ? null
+    : {
+        entries: nextEntries,
+        synthesizedBoundary: false,
       };
 }
 
@@ -406,10 +438,72 @@ function findTrailingReplayCompactionEntry(timeline: CompactionBootstrapTimeline
     : undefined;
 }
 
+function findTrailingReplayCompactionCluster(
+  timeline: CompactionBootstrapTimelineEntry[],
+): SessionTimelineContextCompactionEntry[] {
+  const cluster: SessionTimelineContextCompactionEntry[] = [];
+  for (let index = timeline.length - 1; index >= 0; index -= 1) {
+    const entry = timeline[index];
+    if (
+      entry?.kind !== "context_compaction" ||
+      entry.phase !== "completed" ||
+      !entry.summaryText?.trim()
+    ) {
+      break;
+    }
+    cluster.unshift(entry);
+  }
+  if (!cluster.length) {
+    return [];
+  }
+  const previousContent = findLastNonTranscriptEntry(
+    timeline.slice(0, timeline.length - cluster.length),
+  );
+  if (!previousContent) {
+    return [];
+  }
+  const clusterTime = Date.parse(cluster[0]!.timestamp);
+  const previousTime = Date.parse(previousContent.timestamp);
+  if (!Number.isFinite(clusterTime) || !Number.isFinite(previousTime)) {
+    return [];
+  }
+  return clusterTime - previousTime >= TRAILING_COMPACTION_REANCHOR_THRESHOLD_MS
+    ? cluster
+    : [];
+}
+
+function normalizeTrailingCompactionCluster(input: {
+  entries: SessionTimelineContextCompactionEntry[];
+  anchorTimestamp: string;
+}) {
+  const anchorTime = Date.parse(input.anchorTimestamp);
+  if (!Number.isFinite(anchorTime)) {
+    return input.entries;
+  }
+  const clusterStart = anchorTime - input.entries.length;
+  return input.entries.map((entry, index) => {
+    const clampedTimestamp = new Date(clusterStart + index).toISOString();
+    return {
+      ...entry,
+      timestamp: clampedTimestamp,
+      updatedAt: clampedTimestamp,
+    };
+  });
+}
+
 function findLastNonTranscriptEntry(entries: CompactionBootstrapTimelineEntry[]) {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (entry && !isLegacyTranscriptEntry(entry)) {
+      return entry;
+    }
+  }
+  return undefined;
+}
+
+function findFirstNonTranscriptEntry(entries: SessionTimelineEntry[]) {
+  for (const entry of entries) {
+    if (!isCanonicalTranscriptPrefixEntry(entry)) {
       return entry;
     }
   }

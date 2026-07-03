@@ -494,15 +494,18 @@ export function MissionWorktree(props: any) {
           projectId: activeGitProjectId,
           cwd: activeGitCwd,
         });
-        void dispatch(rpcClientRef.current, "project/git/graph", {
-          projectId: activeGitProjectId,
-          cwd: activeGitCwd,
-        });
+        const currentGraph = gitGraphByWorktree[activeGitCwd];
+        if (currentGraph) {
+          void dispatch(rpcClientRef.current, "project/git/graph", {
+            projectId: activeGitProjectId,
+            cwd: activeGitCwd,
+          });
+        }
       } catch (error) {
         console.error("Commit failed:", error);
       }
     },
-    [activeGitProjectId, activeGitCwd, dispatch],
+    [activeGitProjectId, activeGitCwd, dispatch, gitGraphByWorktree],
   );
 
   const handleGenerateDescription = useCallback(async (): Promise<string> => {
@@ -558,10 +561,12 @@ export function MissionWorktree(props: any) {
       projectId: activeGitProjectId,
       cwd: activeGitCwd,
     });
-    void dispatch(rpcClientRef.current, "project/git/graph", {
-      projectId: activeGitProjectId,
-      cwd: activeGitCwd,
-    });
+    if (currentGraph) {
+      void dispatch(rpcClientRef.current, "project/git/graph", {
+        projectId: activeGitProjectId,
+        cwd: activeGitCwd,
+      });
+    }
   }, [activeGitProjectId, activeGitCwd, dispatch, gitStatusByWorktree, gitGraphByWorktree]);
   const handleOpenGraph = useCallback(() => {
     setSelectedMissionDisplayTabId("graph");

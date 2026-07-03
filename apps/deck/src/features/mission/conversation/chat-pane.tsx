@@ -26,6 +26,7 @@ import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
 import {
+  pruneSessionCardScrollState,
   resolveSessionConversationDisplayMode,
   resolveSessionStreamContentLength,
   shouldAutoScrollSessionBody,
@@ -372,6 +373,21 @@ export function MissionChatPane({
   const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number; contentLength: number; historyLoading: boolean }>>({});
   const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
   const sessionBodyStickToBottomRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    const openSessionIds = openSessions.map((session) => session.id);
+    sessionBodyScrollSnapshotRef.current = pruneSessionCardScrollState(
+      sessionBodyScrollSnapshotRef.current,
+      openSessionIds,
+    );
+    sessionBodyScrollPositionRef.current = pruneSessionCardScrollState(
+      sessionBodyScrollPositionRef.current,
+      openSessionIds,
+    );
+    sessionBodyStickToBottomRef.current = pruneSessionCardScrollState(
+      sessionBodyStickToBottomRef.current,
+      openSessionIds,
+    );
+  }, [openSessions]);
   const recordSessionBodyScroll = useCallback((sessionId: string, body: HTMLDivElement) => {
     if (isPlainHistoryRevealLocked(body)) {
       return;

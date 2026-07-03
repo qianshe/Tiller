@@ -272,3 +272,24 @@ test("shouldAutoScrollSessionBody suppresses auto-follow during history restore 
     true,
   );
 });
+
+test("pruneSessionCardScrollState drops closed session snapshots", async () => {
+  const model = await import("./chat-pane-model.js") as Record<string, unknown>;
+  assert.equal(typeof model.pruneSessionCardScrollState, "function");
+  const pruneSessionCardScrollState = model.pruneSessionCardScrollState as <T>(
+    state: Record<string, T>,
+    openSessionIds: ReadonlyArray<string>,
+  ) => Record<string, T>;
+
+  const pruned = pruneSessionCardScrollState(
+    {
+      "session-open": { scrollTop: 10, scrollHeight: 100 },
+      "session-closed": { scrollTop: 20, scrollHeight: 200 },
+    },
+    ["session-open"],
+  );
+
+  assert.deepEqual(pruned, {
+    "session-open": { scrollTop: 10, scrollHeight: 100 },
+  });
+});

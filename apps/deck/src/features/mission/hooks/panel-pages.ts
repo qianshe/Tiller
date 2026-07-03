@@ -6,7 +6,7 @@ import { useState } from "react";
  * Layout control stays in root/controller layer.
  */
 export function usePanelPages() {
-  const [selectedDisplayTabId, setSelectedDisplayTabId] = useState("graph");
+  const [selectedDisplayTabId, setSelectedDisplayTabId] = useState("diff-detail");
   const [openedDiffFilePaths, setOpenedDiffFilePaths] = useState<string[]>([]);
   const [selectedDiffFilePath, setSelectedDiffFilePath] = useState<
     string | null
