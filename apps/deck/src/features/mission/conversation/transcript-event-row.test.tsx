@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { TranscriptEventRow } from "./transcript-event-row.js";
 
 test("transcript compaction rows render as collapsed muted system summaries", () => {
+  const summaryText = "This session is being continued from a previous conversation that ran out of context.";
   const html = renderToStaticMarkup(
     createElement(TranscriptEventRow, {
       entry: {
@@ -12,7 +13,7 @@ test("transcript compaction rows render as collapsed muted system summaries", ()
         id: "compaction-1",
         phase: "completed",
         source: "provider",
-        summaryText: "This session is being continued from a previous conversation that ran out of context.",
+        summaryText,
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",
         replayCompleteness: "compacted",
@@ -21,9 +22,17 @@ test("transcript compaction rows render as collapsed muted system summaries", ()
   );
 
   assert.match(html, /上下文已压缩/);
-  assert.match(html, /展开摘要/);
+  assert.match(html, /aria-label="展开摘要"/);
   assert.match(html, /bg-surface-sunken\/55/);
   assert.match(html, /border-border-ghost/);
+  assert.match(html, /min-w-0 w-full rounded-\[8px\]/);
+  assert.match(html, /grid-cols-\[0\.375rem_minmax\(0,1fr\)\]/);
+  assert.doesNotMatch(html, /grid-cols-\[0\.375rem_minmax\(0,1fr\)_0\.375rem\]/);
+  assert.match(html, /justify-center/);
+  assert.match(html, /absolute right-0 top-1\/2/);
+  assert.doesNotMatch(html, />展开摘要</);
+  assert.doesNotMatch(html, /早期对话已压缩，后续回复将基于摘要继续/);
+  assert.doesNotMatch(html, new RegExp(summaryText.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
   assert.doesNotMatch(html, /bg-amber-50/);
   assert.doesNotMatch(html, /border-amber-400/);
 });

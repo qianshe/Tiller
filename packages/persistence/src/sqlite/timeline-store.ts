@@ -235,15 +235,58 @@ function ensureSessionTimelineMessageAnchors(
   anchorIndex: ReturnType<typeof createSqliteTimelineMessageAnchorIndex>,
   sessionId: string,
 ) {
-  if (anchorIndex.listNewestAnchors(sessionId, undefined, 1).length > 0) {
-    return;
-  }
   const anchors = buildSessionTimelineMessageGroupAnchors(
     listPositionedSessionTimelineEntries(db, sessionId),
   );
-  if (anchors.length > 0) {
+  const current = listStoredSessionTimelineAnchors(db, sessionId);
+  if (!sameSessionTimelineAnchors(current, anchors)) {
     anchorIndex.replaceSessionAnchors(sessionId, anchors);
   }
+}
+
+function listStoredSessionTimelineAnchors(db: DatabaseSync, sessionId: string) {
+  return db.prepare(
+    `
+      SELECT group_id, group_kind, anchor_position, start_position, anchor_timestamp
+      FROM session_timeline_message_anchors
+      WHERE session_id = ?
+      ORDER BY anchor_position ASC, group_id ASC
+    `,
+  ).all(sessionId).map((row: any) => ({
+    groupId: row.group_id as string,
+    groupKind: row.group_kind as "user" | "assistant",
+    anchorPosition: row.anchor_position as number,
+    startPosition: row.start_position as number,
+    anchorTimestamp: row.anchor_timestamp as string,
+  }));
+}
+
+function sameSessionTimelineAnchors(
+  left: Array<{
+    groupId: string;
+    groupKind: "user" | "assistant";
+    anchorPosition: number;
+    startPosition: number;
+    anchorTimestamp: string;
+  }>,
+  right: Array<{
+    groupId: string;
+    groupKind: "user" | "assistant";
+    anchorPosition: number;
+    startPosition: number;
+    anchorTimestamp: string;
+  }>,
+) {
+  return left.length === right.length &&
+    left.every((anchor, index) => {
+      const candidate = right[index];
+      return candidate &&
+        anchor.groupId === candidate.groupId &&
+        anchor.groupKind === candidate.groupKind &&
+        anchor.anchorPosition === candidate.anchorPosition &&
+        anchor.startPosition === candidate.startPosition &&
+        anchor.anchorTimestamp === candidate.anchorTimestamp;
+    });
 }
 
 function listSessionTimelineEntries(db: DatabaseSync, sessionId: string) {

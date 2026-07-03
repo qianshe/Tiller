@@ -1872,6 +1872,74 @@ test("successful session resume clears the pending restore request", () => {
   assert.deepEqual(dispatched, ["agent/connections"]);
 });
 
+test("successful session/load resume reloads canonical timeline", () => {
+  resetStore();
+  const pendingRequests = new Set<string>(["s1"]);
+  let feedback = "";
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+  useDeckStore.setState({
+    sessions: [session("s1")],
+    messageHistoryState: {
+      s1: {
+        hasMore: true,
+        nextCursor: "cursor-1",
+        loading: false,
+      },
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/resume",
+    {
+      sessionId: "s1",
+      ok: true,
+      message: "已恢复",
+      resume: {
+        state: "resume-available",
+        mode: "reconnect",
+        restoreMethod: "session/load",
+        runtimeSessionId: "runtime-s1",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async (_client, method, params) => {
+        dispatched.push({ method, params: (params ?? {}) as Record<string, unknown> });
+      },
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: (value: string) => {
+        feedback = value;
+      },
+      resumeStartRequestsRef: { current: pendingRequests },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(feedback, "已恢复");
+  assert.equal(useDeckStore.getState().sessions[0]?.runtimeSessionId, "runtime-s1");
+  assert.deepEqual(dispatched, [
+    { method: "agent/connections", params: {} },
+    { method: "session/list_timeline", params: { sessionId: "s1", limit: 20 } },
+  ]);
+  assert.deepEqual(useDeckStore.getState().messageHistoryState.s1, {
+    hasMore: true,
+    nextCursor: "cursor-1",
+    loading: true,
+  });
+});
+
 test("failed session resume marks stale available metadata as unavailable", () => {
   resetStore();
   const pendingRequests = new Set<string>(["s1"]);

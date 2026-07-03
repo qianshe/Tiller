@@ -224,13 +224,15 @@ export function buildSessionTimelineMessageGroupAnchors(
 
     const group = resolveSessionTimelineMessageGroup(entry);
     if (!group) {
-      pendingTranscriptStart = undefined;
       continue;
     }
-    if (seenGroupIds.has(group.groupId)) {
-      pendingTranscriptStart = undefined;
+
+    // Transcript boundaries split message-window groups even when the next
+    // visible assistant segment reuses the same provider paragraph base id.
+    if (seenGroupIds.has(group.groupId) && pendingTranscriptStart === undefined) {
       continue;
     }
+
     seenGroupIds.add(group.groupId);
     anchors.push({
       groupId: group.groupId,

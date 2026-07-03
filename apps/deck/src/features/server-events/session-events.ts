@@ -382,9 +382,12 @@ export function applySessionResult(
               }
             : session,
         ),
-      );
+        );
       if (sourceIsCurrentHelm && payload.ok && rpcClientRef.current?.socket?.readyState === 1) {
         void dispatch(rpcClientRef.current, "agent/connections", {});
+        if (resume.restoreMethod === "session/load") {
+          requestCanonicalTimelineReload(payload.sessionId, context);
+        }
       }
       return true;
     }

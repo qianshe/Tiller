@@ -254,6 +254,77 @@ test("timeline block store message-window keeps context_compaction attached to t
   });
 });
 
+test("timeline block store message-window keeps context_compaction attached across a thinking-only assistant segment", () => {
+  withStore(({ store }) => {
+    store.replace("session-1", [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-1:content",
+          kind: "content",
+          text: "older answer",
+          timestamp: at(30),
+          sequence: 276,
+        }],
+        timestamp: at(30),
+        updatedAt: at(30),
+        sequence: 276,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText: "continued from previous conversation",
+        detailsVisibility: "expandable",
+        timestamp: at(40),
+        updatedAt: at(40),
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-2",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-2:thinking",
+          kind: "thinking",
+          text: "reasoning",
+          title: "Thinking",
+          status: "running",
+          timestamp: at(41),
+          updatedAt: at(41),
+          sequence: 277,
+        }],
+        timestamp: at(41),
+        updatedAt: at(41),
+        sequence: 277,
+      },
+      {
+        id: "assistant-2#p1",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-2:content",
+          kind: "content",
+          text: "follow-up",
+          timestamp: at(42),
+          sequence: 278,
+        }],
+        timestamp: at(42),
+        updatedAt: at(42),
+        sequence: 278,
+      },
+    ]);
+
+    const page = store.listPage("session-1", { limit: 1, window: "message" });
+
+    assert.deepEqual(
+      page.entries.map((entry) => entry.id),
+      ["compaction-1", "assistant-2", "assistant-2#p1"],
+    );
+  });
+});
+
 test("timeline block store list preserves compaction-only transcript order", () => {
   withStore(({ store }) => {
     store.replace("session-1", [

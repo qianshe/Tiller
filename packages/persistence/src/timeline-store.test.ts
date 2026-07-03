@@ -760,6 +760,135 @@ test("pageSessionTimeline keeps context_compaction attached to the following ass
   assert.equal(page.hasMore, true);
 });
 
+test("pageSessionTimeline keeps context_compaction attached across a thinking-only assistant segment", () => {
+  const entries: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:content",
+        kind: "content",
+        text: "older answer",
+        timestamp: at(30),
+        sequence: 276,
+      }],
+      timestamp: at(30),
+      updatedAt: at(30),
+      sequence: 276,
+    },
+    {
+      id: "compaction-1",
+      kind: "context_compaction",
+      phase: "completed",
+      source: "provider",
+      summaryMessageId: "compaction-summary",
+      summaryText: "continued from previous conversation",
+      detailsVisibility: "expandable",
+      timestamp: at(40),
+      updatedAt: at(40),
+      replayCompleteness: "compacted",
+    },
+    {
+      id: "assistant-2",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-2:thinking",
+        kind: "thinking",
+        text: "reasoning",
+        title: "Thinking",
+        status: "running",
+        timestamp: at(41),
+        updatedAt: at(41),
+        sequence: 277,
+      }],
+      timestamp: at(41),
+      updatedAt: at(41),
+      sequence: 277,
+    },
+    {
+      id: "assistant-2#p1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-2:content",
+        kind: "content",
+        text: "follow-up",
+        timestamp: at(42),
+        sequence: 278,
+      }],
+      timestamp: at(42),
+      updatedAt: at(42),
+      sequence: 278,
+    },
+  ];
+
+  const page = pageSessionTimeline(entries, {
+    limit: 1,
+    window: "message",
+  });
+
+  assert.deepEqual(
+    page.entries.map((entry) => entry.id),
+    ["compaction-1", "assistant-2", "assistant-2#p1"],
+  );
+  assert.equal(page.hasMore, true);
+});
+
+test("pageSessionTimeline starts a new message-window anchor after compaction even when assistant paragraph ids share one base", () => {
+  const entries: SessionTimelineEntry[] = [
+    {
+      id: "assistant-2",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-2:content",
+        kind: "content",
+        text: "older paragraph",
+        timestamp: at(30),
+        sequence: 276,
+      }],
+      timestamp: at(30),
+      updatedAt: at(30),
+      sequence: 276,
+    },
+    {
+      id: "compaction-1",
+      kind: "context_compaction",
+      phase: "completed",
+      source: "provider",
+      summaryMessageId: "compaction-summary",
+      summaryText: "continued from previous conversation",
+      detailsVisibility: "expandable",
+      timestamp: at(40),
+      updatedAt: at(40),
+      replayCompleteness: "compacted",
+    },
+    {
+      id: "assistant-2#p1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-2#p1:content",
+        kind: "content",
+        text: "follow-up paragraph",
+        timestamp: at(42),
+        sequence: 278,
+      }],
+      timestamp: at(42),
+      updatedAt: at(42),
+      sequence: 278,
+    },
+  ];
+
+  const page = pageSessionTimeline(entries, {
+    limit: 1,
+    window: "message",
+  });
+
+  assert.deepEqual(
+    page.entries.map((entry) => entry.id),
+    ["compaction-1", "assistant-2#p1"],
+  );
+  assert.equal(page.hasMore, true);
+});
+
 test("pageSessionTimeline ignores legacy resumed rows for message-window prefixes", () => {
   type LegacyResumedKind = `${"session"}_${"resumed"}`;
   const legacyResumedKind = ["session", "resumed"].join("_") as LegacyResumedKind;
