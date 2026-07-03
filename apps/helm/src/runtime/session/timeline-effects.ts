@@ -53,7 +53,6 @@ export function persistTimelineTranscriptEvent(
   const persisted = replaceTimelineEntries(context, sessionId, entries, storedEntry.id);
   return persisted &&
       (persisted.kind === "context_compaction" ||
-        persisted.kind === "session_resumed" ||
         persisted.kind === "history_gap")
     ? persisted
     : undefined;

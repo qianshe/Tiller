@@ -32,6 +32,10 @@ export type RestoreReplayFlushCounts = {
   plans: number;
 };
 
+type RestoreReplayFlushOptions = {
+  persistLocalStores?: boolean;
+};
+
 export function hasRestoreReplayContent(counts: RestoreReplayFlushCounts) {
   return counts.messages > 0 ||
     counts.toolCalls > 0 ||
@@ -123,21 +127,23 @@ export function createRestoreReplayBuffer(
       }
     },
     snapshot,
-    flush(): RestoreReplayFlushCounts {
-      for (const message of messages.values()) {
-        context.sessionMessageStore.append(sessionId, message);
-      }
-      for (const output of outputs.values()) {
-        context.sessionArtifactStore.appendOutput(sessionId, output);
-      }
-      for (const toolCall of toolCalls.values()) {
-        context.sessionArtifactStore.appendToolCall(sessionId, toolCall);
-      }
-      if (diffs) {
-        context.sessionArtifactStore.replaceDiffs(sessionId, diffs);
+    flush(options: RestoreReplayFlushOptions = {}): RestoreReplayFlushCounts {
+      if (options.persistLocalStores !== false) {
+        for (const message of messages.values()) {
+          context.sessionMessageStore.append(sessionId, message);
+        }
+        for (const output of outputs.values()) {
+          context.sessionArtifactStore.appendOutput(sessionId, output);
+        }
+        for (const toolCall of toolCalls.values()) {
+          context.sessionArtifactStore.appendToolCall(sessionId, toolCall);
+        }
+        if (diffs) {
+          context.sessionArtifactStore.replaceDiffs(sessionId, diffs);
+        }
+        persistReplayTimeline();
       }
       context.sessionUpdateStore?.replaceSession?.(sessionId, [...updates]);
-      persistReplayTimeline();
       const counts = {
         messages: messages.size,
         toolCalls: toolCalls.size,

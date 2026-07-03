@@ -49,7 +49,6 @@ function resetStore() {
     messages: {},
     sessionTimeline: {},
     sessionTimelineDeliveryState: {},
-    sessionCompactionStates: {},
     messageHistoryState: {},
     promptQueues: {},
     outputs: {},
@@ -181,11 +180,6 @@ test("session/list_timeline replaces the canonical timeline and applies live sta
       liveState: {
         plan: livePlan,
         promptQueue: livePromptQueue,
-        compactionState: {
-          phase: "started",
-          source: "provider",
-          timestamp: "2026-06-29T10:00:03.000Z",
-        },
       },
     },
     "helm-1",
@@ -198,11 +192,6 @@ test("session/list_timeline replaces the canonical timeline and applies live sta
   assert.deepEqual(state.sessionTimeline["session-1"]?.map((entry) => entry.id), ["loaded-assistant"]);
   assert.deepEqual(state.sessionPlans["session-1"], livePlan);
   assert.deepEqual(state.promptQueues["session-1"], livePromptQueue);
-  assert.deepEqual(state.sessionCompactionStates["session-1"], {
-    phase: "started",
-    source: "provider",
-    timestamp: "2026-06-29T10:00:03.000Z",
-  });
   assert.deepEqual(state.messageHistoryState["session-1"], {
     nextCursor: undefined,
     hasMore: false,
@@ -394,7 +383,7 @@ test("session timeline_batch requests an authoritative reload when delivery sequ
   ]);
 });
 
-test("session live_state snapshots replace plan, prompt queue, and compaction live state", () => {
+test("session live_state snapshots replace plan and prompt queue", () => {
   resetStore();
   useDeckStore.setState({
     sessionPlans: {
@@ -415,13 +404,6 @@ test("session live_state snapshots replace plan, prompt queue, and compaction li
           updatedAt: "2026-06-29T09:00:00.000Z",
           status: "queued",
         }],
-      },
-    },
-    sessionCompactionStates: {
-      "session-1": {
-        phase: "started",
-        source: "heuristic",
-        timestamp: "2026-06-29T09:00:00.000Z",
       },
     },
   });
@@ -464,7 +446,6 @@ test("session live_state snapshots replace plan, prompt queue, and compaction li
       status: "queued",
     }],
   });
-  assert.equal(useDeckStore.getState().sessionCompactionStates["session-1"], undefined);
 });
 
 test("session transcript_event does not mutate canonical timeline entries directly", () => {
@@ -475,6 +456,8 @@ test("session transcript_event does not mutate canonical timeline entries direct
         {
           id: "compaction-session-1",
           kind: "context_compaction",
+          phase: "completed",
+          source: "provider",
           summaryText: "Earlier compact summary",
           timestamp: "2026-06-28T00:00:00.000Z",
           updatedAt: "2026-06-28T00:00:00.000Z",
@@ -493,6 +476,8 @@ test("session transcript_event does not mutate canonical timeline entries direct
         entry: {
           id: "compaction-session-1",
           kind: "context_compaction",
+          phase: "completed",
+          source: "provider",
           summaryText: "Updated compact summary",
           timestamp: "2026-06-28T00:00:00.000Z",
           updatedAt: "2026-06-28T00:00:01.000Z",
@@ -533,17 +518,11 @@ test("session transcript_event leaves anchored timeline rows untouched until can
         {
           id: "synthetic-compaction",
           kind: "context_compaction",
+          phase: "completed",
+          source: "provider",
           summaryMessageId: "compaction-completed-message",
           timestamp: "2026-06-28T00:00:01.000Z",
           updatedAt: "2026-06-28T00:00:01.000Z",
-          replayCompleteness: "compacted",
-        },
-        {
-          id: "resume:session-1:assistant-1",
-          kind: "session_resumed",
-          restoreMethod: "session/load",
-          timestamp: "2026-06-28T00:00:02.000Z",
-          updatedAt: "2026-06-28T00:00:02.000Z",
           replayCompleteness: "compacted",
         },
         {
@@ -574,6 +553,8 @@ test("session transcript_event leaves anchored timeline rows untouched until can
         entry: {
           id: "authoritative-compaction",
           kind: "context_compaction",
+          phase: "completed",
+          source: "provider",
           summaryMessageId: "compaction-summary-message",
           summaryText: "This session is being continued from a previous conversation that ran out of context.",
           timestamp: "2026-06-28T00:00:05.000Z",
@@ -593,53 +574,12 @@ test("session transcript_event leaves anchored timeline rows untouched until can
   assert.deepEqual(timeline.map((entry) => entry.id), [
     "user-1",
     "synthetic-compaction",
-    "resume:session-1:assistant-1",
     "assistant-1",
   ]);
   assert.equal(
     compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].summaryText : undefined,
     undefined,
   );
-});
-
-test("session compaction_state updates keep only live started markers", () => {
-  resetStore();
-
-  const started = applySessionUpdate(
-    {
-      sessionId: "session-1",
-      update: {
-        kind: "compaction_state",
-        phase: "started",
-        source: "provider",
-        timestamp: "2026-06-28T00:00:00.000Z",
-      },
-    },
-    createSessionEventContext(),
-  );
-
-  assert.equal(started, true);
-  assert.deepEqual(useDeckStore.getState().sessionCompactionStates["session-1"], {
-    phase: "started",
-    source: "provider",
-    timestamp: "2026-06-28T00:00:00.000Z",
-  });
-
-  const completed = applySessionUpdate(
-    {
-      sessionId: "session-1",
-      update: {
-        kind: "compaction_state",
-        phase: "completed",
-        source: "heuristic",
-        timestamp: "2026-06-28T00:00:05.000Z",
-      },
-    },
-    createSessionEventContext(),
-  );
-
-  assert.equal(completed, true);
-  assert.equal(useDeckStore.getState().sessionCompactionStates["session-1"], undefined);
 });
 
 test("session/get_artifacts preserves existing canonical timeline reference", () => {
@@ -853,7 +793,7 @@ test("session/get_artifacts keeps canonical timeline untouched while refreshing 
   assert.equal(liveToolCalls.find((toolCall) => toolCall.id === "call-1")?.status, "running");
 });
 
-test("session/get_artifacts stores returned session plans", () => {
+test("session/get_artifacts no longer stores session plans", () => {
   resetStore();
   const plan = {
     updatedAt: "2026-06-02T13:37:09.663Z",
@@ -871,7 +811,6 @@ test("session/get_artifacts stores returned session plans", () => {
       outputs: [],
       toolCalls: [],
       diffs: [],
-      plan,
       hasMore: false,
     },
     "helm-1",
@@ -880,10 +819,10 @@ test("session/get_artifacts stores returned session plans", () => {
   );
 
   assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().sessionPlans["session-1"], plan);
+  assert.equal(useDeckStore.getState().sessionPlans["session-1"], undefined);
 });
 
-test("session/get_artifacts preserves existing session plans when plan is omitted", () => {
+test("session/get_artifacts preserves existing session plans because it no longer owns them", () => {
   resetStore();
   const plan: AgentPlan = {
     updatedAt: "2026-06-05T14:10:22.497Z",

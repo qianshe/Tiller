@@ -33,7 +33,6 @@ const baseProps = {
   copy,
   expandedMessageIds: new Set<string>(),
   messageHistoryState: {},
-  activityHistoryState: {},
   onLoadOlderMessages: () => undefined,
   onToggleExpandedMessage: () => undefined,
   activityLoading: null,

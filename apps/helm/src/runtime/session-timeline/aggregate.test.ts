@@ -159,7 +159,7 @@ test("aggregate second tool-call status update overwrites same entry", () => {
   }
 });
 
-test("aggregate compaction(started) does not create an entry", () => {
+test("aggregate compaction(started) creates a pending context_compaction entry", () => {
   let aggregate = createEmptySessionTimelineAggregate("session-6");
 
   aggregate = applySessionRuntimeEvent(aggregate, {
@@ -169,22 +169,43 @@ test("aggregate compaction(started) does not create an entry", () => {
     timestamp: "2026-06-29T10:00:01.000Z",
   });
 
-  assert.equal(aggregate.entries.length, 0);
+  assert.equal(aggregate.entries.length, 1);
+  const entry = aggregate.entries[0];
+  assert.equal(entry?.kind, "context_compaction");
+  if (entry?.kind === "context_compaction") {
+    assert.equal(entry.phase, "started");
+    assert.equal(entry.source, "provider");
+    assert.equal(entry.summaryText, undefined);
+  }
 });
 
-test("aggregate compaction(completed) creates a context_compaction entry", () => {
+test("aggregate compaction(completed) updates the pending context_compaction entry", () => {
   let aggregate = createEmptySessionTimelineAggregate("session-7");
+
+  aggregate = applySessionRuntimeEvent(aggregate, {
+    type: "compaction",
+    phase: "started",
+    source: "provider",
+    timestamp: "2026-06-29T10:00:01.000Z",
+  });
 
   aggregate = applySessionRuntimeEvent(aggregate, {
     type: "compaction",
     phase: "completed",
     source: "provider",
-    timestamp: "2026-06-29T10:00:01.000Z",
+    timestamp: "2026-06-29T10:00:20.000Z",
     summaryText: "Session compacted.",
   });
 
   assert.equal(aggregate.entries.length, 1);
-  assert.equal(aggregate.entries[0]?.kind, "context_compaction");
+  const entry = aggregate.entries[0];
+  assert.equal(entry?.kind, "context_compaction");
+  if (entry?.kind === "context_compaction") {
+    assert.equal(entry.phase, "completed");
+    assert.equal(entry.source, "provider");
+    assert.equal(entry.summaryText, "Session compacted.");
+    assert.equal(entry.updatedAt, "2026-06-29T10:00:20.000Z");
+  }
 });
 
 test("buildSessionTimelineBatch returns null when entries unchanged", () => {

@@ -210,7 +210,7 @@ export function sanitizeRecoveredHistorySequenceResets(
       return entry;
     }
     // Transcript events don't have sequence to clear
-    if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
+    if (entry.kind === "context_compaction" || entry.kind === "history_gap") {
       return entry;
     }
     if (entry.kind === "tool_call") {
@@ -271,7 +271,7 @@ export function clearRecoveredArtifactTimelineSequences(input: {
 }
 
 function resolveEntryTimelineSequence(entry: SessionTimelineEntry) {
-  if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
+  if (entry.kind === "context_compaction" || entry.kind === "history_gap") {
     return undefined;
   }
   if (entry.kind === "tool_call") {

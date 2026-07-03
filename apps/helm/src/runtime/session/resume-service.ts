@@ -10,6 +10,10 @@ import { createRestoreReplayBuffer, hasRestoreReplayContent } from "../replay/ev
 import { buildSessionResumeInfo, markSessionResumeUnavailable } from "../resume-info";
 import { resolveProviderHistorySnapshot } from "../provider-history/source";
 import {
+  MIGRATE_LEGACY_RESUMED_TO_COMPACTION_ONLY,
+  repairCompactionBootstrapTimeline,
+} from "../session-timeline/compaction-bootstrap";
+import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "./config-options";
@@ -179,45 +183,42 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       await waitForRestoreReplayToSettle(() => lastRestoreReplayEventAt);
       const replaySnapshot = restoreReplayBuffer.snapshot();
       options.providerHistory.recordSessionPlan?.(sessionId, replaySnapshot.plan);
-
-      // Apply replay tail patch instead of unconditional clear
-      const { classifyReplayCompleteness } = await import("./replay-completeness");
-      const { applyReplayTailPatch } = await import("./replay-tail-patch");
-
-      const replayCompleteness = classifyReplayCompleteness({
-        restoreMethod,
-        replayMessages: replaySnapshot.messages,
-        providerId: restoreAgent.id,
-      });
-
-      const localMessages = options.sessionMessageStore.list(sessionId) as import("@tiller/shared").AgentMessage[];
       const localTimeline = handlerContext.sessionTimelineStore?.list?.(sessionId) ?? [];
-      const shouldApplyReplayTailPatch = restoreMethod === "session/load" &&
-        replayCompleteness === "compacted" &&
-        replaySnapshot.messages.length > 0;
+      if (
+        MIGRATE_LEGACY_RESUMED_TO_COMPACTION_ONLY &&
+        handlerContext.sessionTimelineStore?.replace &&
+        localTimeline.length > 0
+      ) {
+        const repairedTimeline = repairCompactionBootstrapTimeline({
+          sessionId,
+          timeline: localTimeline,
+          messages: replaySnapshot.messages,
+          providerId: restoreAgent.id,
+          restoreMethod,
+        });
+        if (repairedTimeline) {
+          handlerContext.sessionTimelineStore.replace(sessionId, repairedTimeline.entries);
+          logResumeInfo(options, "runtime.restore_replay.compaction_repaired", {
+            sessionId,
+            entries: repairedTimeline.entries.length,
+            synthesizedBoundary: repairedTimeline.synthesizedBoundary,
+          });
+        }
+      }
 
       if (replaySnapshot.toolCalls.length || replaySnapshot.outputs.length || replaySnapshot.diffs.length) {
         options.sessionArtifactStore.remove(sessionId);
       }
-      const replayCounts = restoreReplayBuffer.flush();
+      const replayCounts = restoreReplayBuffer.flush({ persistLocalStores: false });
       if (hasRestoreReplayContent(replayCounts)) {
         logResumeInfo(options, "runtime.restore_replay.completed", {
           sessionId,
           ...replayCounts,
         });
       }
-      if (shouldApplyReplayTailPatch) {
-        const replayTimeline = handlerContext.sessionTimelineStore?.list?.(sessionId) ?? [];
-        const patchResult = applyReplayTailPatch({
-          localMessages,
-          localTimeline,
-          replayMessages: replaySnapshot.messages,
-          replayTimeline,
-          replayCompleteness,
-        });
-        options.sessionMessageStore.replace(sessionId, patchResult.nextMessages);
-        handlerContext.sessionTimelineStore?.replace?.(sessionId, patchResult.nextTimeline);
-      }
+      // ACP replay can restore runtime context, but canonical display history
+      // stays owned by local sessionTimelineStore. Never replace local
+      // transcript here.
       const historySnapshot = await resolveProviderHistorySnapshot([
         {
           source: "acp-session-load",

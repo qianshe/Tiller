@@ -91,9 +91,18 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
   assert.doesNotMatch(html, /plain-thinking[^"]*bg-surface-elevated/);
 });
 
-test("plain messages renders live compaction progress rows from transient session state", () => {
+test("plain messages renders pending compaction rows from timeline entries", () => {
   const html = renderPlainMessages({
     timelineItems: [
+      {
+        id: "compaction-pending",
+        kind: "context_compaction",
+        phase: "started",
+        source: "provider",
+        timestamp: "2026-06-28T00:00:00.000Z",
+        updatedAt: "2026-06-28T00:00:00.000Z",
+        replayCompleteness: "compacted",
+      },
       {
         id: "assistant-1",
         kind: "assistant_message",
@@ -111,15 +120,10 @@ test("plain messages renders live compaction progress rows from transient sessio
         sequence: 1,
       },
     ],
-    liveCompactionState: {
-      phase: "started",
-      source: "provider",
-      timestamp: "2026-06-28T00:00:00.000Z",
-    },
   } as any);
 
   assert.match(html, /正在压缩上下文/);
-  assert.ok(html.indexOf("我先继续处理剩余上下文。") < html.indexOf("正在压缩上下文"));
+  assert.ok(html.indexOf("正在压缩上下文") < html.indexOf("我先继续处理剩余上下文。"));
 });
 
 test("plain messages can render unified timeline entries with ordered assistant chunks", () => {
@@ -526,18 +530,12 @@ test("plain messages prefers transcript compaction events over duplicate continu
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         summaryMessageId: "compaction-summary",
         summaryText,
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",
-        replayCompleteness: "compacted",
-      },
-      {
-        id: "resumed-1",
-        kind: "session_resumed",
-        restoreMethod: "session/resume",
-        timestamp: "2026-06-18T13:55:25.194Z",
-        updatedAt: "2026-06-18T13:55:25.194Z",
         replayCompleteness: "compacted",
       },
       {
@@ -646,18 +644,12 @@ test("plain messages suppresses timeline summary messages once compaction transc
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         summaryMessageId: "compaction-summary",
         summaryText,
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",
-        replayCompleteness: "compacted",
-      },
-      {
-        id: "resumed-1",
-        kind: "session_resumed",
-        restoreMethod: "session/load",
-        timestamp: "2026-06-18T13:55:25.194Z",
-        updatedAt: "2026-06-18T13:55:25.194Z",
         replayCompleteness: "compacted",
       },
       {
@@ -692,16 +684,10 @@ test("plain messages suppresses raw compaction lifecycle messages once compactio
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",
-        replayCompleteness: "compacted",
-      },
-      {
-        id: "resumed-1",
-        kind: "session_resumed",
-        restoreMethod: "session/load",
-        timestamp: "2026-06-18T13:55:25.194Z",
-        updatedAt: "2026-06-18T13:55:25.194Z",
         replayCompleteness: "compacted",
       },
       {
@@ -743,7 +729,7 @@ test("plain messages suppresses raw compaction lifecycle messages once compactio
   assert.ok(html.indexOf("上下文已压缩") < html.indexOf("有个测试失败了，看一下具体原因。"));
 });
 
-test("plain messages preserves transcript boundary anchor order when compaction timestamps are later than the resumed tail", () => {
+test("plain messages preserves transcript boundary anchor order when compaction timestamps are later than the first post-compaction message", () => {
   const summaryText = "This session is being continued from a previous conversation that ran out of context.";
   const html = renderPlainMessages({
     timelineItems: [
@@ -766,6 +752,8 @@ test("plain messages preserves transcript boundary anchor order when compaction 
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         summaryMessageId: "compaction-summary",
         summaryText,
         timestamp: "2026-06-18T14:05:25.193Z",
@@ -773,11 +761,73 @@ test("plain messages preserves transcript boundary anchor order when compaction 
         replayCompleteness: "compacted",
       },
       {
-        id: "resumed-1",
-        kind: "session_resumed",
-        restoreMethod: "session/load",
+        id: "current-user",
+        kind: "user_message",
+        message: {
+          id: "current-user",
+          role: "user",
+          text: "给我验证清单",
+          timestamp: "2026-06-18T14:01:49.292Z",
+          sequence: 256,
+        },
         timestamp: "2026-06-18T14:01:49.292Z",
         updatedAt: "2026-06-18T14:01:49.292Z",
+        sequence: 256,
+      },
+      {
+        id: "assistant-answer",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-answer:content",
+            kind: "content",
+            text: "验证清单",
+            timestamp: "2026-06-18T14:02:16.000Z",
+            sequence: 276,
+          },
+        ],
+        timestamp: "2026-06-18T14:02:16.000Z",
+        updatedAt: "2026-06-18T14:02:16.000Z",
+        sequence: 276,
+      },
+    ],
+    items: [],
+  });
+
+  assert.ok(html.indexOf("验证不过的项告诉我具体表现，我来定位修。") < html.indexOf("上下文已压缩"));
+  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("给我验证清单"));
+  assert.ok(html.indexOf("给我验证清单") < html.indexOf("验证清单"));
+});
+
+test("plain messages renders compaction-only transcript prefixes using the stored canonical order", () => {
+  const summaryText = "This session is being continued from a previous conversation that ran out of context.";
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "older-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "older-assistant:content",
+            kind: "content",
+            text: "验证不过的项告诉我具体表现，我来定位修。",
+            timestamp: "2026-06-18T14:01:30.000Z",
+            sequence: 255,
+          },
+        ],
+        timestamp: "2026-06-18T14:01:30.000Z",
+        updatedAt: "2026-06-18T14:01:30.000Z",
+        sequence: 255,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText,
+        timestamp: "2026-06-18T14:05:25.193Z",
+        updatedAt: "2026-06-18T14:05:25.193Z",
         replayCompleteness: "compacted",
       },
       {
@@ -842,6 +892,8 @@ test("plain messages dedupes live assistant replies already represented after a 
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         summaryMessageId: "compaction-summary",
         summaryText,
         timestamp: "2026-06-18T13:55:25.193Z",
@@ -1367,25 +1419,19 @@ test("plain messages marks paged windows that start inside earlier context", () 
   assert.ok(html.indexOf("上方还有上下文") < html.indexOf("后续正文"));
 });
 
-test("plain messages keeps transcript boundary rows when paged windows start before the resumed message", () => {
+test("plain messages keeps transcript boundary rows when paged windows start before the first post-compaction message", () => {
   const summaryText = "This session is being continued from a previous conversation that ran out of context.";
   const html = renderPlainMessages({
     timelineItems: [
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         summaryMessageId: "compaction-summary",
         summaryText,
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",
-        replayCompleteness: "compacted",
-      },
-      {
-        id: "resumed-1",
-        kind: "session_resumed",
-        restoreMethod: "session/load",
-        timestamp: "2026-06-18T13:55:25.194Z",
-        updatedAt: "2026-06-18T13:55:25.194Z",
         replayCompleteness: "compacted",
       },
       {
@@ -1411,10 +1457,8 @@ test("plain messages keeps transcript boundary rows when paged windows start bef
   assert.match(html, /plain-history-boundary/);
   assert.match(html, /上方还有上下文/);
   assert.match(html, /上下文已压缩/);
-  assert.match(html, /会话已恢复/);
   assert.ok(html.indexOf("上方还有上下文") < html.indexOf("上下文已压缩"));
-  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("会话已恢复"));
-  assert.ok(html.indexOf("会话已恢复") < html.indexOf("后续正文"));
+  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("后续正文"));
 });
 
 test("plain messages drops replay-duplicate live assistant messages already covered by timeline history", () => {
@@ -1516,7 +1560,7 @@ test("plain messages keep optimistic live messages visible when timeline history
     ],
     items: [
       {
-        id: "session-1-user-1001",
+        id: "session-1-user-pending",
         role: "user",
         text: "新的 OpenCode prompt",
         timestamp: "2026-05-17T10:00:02.000Z",
@@ -1617,7 +1661,7 @@ test("plain messages append live prompts after restored timeline history", () =>
     ],
     items: [
       {
-        id: "session-1-user-1002",
+        id: "session-1-user-pending",
         role: "user",
         text: "刚发送的新消息",
         timestamp: "2026-05-17T10:05:00.000Z",
@@ -1697,7 +1741,7 @@ test("plain messages append live prompts after a paged restored timeline", () =>
     ],
     items: [
       {
-        id: "session-1-user-1003",
+        id: "session-1-user-pending",
         role: "user",
         text: "刚发送到旧会话的新消息",
         timestamp: "2026-05-17T10:20:00.000Z",
@@ -1715,7 +1759,7 @@ test("plain messages append live prompts after a paged restored timeline", () =>
   assert.ok(liveUserIndex > historyAssistantIndex);
 });
 
-test("plain messages do not append legacy messages older than the loaded timeline window", () => {
+test("plain messages keep older fallback messages ahead of the loaded timeline window", () => {
   const html = renderPlainMessages({
     timelineItems: [
       {
@@ -1750,8 +1794,12 @@ test("plain messages do not append legacy messages older than the loaded timelin
     },
   });
 
+  const legacyUserIndex = html.indexOf("最早的用户消息不应追加到末尾");
+  const loadedAssistantIndex = html.indexOf("已加载窗口里的回复");
+
   assert.match(html, /已加载窗口里的回复/);
-  assert.doesNotMatch(html, /最早的用户消息不应追加到末尾/);
+  assert.match(html, /最早的用户消息不应追加到末尾/);
+  assert.ok(legacyUserIndex >= 0 && loadedAssistantIndex > legacyUserIndex);
 });
 
 test("plain messages sort fallback messages with the restored timeline window", () => {
@@ -3349,7 +3397,7 @@ test("plain message render signature changes when the same render key changes he
   );
 });
 
-test("plain message display recomputes the timeline boundary when hasMore changes", () => {
+test("plain message display keeps fallback messages visible while paged history remains loadable", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {
       id: "assistant-1",
@@ -3394,7 +3442,6 @@ test("plain message display recomputes the timeline boundary when hasMore change
     showThinking: true,
     thinkingToolCalls: [],
     toolCalls: [],
-    historyHasMore: true,
   });
   const afterBoundaryResolved = resolvePlainConversationDisplayItems({
     displayMessages: liveMessages,
@@ -3402,10 +3449,9 @@ test("plain message display recomputes the timeline boundary when hasMore change
     showThinking: true,
     thinkingToolCalls: [],
     toolCalls: [],
-    historyHasMore: false,
   });
 
-  assert.equal(whilePaged.some((item) => item.kind === "message" && item.message.id === "assistant-live-older"), false);
+  assert.equal(whilePaged.some((item) => item.kind === "message" && item.message.id === "assistant-live-older"), true);
   assert.equal(afterBoundaryResolved.some((item) => item.kind === "message" && item.message.id === "assistant-live-older"), true);
 });
 

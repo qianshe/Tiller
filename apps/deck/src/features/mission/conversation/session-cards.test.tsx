@@ -69,6 +69,18 @@ test("SessionPreviewMessages centers idle restore guidance", () => {
   assert.doesNotMatch(html, /operator/);
 });
 
+test("SessionPreviewMessages shows canonical history loading guidance", () => {
+  const html = renderToStaticMarkup(
+    <SessionPreviewMessages session={session({ status: "idle" as any })} historyLoading />,
+  );
+
+  assert.match(html, /data-session-preview-state="history-loading"/);
+  assert.match(html, /正在加载历史消息/);
+  assert.match(html, /正在同步此任务的时间线历史/);
+  assert.match(html, /Build feature/);
+  assert.doesNotMatch(html, /此任务的信息流已保留在并行卡片中/);
+});
+
 test("SessionRestoreNotice shows only the status word and keeps detail in tooltip", () => {
   const html = renderToStaticMarkup(
     <SessionRestoreNotice notice={{ title: "恢复中", message: "正在重连 ACP" }} />,

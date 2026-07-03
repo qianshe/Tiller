@@ -200,6 +200,112 @@ test("timeline block store paginates older entries within the same block", () =>
   }
 });
 
+test("timeline block store message-window keeps context_compaction attached to the following assistant group", () => {
+  withStore(({ store }) => {
+    store.replace("session-1", [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-1:content",
+          kind: "content",
+          text: "answer",
+          timestamp: at(30),
+          sequence: 276,
+        }],
+        timestamp: at(30),
+        updatedAt: at(30),
+        sequence: 276,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText: "continued from previous conversation",
+        detailsVisibility: "expandable",
+        timestamp: at(40),
+        updatedAt: at(40),
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-2",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-2:content",
+          kind: "content",
+          text: "follow-up",
+          timestamp: at(50),
+          sequence: 277,
+        }],
+        timestamp: at(50),
+        updatedAt: at(50),
+        sequence: 277,
+      },
+    ]);
+
+    const page = store.listPage("session-1", { limit: 1, window: "message" });
+
+    assert.deepEqual(
+      page.entries.map((entry) => entry.id),
+      ["compaction-1", "assistant-2"],
+    );
+  });
+});
+
+test("timeline block store list preserves compaction-only transcript order", () => {
+  withStore(({ store }) => {
+    store.replace("session-1", [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-1:content",
+          kind: "content",
+          text: "answer",
+          timestamp: at(30),
+          sequence: 276,
+        }],
+        timestamp: at(30),
+        updatedAt: at(30),
+        sequence: 276,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText: "continued from previous conversation",
+        detailsVisibility: "expandable",
+        timestamp: at(40),
+        updatedAt: at(40),
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-2",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-2:content",
+          kind: "content",
+          text: "follow-up",
+          timestamp: at(50),
+          sequence: 277,
+        }],
+        timestamp: at(50),
+        updatedAt: at(50),
+        sequence: 277,
+      },
+    ]);
+
+    assert.deepEqual(
+      store.list("session-1").map((entry) => entry.id),
+      ["assistant-1", "compaction-1", "assistant-2"],
+    );
+  });
+});
+
 test("timeline block store upsertToolCall merges thinking into an assistant entry", () => {
   withStore(({ store }) => {
     store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", sequence: 2 }));

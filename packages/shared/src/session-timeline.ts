@@ -2,7 +2,6 @@ import type { AgentMessage, AgentToolCall, CommandChunk } from "./types";
 import type {
   SessionTimelineContextCompactionEntry,
   SessionTimelineHistoryGapEntry,
-  SessionTimelineResumedEntry,
 } from "./session-transcript";
 import { isTranscriptEventEntry } from "./session-transcript";
 
@@ -63,7 +62,6 @@ export type SessionTimelineEntry =
   | SessionTimelineAssistantEntry
   | SessionTimelineToolCallEntry
   | SessionTimelineContextCompactionEntry
-  | SessionTimelineResumedEntry
   | SessionTimelineHistoryGapEntry;
 
 export type SessionTimelineBatch = {

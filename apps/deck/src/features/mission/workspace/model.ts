@@ -5,6 +5,7 @@ import {
   resolveMissionActivityLoading,
   selectMissionDisplayTab,
 } from "../utils/session-render-state";
+import { deriveToolCallsFromTimeline } from "../utils/timeline-tool-calls";
 import {
   isSessionExecutionPending,
   resolveSessionRestoreGate,
@@ -24,6 +25,7 @@ export function buildMissionWorktreeModel(input: any) {
     diffs = {},
     outputs = {},
     toolCalls = {},
+    sessionTimeline = {},
     statuses = {},
     copy,
     selectedMissionDisplayTabId,
@@ -77,7 +79,10 @@ export function buildMissionWorktreeModel(input: any) {
   const activeDiffs = activeSession ? (diffs[activeSession.id] ?? []) : [];
   const activeOutputs = activeSession ? (outputs[activeSession.id] ?? []) : [];
   const activeToolCalls = activeSession
-    ? (toolCalls[activeSession.id] ?? [])
+    ? (
+      toolCalls[activeSession.id] ??
+      deriveToolCallsFromTimeline(sessionTimeline[activeSession.id])
+    )
     : [];
   const pendingToolActivity =
     activeSession && isSessionExecutionPending(activeSessionStatus)

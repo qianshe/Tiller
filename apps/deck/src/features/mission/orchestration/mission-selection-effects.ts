@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { agentModelOptionsKey } from "../../agents/facade";
 import { resolveModelOptions, resolvePreferredModel } from "../utils/composer-options";
 import { getDeckClientId } from "../utils/deck-client-id";
+import { shouldPrimeGitGraphLoad } from "../workspace/git-sync";
 import {
   resolveDefaultMissionSessionId,
   resolveDraftSelectionId,
@@ -46,6 +47,8 @@ export function useMissionSelectionEffects(source: any) {
     setWorktreeGitByProject,
     gitStatusByWorktree,
     setGitStatusByWorktree,
+    gitGraphByWorktree,
+    setGitGraphByWorktree,
     dispatch,
     selectedAgentId,
     filteredAgents,
@@ -249,6 +252,49 @@ export function useMissionSelectionEffects(source: any) {
     gitStatusByWorktree,
     pairingState,
     setGitStatusByWorktree,
+  ]);
+
+  useEffect(() => {
+    const client = rpcClientRef.current;
+    if (
+      pairingState !== "paired" ||
+      !client ||
+      client.socket.readyState !== WebSocket.OPEN ||
+      !effectiveGitProjectId ||
+      !effectiveGitCwd
+    ) {
+      return;
+    }
+
+    const currentGraph = gitGraphByWorktree?.[effectiveGitCwd];
+    if (!shouldPrimeGitGraphLoad(currentGraph)) {
+      return;
+    }
+
+    setGitGraphByWorktree?.((current: Record<string, any>) => ({
+      ...current,
+      [effectiveGitCwd]: {
+        projectId: effectiveGitProjectId,
+        cwd: effectiveGitCwd,
+        head: currentGraph?.head,
+        commits: currentGraph?.commits ?? [],
+        loading: true,
+        message: "正在加载提交历史...",
+      },
+    }));
+
+    void dispatch(client, "project/git/graph", {
+      projectId: effectiveGitProjectId,
+      cwd: effectiveGitCwd,
+    });
+  }, [
+    dispatch,
+    effectiveGitCwd,
+    effectiveGitProjectId,
+    gitGraphByWorktree,
+    pairingState,
+    rpcClientRef,
+    setGitGraphByWorktree,
   ]);
 
   useEffect(() => {

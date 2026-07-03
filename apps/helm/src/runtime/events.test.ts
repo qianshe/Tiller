@@ -268,7 +268,7 @@ test("runtime message events persist source-neutral session update records", () 
   assert.equal(JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}").message.text, "hello");
 });
 
-test("runtime compaction started only broadcasts transient compaction state", () => {
+test("runtime compaction started publishes a canonical timeline batch when the pipeline is available", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -276,7 +276,9 @@ test("runtime compaction started only broadcasts transient compaction state", ()
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-compaction-live");
+  const context = createTestContext(logs, capture, "session-compaction-live", {}, {
+    useCanonicalPipeline: true,
+  });
 
   handleRuntimeEvent(
     "session-compaction-live",
@@ -289,17 +291,100 @@ test("runtime compaction started only broadcasts transient compaction state", ()
     context,
   );
 
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  ) as { params?: { update?: { batch?: import("@tiller/shared").SessionTimelineBatch } } } | undefined;
   const compactionStateUpdate = capture.detailBroadcasts.find((item: any) =>
     item.method === "session/update" && item.params?.update?.kind === "compaction_state"
   ) as { params?: { update?: { phase?: string; source?: string } } } | undefined;
+
+  assert.ok(timelineBatchUpdate?.params?.update?.batch);
+  assert.equal(compactionStateUpdate, undefined);
+  assert.equal(capture.timelineEntries?.length ?? 0, 1);
+  assert.equal(capture.timelineEntries?.[0]?.kind, "context_compaction");
+  if (capture.timelineEntries?.[0]?.kind === "context_compaction") {
+    assert.equal(capture.timelineEntries[0].phase, "started");
+    assert.equal(capture.timelineEntries[0].source, "provider");
+  }
+});
+
+test("runtime compaction started publishes a transcript event in fallback mode", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-compaction-fallback");
+
+  handleRuntimeEvent(
+    "session-compaction-fallback",
+    {
+      type: "compaction",
+      phase: "started",
+      source: "provider",
+      timestamp: "2026-06-28T00:00:00.000Z",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
   const transcriptUpdate = capture.detailBroadcasts.find((item: any) =>
     item.method === "session/update" && item.params?.update?.kind === "transcript_event"
   ) as { params?: { update?: { entry?: SessionTimelineEntry } } } | undefined;
 
-  assert.equal(compactionStateUpdate?.params?.update?.phase, "started");
-  assert.equal(compactionStateUpdate?.params?.update?.source, "provider");
-  assert.equal(transcriptUpdate, undefined);
-  assert.equal(capture.timelineEntries?.length ?? 0, 0);
+  assert.equal(transcriptUpdate?.params?.update?.entry?.kind, "context_compaction");
+  assert.equal(capture.timelineEntries?.[0]?.kind, "context_compaction");
+  if (capture.timelineEntries?.[0]?.kind === "context_compaction") {
+    assert.equal(capture.timelineEntries[0].phase, "started");
+    assert.equal(capture.timelineEntries[0].source, "provider");
+  }
+});
+
+test("runtime infers compaction completion from the first post-compaction assistant message", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-compaction-inferred", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-compaction-inferred",
+    {
+      type: "compaction",
+      phase: "started",
+      source: "provider",
+      timestamp: "2026-06-28T00:00:00.000Z",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  handleRuntimeEvent(
+    "session-compaction-inferred",
+    {
+      type: "message",
+      message: {
+        id: "assistant-after-compaction",
+        role: "assistant",
+        text: "压缩后继续。",
+        timestamp: "2026-06-28T00:00:05.000Z",
+        streaming: false,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const compactionEntry = capture.timelineEntries?.find((entry) => entry.kind === "context_compaction");
+  assert.equal(compactionEntry?.kind, "context_compaction");
+  if (compactionEntry?.kind === "context_compaction") {
+    assert.equal(compactionEntry.phase, "completed");
+    assert.equal(compactionEntry.summaryText, undefined);
+  }
 });
 
 test("runtime assistant messages publish canonical timeline batches when the pipeline is available", () => {
@@ -340,6 +425,46 @@ test("runtime assistant messages publish canonical timeline batches when the pip
   assert.ok(timelineBatchUpdate?.params?.update?.batch);
   assert.equal(agentMessageUpdate, undefined);
   assert.equal(timelineBatchUpdate?.params?.update?.batch?.entries[0]?.kind, "assistant_message");
+});
+
+test("runtime tool calls publish canonical timeline batches without compatibility tool_call updates", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-tool-call", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-canonical-tool-call",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-1",
+        kind: "shell",
+        title: "pnpm test",
+        status: "running",
+        commandId: "cmd-1",
+        timestamp: "2026-06-30T00:00:01.000Z",
+        updatedAt: "2026-06-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  );
+  const legacyToolCallUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "tool_call"
+  );
+
+  assert.ok(timelineBatchUpdate);
+  assert.equal(legacyToolCallUpdate, undefined);
 });
 
 test("runtime plan updates publish live_state snapshots when the pipeline is available", () => {
@@ -385,7 +510,68 @@ test("runtime plan updates publish live_state snapshots when the pipeline is ava
   );
 });
 
-test("runtime compaction completed clears live state and persists a transcript compaction event", () => {
+test("runtime command outputs publish canonical timeline batches without compatibility command_output updates", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const appendedOutputs: CommandChunk[] = [];
+  const context = createTestContext(logs, capture, "session-canonical-command-output", {}, {
+    useCanonicalPipeline: true,
+  });
+  context.sessionArtifactStore.appendOutput = (_sessionId: string, chunk: CommandChunk) => {
+    appendedOutputs.push(chunk);
+  };
+
+  handleRuntimeEvent(
+    "session-canonical-command-output",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-1",
+        kind: "shell",
+        title: "pnpm test",
+        status: "running",
+        commandId: "cmd-1",
+        timestamp: "2026-06-30T00:00:01.000Z",
+        updatedAt: "2026-06-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  capture.detailBroadcasts.length = 0;
+
+  handleRuntimeEvent(
+    "session-canonical-command-output",
+    {
+      type: "command-output",
+      chunk: {
+        id: "chunk-1",
+        commandId: "cmd-1",
+        text: "PASS",
+        stream: "stdout",
+        timestamp: "2026-06-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  );
+  const legacyCommandOutputUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "command_output"
+  );
+
+  assert.ok(timelineBatchUpdate);
+  assert.equal(legacyCommandOutputUpdate, undefined);
+  assert.equal(appendedOutputs.length, 1);
+});
+
+test("runtime compaction completed persists a transcript compaction event in fallback mode", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -407,14 +593,10 @@ test("runtime compaction completed clears live state and persists a transcript c
     context,
   );
 
-  const compactionStateUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "compaction_state"
-  ) as { params?: { update?: { phase?: string; source?: string } } } | undefined;
   const transcriptUpdate = capture.detailBroadcasts.find((item: any) =>
     item.method === "session/update" && item.params?.update?.kind === "transcript_event"
   ) as { params?: { update?: { entry?: SessionTimelineEntry } } } | undefined;
 
-  assert.equal(compactionStateUpdate?.params?.update?.phase, "completed");
   assert.equal(transcriptUpdate?.params?.update?.entry?.kind, "context_compaction");
   assert.equal(
     transcriptUpdate?.params?.update?.entry?.id,
@@ -433,6 +615,12 @@ test("runtime compaction completed clears live state and persists a transcript c
     "expandable",
   );
   assert.equal(capture.timelineEntries?.some((entry) => entry.id === "compaction:session-compaction-live:compaction:2026-06-28T00:00:01.000Z"), true);
+  assert.equal(
+    transcriptUpdate?.params?.update?.entry?.kind === "context_compaction"
+      ? transcriptUpdate.params.update.entry.phase
+      : undefined,
+    "completed",
+  );
 });
 
 test("runtime compaction completed hides summary details for codex providers", () => {
@@ -575,6 +763,64 @@ test("runtime compaction starts a fresh assistant segment after the divider", ()
       type: "status",
       status: "idle",
       message: "done",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.timelineEntries?.map((entry) => entry.kind),
+    ["assistant_message", "context_compaction", "assistant_message"],
+  );
+  const assistantEntries = capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
+  assert.equal(assistantEntries.length, 2);
+  assert.notEqual(assistantEntries[0]?.id, assistantEntries[1]?.id);
+});
+
+test("runtime compaction starts a fresh assistant segment after the divider in canonical mode", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-compaction-boundary-canonical", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-compaction-boundary-canonical",
+    {
+      type: "message",
+      message: {
+        id: "reply-1",
+        role: "assistant",
+        text: "压缩前说明。",
+        timestamp: "2026-06-28T00:00:00.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-compaction-boundary-canonical",
+    {
+      type: "compaction",
+      phase: "started",
+      source: "provider",
+      timestamp: "2026-06-28T00:00:01.000Z",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-compaction-boundary-canonical",
+    {
+      type: "message",
+      message: {
+        id: "reply-1",
+        role: "assistant",
+        text: "压缩后继续。",
+        timestamp: "2026-06-28T00:00:02.000Z",
+      },
     } satisfies SessionRuntimeEvent,
     context,
   );

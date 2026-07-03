@@ -6,7 +6,6 @@ export type ConversationRenderItem =
   | { kind: "tool-group"; id: string; toolCalls: AgentToolCall[] }
   | { kind: "subagent"; id: string; toolCall: AgentToolCall }
   | { kind: "context-compaction"; id: string; summaryText?: string }
-  | { kind: "session-resumed"; id: string }
   | { kind: "history-gap"; id: string };
 
 export function buildConversationRenderItems(entries: SessionTimelineEntry[]): ConversationRenderItem[] {
@@ -71,11 +70,6 @@ export function buildConversationRenderItems(entries: SessionTimelineEntry[]): C
           id: entry.id,
           summaryText: entry.summaryText,
         });
-        break;
-      case "session_resumed":
-        flushToolGroup(items, pendingToolGroup);
-        pendingToolGroup = [];
-        items.push({ kind: "session-resumed", id: entry.id });
         break;
       case "history_gap":
         flushToolGroup(items, pendingToolGroup);

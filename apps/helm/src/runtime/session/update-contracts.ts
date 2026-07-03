@@ -18,7 +18,6 @@ import type {
   SessionAgentMessageUpdate as DomainSessionAgentMessageUpdate,
   SessionCommandOutputUpdate as DomainSessionCommandOutputUpdate,
   SessionCommandsAvailableUpdate as DomainSessionCommandsAvailableUpdate,
-  SessionCompactionStateUpdate as DomainSessionCompactionStateUpdate,
   SessionConfigOptionsUpdate as DomainSessionConfigOptionsUpdate,
   SessionDiffUpdate as DomainSessionDiffUpdate,
   SessionLiveStateUpdate as DomainSessionLiveStateUpdate,
@@ -66,8 +65,6 @@ export type SessionCommandsAvailableUpdate = DomainSessionCommandsAvailableUpdat
 export type SessionUpdatedUpdate = DomainSessionUpdatedUpdate<RuntimeSessionSummary>;
 
 export type SessionPromptQueueUpdate = DomainSessionPromptQueueUpdate<SessionPromptQueueSnapshot>;
-
-export type SessionCompactionStateUpdate = DomainSessionCompactionStateUpdate;
 
 export type SessionTranscriptEventUpdate = DomainSessionTranscriptEventUpdate<
   SessionTimelineTranscriptEventEntry

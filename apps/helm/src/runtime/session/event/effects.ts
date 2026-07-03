@@ -4,7 +4,7 @@ import { persistTimelineToolCall } from "../timeline-effects";
 import { createSessionEventPublisher } from "./publisher";
 import { resolveBroadcastToolCall } from "./normalizer";
 
-export function publishRuntimeToolCall(
+export function recordRuntimeToolCallArtifact(
   context: HelmHandlerContext,
   sessionId: string,
   toolCall: AgentToolCall,
@@ -16,6 +16,15 @@ export function publishRuntimeToolCall(
     toolCall,
     artifacts?.toolCalls?.find((item) => item.id === toolCall.id),
   );
+  return mergedToolCall;
+}
+
+export function publishRuntimeToolCall(
+  context: HelmHandlerContext,
+  sessionId: string,
+  toolCall: AgentToolCall,
+) {
+  const mergedToolCall = recordRuntimeToolCallArtifact(context, sessionId, toolCall);
   if (!context.sessionTimelineWorkers || !context.sessionTimelineDispatcher || !context.sessionLiveStateStore) {
     persistTimelineToolCall(context, sessionId, mergedToolCall);
   }
@@ -26,13 +35,21 @@ export function publishRuntimeToolCall(
   return mergedToolCall;
 }
 
+export function recordRuntimeCommandOutputArtifact(
+  context: HelmHandlerContext,
+  sessionId: string,
+  chunk: CommandChunk,
+) {
+  context.sessionArtifactStore.appendOutput(sessionId, chunk);
+}
+
 export function publishRuntimeCommandOutput(
   context: HelmHandlerContext,
   sessionId: string,
   chunk: CommandChunk,
   toolCall?: AgentToolCall,
 ) {
-  context.sessionArtifactStore.appendOutput(sessionId, chunk);
+  recordRuntimeCommandOutputArtifact(context, sessionId, chunk);
   createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "command_output",
     commandId: chunk.commandId,

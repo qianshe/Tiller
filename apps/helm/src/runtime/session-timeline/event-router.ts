@@ -31,27 +31,12 @@ export function routeSessionRuntimeEvent(
       return "timeline" as const;
     }
     case "compaction": {
-      if (event.phase === "started") {
-        const snapshot = deps.liveStateStore.patch(sessionId, {
-          compactionState: {
-            phase: "started",
-            source: event.source,
-            timestamp: event.timestamp,
-          },
-        });
-        publishLiveState(sessionId, snapshot, deps.context);
-        return "live_state" as const;
-      }
       const worker = deps.workers.forSession(sessionId);
       worker.enqueue(event);
       const batches = worker.flush();
       for (const batch of batches) {
         deps.dispatcher.dispatch(sessionId, batch);
       }
-      const snapshot = deps.liveStateStore.patch(sessionId, {
-        compactionState: undefined,
-      });
-      publishLiveState(sessionId, snapshot, deps.context);
       return "timeline" as const;
     }
     case "plan-update": {

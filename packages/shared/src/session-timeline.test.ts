@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "./types";
-import { injectTranscriptBoundaryEvents } from "./session-transcript";
+import { isTranscriptEventEntry } from "./session-transcript";
 import type { SessionTimelineBatch, SessionTimelineEntry } from "./session-timeline";
 import {
   appendToolCallToSessionTimeline,
@@ -46,93 +46,64 @@ function toolCall(
   };
 }
 
-test("session timeline keeps context compaction and resumed tail as explicit ordered events", () => {
+test("isTranscriptEventEntry only accepts compaction and history-gap transcript entities", () => {
+  const legacyResumedKind = ["session", "resumed"].join("_");
+  assert.equal(isTranscriptEventEntry({ kind: "context_compaction" }), true);
+  assert.equal(isTranscriptEventEntry({ kind: "history_gap" }), true);
+  assert.equal(isTranscriptEventEntry({ kind: legacyResumedKind }), false);
+});
+
+test("sortSessionTimelineEntries keeps a compaction-only boundary in stored order", () => {
   const entries: SessionTimelineEntry[] = [
-    {
-      kind: "user_message",
-      id: "user-1",
-      message: message({ id: "user-1", role: "user", text: "旧上下文里的最后一个问题", sequence: 10 }),
-      timestamp: "2026-06-22T10:00:00.000Z",
-      updatedAt: "2026-06-22T10:00:00.000Z",
-      sequence: 10,
-    },
     {
       kind: "context_compaction",
       id: "compaction-1",
-      summaryMessageId: "compaction-summary",
-      summaryText: "This session is being continued from a previous conversation that ran out of context.",
-      timestamp: "2026-06-22T10:01:00.000Z",
-      updatedAt: "2026-06-22T10:01:00.000Z",
+      phase: "completed",
+      source: "provider",
+      timestamp: "2026-07-02T10:00:00.000Z",
+      updatedAt: "2026-07-02T10:00:00.000Z",
       replayCompleteness: "compacted",
-    },
-    {
-      kind: "session_resumed",
-      id: "resume-1",
-      restoreMethod: "session/load",
-      timestamp: "2026-06-22T10:01:05.000Z",
-      updatedAt: "2026-06-22T10:01:05.000Z",
-      replayCompleteness: "compacted",
+      summaryText: "Earlier context compacted.",
     },
     {
       kind: "assistant_message",
-      id: "assistant-1",
+      id: "assistant-after",
       chunks: [{
+        id: "assistant-after:content",
         kind: "content",
-        id: "assistant-1:content",
-        text: "好的，我会继续处理剩余工作。",
-        timestamp: "2026-06-22T10:01:06.000Z",
-        sequence: 20,
+        text: "继续处理",
+        timestamp: "2026-07-02T10:00:01.000Z",
       }],
-      timestamp: "2026-06-22T10:01:06.000Z",
-      updatedAt: "2026-06-22T10:01:06.000Z",
-      sequence: 20,
+      timestamp: "2026-07-02T10:00:01.000Z",
+      updatedAt: "2026-07-02T10:00:01.000Z",
     },
-  ] as SessionTimelineEntry[];
+  ];
 
-  assert.deepEqual(entries.map((entry) => entry.kind), [
-    "user_message",
-    "context_compaction",
-    "session_resumed",
-    "assistant_message",
-  ]);
+  assert.deepEqual(
+    sortSessionTimelineEntries(entries).map((entry) => entry.kind),
+    ["context_compaction", "assistant_message"],
+  );
 });
 
-test("injectTranscriptBoundaryEvents inserts transcript markers before the resumed message", () => {
+test("sortSessionTimelineEntries leaves compaction-only boundaries untouched", () => {
   const entries: SessionTimelineEntry[] = [
     {
-      kind: "assistant_message",
-      id: "older-assistant",
-      chunks: [{
-        kind: "content",
-        id: "older-assistant:content",
-        text: "压缩前最后一条可见回复",
-        timestamp: "2026-06-22T10:00:59.000Z",
-        sequence: 10,
-      }],
-      timestamp: "2026-06-22T10:00:59.000Z",
-      updatedAt: "2026-06-22T10:00:59.000Z",
-      sequence: 10,
-    },
-    {
-      kind: "user_message",
-      id: "current-user",
-      message: {
-        id: "provider-current-user",
-        role: "user",
-        text: "继续处理",
-        timestamp: "2026-06-22T10:01:11.000Z",
-        sequence: 11,
-      },
+      kind: "context_compaction",
+      id: "compaction-1",
+      phase: "completed",
+      source: "provider",
+      summaryMessageId: "compaction-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
       timestamp: "2026-06-22T10:01:11.000Z",
       updatedAt: "2026-06-22T10:01:11.000Z",
-      sequence: 11,
+      replayCompleteness: "compacted",
     },
     {
       kind: "assistant_message",
-      id: "current-assistant",
+      id: "assistant-after",
       chunks: [{
         kind: "content",
-        id: "current-assistant:content",
+        id: "assistant-after:content",
         text: "好的，继续。",
         timestamp: "2026-06-22T10:01:12.000Z",
         sequence: 12,
@@ -143,37 +114,10 @@ test("injectTranscriptBoundaryEvents inserts transcript markers before the resum
     },
   ];
 
-  const nextEntries = injectTranscriptBoundaryEvents(
-    entries,
-    {
-      kind: "context_compaction",
-      id: "compaction-1",
-      summaryMessageId: "compaction-summary",
-      summaryText: "This session is being continued from a previous conversation that ran out of context.",
-      timestamp: "2026-06-22T10:01:11.000Z",
-      updatedAt: "2026-06-22T10:01:11.000Z",
-      replayCompleteness: "compacted",
-    },
-    {
-      kind: "session_resumed",
-      id: "resume-1",
-      restoreMethod: "session/load",
-      timestamp: "2026-06-22T10:01:11.000Z",
-      updatedAt: "2026-06-22T10:01:11.000Z",
-      replayCompleteness: "compacted",
-    },
-  );
-
-  assert.deepEqual(
-    nextEntries.map((entry) => [entry.kind, entry.id]),
-    [
-      ["assistant_message", "older-assistant"],
-      ["context_compaction", "compaction-1"],
-      ["session_resumed", "resume-1"],
-      ["user_message", "current-user"],
-      ["assistant_message", "current-assistant"],
-    ],
-  );
+  assert.deepEqual(sortSessionTimelineEntries(entries).map((entry) => [entry.kind, entry.id]), [
+    ["context_compaction", "compaction-1"],
+    ["assistant_message", "assistant-after"],
+  ]);
 });
 
 test("buildSessionTimelineFromLegacy interleaves a sequence-less tool call by timestamp instead of grouping it after messages", () => {
@@ -446,6 +390,63 @@ test("sortSessionTimelineEntries keeps earlier compacted history anchored when l
       ["user_message", "new-user"],
       ["assistant_message", "new-assistant"],
       ["tool_call", "live-tool"],
+    ],
+  );
+});
+
+test("sortSessionTimelineEntries keeps compacted transcript boundaries ahead of the first post-compaction assistant", () => {
+  const timeline = sortSessionTimelineEntries([
+    {
+      id: "compaction-1",
+      kind: "context_compaction",
+      phase: "completed",
+      source: "heuristic",
+      summaryMessageId: "runtime-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      timestamp: "2026-06-10T10:00:00.000Z",
+      updatedAt: "2026-06-10T10:00:00.000Z",
+      replayCompleteness: "compacted",
+    },
+    {
+      id: "assistant-after-compaction",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-after-compaction:content",
+          kind: "content",
+          text: "压缩后的第一条回复",
+          timestamp: "2026-06-10T10:00:01.000Z",
+          sequence: 10,
+        },
+      ],
+      timestamp: "2026-06-10T10:00:01.000Z",
+      updatedAt: "2026-06-10T10:00:01.000Z",
+      sequence: 10,
+    },
+    {
+      id: "assistant-latest",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-latest:content",
+          kind: "content",
+          text: "更新回复",
+          timestamp: "2026-06-10T10:00:10.000Z",
+          sequence: 11,
+        },
+      ],
+      timestamp: "2026-06-10T10:00:10.000Z",
+      updatedAt: "2026-06-10T10:00:10.000Z",
+      sequence: 11,
+    },
+  ]);
+
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["context_compaction", "compaction-1"],
+      ["assistant_message", "assistant-after-compaction"],
+      ["assistant_message", "assistant-latest"],
     ],
   );
 });

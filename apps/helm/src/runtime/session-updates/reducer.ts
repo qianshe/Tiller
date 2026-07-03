@@ -80,13 +80,15 @@ function applyCompaction(
   event: Extract<SessionRuntimeEvent, { type: "compaction" }>,
   meta?: Pick<SessionUpdateRecord, "providerId" | "sessionId">,
 ): SessionUpdateReducerState {
-  if (event.phase !== "completed" || !meta?.sessionId) {
+  if (!meta?.sessionId) {
     return state;
   }
   const entry = buildSessionCompactionEntryFromProvider({
     sessionId: meta.sessionId,
     providerId: meta.providerId,
     timestamp: event.timestamp,
+    phase: event.phase,
+    source: event.source,
     summaryText: event.summaryText,
     summaryMessageId: event.messageId,
     idSuffix: event.messageId ? undefined : `compaction:${event.timestamp}`,

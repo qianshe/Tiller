@@ -337,14 +337,9 @@ export function MissionWorktree(props: any) {
     openSessions,
     sessions: sessions as SessionSummary[],
     messageHistoryState,
-    activityHistoryState,
     messagesBySession: messages,
     sessionTimelineBySession: sessionTimeline,
-    outputsBySession: outputs,
-    toolCallsBySession: toolCalls,
-    sessionPlansBySession: sessionPlans,
     setMessageHistoryState,
-    setActivityHistoryState,
   });
   const effectiveSelectedAgentId = focusedDraftWindow?.agentId ?? selectedAgentId;
   const effectiveSelectedCwd = focusedDraftWindow?.cwd ?? selectedCwd;
@@ -932,7 +927,6 @@ export function MissionWorktree(props: any) {
           onHandoffAssistantMessage={handleAssistantHandoff}
           expandedMessageIds={expandedMessageIds}
           messageHistoryState={messageHistoryState}
-          activityHistoryState={activityHistoryState}
           onLoadOlderMessages={loadOlderMessages}
           onToggleExpandedMessage={toggleExpandedMessage}
           activityLoading={missionActivityLoading}

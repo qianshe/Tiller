@@ -439,8 +439,9 @@ export function createSqliteTimelineBlockStore(
       oldestAnchor.startPosition,
       currentAnchor?.startPosition,
     );
+    const entries = positioned.map((entry) => normalizeTimelineEntry(entry.payload));
     return {
-      entries: positioned.map((entry) => normalizeTimelineEntry(entry.payload)),
+      entries,
       nextCursor: hasMore
         ? encodeSessionTimelineOrderCursor(oldestAnchor.anchorPosition, oldestAnchor.groupId)
         : undefined,

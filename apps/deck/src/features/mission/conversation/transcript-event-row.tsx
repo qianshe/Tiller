@@ -1,11 +1,9 @@
 import { useState } from "react";
 import type {
-  SessionLiveCompactionState,
   SessionTimelineContextCompactionEntry,
   SessionTimelineHistoryGapEntry,
-  SessionTimelineResumedEntry,
 } from "@tiller/shared";
-import { AlertTriangle, ChevronDown, FileText, LoaderCircle, PlayCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, FileText, LoaderCircle } from "lucide-react";
 import { cn } from "../../../shared/utils/cn";
 
 const TRANSCRIPT_ROW_CLASS =
@@ -16,21 +14,10 @@ const TRANSCRIPT_SURFACE_CLASS =
 export function TranscriptEventRow(props: {
   entry:
     | SessionTimelineContextCompactionEntry
-    | SessionTimelineResumedEntry
     | SessionTimelineHistoryGapEntry;
 }) {
   if (props.entry.kind === "context_compaction") {
     return <ContextCompactionRow entry={props.entry} />;
-  }
-
-  if (props.entry.kind === "session_resumed") {
-    return (
-      <StatusTranscriptRow
-        detail={`恢复方式 ${props.entry.restoreMethod}`}
-        icon={PlayCircle}
-        title="会话已恢复"
-      />
-    );
   }
 
   if (props.entry.kind === "history_gap") {
@@ -47,34 +34,21 @@ export function TranscriptEventRow(props: {
   return null;
 }
 
-export function LiveCompactionStateRow(props: {
-  state: SessionLiveCompactionState;
-}) {
-  return (
-    <div className={TRANSCRIPT_ROW_CLASS}>
-      <span aria-hidden="true" />
-      <section className={TRANSCRIPT_SURFACE_CLASS}>
-        <div className="flex min-w-0 items-start gap-2">
-          <LoaderCircle className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary" />
-          <div className="min-w-0 flex-1">
-            <div className="text-xs font-medium text-foreground">
-              正在压缩上下文...
-            </div>
-            <p className="mt-0.5 text-xs leading-[1.5] text-muted-foreground">
-              完成后会基于压缩后的上下文继续回复。
-            </p>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
-}
-
 function ContextCompactionRow({
   entry,
 }: {
   entry: SessionTimelineContextCompactionEntry;
 }) {
+  if (entry.phase === "started") {
+    return (
+      <StatusTranscriptRow
+        detail="完成后会基于压缩后的上下文继续回复。"
+        icon={LoaderCircle}
+        title="正在压缩上下文..."
+      />
+    );
+  }
+
   const [open, setOpen] = useState(false);
   const summaryText = entry.summaryText?.trim() ||
     "早期对话历史已压缩以节省上下文空间。";

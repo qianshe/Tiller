@@ -1,8 +1,17 @@
 import { isFallbackToolCallTitle, pageSessionArtifacts } from "@tiller/persistence";
-import type { AgentToolCall, CommandChunk, FileDiffSummary, SessionSummary } from "@tiller/shared";
+import type {
+  AgentToolCall,
+  CommandChunk,
+  FileDiffSummary,
+  SessionSummary,
+} from "@tiller/shared";
 import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
 import { broadcastSessionUpdate } from "../../rpc/notifications";
 import { projectLegacySessionHistoryFromTimeline } from "../../runtime/session-timeline/legacy-projection.js";
+import {
+  MIGRATE_LEGACY_RESUMED_TO_COMPACTION_ONLY,
+  repairCompactionBootstrapTimeline,
+} from "../../runtime/session-timeline/compaction-bootstrap";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
 
@@ -82,13 +91,11 @@ export async function getArtifacts(
   });
   const artifacts = resolveArtifactHistoryPage(params.sessionId, persistedArtifacts, params, context);
   const diffs = await context.hydrateDiffsFromWorktreeGit(params.sessionId, artifacts.diffs);
-  const plan = context.readSessionPlan?.(params.sessionId);
   return {
     sessionId: params.sessionId,
     outputs: artifacts.outputs,
     diffs,
     toolCalls: artifacts.toolCalls,
-    ...(plan ? { plan } : {}),
     nextCursor: artifacts.nextCursor,
     hasMore: artifacts.hasMore,
   };
@@ -107,6 +114,7 @@ export async function listTimeline(
 ) {
   repairProviderToolCalls(params.sessionId, context);
   await context.refreshAuthoritativeSessionHistory(params.sessionId);
+  migrateLegacyCompactionTimelineIfNeeded(params.sessionId, context);
   const page = context.sessionTimelineStore.listPage(params.sessionId, {
     limit: params.limit,
     before: params.before,
@@ -121,6 +129,44 @@ export async function listTimeline(
     hasMore: page.hasMore,
     ...(liveState ? { liveState } : {}),
   };
+}
+
+function migrateLegacyCompactionTimelineIfNeeded(
+  sessionId: string,
+  context: HelmHandlerContext,
+) {
+  if (
+    !MIGRATE_LEGACY_RESUMED_TO_COMPACTION_ONLY ||
+    !context.sessionTimelineStore.list ||
+    !context.sessionTimelineStore.replace
+  ) {
+    return null;
+  }
+  const timeline = context.sessionTimelineStore.list(sessionId) ?? [];
+  if (!timeline.length) {
+    return null;
+  }
+  const repairedTimeline = repairCompactionBootstrapTimeline({
+    sessionId,
+    timeline,
+    messages: context.sessionMessageStore?.listPage?.(sessionId, { limit: 200 })?.messages ?? [],
+    providerId: resolveSessionProviderId(sessionId, context),
+  });
+  if (!repairedTimeline) {
+    return null;
+  }
+  context.sessionTimelineStore.replace(sessionId, repairedTimeline.entries);
+  logSessionDebug(context, "session.timeline.compaction_repaired", {
+    sessionId,
+    synthesizedBoundary: repairedTimeline.synthesizedBoundary,
+  });
+  return repairedTimeline.entries;
+}
+
+function resolveSessionProviderId(sessionId: string, context: HelmHandlerContext) {
+  return context.sessions?.get?.(sessionId)?.agent?.id ??
+    context.sessions?.get?.(sessionId)?.summary?.agentId ??
+    context.sessionStore?.list?.().find((item: SessionSummary) => item.id === sessionId)?.agentId;
 }
 
 export function checkResume(params: { sessionId: string }, context: HelmHandlerContext) {

@@ -431,9 +431,7 @@ export function App() {
     deckDeviceId,
   });
   const history = useHistoryPagination({
-    activeSessionId: deckData.activeSessionId,
     activityHistoryState: deckData.activityHistoryState,
-    chatMainRef: runtimeState.chatMainRef,
     dispatch,
     messageHistoryState: deckData.messageHistoryState,
     sessionHistoryState: deckData.sessionHistoryState,

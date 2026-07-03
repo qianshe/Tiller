@@ -24,21 +24,14 @@ export type SessionTranscriptStatus = {
 export type SessionTimelineContextCompactionEntry = {
   kind: "context_compaction";
   id: string;
+  phase: SessionCompactionPhase;
+  source: SessionCompactionSource;
   summaryMessageId?: string;
   summaryText?: string;
   detailsVisibility?: "hidden" | "expandable";
   timestamp: string;
   updatedAt: string;
   replayCompleteness: Exclude<SessionReplayCompleteness, "none">;
-};
-
-export type SessionTimelineResumedEntry = {
-  kind: "session_resumed";
-  id: string;
-  restoreMethod: "client-reconnect" | "session/load" | "session/resume";
-  timestamp: string;
-  updatedAt: string;
-  replayCompleteness: SessionReplayCompleteness;
 };
 
 export type SessionTimelineHistoryGapEntry = {
@@ -51,47 +44,11 @@ export type SessionTimelineHistoryGapEntry = {
 
 export type SessionTimelineTranscriptEventEntry =
   | SessionTimelineContextCompactionEntry
-  | SessionTimelineResumedEntry
   | SessionTimelineHistoryGapEntry;
-
-export type SessionLiveCompactionState = {
-  phase: Extract<SessionCompactionPhase, "started">;
-  source: SessionCompactionSource;
-  timestamp: string;
-};
 
 export function isTranscriptEventEntry(
   entry: { kind: string },
 ): entry is SessionTimelineTranscriptEventEntry {
   return entry.kind === "context_compaction" ||
-    entry.kind === "session_resumed" ||
     entry.kind === "history_gap";
-}
-
-export function injectTranscriptBoundaryEvents(
-  entries: import("./session-timeline").SessionTimelineEntry[],
-  compactionEntry: SessionTimelineContextCompactionEntry,
-  resumedEntry: SessionTimelineResumedEntry,
-): import("./session-timeline").SessionTimelineEntry[] {
-  if (
-    entries.some((entry) => entry.id === compactionEntry.id || entry.id === resumedEntry.id)
-  ) {
-    return entries;
-  }
-  const resumedTimestamp = resumedEntry.timestamp;
-
-  const insertIndex = entries.findIndex(
-    (entry) => entry.timestamp >= resumedTimestamp,
-  );
-
-  if (insertIndex === -1) {
-    return [...entries, compactionEntry, resumedEntry];
-  }
-
-  return [
-    ...entries.slice(0, insertIndex),
-    compactionEntry,
-    resumedEntry,
-    ...entries.slice(insertIndex),
-  ];
 }

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type {
   AgentMessage,
   AgentToolCall,
-  SessionLiveCompactionState,
   SessionTimelineEntry,
 } from "@tiller/shared";
 import {
@@ -21,7 +20,7 @@ import {
   type ConversationToolCallItem,
 } from "../../logbook";
 import { PlainMessageItem, PlainSubagentItem, PlainThinkingItem, PlainToolGroupItem } from "./plain-message-items";
-import { LiveCompactionStateRow, TranscriptEventRow } from "./transcript-event-row";
+import { TranscriptEventRow } from "./transcript-event-row";
 
 export const INITIAL_PLAIN_MESSAGE_RENDER_LIMIT = 96;
 export const PLAIN_MESSAGE_RENDER_LOAD_STEP = 96;
@@ -42,7 +41,6 @@ type PlainMessagesProps = {
   onHandoffAssistantMessage?: (assistantBlockText: string) => void;
   emptyText: string;
   expandedMessageIds: ReadonlySet<string>;
-  liveCompactionState?: SessionLiveCompactionState;
   boundaryTimestamps?: string[];
   historyState?: {
     hasMore: boolean;
@@ -65,7 +63,6 @@ export function PlainMessages({
   onHandoffAssistantMessage,
   emptyText,
   expandedMessageIds,
-  liveCompactionState,
   boundaryTimestamps = [],
   historyState,
   onLoadOlderMessages,
@@ -118,23 +115,18 @@ export function PlainMessages({
     setDismissedSystemMessageIds((current) => new Set([...current, messageId]));
   }, []);
   const displayItems = useMemo(
-    () => appendLiveCompactionStateItem(
-      resolvePlainConversationDisplayItems({
-        sessionId,
-        displayMessages,
-        timelineItems: effectiveTimelineItems,
-        showThinking,
-        thinkingToolCalls,
-        toolCalls,
-        historyHasMore: Boolean(historyState?.hasMore),
-      }),
-      liveCompactionState,
-    ),
+    () => resolvePlainConversationDisplayItems({
+      sessionId,
+      displayMessages,
+      timelineItems: effectiveTimelineItems,
+      showThinking,
+      thinkingToolCalls,
+      toolCalls,
+    }),
     [
       displayMessages,
       effectiveTimelineItems,
       historyState?.hasMore,
-      liveCompactionState,
       sessionId,
       showThinking,
       thinkingToolCalls,
@@ -334,13 +326,6 @@ export function PlainMessages({
             </div>
           );
         }
-        if (renderItem.kind === "compaction-state") {
-          return (
-            <div key={renderItem.renderKey} className={spacingClassName}>
-              <LiveCompactionStateRow state={renderItem.state} />
-            </div>
-          );
-        }
 
         if (renderItem.kind === "thinking") {
           return (
@@ -415,8 +400,7 @@ type PlainConversationItem =
   | { kind: "thinking"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: AgentToolCall }
   | { kind: "subagent"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: ConversationToolCallItem }
   | { kind: "tool-group"; sourceIndex?: number; timestamp: string; sequence?: number; group: ConversationToolCallItem[] }
-  | { kind: "compaction-state"; sourceIndex?: number; timestamp: string; sequence?: number; state: SessionLiveCompactionState }
-  | { kind: "transcript-event"; sourceIndex?: number; timestamp: string; sequence?: number; entry: Extract<SessionTimelineEntry, { kind: "context_compaction" | "session_resumed" | "history_gap" }> };
+  | { kind: "transcript-event"; sourceIndex?: number; timestamp: string; sequence?: number; entry: Extract<SessionTimelineEntry, { kind: "context_compaction" | "history_gap" }> };
 
 type PlainMessageRenderSource = AgentMessage | PlainConversationItem;
 
@@ -443,14 +427,9 @@ export type PlainMessageRenderItem =
       toolCall: ConversationToolCallItem;
     }
   | {
-      kind: "compaction-state";
-      renderKey: string;
-      state: SessionLiveCompactionState;
-    }
-  | {
       kind: "transcript-event";
       renderKey: string;
-      entry: Extract<SessionTimelineEntry, { kind: "context_compaction" | "session_resumed" | "history_gap" }>;
+      entry: Extract<SessionTimelineEntry, { kind: "context_compaction" | "history_gap" }>;
     };
 
 export type PlainConversationRenderKind = PlainMessageRenderItem["kind"];
@@ -498,16 +477,6 @@ export function resolvePlainMessageRenderItems(
         kind: "transcript-event",
         renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
         entry: item.entry,
-      };
-    }
-    if (item.kind === "compaction-state") {
-      const baseKey = `compaction-state-${item.state.timestamp}`;
-      const seenCount = seenKeys.get(baseKey) ?? 0;
-      seenKeys.set(baseKey, seenCount + 1);
-      return {
-        kind: "compaction-state",
-        renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
-        state: item.state,
       };
     }
     if (item.kind === "thinking") {
@@ -586,9 +555,6 @@ function resolvePlainMessageRenderSignaturePart(item: PlainMessageRenderItem) {
       item.toolCall.input,
     );
   }
-  if (item.kind === "compaction-state") {
-    return [item.renderKey, item.state.phase, item.state.timestamp, item.state.source].join(":");
-  }
   if (item.kind === "transcript-event") {
     return [item.renderKey, item.entry.kind, item.entry.id].join(":");
   }
@@ -630,8 +596,7 @@ function resolveRenderablePlainMessageItems(
   const firstStableIndex = items.findIndex(
     (item) =>
       item.kind === "message" ||
-      item.kind === "transcript-event" ||
-      item.kind === "compaction-state",
+      item.kind === "transcript-event",
   );
   return firstStableIndex >= 0 ? items.slice(firstStableIndex) : [];
 }
@@ -808,7 +773,6 @@ export function resolvePlainConversationDisplayItems({
   showThinking,
   thinkingToolCalls,
   toolCalls,
-  historyHasMore,
 }: {
   sessionId?: string | null;
   displayMessages: AgentMessage[];
@@ -816,7 +780,6 @@ export function resolvePlainConversationDisplayItems({
   showThinking: boolean;
   thinkingToolCalls: AgentToolCall[];
   toolCalls: AgentToolCall[];
-  historyHasMore: boolean;
 }) {
   return timelineItems.length
     ? buildPlainConversationItemsFromTimelineWithLiveMessages(
@@ -824,32 +787,12 @@ export function resolvePlainConversationDisplayItems({
         timelineItems,
         displayMessages,
         showThinking,
-        historyHasMore,
       )
     : buildPlainConversationItems(
         displayMessages,
         showThinking ? thinkingToolCalls : [],
         toolCalls,
       );
-}
-
-function appendLiveCompactionStateItem(
-  items: PlainConversationItem[],
-  liveCompactionState: SessionLiveCompactionState | undefined,
-) {
-  if (!liveCompactionState || liveCompactionState.phase !== "started") {
-    return items;
-  }
-  return [
-    ...items,
-    {
-      kind: "compaction-state" as const,
-      sourceIndex: items.length,
-      timestamp: liveCompactionState.timestamp,
-      sequence: undefined,
-      state: liveCompactionState,
-    },
-  ];
 }
 
 export function resolveRemoteHistoryRevealAction({
@@ -962,7 +905,7 @@ function buildPlainConversationItemsFromTimeline(
   let sourceIndex = 0;
 
   for (const entry of timelineItems) {
-    // Handle transcript events (context_compaction, session_resumed, history_gap)
+    // Handle transcript events (context_compaction, history_gap)
     if (isTranscriptEventEntry(entry)) {
       items.push({
         kind: "transcript-event",
@@ -1079,7 +1022,6 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
   timelineItems: SessionTimelineEntry[],
   messages: AgentMessage[],
   showThinking: boolean,
-  omitMessagesBeforeTimelineWindow: boolean,
 ): PlainConversationItem[] {
   const timelineConversationItems = buildPlainConversationItemsFromTimeline(
     timelineItems,
@@ -1102,7 +1044,6 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
     messages,
     continuationPrefaceMessageIds,
   );
-  const timelineWindowLowerBound = resolveTimelineWindowLowerBound(timelineItems);
   const liveMessageItems = messages.flatMap((message, index) => {
     if (
       hasCompactionTranscriptEvent &&
@@ -1116,12 +1057,7 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
     if (
       timelineMessageIds.has(message.id) ||
       representedLiveUserMessageIds.has(message.id) ||
-      representedLiveAssistantMessageIds.has(message.id) ||
-      (
-        omitMessagesBeforeTimelineWindow &&
-        !continuationPrefaceMessageIds.has(message.id) &&
-        isMessageBeforeTimelineWindow(message, timelineWindowLowerBound)
-      )
+      representedLiveAssistantMessageIds.has(message.id)
     ) {
       return [];
     }
@@ -1194,7 +1130,7 @@ function isOptimisticLiveMessage(
     return false;
   }
   if (message.role === "user") {
-    return message.id.startsWith(`${sessionId}-user-`);
+    return message.id === `${sessionId}-user-pending`;
   }
   return message.role === "assistant" && message.streaming === true;
 }
@@ -1384,43 +1320,6 @@ function compareUnsequencedPlainConversationItems(
   return plainConversationKindRank(left) - plainConversationKindRank(right);
 }
 
-type TimelineWindowLowerBound = {
-  timestamp?: string;
-  sequence?: number;
-};
-
-function resolveTimelineWindowLowerBound(
-  timelineItems: SessionTimelineEntry[],
-): TimelineWindowLowerBound | undefined {
-  const first = timelineItems[0];
-  if (!first) {
-    return undefined;
-  }
-  if (first.kind === "assistant_message") {
-    const firstChunk = first.chunks[0];
-    return {
-      timestamp: firstChunk?.timestamp ?? first.timestamp,
-      sequence: firstChunk?.sequence ?? first.sequence,
-    };
-  }
-  if (first.kind === "tool_call") {
-    return {
-      timestamp: first.timestamp,
-      sequence: first.sequence ?? first.toolCall.sequence,
-    };
-  }
-  if (first.kind === "context_compaction" || first.kind === "session_resumed" || first.kind === "history_gap") {
-    return {
-      timestamp: first.timestamp,
-      sequence: undefined,
-    };
-  }
-  return {
-    timestamp: first.timestamp,
-    sequence: first.sequence ?? first.message.sequence,
-  };
-}
-
 function resolveContinuationPrefaceMessageIds(messages: AgentMessage[]) {
   const markerIndex = messages.findIndex((message) =>
     looksLikeContinuationSummary(message.text)
@@ -1504,26 +1403,6 @@ function resolveContinuationPrefaceInsertIndex(
     }
   }
   return 0;
-}
-
-function isMessageBeforeTimelineWindow(
-  message: AgentMessage,
-  lowerBound: TimelineWindowLowerBound | undefined,
-) {
-  if (!lowerBound) {
-    return false;
-  }
-  if (
-    typeof message.sequence === "number" &&
-    typeof lowerBound.sequence === "number"
-  ) {
-    return message.sequence < lowerBound.sequence;
-  }
-  const messageTime = Date.parse(message.timestamp);
-  const lowerBoundTime = lowerBound.timestamp ? Date.parse(lowerBound.timestamp) : Number.NaN;
-  return Number.isFinite(messageTime) &&
-    Number.isFinite(lowerBoundTime) &&
-    messageTime < lowerBoundTime;
 }
 
 function collectTimelineMessageIds(timelineItems: SessionTimelineEntry[]) {

@@ -289,15 +289,13 @@ function applyCompactionEvent(
   aggregate: SessionTimelineAggregate,
   event: Extract<SessionRuntimeEvent, { type: "compaction" }>,
 ): SessionTimelineAggregate {
-  if (event.phase === "started") {
-    return aggregate;
-  }
-
   const entries = [...aggregate.entries];
   const compactionEntry = buildSessionCompactionEntryFromProvider({
     sessionId: aggregate.sessionId,
     timestamp: event.timestamp,
     providerId: aggregate.providerId,
+    phase: event.phase,
+    source: event.source,
     summaryText: event.summaryText,
     summaryMessageId: event.messageId,
   });

@@ -6,6 +6,7 @@ import { useConfiguredHelms } from "../../helm-connection/utils/configured-helms
 import { resolveTechnicalPanelPreferences } from "../../preferences/utils/helpers";
 import { formatResumeLabel } from "../utils/session-state";
 import { usePromptImages } from "../hooks/prompt-images";
+import { deriveToolCallsFromTimeline } from "../utils/timeline-tool-calls";
 import {
   MODEL_OPTIONS,
   resolveAgentModeOptions,
@@ -52,8 +53,14 @@ export function useMissionViewModel(ctx: any) {
     promptQueues,
     deckPreferences,
     toolCalls,
+    sessionTimeline,
   } = source;
-const activeSessionToolCalls = activeSessionId ? (toolCalls?.[activeSessionId] ?? []) : [];
+const activeSessionToolCalls = activeSessionId
+  ? (
+    toolCalls?.[activeSessionId] ??
+    deriveToolCallsFromTimeline(sessionTimeline?.[activeSessionId])
+  )
+  : [];
 const activeSession = useMemo(
   () => sessions.find((session) => session.id === activeSessionId) ?? null,
   [activeSessionId, sessions],

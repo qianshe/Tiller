@@ -17,11 +17,7 @@ test("loadOlderMessages requests timeline pages with the canonical history curso
     };
 
     const pagination = useHistoryPagination({
-      activeSessionId: "session-1",
       activityHistoryState: {},
-      chatMainRef: {
-        current: { scrollHeight: 1200, scrollTop: 240 },
-      } as any,
       dispatch: async (_client: unknown, method: string, params: unknown) => {
         dispatched.push({ method, params: params as Record<string, unknown> });
       },

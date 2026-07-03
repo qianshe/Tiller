@@ -1,5 +1,3 @@
-import type { SessionCompactionPhase, SessionCompactionSource } from "@tiller/shared";
-
 export type SessionStatus = "starting" | "running" | "waiting_for_permission" | "idle" | "error" | "cancelled";
 
 export type RuntimeResumeMode = "none" | "same-process" | "reconnect";
@@ -109,14 +107,6 @@ export type SessionTranscriptEventUpdate<Entry = unknown> = {
   entry: Entry;
 };
 
-export type SessionCompactionStateUpdate = {
-  kind: "compaction_state";
-  phase: SessionCompactionPhase;
-  source: SessionCompactionSource;
-  timestamp: string;
-  summaryText?: string;
-};
-
 export type SessionTimelineBatchUpdate<TimelineEntry = unknown> = {
   kind: "timeline_batch";
   batch: {
@@ -160,7 +150,6 @@ export type SessionRealtimeUpdate<
   | SessionCommandsAvailableUpdate<Command>
   | SessionUpdatedUpdate<Summary>
   | SessionPromptQueueUpdate<Queue>
-  | SessionCompactionStateUpdate
   | SessionTranscriptEventUpdate<TranscriptEvent>
   | SessionTimelineBatchUpdate<TimelineEntry>
   | SessionLiveStateUpdate<LiveStateSnapshot>;

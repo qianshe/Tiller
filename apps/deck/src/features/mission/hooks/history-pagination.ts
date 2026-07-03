@@ -1,6 +1,5 @@
 import type {
   MutableRefObject,
-  RefObject,
   UIEvent as ReactUIEvent,
 } from "react";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
@@ -12,9 +11,7 @@ import type {
 import { buildConversationPaginationPlan } from "../history/model";
 
 type UseHistoryPaginationOptions = {
-  activeSessionId: string | null;
   activityHistoryState: ActivitiesSlice["activityHistoryState"];
-  chatMainRef: RefObject<HTMLDivElement | null>;
   dispatch: DispatchToHelm;
   messageHistoryState: MessagesSlice["messageHistoryState"];
   sessionHistoryState: SessionsSlice["sessionHistoryState"];
@@ -35,9 +32,7 @@ function getOpenClient(rpcClientRef: MutableRefObject<DeckRpcClient | null>) {
 
 /** Coordinates mission history pagination for sessions, messages and activities. */
 export function useHistoryPagination({
-  activeSessionId,
   activityHistoryState,
-  chatMainRef,
   dispatch,
   messageHistoryState,
   sessionHistoryState,
@@ -83,11 +78,9 @@ export function useHistoryPagination({
     const plan = buildConversationPaginationPlan({
       sessionId,
       messagePageLimit,
-      activityPageLimit,
       messageState: messageHistoryState[sessionId],
-      activityState: activityHistoryState[sessionId],
     });
-    if (!client || (!plan.listTimeline && !plan.getArtifacts)) {
+    if (!client || !plan.listTimeline) {
       return;
     }
     if (plan.listTimeline) {
@@ -100,9 +93,6 @@ export function useHistoryPagination({
         },
       }));
       void dispatch(client, "session/list_timeline", plan.listTimeline);
-    }
-    if (plan.getArtifacts) {
-      loadOlderActivities(sessionId);
     }
   }
 

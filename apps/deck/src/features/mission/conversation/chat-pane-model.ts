@@ -4,6 +4,7 @@ import type {
   SessionSummary,
   SessionTimelineEntry,
 } from "@tiller/shared";
+import { deriveToolCallsFromTimeline } from "../utils/timeline-tool-calls";
 
 /**
  * Measures the total streamed character volume of a session so callers can
@@ -26,7 +27,7 @@ export function resolveSessionStreamContentLength(sources: {
       }
     } else if (entry.kind === "tool_call") {
       length += (entry.toolCall.output?.length ?? 0) + (entry.toolCall.input?.length ?? 0);
-    } else if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
+    } else if (entry.kind === "context_compaction" || entry.kind === "history_gap") {
       // Transcript events don't contribute to character count
       continue;
     } else {
@@ -39,11 +40,17 @@ export function resolveSessionStreamContentLength(sources: {
   return length;
 }
 
-export function splitMissionToolCalls(toolCalls: AgentToolCall[]) {
+export function splitMissionToolCalls(
+  toolCalls: AgentToolCall[],
+  timelineItems?: SessionTimelineEntry[],
+) {
+  const effectiveToolCalls = toolCalls.length > 0
+    ? toolCalls
+    : deriveToolCallsFromTimeline(timelineItems);
   return {
-    thinkingToolCalls: toolCalls.filter((toolCall) => toolCall.kind === "think"),
-    timelineToolCalls: toolCalls.filter((toolCall) => toolCall.kind !== "think"),
-    boundaryTimestamps: toolCalls.map((toolCall) => toolCall.timestamp),
+    thinkingToolCalls: effectiveToolCalls.filter((toolCall) => toolCall.kind === "think"),
+    timelineToolCalls: effectiveToolCalls.filter((toolCall) => toolCall.kind !== "think"),
+    boundaryTimestamps: effectiveToolCalls.map((toolCall) => toolCall.timestamp),
   };
 }
 
@@ -99,6 +106,46 @@ export function resolveSessionStatusLabel(status: SessionSummary["status"]): str
     default:
       return "空闲";
   }
+}
+
+export function resolveSessionConversationDisplayMode({
+  sessionId,
+  sessionMessages,
+  sessionStatus,
+  timelineItemsLength,
+}: {
+  sessionId: string;
+  sessionMessages?: AgentMessage[];
+  sessionStatus: SessionSummary["status"];
+  timelineItemsLength: number;
+}): "conversation" | "history-loading" | "preview" {
+  const messages = sessionMessages ?? [];
+  const canUseOptimisticFallback =
+    sessionStatus === "starting" ||
+    sessionStatus === "running" ||
+    sessionStatus === "waiting_for_permission";
+  if (timelineItemsLength > 0) {
+    return "conversation";
+  }
+  if (canUseOptimisticFallback && hasOptimisticConversationMessages(sessionId, messages)) {
+    return "conversation";
+  }
+  if (messages.length > 0) {
+    return "history-loading";
+  }
+  return "preview";
+}
+
+function hasOptimisticConversationMessages(
+  sessionId: string,
+  sessionMessages: AgentMessage[],
+) {
+  return sessionMessages.some((message) => {
+    if (message.role === "user") {
+      return message.id === `${sessionId}-user-pending`;
+    }
+    return message.role === "assistant" && message.streaming === true;
+  });
 }
 
 export function formatSessionPreviewTime(value: string | undefined) {

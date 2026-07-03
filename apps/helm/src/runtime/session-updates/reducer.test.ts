@@ -126,7 +126,7 @@ test("session update reducer keeps stronger tool classification when sparse patc
   assert.equal(finalState.toolCalls[0]?.output, "ok");
 });
 
-test("session update reducer rebuilds one merged compaction row from explicit completion plus summary enrichment", () => {
+test("session update reducer rebuilds one merged compaction row from started lifecycle plus summary enrichment", () => {
   const records: SessionUpdateRecord[] = [
     {
       sessionId: "session-compaction",
@@ -138,10 +138,9 @@ test("session update reducer rebuilds one merged compaction row from explicit co
       receivedAt: at(1),
       payloadJson: JSON.stringify({
         type: "compaction",
-        phase: "completed",
+        phase: "started",
         source: "provider",
         timestamp: at(1),
-        messageId: "compaction-completed",
       }),
     },
     {
@@ -155,8 +154,24 @@ test("session update reducer rebuilds one merged compaction row from explicit co
       payloadJson: JSON.stringify({
         type: "compaction",
         phase: "completed",
-        source: "heuristic",
+        source: "provider",
         timestamp: at(2),
+        messageId: "compaction-completed",
+      }),
+    },
+    {
+      sessionId: "session-compaction",
+      runtimeSessionId: "runtime-1",
+      providerId: "claude",
+      sequence: 3,
+      source: "acp_live",
+      updateType: "compaction",
+      receivedAt: at(3),
+      payloadJson: JSON.stringify({
+        type: "compaction",
+        phase: "completed",
+        source: "heuristic",
+        timestamp: at(3),
         messageId: "compaction-summary",
         summaryText: "This session is being continued from a previous conversation that ran out of context.",
       }),
@@ -166,7 +181,11 @@ test("session update reducer rebuilds one merged compaction row from explicit co
 
   const compactionEntries = finalState.entries.filter((entry) => entry.kind === "context_compaction");
   assert.equal(compactionEntries.length, 1);
-  assert.equal(compactionEntries[0]?.id, "compaction:session-compaction:compaction-completed");
+  assert.equal(compactionEntries[0]?.id, `compaction:session-compaction:compaction:${at(1)}`);
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].phase : undefined,
+    "completed",
+  );
   assert.equal(
     compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].summaryText : undefined,
     "This session is being continued from a previous conversation that ran out of context.",

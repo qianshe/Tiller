@@ -2,7 +2,6 @@ import { memo, useCallback } from "react";
 import type {
   AgentMessage,
   AgentToolCall,
-  SessionLiveCompactionState,
   SessionTimelineEntry,
 } from "@tiller/shared";
 import { resolveConversationHistoryFlags } from "../history/model";
@@ -31,10 +30,8 @@ type MissionMessageTimelineProps = {
   assistantHandoffBusy?: boolean;
   onHandoffAssistantMessage?: (assistantBlockText: string) => void;
   expandedMessageIds: ReadonlySet<string>;
-  liveCompactionState?: SessionLiveCompactionState;
   boundaryTimestamps?: string[];
   historyStateBySession: Record<string, MessageHistoryState | undefined>;
-  activityHistoryStateBySession?: Record<string, MessageHistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
 };
@@ -54,10 +51,8 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   assistantHandoffBusy = false,
   onHandoffAssistantMessage,
   expandedMessageIds,
-  liveCompactionState,
   boundaryTimestamps = [],
   historyStateBySession,
-  activityHistoryStateBySession = {},
   onLoadOlderMessages,
   onToggleExpandedMessage,
 }: MissionMessageTimelineProps) {
@@ -69,7 +64,6 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
 
   const historyState = resolveConversationHistoryState(
     sessionId ? historyStateBySession[sessionId] : undefined,
-    sessionId ? activityHistoryStateBySession[sessionId] : undefined,
   );
 
   return (
@@ -85,7 +79,6 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       onHandoffAssistantMessage={onHandoffAssistantMessage}
       emptyText={copy.waitingForAgent}
       expandedMessageIds={expandedMessageIds}
-      liveCompactionState={liveCompactionState}
       boundaryTimestamps={boundaryTimestamps}
       historyState={historyState}
       onLoadOlderMessages={loadOlderMessages}
@@ -96,8 +89,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
 
 export function resolveConversationHistoryState(
   messageHistoryState?: MessageHistoryState,
-  activityHistoryState?: MessageHistoryState,
 ): MessageHistoryState | undefined {
-  return resolveConversationHistoryFlags(messageHistoryState, activityHistoryState) as
+  return resolveConversationHistoryFlags(messageHistoryState) as
     MessageHistoryState | undefined;
 }

@@ -75,23 +75,21 @@ const slashCommandsHookSource = readFileSync(resolve(currentDir, "../hooks/slash
 const sessionEventsSource = readFileSync(resolve(currentDir, "../../server-events/session-events.ts"), "utf8");
 const markdownSource = readFileSync(resolve(currentDir, "../../../shared/ui/markdown.tsx"), "utf8");
 
-test("mission message history loading also advances artifact history for thinking cards", () => {
+test("mission message history loading keeps artifact pagination outside chat pagination", () => {
   const historyPaginationSource = readFileSync(resolve(currentDir, "../hooks/history-pagination.ts"), "utf8");
 
   assert.match(historyPaginationSource, /function loadOlderActivities/);
   assert.match(historyPaginationSource, /buildConversationPaginationPlan/);
-  assert.match(historyPaginationSource, /!plan\.listMessages && !plan\.getArtifacts/);
-  assert.match(historyPaginationSource, /if \(plan\.listMessages\)/);
-  assert.match(historyPaginationSource, /if \(plan\.getArtifacts\)/);
+  assert.match(historyPaginationSource, /if \(!client \|\| !plan\.listTimeline\)/);
+  assert.doesNotMatch(historyPaginationSource, /plan\.getArtifacts/u);
 });
 
-test("mission chat history state includes activity history for thinking-only pages", () => {
-  assert.match(worktreeSource, /activityHistoryState=\{activityHistoryState\}/);
-  assert.match(chatPaneSource, /activityHistoryState: Record<string, HistoryState \| undefined>/);
-  assert.match(chatPaneSource, /const activityHistoryStateBySession = useMemo/);
-  assert.match(chatPaneSource, /activityHistoryStateBySession=\{activityHistoryStateBySession\}/);
+test("mission chat history state no longer depends on activity history pages", () => {
+  assert.match(worktreeSource, /messageHistoryState=\{messageHistoryState\}/);
   assert.match(messageTimelineSource, /resolveConversationHistoryState/);
   assert.match(messageTimelineSource, /resolveConversationHistoryFlags/);
+  assert.doesNotMatch(chatPaneSource, /activityHistoryState: Record<string, HistoryState \| undefined>/u);
+  assert.doesNotMatch(chatPaneSource, /activityHistoryStateBySession/u);
 });
 
 test("mission chat renders permission drawers inside matching session cards", () => {
@@ -446,8 +444,8 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(openSessionStreamsSource, /openSessionTopicSubscriptionsRef/);
   assert.match(openSessionStreamsSource, /subscribeToSessionTopic\(client, sessionId, dispatch\)/);
   assert.match(openSessionStreamsSource, /unsubscribeFromSessionTopic\(client, sessionId, dispatch\)/);
-  assert.match(openSessionStreamsSource, /dispatch\(client, "session\/list_messages"/);
-  assert.match(openSessionStreamsSource, /dispatch\(client, "session\/get_artifacts"/);
+  assert.match(openSessionStreamsSource, /dispatch\(client, "session\/list_timeline"/);
+  assert.doesNotMatch(openSessionStreamsSource, /session\/get_artifacts/u);
   assert.match(openSessionStreamsSource, /openSessionResumeCheckRef/);
   assert.match(openSessionStreamsSource, /resumeCheckSessionIds/);
   assert.match(openSessionStreamsSource, /openSessionResumeCheckRef\.current\.add\(sessionId\)/);
@@ -456,7 +454,7 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(sessionStreamsSource, /session\.resume\?\.state !== "resume-unavailable"/);
   assert.match(worktreeSource, /sessions: sessions as SessionSummary\[\]/);
   assert.match(openSessionStreamsSource, /setMessageHistoryState\(\(current: any\) =>/);
-  assert.match(openSessionStreamsSource, /setActivityHistoryState\(\(current: any\) =>/);
+  assert.doesNotMatch(openSessionStreamsSource, /setActivityHistoryState\(\(current: any\) =>/u);
   assert.match(chatWindowActionsSource, /hydrateOpenSessionStreams\(\[sessionId\]\)/);
   assert.match(openSessionStreamsSource, /hydrateOpenSessionStreams\(openSessions\.map\(\(session\) => session\.id\)\)/);
   assert.match(worktreeSource, /focusedDraftWindow,/);

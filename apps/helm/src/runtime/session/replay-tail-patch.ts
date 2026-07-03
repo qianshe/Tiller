@@ -239,7 +239,6 @@ function resolveAssistantComparableTexts(
 function isTranscriptOrToolEntry(entry: SessionTimelineEntry) {
   return entry.kind === "tool_call" ||
     entry.kind === "context_compaction" ||
-    entry.kind === "session_resumed" ||
     entry.kind === "history_gap";
 }
 

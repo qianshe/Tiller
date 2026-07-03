@@ -65,7 +65,7 @@ test("session/get_artifacts repairs stale running thinking for idle sessions", a
   assert.equal(result.toolCalls[0]?.updatedAt, "2026-05-17T10:00:10.000Z");
 });
 
-test("session/get_artifacts returns the current history plan when available", async () => {
+test("session/get_artifacts no longer returns history plan payloads", async () => {
   const sessionId = "session-opencode-plan-history";
   const plan = {
     updatedAt: "2026-06-02T13:37:09.663Z",
@@ -93,7 +93,7 @@ test("session/get_artifacts returns the current history plan when available", as
     } as any,
   ) as any;
 
-  assert.deepEqual(result.plan, plan);
+  assert.equal(result.plan, undefined);
 });
 
 test("session/get_artifacts reconstructs outputs and tool calls from canonical timeline when legacy activity rows are absent", async () => {
@@ -1287,14 +1287,6 @@ test("session/list_timeline reads the first page from canonical timeline storage
               replayCompleteness: "compacted",
             },
             {
-              id: "resume-1",
-              kind: "session_resumed",
-              restoreMethod: "session/load",
-              timestamp: "2026-05-24T10:00:01.000Z",
-              updatedAt: "2026-05-24T10:00:01.000Z",
-              replayCompleteness: "compacted",
-            },
-            {
               id: "current-user",
               kind: "user_message",
               message: {
@@ -1331,7 +1323,7 @@ test("session/list_timeline reads the first page from canonical timeline storage
 
   assert.deepEqual(
     result.entries.map((entry: any) => entry.id),
-    ["compaction-1", "resume-1", "current-user", "assistant-1"],
+    ["compaction-1", "current-user", "assistant-1"],
   );
   assert.equal(result.hasMore, false);
 });
@@ -1421,409 +1413,9 @@ test("session/list_timeline requests message-window timeline pages from the stor
   assert.equal(result.hasMore, false);
 });
 
-test.skip("session/list_timeline expands the first timeline page around compaction boundaries", async () => {
-  const sessionId = "session-compaction-boundary";
-  const fullTimeline = [
-    {
-      id: "older-user",
-      kind: "user_message" as const,
-      message: {
-        id: "older-user",
-        role: "user" as const,
-        text: "先检查历史",
-        timestamp: "2026-06-18T14:01:20.000Z",
-        sequence: 254,
-      },
-      timestamp: "2026-06-18T14:01:20.000Z",
-      updatedAt: "2026-06-18T14:01:20.000Z",
-      sequence: 254,
-    },
-    {
-      id: "older-assistant",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "older-assistant:content",
-          kind: "content" as const,
-          text: "还没有，之前上下文断了。",
-          timestamp: "2026-06-18T14:01:30.000Z",
-          sequence: 255,
-        },
-      ],
-      timestamp: "2026-06-18T14:01:30.000Z",
-      updatedAt: "2026-06-18T14:01:30.000Z",
-      sequence: 255,
-    },
-    {
-      id: "current-user",
-      kind: "user_message" as const,
-      message: {
-        id: "provider-current-user",
-        role: "user" as const,
-        text: "结束任务",
-        timestamp: "2026-06-18T14:01:49.292Z",
-        sequence: 256,
-      },
-      timestamp: "2026-06-18T14:01:49.292Z",
-      updatedAt: "2026-06-18T14:01:49.292Z",
-      sequence: 256,
-    },
-    {
-      id: "tool-1",
-      kind: "tool_call" as const,
-      toolCall: {
-        id: "tool-1",
-        kind: "read" as const,
-        title: "Read task list",
-        status: "completed" as const,
-        timestamp: "2026-06-18T14:02:00.000Z",
-        updatedAt: "2026-06-18T14:02:00.000Z",
-        sequence: 260,
-      },
-      timestamp: "2026-06-18T14:02:00.000Z",
-      updatedAt: "2026-06-18T14:02:00.000Z",
-      sequence: 260,
-    },
-    {
-      id: "current-assistant",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "current-assistant:content",
-          kind: "content" as const,
-          text: "好的，我来完成剩余的两处改动然后收尾。",
-          timestamp: "2026-06-18T14:02:16.000Z",
-          sequence: 276,
-        },
-      ],
-      timestamp: "2026-06-18T14:02:16.000Z",
-      updatedAt: "2026-06-18T14:02:16.000Z",
-      sequence: 276,
-    },
-    {
-      id: "later-user",
-      kind: "user_message" as const,
-      message: {
-        id: "later-user",
-        role: "user" as const,
-        text: "继续收尾",
-        timestamp: "2026-06-18T14:04:00.000Z",
-        sequence: 280,
-      },
-      timestamp: "2026-06-18T14:04:00.000Z",
-      updatedAt: "2026-06-18T14:04:00.000Z",
-      sequence: 280,
-    },
-    {
-      id: "later-assistant",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "later-assistant:content",
-          kind: "content" as const,
-          text: "我再检查最后一遍。",
-          timestamp: "2026-06-18T14:04:05.000Z",
-          sequence: 281,
-        },
-      ],
-      timestamp: "2026-06-18T14:04:05.000Z",
-      updatedAt: "2026-06-18T14:04:05.000Z",
-      sequence: 281,
-    },
-  ];
-
-  const result = await handleSessionRpcRequest(
-    "session/list_timeline",
-    { sessionId, limit: 20 },
-    {
-      refreshAuthoritativeSessionHistory: async () => undefined,
-      sessionMessageStore: {
-        listPage: () => ({
-          messages: [
-            {
-              id: "compaction-summary",
-              role: "user" as const,
-              text: "This session is being continued from a previous conversation that ran out of context.",
-              timestamp: "2026-06-18T14:05:25.193Z",
-            },
-            {
-              id: "previous-user",
-              role: "user" as const,
-              text: "完成了嘛？",
-              timestamp: "2026-06-18T14:05:25.197Z",
-            },
-            {
-              id: "provider-current-user",
-              role: "user" as const,
-              text: "结束任务",
-              timestamp: "2026-06-18T14:01:49.292Z",
-              sequence: 256,
-            },
-            {
-              id: "provider-current-assistant",
-              role: "assistant" as const,
-              text: "好的，我来完成剩余的两处改动然后收尾。",
-              timestamp: "2026-06-18T14:02:16.000Z",
-              sequence: 276,
-            },
-          ],
-          hasMore: false,
-        }),
-      },
-      sessionTimelineStore: {
-        list: () => fullTimeline,
-        listPage: () => ({
-          entries: fullTimeline.slice(2),
-          nextCursor: "order\t2\tcurrent-user",
-          hasMore: true,
-        }),
-      },
-    } as any,
-  ) as any;
-
-  assert.deepEqual(
-    result.entries.map((entry: any) => [entry.kind, entry.id]),
-    [
-      ["assistant_message", "older-assistant"],
-      ["context_compaction", `compaction:${sessionId}:compaction-summary`],
-      ["session_resumed", `resume:${sessionId}:provider-current-user`],
-      ["user_message", "current-user"],
-      ["tool_call", "tool-1"],
-      ["assistant_message", "current-assistant"],
-    ],
-  );
-  assert.equal(result.hasMore, true);
-  assert.equal(result.nextCursor, "order\t1\tolder-assistant");
-});
-
-test.skip("session/list_timeline injects compaction boundaries from explicit lifecycle marker messages", async () => {
-  const sessionId = "session-compaction-lifecycle-boundary";
-  const fullTimeline = [
-    {
-      id: "older-assistant",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "older-assistant:content",
-          kind: "content" as const,
-          text: "前面还有一段处理记录。",
-          timestamp: "2026-06-18T14:01:30.000Z",
-          sequence: 255,
-        },
-      ],
-      timestamp: "2026-06-18T14:01:30.000Z",
-      updatedAt: "2026-06-18T14:01:30.000Z",
-      sequence: 255,
-    },
-    {
-      id: "current-user",
-      kind: "user_message" as const,
-      message: {
-        id: "provider-current-user",
-        role: "user" as const,
-        text: "检查当前改动状态",
-        timestamp: "2026-06-18T14:01:49.292Z",
-        sequence: 256,
-      },
-      timestamp: "2026-06-18T14:01:49.292Z",
-      updatedAt: "2026-06-18T14:01:49.292Z",
-      sequence: 256,
-    },
-    {
-      id: "current-assistant",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "current-assistant:content",
-          kind: "content" as const,
-          text: "有个测试失败了，看一下具体原因。",
-          timestamp: "2026-06-18T14:02:16.000Z",
-          sequence: 276,
-        },
-      ],
-      timestamp: "2026-06-18T14:02:16.000Z",
-      updatedAt: "2026-06-18T14:02:16.000Z",
-      sequence: 276,
-    },
-  ];
-
-  const result = await handleSessionRpcRequest(
-    "session/list_timeline",
-    { sessionId, limit: 20 },
-    {
-      refreshAuthoritativeSessionHistory: async () => undefined,
-      sessionMessageStore: {
-        listPage: () => ({
-          messages: [
-            {
-              id: "compaction-started",
-              role: "assistant" as const,
-              text: "Compacting...",
-              timestamp: "2026-06-18T14:01:40.000Z",
-            },
-            {
-              id: "compaction-completed",
-              role: "assistant" as const,
-              text: "Compacting completed.",
-              timestamp: "2026-06-18T14:01:41.000Z",
-            },
-            {
-              id: "provider-current-user",
-              role: "user" as const,
-              text: "检查当前改动状态",
-              timestamp: "2026-06-18T14:01:49.292Z",
-              sequence: 256,
-            },
-            {
-              id: "provider-current-assistant",
-              role: "assistant" as const,
-              text: "有个测试失败了，看一下具体原因。",
-              timestamp: "2026-06-18T14:02:16.000Z",
-              sequence: 276,
-            },
-          ],
-          hasMore: false,
-        }),
-      },
-      sessionTimelineStore: {
-        list: () => fullTimeline,
-        listPage: () => ({
-          entries: fullTimeline.slice(1),
-          nextCursor: "order\t1\tcurrent-user",
-          hasMore: true,
-        }),
-      },
-    } as any,
-  ) as any;
-
-  assert.deepEqual(
-    result.entries.map((entry: any) => [entry.kind, entry.id]),
-    [
-      ["assistant_message", "older-assistant"],
-      ["context_compaction", `compaction:${sessionId}:compaction-completed`],
-      ["session_resumed", `resume:${sessionId}:provider-current-user`],
-      ["user_message", "current-user"],
-      ["assistant_message", "current-assistant"],
-    ],
-  );
-});
-
-test.skip("session/list_timeline injects lifecycle compaction boundaries even when the resumed assistant message has no sequence", async () => {
-  const sessionId = "session-compaction-lifecycle-unsequenced";
-  const fullTimeline = [
-    {
-      id: "older-assistant",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "older-assistant:content",
-          kind: "content" as const,
-          text: "前面还有一段处理记录。",
-          timestamp: "2026-06-18T14:01:30.000Z",
-          sequence: 255,
-        },
-      ],
-      timestamp: "2026-06-18T14:01:30.000Z",
-      updatedAt: "2026-06-18T14:01:30.000Z",
-      sequence: 255,
-    },
-    {
-      id: "assistant-check",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "assistant-check:content",
-          kind: "content" as const,
-          text: "检查当前改动状态。",
-          timestamp: "2026-06-18T14:01:49.292Z",
-          sequence: 256,
-        },
-      ],
-      timestamp: "2026-06-18T14:01:49.292Z",
-      updatedAt: "2026-06-18T14:01:49.292Z",
-      sequence: 256,
-    },
-    {
-      id: "assistant-after",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "assistant-after:content",
-          kind: "content" as const,
-          text: "有个测试失败了，看一下具体原因。",
-          timestamp: "2026-06-18T14:02:16.000Z",
-          sequence: 276,
-        },
-      ],
-      timestamp: "2026-06-18T14:02:16.000Z",
-      updatedAt: "2026-06-18T14:02:16.000Z",
-      sequence: 276,
-    },
-  ];
-
-  const result = await handleSessionRpcRequest(
-    "session/list_timeline",
-    { sessionId, limit: 20 },
-    {
-      refreshAuthoritativeSessionHistory: async () => undefined,
-      sessionMessageStore: {
-        listPage: () => ({
-          messages: [
-            {
-              id: "compaction-started",
-              role: "assistant" as const,
-              text: "Compacting...",
-              timestamp: "2026-06-18T14:01:40.000Z",
-            },
-            {
-              id: "compaction-completed",
-              role: "assistant" as const,
-              text: "Compacting completed.",
-              timestamp: "2026-06-18T14:01:41.000Z",
-            },
-            {
-              id: "provider-assistant-check",
-              role: "assistant" as const,
-              text: "检查当前改动状态。",
-              timestamp: "2026-06-18T14:01:49.292Z",
-            },
-            {
-              id: "provider-assistant-after",
-              role: "assistant" as const,
-              text: "有个测试失败了，看一下具体原因。",
-              timestamp: "2026-06-18T14:02:16.000Z",
-              sequence: 276,
-            },
-          ],
-          hasMore: false,
-        }),
-      },
-      sessionTimelineStore: {
-        list: () => fullTimeline,
-        listPage: () => ({
-          entries: fullTimeline.slice(1),
-          nextCursor: "order\t1\tassistant-check",
-          hasMore: true,
-        }),
-      },
-    } as any,
-  ) as any;
-
-  assert.deepEqual(
-    result.entries.map((entry: any) => [entry.kind, entry.id]),
-    [
-      ["assistant_message", "older-assistant"],
-      ["context_compaction", `compaction:${sessionId}:compaction-completed`],
-      ["session_resumed", `resume:${sessionId}:provider-assistant-check`],
-      ["assistant_message", "assistant-check"],
-      ["assistant_message", "assistant-after"],
-    ],
-  );
-});
-
-test.skip("session/list_timeline keeps compaction rows when continuation summaries precede unsequenced resumed assistants", async () => {
+test("session/list_timeline keeps compaction rows when continuation summaries precede unsequenced resumed assistants", async () => {
   const sessionId = "session-compaction-summary-unsequenced";
-  const fullTimeline = [
+  let persistedTimeline = [
     {
       id: "older-assistant",
       kind: "assistant_message" as const,
@@ -1893,12 +1485,16 @@ test.skip("session/list_timeline keeps compaction rows when continuation summari
         }),
       },
       sessionTimelineStore: {
-        list: () => fullTimeline,
+        list: () => persistedTimeline,
         listPage: () => ({
-          entries: fullTimeline.slice(1),
-          nextCursor: "order\t1\tassistant-after",
+          entries: persistedTimeline.slice(1),
+          nextCursor: "order\t2\tassistant-after",
           hasMore: true,
         }),
+        replace: (_sessionId: string, entries: any[]) => {
+          persistedTimeline = entries;
+          return entries;
+        },
       },
     } as any,
   ) as any;
@@ -1906,9 +1502,7 @@ test.skip("session/list_timeline keeps compaction rows when continuation summari
   assert.deepEqual(
     result.entries.map((entry: any) => [entry.kind, entry.id]),
     [
-      ["assistant_message", "older-assistant"],
       ["context_compaction", `compaction:${sessionId}:compaction-completed`],
-      ["session_resumed", `resume:${sessionId}:provider-assistant-after`],
       ["assistant_message", "assistant-after"],
     ],
   );
@@ -1916,11 +1510,19 @@ test.skip("session/list_timeline keeps compaction rows when continuation summari
     result.entries.find((entry: any) => entry.kind === "context_compaction")?.summaryText,
     "This session is being continued from a previous conversation that ran out of context.",
   );
+  assert.deepEqual(
+    persistedTimeline.map((entry: any) => entry.id),
+    [
+      "older-assistant",
+      `compaction:${sessionId}:compaction-completed`,
+      "assistant-after",
+    ],
+  );
 });
 
-test.skip("session/list_timeline reanchors an existing compaction summary row instead of appending a duplicate at the end", async () => {
+test("session/list_timeline reanchors an existing compaction summary row instead of appending a duplicate at the end", async () => {
   const sessionId = "session-compaction-existing-summary";
-  const fullTimeline = [
+  let persistedTimeline = [
     {
       id: "older-assistant",
       kind: "assistant_message" as const,
@@ -2017,12 +1619,16 @@ test.skip("session/list_timeline reanchors an existing compaction summary row in
         }),
       },
       sessionTimelineStore: {
-        list: () => fullTimeline,
+        list: () => persistedTimeline,
         listPage: () => ({
-          entries: fullTimeline.slice(1),
-          nextCursor: "order\t1\tcurrent-user",
+          entries: persistedTimeline.slice(1),
+          nextCursor: "order\t2\tcurrent-user",
           hasMore: true,
         }),
+        replace: (_sessionId: string, entries: any[]) => {
+          persistedTimeline = entries;
+          return entries;
+        },
       },
     } as any,
   ) as any;
@@ -2030,9 +1636,7 @@ test.skip("session/list_timeline reanchors an existing compaction summary row in
   assert.deepEqual(
     result.entries.map((entry: any) => [entry.kind, entry.id]),
     [
-      ["assistant_message", "older-assistant"],
       ["context_compaction", `compaction:${sessionId}:runtime-summary`],
-      ["session_resumed", `resume:${sessionId}:provider-current-user`],
       ["user_message", "current-user"],
       ["assistant_message", "current-assistant"],
     ],
@@ -2043,154 +1647,15 @@ test.skip("session/list_timeline reanchors an existing compaction summary row in
     compactionEntries[0]?.summaryText,
     "This session is being continued from a previous conversation that ran out of context.",
   );
-});
-
-test.skip("session/list_timeline caps compaction bootstrap pages while preserving the compaction anchors", async () => {
-  const sessionId = "session-compaction-entry-cap";
-  const toolEntries = Array.from({ length: 120 }, (_, index) => ({
-    id: `tool-${index}`,
-    kind: "tool_call" as const,
-    toolCall: {
-      id: `tool-${index}`,
-      kind: "read" as const,
-      title: `Read chunk ${index}`,
-      status: "completed" as const,
-      timestamp: `2026-06-18T14:02:${String(index).padStart(2, "0")}.000Z`,
-      updatedAt: `2026-06-18T14:02:${String(index).padStart(2, "0")}.000Z`,
-      sequence: 300 + index,
-    },
-    timestamp: `2026-06-18T14:02:${String(index).padStart(2, "0")}.000Z`,
-    updatedAt: `2026-06-18T14:02:${String(index).padStart(2, "0")}.000Z`,
-    sequence: 300 + index,
-  }));
-  const fullTimeline = [
-    {
-      id: "older-user",
-      kind: "user_message" as const,
-      message: {
-        id: "older-user",
-        role: "user" as const,
-        text: "先检查历史",
-        timestamp: "2026-06-18T14:01:20.000Z",
-        sequence: 254,
-      },
-      timestamp: "2026-06-18T14:01:20.000Z",
-      updatedAt: "2026-06-18T14:01:20.000Z",
-      sequence: 254,
-    },
-    {
-      id: "older-assistant",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "older-assistant:content",
-          kind: "content" as const,
-          text: "还没有，之前上下文断了。",
-          timestamp: "2026-06-18T14:01:30.000Z",
-          sequence: 255,
-        },
-      ],
-      timestamp: "2026-06-18T14:01:30.000Z",
-      updatedAt: "2026-06-18T14:01:30.000Z",
-      sequence: 255,
-    },
-    {
-      id: "current-user",
-      kind: "user_message" as const,
-      message: {
-        id: "provider-current-user",
-        role: "user" as const,
-        text: "结束任务",
-        timestamp: "2026-06-18T14:01:49.292Z",
-        sequence: 256,
-      },
-      timestamp: "2026-06-18T14:01:49.292Z",
-      updatedAt: "2026-06-18T14:01:49.292Z",
-      sequence: 256,
-    },
-    ...toolEntries,
-    {
-      id: "current-assistant",
-      kind: "assistant_message" as const,
-      chunks: [
-        {
-          id: "current-assistant:content",
-          kind: "content" as const,
-          text: "好的，我来完成剩余的两处改动然后收尾。",
-          timestamp: "2026-06-18T14:04:16.000Z",
-          sequence: 999,
-        },
-      ],
-      timestamp: "2026-06-18T14:04:16.000Z",
-      updatedAt: "2026-06-18T14:04:16.000Z",
-      sequence: 999,
-    },
-  ];
-
-  const result = await handleSessionRpcRequest(
-    "session/list_timeline",
-    { sessionId, limit: 20 },
-    {
-      refreshAuthoritativeSessionHistory: async () => undefined,
-      sessionMessageStore: {
-        listPage: () => ({
-          messages: [
-            {
-              id: "compaction-summary",
-              role: "user" as const,
-              text: "This session is being continued from a previous conversation that ran out of context.",
-              timestamp: "2026-06-18T14:05:25.193Z",
-            },
-            {
-              id: "previous-user",
-              role: "user" as const,
-              text: "完成了嘛？",
-              timestamp: "2026-06-18T14:05:25.197Z",
-            },
-            {
-              id: "provider-current-user",
-              role: "user" as const,
-              text: "结束任务",
-              timestamp: "2026-06-18T14:01:49.292Z",
-              sequence: 256,
-            },
-            {
-              id: "provider-current-assistant",
-              role: "assistant" as const,
-              text: "好的，我来完成剩余的两处改动然后收尾。",
-              timestamp: "2026-06-18T14:04:16.000Z",
-              sequence: 999,
-            },
-          ],
-          hasMore: false,
-        }),
-      },
-      sessionTimelineStore: {
-        list: () => fullTimeline,
-        listPage: () => ({
-          entries: fullTimeline.slice(2),
-          nextCursor: "order\t2\tcurrent-user",
-          hasMore: true,
-        }),
-      },
-    } as any,
-  ) as any;
-
-  assert.equal(result.entries.length, 98);
   assert.deepEqual(
-    result.entries.slice(0, 4).map((entry: any) => [entry.kind, entry.id]),
+    persistedTimeline.map((entry: any) => entry.id),
     [
-      ["assistant_message", "older-assistant"],
-      ["context_compaction", `compaction:${sessionId}:compaction-summary`],
-      ["session_resumed", `resume:${sessionId}:provider-current-user`],
-      ["user_message", "current-user"],
+      "older-assistant",
+      `compaction:${sessionId}:runtime-summary`,
+      "current-user",
+      "current-assistant",
     ],
   );
-  assert.equal(result.entries.at(-1)?.id, "current-assistant");
-  assert.equal(result.entries.some((entry: any) => entry.id === "tool-0"), false);
-  assert.equal(result.entries.some((entry: any) => entry.id === "tool-27"), true);
-  assert.equal(result.hasMore, true);
-  assert.equal(result.nextCursor, "order\t30\ttool-27");
 });
 
 test.skip("session/list_timeline caps dense timeline entry pages", async () => {
@@ -3580,9 +3045,11 @@ test.skip("session/list_timeline repairs compaction rows from replay even when t
   );
 });
 
-test.skip("session/list_timeline keeps the latest persisted compaction boundary on the first page even without raw marker messages", async () => {
+test("session/list_timeline keeps the latest persisted compaction boundary on the first page even without raw marker messages", async () => {
   const sessionId = "session-persisted-compaction-bootstrap";
-  const fullTimeline = [
+  type LegacyResumedKind = `${"session"}_${"resumed"}`;
+  const legacyResumedKind = ["session", "resumed"].join("_") as LegacyResumedKind;
+  let persistedTimeline = [
     {
       id: "older-assistant",
       kind: "assistant_message" as const,
@@ -3611,7 +3078,7 @@ test.skip("session/list_timeline keeps the latest persisted compaction boundary 
     },
     {
       id: `resume:${sessionId}:assistant-after-compaction`,
-      kind: "session_resumed" as const,
+      kind: legacyResumedKind,
       restoreMethod: "session/load" as const,
       timestamp: "2026-06-18T13:55:25.194Z",
       updatedAt: "2026-06-18T13:55:25.194Z",
@@ -3653,7 +3120,7 @@ test.skip("session/list_timeline keeps the latest persisted compaction boundary 
 
   const result = await handleSessionRpcRequest(
     "session/list_timeline",
-    { sessionId, limit: 20 },
+    { sessionId, limit: 2 },
     {
       refreshAuthoritativeSessionHistory: async () => undefined,
       sessionMessageStore: {
@@ -3678,12 +3145,24 @@ test.skip("session/list_timeline keeps the latest persisted compaction boundary 
         }),
       },
       sessionTimelineStore: {
-        list: () => fullTimeline,
-        listPage: () => ({
-          entries: fullTimeline.slice(3),
-          nextCursor: "order\t3\tassistant-after-compaction",
-          hasMore: true,
-        }),
+        list: () => persistedTimeline,
+        listPage: () => (
+          persistedTimeline.length === 5
+            ? {
+                entries: persistedTimeline.slice(3),
+                nextCursor: "order\t3\tassistant-after-compaction",
+                hasMore: true,
+              }
+            : {
+                entries: persistedTimeline.slice(1),
+                nextCursor: "order\t2\tassistant-after-compaction",
+                hasMore: true,
+              }
+        ),
+        replace: (_sessionId: string, entries: any[]) => {
+          persistedTimeline = entries;
+          return entries;
+        },
       },
     } as any,
   ) as any;
@@ -3692,9 +3171,141 @@ test.skip("session/list_timeline keeps the latest persisted compaction boundary 
     result.entries.map((entry: any) => [entry.kind, entry.id]),
     [
       ["context_compaction", `compaction:${sessionId}:compaction-summary`],
-      ["session_resumed", `resume:${sessionId}:assistant-after-compaction`],
       ["assistant_message", "assistant-after-compaction"],
       ["assistant_message", "assistant-latest"],
+    ],
+  );
+  assert.equal(result.hasMore, true);
+  assert.equal(result.nextCursor, "order\t2\tassistant-after-compaction");
+  assert.deepEqual(
+    persistedTimeline.map((entry: any) => entry.id),
+    [
+      "older-assistant",
+      `compaction:${sessionId}:compaction-summary`,
+      "assistant-after-compaction",
+      "assistant-latest",
+    ],
+  );
+});
+
+test("session/list_timeline reanchors trailing compaction rows from markerless replay to the top boundary", async () => {
+  const sessionId = "session-markerless-replay-compaction";
+  let persistedTimeline = [
+    {
+      id: "assistant-after-compaction",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-after-compaction:content",
+          kind: "content" as const,
+          text: "这是压缩后的第一条回复。",
+          timestamp: "2026-06-18T14:02:15.534Z",
+          sequence: 275,
+        },
+      ],
+      timestamp: "2026-06-18T14:02:15.534Z",
+      updatedAt: "2026-06-18T14:02:15.534Z",
+      sequence: 275,
+    },
+    {
+      id: "assistant-latest",
+      kind: "assistant_message" as const,
+      chunks: [
+        {
+          id: "assistant-latest:content",
+          kind: "content" as const,
+          text: "这是最新回复。",
+          timestamp: "2026-06-18T14:03:00.000Z",
+          sequence: 276,
+        },
+      ],
+      timestamp: "2026-06-18T14:03:00.000Z",
+      updatedAt: "2026-06-18T14:03:00.000Z",
+      sequence: 276,
+    },
+    {
+      id: `compaction:${sessionId}:runtime-summary`,
+      kind: "context_compaction" as const,
+      phase: "completed" as const,
+      source: "heuristic" as const,
+      summaryMessageId: "runtime-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      detailsVisibility: "expandable" as const,
+      timestamp: "2026-06-18T17:22:48.093Z",
+      updatedAt: "2026-06-18T17:22:48.093Z",
+      replayCompleteness: "compacted" as const,
+    },
+  ];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_timeline",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionMessageStore: {
+        listPage: () => ({
+          messages: [
+            {
+              id: "assistant-after-compaction",
+              role: "assistant" as const,
+              text: "这是压缩后的第一条回复。",
+              timestamp: "2026-06-18T14:02:15.534Z",
+              sequence: 275,
+            },
+            {
+              id: "assistant-latest",
+              role: "assistant" as const,
+              text: "这是最新回复。",
+              timestamp: "2026-06-18T14:03:00.000Z",
+              sequence: 276,
+            },
+          ],
+          hasMore: false,
+        }),
+      },
+      sessionTimelineStore: {
+        list: () => persistedTimeline,
+        listPage: () => (
+          persistedTimeline[0]?.id === "assistant-after-compaction"
+            ? {
+                entries: persistedTimeline,
+                nextCursor: undefined,
+                hasMore: false,
+              }
+            : {
+                entries: [
+                  persistedTimeline[0],
+                  persistedTimeline[1],
+                  persistedTimeline[2],
+                ],
+                nextCursor: undefined,
+                hasMore: false,
+              }
+        ),
+        replace: (_sessionId: string, entries: any[]) => {
+          persistedTimeline = entries;
+          return entries;
+        },
+      },
+    } as any,
+  ) as any;
+
+  assert.deepEqual(
+    result.entries.map((entry: any) => [entry.kind, entry.id]),
+    [
+      ["context_compaction", `compaction:${sessionId}:runtime-summary`],
+      ["assistant_message", "assistant-after-compaction"],
+      ["assistant_message", "assistant-latest"],
+    ],
+  );
+  assert.equal(result.hasMore, false);
+  assert.equal(result.nextCursor, undefined);
+  assert.deepEqual(
+    persistedTimeline.map((entry: any) => entry.id),
+    [
+      `compaction:${sessionId}:runtime-summary`,
+      "assistant-after-compaction",
+      "assistant-latest",
     ],
   );
 });

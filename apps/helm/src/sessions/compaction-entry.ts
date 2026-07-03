@@ -1,6 +1,8 @@
 import { resolveAdapterCompactionDetailsVisibility } from "@tiller/acp-runtime";
 import type { HelmHandlerContext } from "../handlers/context";
 import type {
+  SessionCompactionPhase,
+  SessionCompactionSource,
   SessionTimelineContextCompactionEntry,
   SessionTimelineEntry,
   SessionSummary,
@@ -10,6 +12,8 @@ export function buildSessionCompactionEntry(args: {
   sessionId: string;
   timestamp: string;
   context: HelmHandlerContext;
+  phase?: SessionCompactionPhase;
+  source?: SessionCompactionSource;
   summaryText?: string;
   summaryMessageId?: string;
   idSuffix?: string;
@@ -18,6 +22,8 @@ export function buildSessionCompactionEntry(args: {
     sessionId: args.sessionId,
     timestamp: args.timestamp,
     providerId: contextProviderId(args.sessionId, args.context),
+    phase: args.phase,
+    source: args.source,
     summaryText: args.summaryText,
     summaryMessageId: args.summaryMessageId,
     idSuffix: args.idSuffix,
@@ -28,6 +34,8 @@ export function buildSessionCompactionEntryFromProvider(args: {
   sessionId: string;
   timestamp: string;
   providerId?: string;
+  phase?: SessionCompactionPhase;
+  source?: SessionCompactionSource;
   summaryText?: string;
   summaryMessageId?: string;
   idSuffix?: string;
@@ -37,6 +45,8 @@ export function buildSessionCompactionEntryFromProvider(args: {
   return {
     kind: "context_compaction",
     id: `compaction:${args.sessionId}:${idSuffix}`,
+    phase: args.phase ?? "completed",
+    source: args.source ?? "provider",
     summaryMessageId: args.summaryMessageId,
     summaryText,
     detailsVisibility: resolveCompactionDetailsVisibility(args.providerId, summaryText),
@@ -60,6 +70,16 @@ export function upsertSessionCompactionEntry(
     }
     entries[sameIdIndex] = incoming;
     return incoming;
+  }
+
+  const lifecycleMergeIndex = findCompactionLifecycleMergeIndex(entries, incoming);
+  if (lifecycleMergeIndex !== -1) {
+    const current = entries[lifecycleMergeIndex];
+    if (current?.kind === "context_compaction") {
+      const merged = mergeCompactionEntry(current, incoming);
+      entries[lifecycleMergeIndex] = merged;
+      return merged;
+    }
   }
 
   const mergeIndex = findCompactionSummaryMergeIndex(entries, incoming);
@@ -117,6 +137,25 @@ function findCompactionSummaryMergeIndex(
   return -1;
 }
 
+function findCompactionLifecycleMergeIndex(
+  entries: SessionTimelineEntry[],
+  incoming: SessionTimelineContextCompactionEntry,
+) {
+  if (incoming.phase !== "completed") {
+    return -1;
+  }
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const current = entries[index];
+    if (current?.kind !== "context_compaction" || current.phase !== "started") {
+      continue;
+    }
+    if (isCompactionSummaryMergeCandidate(current, incoming)) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function isCompactionSummaryMergeCandidate(
   current: SessionTimelineContextCompactionEntry,
   incoming: SessionTimelineContextCompactionEntry,
@@ -140,6 +179,8 @@ function mergeCompactionEntry(
     id: current.id,
     timestamp: current.timestamp,
     updatedAt: incoming.updatedAt ?? incoming.timestamp ?? current.updatedAt,
+    phase: incoming.phase ?? current.phase,
+    source: incoming.source ?? current.source,
     summaryMessageId: incoming.summaryMessageId ?? current.summaryMessageId,
     summaryText: incoming.summaryText ?? current.summaryText,
     detailsVisibility: incoming.detailsVisibility ?? current.detailsVisibility,

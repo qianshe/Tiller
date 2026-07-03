@@ -6,7 +6,6 @@ import type {
   AgentPromptImageContent,
   AgentToolCall,
   SessionConfigOption,
-  SessionLiveCompactionState,
   SessionLiveStateSnapshot,
   SessionSummary,
   SessionTimelineBatch,
@@ -220,9 +219,6 @@ export function applySessionResult(
         store.setSessionTimelineDeliveryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
-        store.setSessionCompactionStates((current) =>
-          pruneSessionScopedMap(current, nextSessions),
-        );
         store.setMessageHistoryState((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
@@ -309,10 +305,6 @@ export function applySessionResult(
     }
     case "session/get_artifacts": {
       const outputToolCalls = payload.outputs.map(commandChunkToToolCall);
-      const artifactToolCalls = [
-        ...(payload.toolCalls ?? []),
-        ...outputToolCalls,
-      ];
       store.setOutputs((current) => ({
         ...current,
         [payload.sessionId]: mergeCommandHistory(
@@ -325,7 +317,6 @@ export function applySessionResult(
         ...outputToolCalls,
         ...(payload.toolCalls ?? []),
       ]);
-      applySessionPlanPayload(store, payload.sessionId, payload.plan);
       store.setDiffs((current) => ({
         ...current,
         [payload.sessionId]: payload.diffs,
@@ -419,9 +410,6 @@ export function applySessionResult(
       store.setSessionTimeline((current) =>
         removeSessionRecord(current, payload.result.sessionId),
       );
-      store.setSessionCompactionStates((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
-      );
       store.dropSessionApprovals(payload.result.sessionId);
       store.setOutputs((current) =>
         removeSessionRecord(current, payload.result.sessionId),
@@ -454,20 +442,6 @@ export function applySessionResult(
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
-
-function applySessionPlanPayload(
-  store: DeckStore,
-  sessionId: string,
-  plan: unknown,
-) {
-  if (!isAgentPlanPayload(plan)) {
-    return;
-  }
-  store.setSessionPlans((current) => ({
-    ...current,
-    [sessionId]: plan,
-  }));
-}
 
 function replaceSessionPlanPayload(
   store: DeckStore,
@@ -516,10 +490,6 @@ function applySessionLiveStateSnapshot(
     isAgentPlanPayload(snapshot?.plan) ? snapshot.plan : undefined,
   );
   replacePromptQueuePayload(store, sessionId, snapshot?.promptQueue);
-  store.setSessionCompactionStates((current) => ({
-    ...current,
-    [sessionId]: snapshot?.compactionState,
-  }));
 }
 
 function applySessionTimelineHistoryResult(
@@ -791,22 +761,6 @@ export function applySessionUpdate(
     case "prompt_queue":
       store.setPromptQueue(sessionId, update.queue);
       return true;
-    case "compaction_state":
-      store.setSessionCompactionStates((current) => {
-        if (update.phase === "started") {
-          const nextState: SessionLiveCompactionState = {
-            phase: "started",
-            source: update.source,
-            timestamp: update.timestamp,
-          };
-          return { ...current, [sessionId]: nextState };
-        }
-        return {
-          ...current,
-          [sessionId]: undefined,
-        };
-      });
-      return true;
     case "user_message":
       store.setMessages((current) => ({
         ...current,
@@ -818,10 +772,6 @@ export function applySessionUpdate(
       }));
       return true;
     case "transcript_event":
-      store.setSessionCompactionStates((current) => ({
-        ...current,
-        [sessionId]: undefined,
-      }));
       return true;
     case "timeline_batch":
       applyCanonicalTimelineBatch(store, sessionId, update.batch, context);
@@ -831,12 +781,6 @@ export function applySessionUpdate(
       return true;
     case "status_change":
       requestAgentConnectionsRefresh(context);
-      if (update.status !== "running") {
-        store.setSessionCompactionStates((current) => ({
-          ...current,
-          [sessionId]: undefined,
-        }));
-      }
       store.setStatuses((current) => ({
         ...current,
         [sessionId]: update.status,

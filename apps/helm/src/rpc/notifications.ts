@@ -38,7 +38,6 @@ function isSessionDetailUpdate(update: unknown): boolean {
     || kind === "tool_call"
     || kind === "plan_update"
     || kind === "command_output"
-    || kind === "compaction_state"
     || kind === "transcript_event"
     || kind === "timeline_batch"
     || kind === "live_state"

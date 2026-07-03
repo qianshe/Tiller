@@ -1,11 +1,21 @@
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "../sessions/facade";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, SessionSummary } from "@tiller/shared";
+import type {
+  AgentMessage,
+  SessionSummary,
+  SessionTimelineContextCompactionEntry,
+  SessionTimelineEntry,
+} from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { buildSessionCompactionEntry } from "../sessions/compaction-entry";
 import { handleRuntimePermissionRequest } from "./approval-boundary";
 import { createSessionEventPublisher } from "./session/event/publisher";
-import { publishRuntimeCommandOutput, publishRuntimeToolCall } from "./session/event/effects";
+import {
+  publishRuntimeCommandOutput,
+  publishRuntimeToolCall,
+  recordRuntimeCommandOutputArtifact,
+  recordRuntimeToolCallArtifact,
+} from "./session/event/effects";
 import {
   persistTimelineMessage,
   persistTimelineTranscriptEvent,
@@ -125,6 +135,61 @@ function nextLiveEventSequence(sessionId: string) {
   return allocateLiveEventSequence(sessionId);
 }
 
+function hasPendingTimelineCompaction(
+  sessionId: string,
+  context: Pick<HelmHandlerContext, "sessionTimelineStore">,
+): context is Pick<HelmHandlerContext, "sessionTimelineStore"> & {
+  sessionTimelineStore: NonNullable<HelmHandlerContext["sessionTimelineStore"]>;
+} {
+  return Boolean(findPendingTimelineCompactionEntry(sessionId, context));
+}
+
+function findPendingTimelineCompactionEntry(
+  sessionId: string,
+  context: Pick<HelmHandlerContext, "sessionTimelineStore">,
+): SessionTimelineContextCompactionEntry | undefined {
+  const entries = context.sessionTimelineStore?.list?.(sessionId) as SessionTimelineEntry[] | undefined;
+  if (!entries?.length) {
+    return undefined;
+  }
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry?.kind === "context_compaction" && entry.phase === "started") {
+      return entry;
+    }
+  }
+  return undefined;
+}
+
+function shouldInferCompactionCompletionFromEvent(event: SessionRuntimeEvent) {
+  switch (event.type) {
+    case "message":
+      return event.message.role === "assistant";
+    case "tool-call":
+    case "command-output":
+    case "permission-request":
+      return true;
+    default:
+      return false;
+  }
+}
+
+function resolveCompactionCompletionTimestamp(
+  event: SessionRuntimeEvent,
+  pending: SessionTimelineContextCompactionEntry,
+) {
+  switch (event.type) {
+    case "message":
+      return event.message.timestamp;
+    case "tool-call":
+      return event.toolCall.timestamp;
+    case "command-output":
+      return event.chunk.timestamp;
+    default:
+      return pending.updatedAt;
+  }
+}
+
 function hasCanonicalTimelinePipeline(
   context: HelmHandlerContext,
 ): context is HelmHandlerContext & Required<Pick<
@@ -152,6 +217,30 @@ function routeCanonicalTimelineEvent(
     dispatcher: context.sessionTimelineDispatcher,
     context,
   });
+}
+
+function inferPendingCompactionCompletion(
+  sessionId: string,
+  event: SessionRuntimeEvent,
+  context: HelmHandlerContext & Required<Pick<
+    HelmHandlerContext,
+    "sessionTimelineWorkers" | "sessionTimelineDispatcher" | "sessionLiveStateStore"
+  >>,
+) {
+  if (!shouldInferCompactionCompletionFromEvent(event)) {
+    return false;
+  }
+  const pending = findPendingTimelineCompactionEntry(sessionId, context);
+  if (!pending) {
+    return false;
+  }
+  routeCanonicalTimelineEvent(sessionId, {
+    type: "compaction",
+    phase: "completed",
+    source: pending.source,
+    timestamp: resolveCompactionCompletionTimestamp(event, pending),
+  }, context);
+  return true;
 }
 
 export function nextLiveEventSequenceForTest(sessionId: string) {
@@ -323,6 +412,9 @@ export function handleRuntimeEvent(
   if (event.type !== "command-output") {
     flushCommandOutputSummaries(sessionId, context);
   }
+  if (hasCanonicalTimelinePipeline(context) && hasPendingTimelineCompaction(sessionId, context)) {
+    inferPendingCompactionCompletion(sessionId, event, context);
+  }
 
   switch (event.type) {
     case "status":
@@ -414,35 +506,34 @@ export function handleRuntimeEvent(
       return;
     case "compaction":
       persistRuntimeSessionUpdate(sessionId, event, context);
+      const shouldStartNewAssistantTurn = !hasPendingTimelineCompaction(sessionId, context);
       if (hasCanonicalTimelinePipeline(context)) {
+        if (shouldStartNewAssistantTurn) {
+          startNextAssistantResponseSegment(sessionId);
+        }
         routeCanonicalTimelineEvent(sessionId, event, context);
         return;
       }
       flushLiveAssistantMessage(sessionId, context);
-      startNextAssistantResponseSegment(sessionId);
-      createSessionEventPublisher(context).sessionUpdate(sessionId, {
-        kind: "compaction_state",
+      if (shouldStartNewAssistantTurn) {
+        startNextAssistantResponseSegment(sessionId);
+      }
+      const compactionEntry = buildSessionCompactionEntry({
+        sessionId,
+        context,
         phase: event.phase,
         source: event.source,
-        timestamp: event.timestamp,
         summaryText: event.summaryText,
+        summaryMessageId: event.messageId,
+        timestamp: event.timestamp,
+        idSuffix: event.messageId ? undefined : `compaction:${event.timestamp}`,
       });
-      if (event.phase === "completed") {
-        const compactionEntry = buildSessionCompactionEntry({
-          sessionId,
-          context,
-          summaryText: event.summaryText,
-          summaryMessageId: event.messageId,
-          timestamp: event.timestamp,
-          idSuffix: event.messageId ? undefined : `compaction:${event.timestamp}`,
-        });
-        const storedCompactionEntry =
-          persistTimelineTranscriptEvent(context, sessionId, compactionEntry) ?? compactionEntry;
-        createSessionEventPublisher(context).sessionUpdate(sessionId, {
-          kind: "transcript_event",
-          entry: storedCompactionEntry,
-        });
-      }
+      const storedCompactionEntry =
+        persistTimelineTranscriptEvent(context, sessionId, compactionEntry) ?? compactionEntry;
+      createSessionEventPublisher(context).sessionUpdate(sessionId, {
+        kind: "transcript_event",
+        entry: storedCompactionEntry,
+      });
       return;
     case "permission-request":
       flushLiveAssistantMessage(sessionId, context);
@@ -503,7 +594,7 @@ export function handleRuntimeEvent(
       if (hasCanonicalTimelinePipeline(context)) {
         persistRuntimeSessionUpdate(sessionId, event, context);
         routeCanonicalTimelineEvent(sessionId, event, context);
-        publishRuntimeToolCall(context, sessionId, {
+        recordRuntimeToolCallArtifact(context, sessionId, {
           ...event.toolCall,
           sequence: nextLiveEventSequence(sessionId),
         });
@@ -537,17 +628,13 @@ export function handleRuntimeEvent(
           sequence: nextLiveEventSequence(sessionId),
         };
         recordCommandOutputSummary(sessionId, event.chunk, orderedChunkForArtifacts.sequence);
-        publishRuntimeCommandOutput(
-          context,
-          sessionId,
-          orderedChunkForArtifacts,
-          event.toolCall
-            ? {
-                ...event.toolCall,
-                sequence: orderedChunkForArtifacts.sequence,
-              }
-            : undefined,
-        );
+        recordRuntimeCommandOutputArtifact(context, sessionId, orderedChunkForArtifacts);
+        if (event.toolCall) {
+          recordRuntimeToolCallArtifact(context, sessionId, {
+            ...event.toolCall,
+            sequence: orderedChunkForArtifacts.sequence,
+          });
+        }
         return;
       }
       flushLiveAssistantMessage(sessionId, context);

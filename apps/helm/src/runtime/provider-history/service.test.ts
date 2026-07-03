@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSessionTimelineFromLegacy, type AgentMessage, type AgentToolCall, type SessionSummary } from "@tiller/shared";
+import {
+  buildSessionTimelineFromLegacy,
+  type AgentMessage,
+  type AgentToolCall,
+  type SessionSummary,
+  type SessionTimelineEntry,
+} from "@tiller/shared";
 import type { AgentPlan, SessionUpdateRecord } from "@tiller/shared";
 import { createProviderHistoryService } from "./service.js";
 
@@ -380,6 +386,97 @@ test("provider history refresh materializes canonical timeline from legacy local
 
   assert.deepEqual(timeline, expected);
   assert.equal(replaces, 1);
+});
+
+test("provider history migration leaves existing canonical timelines untouched", () => {
+  const sessionId = "session-normalize-canonical";
+  const logs: string[] = [];
+  let timeline: SessionTimelineEntry[] = [
+    {
+      id: "older-assistant",
+      kind: "assistant_message",
+      chunks: [{
+        id: "older-assistant:content",
+        kind: "content",
+        text: "older",
+        timestamp: "2026-06-30T10:00:00.000Z",
+        sequence: 255,
+      }],
+      timestamp: "2026-06-30T10:00:00.000Z",
+      updatedAt: "2026-06-30T10:00:00.000Z",
+      sequence: 255,
+    },
+    {
+      id: "current-user",
+      kind: "user_message",
+      message: {
+        id: "current-user",
+        role: "user",
+        text: "current",
+        timestamp: "2026-06-30T10:00:05.000Z",
+        sequence: 256,
+      },
+      timestamp: "2026-06-30T10:00:05.000Z",
+      updatedAt: "2026-06-30T10:00:05.000Z",
+      sequence: 256,
+    },
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:content",
+        kind: "content",
+        text: "answer",
+        timestamp: "2026-06-30T10:00:20.000Z",
+        sequence: 276,
+      }],
+      timestamp: "2026-06-30T10:00:20.000Z",
+      updatedAt: "2026-06-30T10:00:20.000Z",
+      sequence: 276,
+    },
+    {
+      id: "compaction-1",
+      kind: "context_compaction",
+      phase: "completed",
+      source: "provider",
+      summaryMessageId: "compaction-summary",
+      summaryText: "continued from previous conversation",
+      detailsVisibility: "expandable",
+      timestamp: "2026-06-30T10:00:40.000Z",
+      updatedAt: "2026-06-30T10:00:40.000Z",
+      replayCompleteness: "compacted",
+    },
+  ];
+  let replaces = 0;
+  const service = createTestProviderHistoryService(
+    {},
+    {
+      sessionStore: { list: () => [summary(sessionId)] },
+      logInfo: (message: string) => {
+        logs.push(message);
+      },
+      sessionTimelineStore: {
+        list: () => timeline,
+        replace: (_sessionId, entries) => {
+          replaces += 1;
+          timeline = entries;
+          return entries;
+        },
+      },
+    },
+  );
+
+  service.migrateLegacySessionHistory();
+
+  assert.deepEqual(
+    timeline.map((entry) => entry.id),
+    ["older-assistant", "current-user", "assistant-1", "compaction-1"],
+  );
+  assert.equal(replaces, 0);
+  assert.equal(
+    logs.some((message) => message.includes("provider.history.timeline.normalized") && message.includes(sessionId)),
+    false,
+  );
 });
 
 function createTestProviderHistoryService(

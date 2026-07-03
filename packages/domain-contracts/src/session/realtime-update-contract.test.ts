@@ -58,12 +58,6 @@ const realtimeUpdateContractSamples = [
   { kind: "commands_available", commands: [{ id: "test", label: "Run tests" }] },
   { kind: "session_updated", session: { id: "s1", status: "running" } },
   { kind: "prompt_queue", queue: { items: ["q1"] } },
-  {
-    kind: "compaction_state",
-    phase: "started",
-    source: "provider",
-    timestamp: "2026-06-28T00:00:00.000Z",
-  },
   { kind: "plan_update", plan: { entries: [{ content: "Wire ACP plan", status: "in_progress" }] } },
   {
     kind: "transcript_event",

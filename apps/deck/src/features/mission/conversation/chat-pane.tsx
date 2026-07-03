@@ -4,7 +4,6 @@ import type {
   AgentToolCall,
   PermissionDecision,
   PermissionRequest,
-  SessionLiveCompactionState,
   SessionPromptQueueSnapshot,
   SessionSummary,
   SessionTimelineEntry,
@@ -27,10 +26,12 @@ import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
 import {
+  resolveSessionConversationDisplayMode,
   resolveSessionStreamContentLength,
   shouldAutoScrollSessionBody,
   splitMissionToolCalls,
 } from "./chat-pane-model";
+import { deriveToolCallsFromTimeline } from "../utils/timeline-tool-calls";
 import { resolveChatSessionToolLoading } from "./chat-session-state";
 import {
   createAgentPlanDismissalKey,
@@ -107,7 +108,6 @@ type MissionChatPaneProps = {
   ) => void;
   expandedMessageIds: ReadonlySet<string>;
   messageHistoryState: Record<string, HistoryState | undefined>;
-  activityHistoryState: Record<string, HistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
   activityLoading: MissionToolActivity | null;
@@ -178,7 +178,6 @@ export function MissionChatPane({
   openSessions,
   expandedMessageIds,
   messageHistoryState,
-  activityHistoryState,
   onLoadOlderMessages,
   onToggleExpandedMessage,
   activityLoading,
@@ -214,7 +213,6 @@ export function MissionChatPane({
   onDeleteQueuedPrompt,
   children,
 }: MissionChatPaneProps) {
-  const sessionCompactionStates = useDeckStore((state) => state.sessionCompactionStates);
   const projectMenuRef = useRef<HTMLDivElement | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const sessionGridRef = useRef<HTMLDivElement | null>(null);
@@ -255,7 +253,7 @@ export function MissionChatPane({
   const singleSession = openSessions[0];
   const visibleSessionStreamCounts = openSessions
     .map((session) =>
-      `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionTimelineById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}:${sessionCompactionStates[session.id] ? 1 : 0}`
+      `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionTimelineById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}`
     )
     .join("|");
   const [dragOver, setDragOver] = useState(false);
@@ -371,7 +369,7 @@ export function MissionChatPane({
     };
   }, [chatMainRef, openSessions.length, shouldLockChatMainScroll]);
 
-  const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number; contentLength: number; historyLoading: boolean; compactionCount: number }>>({});
+  const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number; contentLength: number; historyLoading: boolean }>>({});
   const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
   const sessionBodyStickToBottomRef = useRef<Record<string, boolean>>({});
   const recordSessionBodyScroll = useCallback((sessionId: string, body: HTMLDivElement) => {
@@ -403,35 +401,32 @@ export function MissionChatPane({
     }
     const changedSessionIds: string[] = [];
     const previousSnapshot = sessionBodyScrollSnapshotRef.current;
-    const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number; contentLength: number; historyLoading: boolean; compactionCount: number }> = {};
+    const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number; contentLength: number; historyLoading: boolean }> = {};
 
     openSessions.forEach((session) => {
+      const sessionTimelineItems = sessionTimelineById[session.id];
       const sessionMessages =
         sessionMessagesById[session.id] ??
         (session.id === activeSessionId ? activeSessionMessages : undefined);
       const sessionToolCalls =
         sessionToolCallsById[session.id] ??
-        (session.id === activeSessionId ? activeSessionToolCalls : undefined);
-      const timelineCount = sessionTimelineById[session.id]?.length ?? 0;
+        (session.id === activeSessionId ? activeSessionToolCalls : undefined) ??
+        deriveToolCallsFromTimeline(sessionTimelineItems);
+      const timelineCount = sessionTimelineItems?.length ?? 0;
       const messageCount = sessionMessages?.length ?? 0;
       const toolCallCount = sessionToolCalls?.length ?? 0;
-      const compactionCount = sessionCompactionStates[session.id] ? 1 : 0;
-      const historyLoading = Boolean(
-        messageHistoryState[session.id]?.loading ||
-        activityHistoryState[session.id]?.loading,
-      );
+      const historyLoading = Boolean(messageHistoryState[session.id]?.loading);
       const contentLength = resolveSessionStreamContentLength({
         messages: sessionMessages,
-        timeline: sessionTimelineById[session.id],
+        timeline: sessionTimelineItems,
         toolCalls: sessionToolCalls,
-      }) + compactionCount;
+      });
       const previous = previousSnapshot[session.id];
       nextSnapshot[session.id] = {
         messageCount: Math.max(messageCount, timelineCount),
         toolCallCount,
         contentLength,
         historyLoading,
-        compactionCount,
       };
       if (!previous) {
         if (messageCount > 0 || timelineCount > 0 || toolCallCount > 0) {
@@ -442,8 +437,7 @@ export function MissionChatPane({
       if (
         previous.messageCount !== Math.max(messageCount, timelineCount) ||
         previous.toolCallCount !== toolCallCount ||
-        previous.contentLength !== contentLength ||
-        previous.compactionCount !== compactionCount
+        previous.contentLength !== contentLength
       ) {
         changedSessionIds.push(session.id);
       }
@@ -501,7 +495,7 @@ export function MissionChatPane({
       window.clearTimeout(timeout);
       window.clearTimeout(lateTimeout);
     };
-  }, [activeSessionId, activeSessionMessages, activeSessionToolCalls, activityHistoryState, chatMainRef, messageHistoryState, openSessions, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
+  }, [activeSessionId, activeSessionMessages, activeSessionToolCalls, chatMainRef, messageHistoryState, openSessions, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
 
   useEffect(() => {
     if (!shouldAnchorActiveParallelCard || !activeSessionId) {
@@ -553,10 +547,7 @@ export function MissionChatPane({
         if (!body) {
           continue;
         }
-        const historyLoading = Boolean(
-          messageHistoryState[sessionId]?.loading ||
-          activityHistoryState[sessionId]?.loading,
-        );
+        const historyLoading = Boolean(messageHistoryState[sessionId]?.loading);
         if (!shouldAutoScrollSessionBody({
           stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
           historyLoading,
@@ -583,7 +574,6 @@ export function MissionChatPane({
     activeSessionId,
     activeSessionMessages,
     activeSessionToolCalls,
-    activityHistoryState,
     chatMainRef,
     messageHistoryState,
     openSessions,
@@ -772,14 +762,12 @@ export function MissionChatPane({
                     (session.id === activeSessionId ? activeSessionMessages : EMPTY_MESSAGES)
                   }
                   timelineItems={sessionTimelineById[session.id] ?? EMPTY_TIMELINE_ITEMS}
-                  liveCompactionState={sessionCompactionStates[session.id]}
                   sessionToolCalls={
                     sessionToolCallsById[session.id] ??
                     (session.id === activeSessionId ? activeSessionToolCalls : EMPTY_TOOL_CALLS)
                   }
                   pendingApprovals={pendingApprovalsBySession[session.id] ?? EMPTY_PENDING_APPROVALS}
                   messageHistoryState={messageHistoryState[session.id]}
-                  activityHistoryState={activityHistoryState[session.id]}
                   bodyScrollSnapshot={sessionBodyScrollPositionRef.current[session.id]}
                   onBodyScroll={recordSessionBodyScroll}
                   onFocus={handleSelectSessionView}
@@ -828,7 +816,6 @@ export function MissionChatPane({
 
 type MissionChatSessionCardProps = {
   active: boolean;
-  activityHistoryState?: HistoryState;
   activityLoading: MissionToolActivity | null;
   bodyScrollSnapshot?: { scrollTop: number; scrollHeight: number };
   canHandoffAssistantMessage?: boolean;
@@ -865,7 +852,6 @@ type MissionChatSessionCardProps = {
   session: SessionSummary;
   sessionMessages: AgentMessage[];
   sessionToolCalls: AgentToolCall[];
-  liveCompactionState?: SessionLiveCompactionState;
   showPermissionWorktree: boolean;
   showThinking: boolean;
   showThinkingToggle: boolean;
@@ -874,7 +860,6 @@ type MissionChatSessionCardProps = {
 
 const MissionChatSessionCard = memo(function MissionChatSessionCard({
   active,
-  activityHistoryState,
   activityLoading,
   bodyScrollSnapshot,
   canHandoffAssistantMessage = false,
@@ -907,23 +892,18 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   session,
   sessionMessages,
   sessionToolCalls,
-  liveCompactionState,
   showPermissionWorktree,
   showThinking,
   showThinkingToggle,
   timelineItems,
 }: MissionChatSessionCardProps) {
   const sessionTimeline = useMemo(
-    () => splitMissionToolCalls(sessionToolCalls),
-    [sessionToolCalls],
+    () => splitMissionToolCalls(sessionToolCalls, timelineItems),
+    [sessionToolCalls, timelineItems],
   );
   const historyStateBySession = useMemo(
     () => ({ [session.id]: messageHistoryState }),
     [messageHistoryState, session.id],
-  );
-  const activityHistoryStateBySession = useMemo(
-    () => ({ [session.id]: activityHistoryState }),
-    [activityHistoryState, session.id],
   );
   const handleBodyScroll = useCallback<UIEventHandler<HTMLDivElement>>(
     (event) => onBodyScroll(session.id, event.currentTarget),
@@ -970,7 +950,13 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       onDelete={onDeleteQueuedPrompt}
     />
   ) : null;
-  const hasSessionContent = sessionMessages.length > 0 || timelineItems.length > 0;
+  const conversationDisplayMode = resolveSessionConversationDisplayMode({
+    sessionId: session.id,
+    sessionMessages,
+    sessionStatus: session.status,
+    timelineItemsLength: timelineItems.length,
+  });
+  const hasSessionContent = conversationDisplayMode === "conversation";
 
   return (
     <SessionCard
@@ -1014,14 +1000,16 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
             )
           }
           expandedMessageIds={expandedMessageIds}
-          liveCompactionState={liveCompactionState}
           historyStateBySession={historyStateBySession}
-          activityHistoryStateBySession={activityHistoryStateBySession}
           onLoadOlderMessages={onLoadOlderMessages}
           onToggleExpandedMessage={onToggleExpandedMessage}
         />
       ) : (
-        <SessionPreviewMessages session={session} restoring={isRuntimeActive} />
+        <SessionPreviewMessages
+          session={session}
+          restoring={isRuntimeActive}
+          historyLoading={conversationDisplayMode === "history-loading"}
+        />
       )}
     </SessionCard>
   );

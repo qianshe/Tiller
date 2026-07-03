@@ -91,16 +91,15 @@ test("session/list_timeline returns paginated canonical timeline entries", () =>
     nextCursor: "order\t1\tassistant-1",
     hasMore: true,
     liveState: {
-      compactionState: {
-        phase: "started",
-        source: "provider",
-        timestamp: "2026-06-29T10:00:02.000Z",
+      promptQueue: {
+        sessionId: "s1",
+        queued: [],
       },
     },
   });
   assert.equal(result.entries.length, 1);
   assert.equal(result.hasMore, true);
-  assert.equal(result.liveState?.compactionState?.phase, "started");
+  assert.equal(result.liveState?.promptQueue?.sessionId, "s1");
 });
 
 test("session/get_artifacts returns outputs/diffs/toolCalls arrays", () => {
@@ -110,14 +109,8 @@ test("session/get_artifacts returns outputs/diffs/toolCalls arrays", () => {
     outputs: [],
     diffs: [],
     toolCalls: [],
-    plan: {
-      updatedAt: "2026-06-02T13:37:09.663Z",
-      entries: [
-        { content: "恢复 OpenCode todo", priority: "high", status: "completed" },
-      ],
-    },
   });
-  assert.equal(parsed.plan?.entries[0]?.content, "恢复 OpenCode todo");
+  assert.deepEqual(parsed.toolCalls, []);
 });
 
 test("session/check_resume and session/resume share sessionId param", () => {

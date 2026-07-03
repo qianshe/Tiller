@@ -13,6 +13,9 @@ export type GitStatusFile = {
   indexStatus: string;
   worktreeStatus: string;
   originalPath?: string;
+  additions?: number;
+  deletions?: number;
+  patch?: string;
 };
 
 export type GitStatusState = {

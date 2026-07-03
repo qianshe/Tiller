@@ -711,7 +711,15 @@ export function DraftSessionCard({
   );
 }
 
-export function SessionPreviewMessages({ session, restoring = false }: { session: SessionSummary; restoring?: boolean }) {
+export function SessionPreviewMessages({
+  session,
+  restoring = false,
+  historyLoading = false,
+}: {
+  session: SessionSummary;
+  restoring?: boolean;
+  historyLoading?: boolean;
+}) {
   const sessionTitle = session.title?.trim();
 
   if (restoring) {
@@ -728,6 +736,32 @@ export function SessionPreviewMessages({ session, restoring = false }: { session
             <p className="text-section font-semibold text-foreground">正在恢复任务</p>
             <p className="text-meta leading-5 text-muted-foreground">
               正在重连 {session.agentName} 并同步历史消息，恢复后会继续显示最新输出。
+            </p>
+          </div>
+          {sessionTitle ? (
+            <div className="mx-auto max-w-full truncate rounded-md border border-border-ghost bg-surface-sunken px-3 py-2 text-meta text-foreground">
+              {sessionTitle}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (historyLoading) {
+    return (
+      <div
+        className="flex min-h-full flex-1 items-center justify-center px-6 py-10 text-center"
+        data-session-preview-state="history-loading"
+      >
+        <div className="mx-auto grid max-w-sm gap-3">
+          <div className="mx-auto grid size-9 place-items-center rounded-full border border-primary/20 bg-primary-soft/10 text-primary">
+            <StatusDot tone="primary" pulse size={8} />
+          </div>
+          <div className="grid gap-1">
+            <p className="text-section font-semibold text-foreground">正在加载历史消息</p>
+            <p className="text-meta leading-5 text-muted-foreground">
+              正在同步此任务的时间线历史，加载后会按统一消息顺序显示。
             </p>
           </div>
           {sessionTitle ? (

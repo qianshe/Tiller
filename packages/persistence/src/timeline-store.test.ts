@@ -381,18 +381,12 @@ test("sqlite timeline message-window paging keeps transcript boundaries with the
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         summaryText: "continued from previous conversation",
         detailsVisibility: "expandable",
         timestamp: at(2),
         updatedAt: at(2),
-        replayCompleteness: "compacted",
-      },
-      {
-        id: "resume-1",
-        kind: "session_resumed",
-        restoreMethod: "session/load",
-        timestamp: at(3),
-        updatedAt: at(3),
         replayCompleteness: "compacted",
       },
       {
@@ -424,7 +418,7 @@ test("sqlite timeline message-window paging keeps transcript boundaries with the
 
     assert.deepEqual(
       latest.entries.map((entry) => entry.id),
-      ["compaction-1", "resume-1", "current-user", "assistant-1"],
+      ["compaction-1", "current-user", "assistant-1"],
     );
     assert.equal(latest.hasMore, true);
     assert.deepEqual(older.entries.map((entry) => entry.id), ["older-user"]);
@@ -708,4 +702,114 @@ test("timeline message window includes leading tool entries when anchors fit wit
     page.entries.map((entry) => entry.id),
     ["assistant-1:thinking", "tool:tool-1", "user-1", "assistant-1#p0"],
   );
+});
+
+test("pageSessionTimeline keeps context_compaction attached to the following assistant group", () => {
+  const entries: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:content",
+        kind: "content",
+        text: "answer",
+        timestamp: at(30),
+        sequence: 276,
+      }],
+      timestamp: at(30),
+      updatedAt: at(30),
+      sequence: 276,
+    },
+    {
+      id: "compaction-1",
+      kind: "context_compaction",
+      phase: "completed",
+      source: "provider",
+      summaryMessageId: "compaction-summary",
+      summaryText: "continued from previous conversation",
+      detailsVisibility: "expandable",
+      timestamp: at(40),
+      updatedAt: at(40),
+      replayCompleteness: "compacted",
+    },
+    {
+      id: "assistant-2",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-2:content",
+        kind: "content",
+        text: "follow-up",
+        timestamp: at(50),
+        sequence: 277,
+      }],
+      timestamp: at(50),
+      updatedAt: at(50),
+      sequence: 277,
+    },
+  ];
+
+  const page = pageSessionTimeline(entries, {
+    limit: 1,
+    window: "message",
+  });
+
+  assert.deepEqual(
+    page.entries.map((entry) => entry.id),
+    ["compaction-1", "assistant-2"],
+  );
+  assert.equal(page.hasMore, true);
+});
+
+test("pageSessionTimeline ignores legacy resumed rows for message-window prefixes", () => {
+  type LegacyResumedKind = `${"session"}_${"resumed"}`;
+  const legacyResumedKind = ["session", "resumed"].join("_") as LegacyResumedKind;
+  const legacyResumedEntry = {
+    id: "resume-1",
+    kind: legacyResumedKind,
+    restoreMethod: "session/load",
+    timestamp: at(20),
+    updatedAt: at(20),
+    replayCompleteness: "compacted",
+  } as unknown as SessionTimelineEntry;
+
+  const page = pageSessionTimeline([
+    {
+      id: "assistant-0",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-0:content",
+        kind: "content",
+        text: "older",
+        timestamp: at(10),
+        sequence: 200,
+      }],
+      timestamp: at(10),
+      updatedAt: at(10),
+      sequence: 200,
+    },
+    legacyResumedEntry,
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:content",
+        kind: "content",
+        text: "answer",
+        timestamp: at(30),
+        sequence: 276,
+      }],
+      timestamp: at(30),
+      updatedAt: at(30),
+      sequence: 276,
+    },
+  ], {
+    limit: 1,
+    window: "message",
+  });
+
+  assert.deepEqual(
+    page.entries.map((entry) => entry.id),
+    ["assistant-1"],
+  );
+  assert.equal(page.hasMore, true);
 });

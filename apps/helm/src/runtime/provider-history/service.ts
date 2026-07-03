@@ -244,3 +244,21 @@ function isAgentPlan(value: unknown): value is AgentPlan {
           (entry as { status?: unknown }).status === "completed"),
     );
 }
+
+function logProviderHistoryInfo(
+  options: ProviderHistoryServiceOptions,
+  event: string,
+  fields: Record<string, unknown>,
+) {
+  if (options.logger) {
+    options.logger.debug(event, fields);
+    return;
+  }
+  options.logInfo(`[tiller] ${event} ${formatLogFields(fields)}`);
+}
+
+function formatLogFields(fields: Record<string, unknown>) {
+  return Object.entries(fields)
+    .map(([key, value]) => `${key}=${String(value)}`)
+    .join(" ");
+}

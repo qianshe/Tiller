@@ -26,7 +26,7 @@ test("restore replay completion logs only when replay content was persisted", ()
   );
 });
 
-test("session restore uses ACP load replay as authoritative history", async () => {
+test("session restore records ACP load replay without mutating local display history", async () => {
   const sessionId = "session-opencode-restore";
   const agent: AcpAgentProvider = {
     id: "opencode",
@@ -149,9 +149,7 @@ test("session restore uses ACP load replay as authoritative history", async () =
 
   assert.equal(appliedSource, "");
   assert.deepEqual(appliedMessages, []);
-  assert.deepEqual(storedMessages.map((message) => [message.id, message.role, message.text]), [
-    ["load-assistant-1", "assistant", "第一条回复"],
-  ]);
+  assert.deepEqual(storedMessages, []);
   assert.deepEqual(replayUpdates.map((update) => [update.source, update.providerId, update.runtimeSessionId, update.updateType]), [
     ["acp_load_replay", "opencode", "runtime-1", "message"],
   ]);
@@ -535,6 +533,7 @@ test("session restore waits for asynchronous ACP replay before flushing", async 
   const storedMessages: AgentMessage[] = [];
   const storedToolCalls: AgentToolCall[] = [];
   let storedTimeline: SessionTimelineEntry[] = [];
+  let replayUpdates: SessionUpdateRecord[] = [];
 
   const service = createSessionResumeService({
     sessions: new Map(),
@@ -633,6 +632,11 @@ test("session restore waits for asynchronous ACP replay before flushing", async 
           return entries;
         },
       },
+      sessionUpdateStore: {
+        replaceSession: (_sessionId: string, updates: SessionUpdateRecord[]) => {
+          replayUpdates = updates;
+        },
+      },
     } as any),
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
@@ -653,27 +657,20 @@ test("session restore waits for asynchronous ACP replay before flushing", async 
 
   await service.startSessionResume(sessionId);
 
+  assert.deepEqual(storedMessages, []);
+  assert.deepEqual(storedToolCalls, []);
+  assert.deepEqual(storedTimeline, []);
   assert.deepEqual(
-    storedMessages.map((message) => [message.role, message.text, message.sequence]),
+    replayUpdates.map((update) => [update.updateType, update.sequence]),
     [
-      ["user", "重新导入", 1],
-      ["assistant", "工具后继续输出", 3],
-    ],
-  );
-  assert.deepEqual(storedToolCalls.map((toolCall) => [toolCall.title, toolCall.sequence]), [
-    ["git status --short", 2],
-  ]);
-  assert.deepEqual(
-    storedTimeline.map((entry) => [entry.kind, entry.id, (entry as any).sequence]),
-    [
-      ["user_message", "user-1", 1],
-      ["tool_call", "tool:tool-1", 2],
-      ["assistant_message", "assistant-1", 3],
+      ["message", 1],
+      ["tool-call", 2],
+      ["message", 3],
     ],
   );
 });
 
-test("session restore reapplies compacted replay tail after flush so local prefix survives", async () => {
+test("session restore repairs a trailing compacted boundary from replay without replacing local history", async () => {
   const sessionId = "session-compacted-tail-patch";
   const agent: AcpAgentProvider = {
     id: "codex",
@@ -730,6 +727,18 @@ test("session restore reapplies compacted replay tail after flush so local prefi
       timestamp: persistedMessages[1]!.timestamp,
       updatedAt: persistedMessages[1]!.timestamp,
       sequence: 20,
+    },
+    {
+      id: `compaction:${sessionId}:compaction-summary`,
+      kind: "context_compaction",
+      phase: "completed",
+      source: "heuristic",
+      summaryMessageId: "compaction-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      detailsVisibility: "expandable",
+      timestamp: "2026-06-18T14:05:25.193Z",
+      updatedAt: "2026-06-18T14:05:25.193Z",
+      replayCompleteness: "compacted",
     },
   ];
 
@@ -847,10 +856,201 @@ test("session restore reapplies compacted replay tail after flush so local prefi
 
   assert.deepEqual(
     persistedMessages.map((message) => message.id),
-    ["older-user", "anchor-user", "new-assistant"],
+    ["older-user", "anchor-user"],
   );
   assert.deepEqual(
     persistedTimeline.map((entry) => entry.id),
-    ["older-user", "anchor-user", "new-assistant"],
+    [
+      "older-user",
+      `compaction:${sessionId}:compaction-summary`,
+      "anchor-user",
+    ],
+  );
+  assert.deepEqual(
+    persistedTimeline.map((entry) => entry.kind),
+    [
+      "user_message",
+      "context_compaction",
+      "user_message",
+    ],
+  );
+});
+
+test("session restore reanchors trailing compaction rows even when replay omits summary markers", async () => {
+  const sessionId = "session-compacted-replay-without-markers";
+  const agent: AcpAgentProvider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-code-acp",
+    transport: "stdio",
+    protocol: "acp",
+  };
+  const worktree: WorktreeSummary = { name: "main", path: "D:/repo" };
+  const summary: SessionSummary = {
+    id: sessionId,
+    title: "Compacted replay without markers",
+    status: "idle",
+    projectId: "project-1",
+    projectName: "Tiller",
+    helmId: "helm-1",
+    agentId: "claudecode",
+    agentName: "ClaudeCode",
+    cwd: "D:/repo",
+    createdAt: "2026-06-18T14:00:00.000Z",
+    updatedAt: "2026-06-18T14:00:00.000Z",
+    messageCount: 2,
+    runtimeSessionId: "runtime-claude-tail",
+  };
+  let persistedTimeline: SessionTimelineEntry[] = [
+    {
+      id: "assistant-after-compaction",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-after-compaction:content",
+          kind: "content",
+          text: "压缩后的第一条回复",
+          timestamp: "2026-06-18T14:02:16.000Z",
+          sequence: 21,
+        },
+      ],
+      timestamp: "2026-06-18T14:02:16.000Z",
+      updatedAt: "2026-06-18T14:02:16.000Z",
+      sequence: 21,
+    },
+    {
+      id: "user-after-compaction",
+      kind: "user_message",
+      message: {
+        id: "user-after-compaction",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-06-18T14:02:40.000Z",
+        sequence: 22,
+      },
+      timestamp: "2026-06-18T14:02:40.000Z",
+      updatedAt: "2026-06-18T14:02:40.000Z",
+      sequence: 22,
+    },
+    {
+      id: `compaction:${sessionId}:runtime-summary`,
+      kind: "context_compaction",
+      phase: "completed",
+      source: "heuristic",
+      summaryMessageId: "runtime-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      detailsVisibility: "expandable",
+      timestamp: "2026-06-18T17:22:48.093Z",
+      updatedAt: "2026-06-18T17:22:48.093Z",
+      replayCompleteness: "compacted",
+    },
+  ];
+
+  const service = createSessionResumeService({
+    sessions: new Map(),
+    sessionStore: {
+      list: () => [summary],
+      upsert: () => undefined,
+    },
+    sessionMessageStore: {
+      list: () => [],
+      replace: () => undefined,
+    },
+    sessionArtifactStore: {
+      remove: () => undefined,
+    },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "claudecode",
+        runtimeSessionId: "runtime-claude-tail",
+        capabilities: { sessionLoad: true },
+        lastSeenAt: summary.updatedAt,
+        state: "resumeable",
+      }),
+    },
+    providerLifecycle: {
+      createRuntime: async (input: any) => {
+        input.onRestoreReplayEvent?.({
+          type: "message",
+          message: {
+            id: "assistant-after-compaction",
+            role: "assistant",
+            text: "压缩后的第一条回复",
+            timestamp: "2026-06-18T14:02:16.000Z",
+            sequence: 21,
+          },
+        });
+        input.onRestoreReplayEvent?.({
+          type: "message",
+          message: {
+            id: "user-after-compaction",
+            role: "user",
+            text: "继续",
+            timestamp: "2026-06-18T14:02:40.000Z",
+            sequence: 22,
+          },
+        });
+        return {
+          runtimeSessionId: "runtime-claude-tail",
+          sessionCapabilities: { sessionLoad: true },
+          prompt: async () => undefined,
+          cancel: () => undefined,
+        };
+      },
+    },
+    providerHistory: {
+      hasHistoryContent: (history: { messages: unknown[] }) => history.messages.length > 0,
+      applyAuthoritativeProviderHistory: () => undefined,
+      refreshAuthoritativeSessionHistory: async () => undefined,
+    } as any,
+    getAgents: () => [agent],
+    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+    createHandlerContext: () => ({
+      sessionMessageStore: {
+        append: () => undefined,
+      },
+      sessionArtifactStore: {
+        appendOutput: () => undefined,
+        appendToolCall: () => undefined,
+        replaceDiffs: () => undefined,
+      },
+      sessionUpdateStore: {
+        replaceSession: () => undefined,
+      },
+      sessionTimelineStore: {
+        list: () => persistedTimeline,
+        replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+          persistedTimeline = entries;
+          return entries;
+        },
+      },
+    } as any),
+    resolveStoredSessionWorktree: () => worktree,
+    buildResumeInfo: () => ({
+      mode: "same-provider",
+      state: "resume-available",
+      reason: "load",
+      checkedAt: "2026-06-18T14:00:00.000Z",
+      runtimeSessionId: "runtime-claude-tail",
+      restoreMethod: "session/load",
+    }),
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    persistRuntimeDescriptor: () => undefined,
+    handleRuntimeEvent: () => undefined,
+    logConnectionLifecycle: () => undefined,
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  await service.startSessionResume(sessionId);
+
+  assert.deepEqual(
+    persistedTimeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["context_compaction", `compaction:${sessionId}:runtime-summary`],
+      ["assistant_message", "assistant-after-compaction"],
+      ["user_message", "user-after-compaction"],
+    ],
   );
 });

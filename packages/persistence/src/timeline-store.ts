@@ -79,11 +79,13 @@ function resolvePageStartIndex(
     return Math.max(entries.length - limit, 0);
   }
 
-  const messageIndexes = resolveMessageWindowAnchorIndexes(entries);
-  const messageStartIndex = messageIndexes.length
-    ? messageIndexes.length <= limit
+  const anchors = buildSessionTimelineMessageGroupAnchors(
+    entries.map((entry, position) => ({ position, entry })),
+  );
+  const messageStartIndex = anchors.length
+    ? anchors.length <= limit
       ? 0
-      : messageIndexes[messageIndexes.length - limit] ?? 0
+      : anchors[anchors.length - limit]?.startPosition ?? 0
     : Math.max(entries.length - limit, 0);
   const entryLimit = normalizePageLimit(
     options.entryLimit,
@@ -161,20 +163,6 @@ function toReplayDuplicateTimelineObservation(
         sequence: sequence,
       }
     : null;
-}
-
-function resolveMessageWindowAnchorIndexes(entries: SessionTimelineEntry[]) {
-  const indexes: number[] = [];
-  const seenGroupIds = new Set<string>();
-  entries.forEach((entry, index) => {
-    const groupId = resolveSessionTimelineMessageGroupId(entry);
-    if (!groupId || seenGroupIds.has(groupId)) {
-      return;
-    }
-    seenGroupIds.add(groupId);
-    indexes.push(index);
-  });
-  return indexes;
 }
 
 function isAssistantContentWindowAnchor(
@@ -279,7 +267,6 @@ function resolveSessionTimelineMessageGroup(entry: SessionTimelineEntry) {
 
 function isTranscriptPrefixEntry(entry: SessionTimelineEntry) {
   return entry.kind === "context_compaction" ||
-    entry.kind === "session_resumed" ||
     entry.kind === "history_gap";
 }
 

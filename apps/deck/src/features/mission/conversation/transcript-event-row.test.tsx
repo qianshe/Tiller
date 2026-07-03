@@ -10,6 +10,8 @@ test("transcript compaction rows render as collapsed muted system summaries", ()
       entry: {
         kind: "context_compaction",
         id: "compaction-1",
+        phase: "completed",
+        source: "provider",
         summaryText: "This session is being continued from a previous conversation that ran out of context.",
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",
@@ -26,24 +28,23 @@ test("transcript compaction rows render as collapsed muted system summaries", ()
   assert.doesNotMatch(html, /border-amber-400/);
 });
 
-test("transcript resumed rows render as compact status rows", () => {
+test("transcript compaction rows render pending state directly from timeline entries", () => {
   const html = renderToStaticMarkup(
     createElement(TranscriptEventRow, {
       entry: {
-        kind: "session_resumed",
-        id: "resumed-1",
-        restoreMethod: "session/resume",
-        timestamp: "2026-06-18T13:55:25.194Z",
-        updatedAt: "2026-06-18T13:55:25.194Z",
+        kind: "context_compaction",
+        id: "compaction-pending",
+        phase: "started",
+        source: "provider",
+        timestamp: "2026-06-18T13:55:25.192Z",
+        updatedAt: "2026-06-18T13:55:25.192Z",
         replayCompleteness: "compacted",
       },
     }),
   );
 
-  assert.match(html, /会话已恢复/);
-  assert.match(html, /session\/resume/);
-  assert.doesNotMatch(html, /bg-blue-50/);
-  assert.doesNotMatch(html, /从先前会话恢复/);
+  assert.match(html, /正在压缩上下文/);
+  assert.match(html, /完成后会基于压缩后的上下文继续回复/);
 });
 
 test("transcript history gap rows keep warning semantics without bright cards", () => {
@@ -71,6 +72,8 @@ test("transcript compaction rows can hide summary details for providers that onl
       entry: {
         kind: "context_compaction",
         id: "compaction-hidden",
+        phase: "completed",
+        source: "provider",
         summaryText: "This session is being continued from a previous conversation that ran out of context.",
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",

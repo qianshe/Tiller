@@ -74,7 +74,7 @@ test("thinking chunks project as thinking render items", () => {
   assert.deepEqual(items.map((item) => item.kind), ["thinking", "message"]);
 });
 
-test("context_compaction and session_resumed project as distinct items", () => {
+test("context_compaction projects as its own render item", () => {
   const items = buildConversationRenderItems([
     {
       kind: "context_compaction",
@@ -84,15 +84,7 @@ test("context_compaction and session_resumed project as distinct items", () => {
       updatedAt: "2026-06-29T10:00:01.000Z",
       replayCompleteness: "compacted",
     },
-    {
-      kind: "session_resumed",
-      id: "resume-1",
-      restoreMethod: "session/load",
-      timestamp: "2026-06-29T10:00:02.000Z",
-      updatedAt: "2026-06-29T10:00:02.000Z",
-      replayCompleteness: "compacted",
-    },
   ] as SessionTimelineEntry[]);
 
-  assert.deepEqual(items.map((item) => item.kind), ["context-compaction", "session-resumed"]);
+  assert.deepEqual(items.map((item) => item.kind), ["context-compaction"]);
 });
