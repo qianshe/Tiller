@@ -17,6 +17,7 @@ export type WorkspaceSessionStreamHydrationInput = {
   messagesBySession?: Record<string, Pick<AgentMessage, "id" | "role">[] | undefined>;
   sessionTimelineBySession?: Record<string, SessionTimelineEntry[] | undefined>;
   checkedResumeSessionIds: ReadonlySet<string>;
+  pendingTimelineRequestSessionIds?: ReadonlySet<string>;
 };
 
 export function buildSessionStreamHydrationPlan({
@@ -26,6 +27,7 @@ export function buildSessionStreamHydrationPlan({
   messagesBySession,
   sessionTimelineBySession,
   checkedResumeSessionIds,
+  pendingTimelineRequestSessionIds,
 }: WorkspaceSessionStreamHydrationInput): WorkspaceSessionStreamHydrationPlan {
   const uniqueSessionIds = [...new Set(sessionIds)];
 
@@ -39,6 +41,8 @@ export function buildSessionStreamHydrationPlan({
         // every render turns that steady state into an idle fetch loop.
         hasTimelineCache: hasOwnSessionCache(sessionTimelineBySession, sessionId),
         historyState: messageHistoryState[sessionId],
+        hasPendingTimelineRequest:
+          pendingTimelineRequestSessionIds?.has(sessionId) ?? false,
         session: sessionById.get(sessionId),
       })
     )),
@@ -58,18 +62,24 @@ function hasIncompleteCachedMessageHistory({
   cachedMessages,
   hasTimelineCache,
   historyState,
+  hasPendingTimelineRequest,
   session,
 }: {
   cachedMessages: Pick<AgentMessage, "id" | "role">[] | undefined;
   hasTimelineCache: boolean;
   historyState: HistoryState | undefined;
+  hasPendingTimelineRequest: boolean;
   session: SessionSummary | undefined;
 }) {
-  if (!session || !historyState || historyState.loading || historyState.hasMore) {
+  if (!session || !historyState || historyState.hasMore) {
     return false;
   }
   if (hasTimelineCache) {
     return false;
+  }
+  if (historyState.loading) {
+    return !hasPendingTimelineRequest &&
+      Boolean(cachedMessages?.length || session.messageCount > 0);
   }
   return Boolean(cachedMessages?.length || session.messageCount > 0);
 }

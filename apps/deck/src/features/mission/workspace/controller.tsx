@@ -267,13 +267,33 @@ export function MissionWorktree(props: any) {
     }
   };
   const {
+    focusedRealSessionId,
+    persistedOpenChatSessionIds,
+    visibleChatSessionIds,
+    openSessions,
+    openSessionIdSet,
+    focusedDraftWindow,
+    selectedComposerSession,
+  } = buildChatWindowModel({
+    sessions: sessions as SessionSummary[],
+    activeSessionId,
+    activeSession,
+    openChatSessionIds: openChatSessionIds as string[],
+    focusedChatWindowId,
+    draftChatWindow,
+    isMissionMobile,
+  });
+  const composerSession = selectedComposerSession ?? activeSession;
+  const {
     canSend,
     activeSessionRestoreGate,
+    composerSessionRestoreGate,
     activeMissionHelm,
     activeDiffs,
     activeOutputs,
     activeToolCalls,
     activeSessionStatus,
+    composerSessionStatus,
     pendingToolActivity,
     missionActivityLoading,
     missionDiffCount: sessionMissionDiffCount,
@@ -294,7 +314,10 @@ export function MissionWorktree(props: any) {
     visibleProjectFiles,
     sessionExecutionPending,
     composerModelLoading,
-  } = buildMissionWorktreeModel(props);
+  } = buildMissionWorktreeModel({
+    ...props,
+    composerSession,
+  });
   const activeGitProjectId = activeSessionProjectId ?? selectedProjectId;
   const activeGitCwd = selectedCwd ?? activeSession?.cwd;
   const currentGitStatus = activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined;
@@ -313,23 +336,6 @@ export function MissionWorktree(props: any) {
       !technicalPanels.showMissionThinking,
     );
   };
-  const {
-    focusedRealSessionId,
-    persistedOpenChatSessionIds,
-    visibleChatSessionIds,
-    openSessions,
-    openSessionIdSet,
-    focusedDraftWindow,
-    selectedComposerSession,
-  } = buildChatWindowModel({
-    sessions: sessions as SessionSummary[],
-    activeSessionId,
-    activeSession,
-    openChatSessionIds: openChatSessionIds as string[],
-    focusedChatWindowId,
-    draftChatWindow,
-    isMissionMobile,
-  });
   const hydrateOpenSessionStreams = useOpenSessionStreams({
     pairingState,
     connection,
@@ -970,7 +976,7 @@ export function MissionWorktree(props: any) {
           ) : null}
           {shouldShowComposer ? (
             <MissionComposer
-              activeSession={activeSession}
+              activeSession={composerSession}
               contextSession={selectedComposerSession}
               isMobile={isMissionMobile}
               worktreePickerRef={worktreePickerRef}
@@ -1024,7 +1030,7 @@ export function MissionWorktree(props: any) {
               draftModelPickerLabel={draftModelPickerLabel}
               draftModelLoading={composerModelLoading}
               draftModelConfigReady={draftModelConfigReady}
-              modelSettingsLocked={Boolean(activeSession && !activeSessionRestoreGate.canChat)}
+              modelSettingsLocked={Boolean(composerSession && !composerSessionRestoreGate.canChat)}
               draftModelBaseOptions={draftModelBaseOptions}
               resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
               draftAllModelOptions={draftAllModelOptions}
@@ -1039,7 +1045,7 @@ export function MissionWorktree(props: any) {
               enhancePromptDraft={enhancePromptDraft}
               promptEnhancerBusy={promptEnhancerBusy}
               promptEnhancerStatus={props.promptEnhancerStatus || ""}
-              sessionCanCancel={sessionExecutionPending && activeSessionStatus !== "starting"}
+              sessionCanCancel={sessionExecutionPending && composerSessionStatus !== "starting"}
               cancelSession={cancelSession}
               canSend={canSend}
             />

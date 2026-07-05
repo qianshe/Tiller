@@ -56,7 +56,9 @@ test("submitPromptRequest dispatches existing-session prompts with a matching tr
     },
   ]);
   assert.deepEqual(cleared, ["notice:", "prompt:", "images:0"]);
-  assert.deepEqual(appended, []);
+  assert.deepEqual(appended, [
+    { sessionId: "session-1", text: "hello", id: "client-session-1", images: [] },
+  ]);
 
   await flushPromises();
 
@@ -119,17 +121,20 @@ test("submitPromptRequest prepares an existing image session before dispatching 
   );
 
   assert.equal(submitted, true);
-  assert.deepEqual(calls, ["prepare:session-1"]);
+  assert.deepEqual(calls, [
+    "append:session-1:看这张图:client-session-1:1",
+    "prepare:session-1",
+  ]);
   assert.deepEqual(dispatched, []);
 
   releasePrepare();
   await flushPromises();
 
   assert.deepEqual(calls, [
+    "append:session-1:看这张图:client-session-1:1",
     "prepare:session-1",
     "prepared:session-1",
     "dispatch:session/prompt",
-    "append:session-1:看这张图:client-session-1:1",
   ]);
   assert.deepEqual(dispatched, [
     {
@@ -169,7 +174,7 @@ test("submitPromptRequest preserves the no-session create path", () => {
   assert.deepEqual(cleared, ["notice:", "prompt:", "images:0"]);
 });
 
-test("submitPromptRequest does not append user message when prompt is queued", async () => {
+test("submitPromptRequest keeps the optimistic user message when prompt is later queued", async () => {
   const { dependencies, appended } = createDependencies({
     dispatch: () => Promise.resolve({ accepted: "queued" }),
   });
@@ -184,8 +189,13 @@ test("submitPromptRequest does not append user message when prompt is queued", a
   );
 
   assert.equal(submitted, true);
+  assert.deepEqual(appended, [
+    { sessionId: "session-1", text: "queued message", id: "client-session-1", images: [] },
+  ]);
   await flushPromises();
-  assert.deepEqual(appended, []);
+  assert.deepEqual(appended, [
+    { sessionId: "session-1", text: "queued message", id: "client-session-1", images: [] },
+  ]);
 });
 
 test("submitPromptRequest does not dispatch when chat is restore-gated", () => {

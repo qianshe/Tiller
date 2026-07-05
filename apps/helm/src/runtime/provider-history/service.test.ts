@@ -8,6 +8,8 @@ import {
   type SessionTimelineEntry,
 } from "@tiller/shared";
 import type { AgentPlan, SessionUpdateRecord } from "@tiller/shared";
+import { reduceSessionUpdateRecords } from "../session-updates/records.js";
+import { createSessionUpdateRecord } from "../session-updates/reducer.js";
 import { createProviderHistoryService } from "./service.js";
 
 function summary(sessionId: string): SessionSummary {
@@ -385,6 +387,111 @@ test("provider history refresh materializes canonical timeline from legacy local
   await service.refreshAuthoritativeSessionHistory(sessionId);
 
   assert.deepEqual(timeline, expected);
+  assert.equal(replaces, 1);
+});
+
+test("provider history refresh repairs incomplete canonical timeline from persisted session updates", async () => {
+  const sessionId = "session-repair-canonical-from-updates";
+  const updates = [
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 1,
+      source: "acp_live",
+      event: {
+        type: "message",
+        message: {
+          id: "user-1",
+          role: "user",
+          text: "开始",
+          timestamp: "2026-07-04T22:49:54.000Z",
+          sequence: 1,
+        },
+      },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 2,
+      source: "acp_live",
+      event: {
+        type: "tool-call",
+        toolCall: {
+          id: "tool-1",
+          kind: "shell",
+          title: "Shell",
+          status: "completed",
+          output: "ok",
+          timestamp: "2026-07-04T22:49:55.000Z",
+          updatedAt: "2026-07-04T22:49:56.000Z",
+          sequence: 2,
+        },
+      },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 3,
+      source: "acp_live",
+      event: {
+        type: "message",
+        message: {
+          id: "assistant-1",
+          role: "assistant",
+          text: "完成",
+          timestamp: "2026-07-04T22:49:57.000Z",
+          sequence: 3,
+        },
+      },
+    }),
+  ];
+  const expectedTimeline = reduceSessionUpdateRecords(updates).entries;
+  let timeline = buildSessionTimelineFromLegacy({
+    messages: [
+      {
+        id: "user-1",
+        role: "user",
+        text: "开始",
+        timestamp: "2026-07-04T22:49:54.000Z",
+        sequence: 1,
+      },
+      {
+        id: "assistant-1",
+        role: "assistant",
+        text: "完成",
+        timestamp: "2026-07-04T22:49:57.000Z",
+        sequence: 3,
+      },
+    ],
+    outputs: [],
+    toolCalls: [],
+  });
+  let replaces = 0;
+  const service = createTestProviderHistoryService(
+    {
+      listPage: () => ({
+        updates,
+        hasMore: false,
+      }),
+    },
+    {
+      sessionTimelineStore: {
+        list: () => timeline,
+        replace: (_sessionId, entries) => {
+          replaces += 1;
+          timeline = entries;
+          return entries;
+        },
+      },
+    },
+  );
+
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+
+  assert.deepEqual(timeline, expectedTimeline);
   assert.equal(replaces, 1);
 });
 

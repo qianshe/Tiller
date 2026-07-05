@@ -122,6 +122,38 @@ export type SessionLiveStateUpdate<Snapshot = unknown> = {
   snapshot: Snapshot;
 };
 
+export const CANONICAL_CONVERSATION_UPDATE_KINDS = ["timeline_batch"] as const;
+
+export const COMPATIBILITY_CONVERSATION_UPDATE_KINDS = [
+  "user_message",
+  "agent_message",
+  "tool_call",
+  "command_output",
+  "transcript_event",
+] as const;
+
+export type CanonicalConversationUpdateKind =
+  (typeof CANONICAL_CONVERSATION_UPDATE_KINDS)[number];
+
+export type CompatibilityConversationUpdateKind =
+  (typeof COMPATIBILITY_CONVERSATION_UPDATE_KINDS)[number];
+
+export function isCanonicalConversationUpdateKind(
+  kind: string,
+): kind is CanonicalConversationUpdateKind {
+  return CANONICAL_CONVERSATION_UPDATE_KINDS.includes(
+    kind as CanonicalConversationUpdateKind,
+  );
+}
+
+export function isCompatibilityConversationUpdateKind(
+  kind: string,
+): kind is CompatibilityConversationUpdateKind {
+  return COMPATIBILITY_CONVERSATION_UPDATE_KINDS.includes(
+    kind as CompatibilityConversationUpdateKind,
+  );
+}
+
 export type SessionRealtimeUpdate<
   Message = unknown,
   ToolCall = unknown,

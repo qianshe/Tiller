@@ -26,7 +26,10 @@ import {
   removeSessionRecord,
   upsertSessionSummary,
 } from "./helpers";
-import type { SessionUpdateParams } from "./session-update-contracts";
+import {
+  isCanonicalConversationUpdateKind,
+  type SessionUpdateParams,
+} from "./session-update-contracts";
 import {
   applySessionConfigSelection,
   resolveSessionConfigSelection,
@@ -73,6 +76,16 @@ function requestAgentConnectionsRefresh(context: SessionServerEventContext) {
   if (context.rpcClientRef.current?.socket?.readyState === 1) {
     void context.dispatch(context.rpcClientRef.current, "agent/connections", {});
   }
+}
+
+function hasCanonicalConversationTimeline(
+  store: DeckStore,
+  sessionId: string,
+): boolean {
+  if (store.sessionTimelineDeliveryState[sessionId]) {
+    return true;
+  }
+  return (store.sessionTimeline[sessionId]?.length ?? 0) > 0;
 }
 
 export type SessionServerEventContext = {
@@ -385,7 +398,7 @@ export function applySessionResult(
         );
       if (sourceIsCurrentHelm && payload.ok && rpcClientRef.current?.socket?.readyState === 1) {
         void dispatch(rpcClientRef.current, "agent/connections", {});
-        if (resume.restoreMethod === "session/load") {
+        if (shouldReloadCanonicalTimelineAfterResume(store, payload.sessionId, resume)) {
           requestCanonicalTimelineReload(payload.sessionId, context);
         }
       }
@@ -569,6 +582,23 @@ function requestCanonicalTimelineReload(
       },
     }));
   });
+}
+
+function shouldReloadCanonicalTimelineAfterResume(
+  store: DeckStore,
+  sessionId: string,
+  resume: SessionSummary["resume"],
+) {
+  if (resume?.restoreMethod === "session/load") {
+    return true;
+  }
+  if (resume?.mode !== "reconnect") {
+    return false;
+  }
+  const existingEntries = store.sessionTimeline[sessionId] ?? [];
+  const latestDeliverySequence =
+    store.sessionTimelineDeliveryState[sessionId]?.latestDeliverySequence ?? 0;
+  return existingEntries.length === 0 && latestDeliverySequence === 0;
 }
 
 function applyCanonicalTimelineBatch(
@@ -765,6 +795,9 @@ export function applySessionUpdate(
       store.setPromptQueue(sessionId, update.queue);
       return true;
     case "user_message":
+      if (hasCanonicalConversationTimeline(store, sessionId)) {
+        return true;
+      }
       store.setMessages((current) => ({
         ...current,
         [sessionId]: mergeMessageHistory(
@@ -777,6 +810,9 @@ export function applySessionUpdate(
     case "transcript_event":
       return true;
     case "timeline_batch":
+      if (!isCanonicalConversationUpdateKind(update.kind)) {
+        return false;
+      }
       applyCanonicalTimelineBatch(store, sessionId, update.batch, context);
       return true;
     case "live_state":

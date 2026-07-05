@@ -25,6 +25,7 @@ import {
 import type { HelmHandlerContext } from "../../handlers/context";
 import { emitHelmPromptTrace } from "../prompt-trace";
 import { persistTimelineMessage } from "./timeline-effects";
+import { routeSessionRuntimeEvent } from "../session-timeline/event-router";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
@@ -253,11 +254,20 @@ async function appendUserPromptMessage(
     context,
     storedUserMessage.sequence,
   );
-  persistTimelineMessage(context, sessionId, storedUserMessage);
-  createSessionEventPublisher(context).sessionUpdate(sessionId, {
-    kind: "user_message",
-    message: storedUserMessage,
-  });
+  if (hasCanonicalTimelinePipeline(context)) {
+    routeSessionRuntimeEvent(sessionId, { type: "message", message: storedUserMessage }, {
+      workers: context.sessionTimelineWorkers,
+      liveStateStore: context.sessionLiveStateStore,
+      flushScheduler: context.sessionTimelineFlushScheduler,
+      context,
+    });
+  } else {
+    persistTimelineMessage(context, sessionId, storedUserMessage);
+    createSessionEventPublisher(context).sessionUpdate(sessionId, {
+      kind: "user_message",
+      message: storedUserMessage,
+    });
+  }
   const updated = context.updateSessionSummary(sessionId, (current) =>
     applyDispatchingUserPromptToSummary(current, storedUserMessage.text, storedUserMessage.timestamp),
   );
@@ -267,6 +277,23 @@ async function appendUserPromptMessage(
       session: updated,
     });
   }
+}
+
+function hasCanonicalTimelinePipeline(
+  context: HelmHandlerContext,
+): context is HelmHandlerContext & Required<Pick<
+  HelmHandlerContext,
+  | "sessionTimelineWorkers"
+  | "sessionTimelineDispatcher"
+  | "sessionTimelineFlushScheduler"
+  | "sessionLiveStateStore"
+>> {
+  return Boolean(
+    context.sessionTimelineWorkers &&
+      context.sessionTimelineDispatcher &&
+      context.sessionTimelineFlushScheduler &&
+      context.sessionLiveStateStore,
+  );
 }
 
 async function runInFlightPrompt(

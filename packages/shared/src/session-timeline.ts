@@ -638,6 +638,7 @@ function mergeToolCallEntry(
       ...current.toolCall,
       ...incoming.toolCall,
       id: current.toolCall.id,
+      kind: resolveMergedToolCallKind(current.toolCall, incoming.toolCall),
       title: resolveMergedToolCallTitle(current.toolCall, incoming.toolCall),
       status: resolveMergedToolCallStatus(current.toolCall, incoming.toolCall),
       input: mergeOptionalText(current.toolCall.input, incoming.toolCall.input),
@@ -660,10 +661,28 @@ function isSameToolCommand(left: AgentToolCall, right: AgentToolCall) {
   );
 }
 
+function resolveMergedToolCallKind(current: AgentToolCall, incoming: AgentToolCall) {
+  return toolKindRank(incoming.kind) > toolKindRank(current.kind)
+    ? incoming.kind
+    : current.kind;
+}
+
 function resolveMergedToolCallTitle(current: AgentToolCall, incoming: AgentToolCall) {
+  const currentTitle = current.title.trim();
   const incomingTitle = incoming.title.trim();
-  if (!incomingTitle || incomingTitle === incoming.id || incomingTitle === incoming.commandId) {
+  if (isWeakMergedToolCallTitle(incomingTitle, incoming)) {
     return current.title;
+  }
+  if (isWeakMergedToolCallTitle(currentTitle, current)) {
+    return incoming.title;
+  }
+  if (isGenericToolCallTitle(incomingTitle)) {
+    if (!isGenericToolCallTitle(currentTitle)) {
+      return current.title;
+    }
+    return toolKindRank(incoming.kind) > toolKindRank(current.kind)
+      ? incoming.title
+      : current.title;
   }
   return incoming.title;
 }
@@ -705,6 +724,10 @@ function isWeakMergedToolCallTitle(title: string, toolCall: AgentToolCall) {
     normalizedTitle.startsWith("tool call ");
 }
 
+function isGenericToolCallTitle(title: string) {
+  return GENERIC_TOOL_CALL_TITLES.has(title.trim().toLowerCase());
+}
+
 function toolKindRank(kind: AgentToolCall["kind"]) {
   const ranks: Record<AgentToolCall["kind"], number> = {
     unknown: 0,
@@ -722,6 +745,25 @@ function toolKindRank(kind: AgentToolCall["kind"]) {
   };
   return ranks[kind];
 }
+
+const GENERIC_TOOL_CALL_TITLES = new Set([
+  "agent",
+  "built-in",
+  "builtin",
+  "fetch",
+  "file",
+  "mcp",
+  "read",
+  "search",
+  "shell",
+  "skill",
+  "subagent",
+  "think",
+  "thinking",
+  "todo",
+  "tool",
+  "write",
+]);
 
 function applyAssistantEntryBounds(entry: SessionTimelineAssistantEntry) {
   const sortedChunks = sortAssistantTimelineChunks(entry.chunks);

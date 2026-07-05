@@ -532,10 +532,10 @@ export function PlainThinkingItem({
           className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起 Thinking" : "展开 Thinking"}
         >
-          <span aria-hidden="true" className="shrink-0 text-primary">
+          <span aria-hidden="true" className="inline-flex size-4 shrink-0 items-center justify-center text-primary">
             <PlainThinkingIcon />
           </span>
-          <span className="min-w-0 truncate font-medium">
+          <span className="inline-flex min-w-0 h-4 items-center truncate font-medium">
             Thinking
           </span>
           <Icon
@@ -547,7 +547,7 @@ export function PlainThinkingItem({
             )}
           />
         </summary>
-        <div className="plain-thinking-content ml-1.5 border-l border-primary/25 pl-3.5 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
+        <div className="plain-thinking-content pt-1 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
           <MarkdownMessage text={text} />
         </div>
       </details>
@@ -664,7 +664,7 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
         </summary>
         <div
           ref={contentRef}
-          className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-[12.5px] text-muted-foreground"
+          className="plain-tool-group-content grid max-h-36 gap-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground"
           data-mission-swipe-lock="true"
         >
           {group.map((item) => (
@@ -705,32 +705,37 @@ export function PlainSubagentItem({
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary
-          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? `收起 ${label}` : `展开 ${label}`}
         >
-          <Icon name="message" size={12} className="shrink-0 text-primary" />
-          <span className="shrink-0 font-medium">
-            {label}
-          </span>
-          <span className="min-w-0 truncate text-muted-foreground/70">
-            {summary}
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="inline-flex size-4 shrink-0 items-center justify-center">
+              <Icon name="message" size={12} className="shrink-0 text-primary" />
+            </span>
+            <span className="inline-flex h-4 shrink-0 items-center font-medium leading-none">
+              {label}
+            </span>
+            {summary ? (
+              <span className="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground/70">
+                {summary}
+              </span>
+            ) : null}
           </span>
           {statusBadge ? (
-            <span className={cn("ml-auto shrink-0 rounded-sm px-1.5 py-0.5 text-2xs font-semibold", statusBadge.className)}>
+            <span className={cn("inline-flex h-4 shrink-0 items-center rounded-sm px-1.5 py-0.5 text-2xs font-semibold leading-none", statusBadge.className)}>
               {statusBadge.label}
             </span>
           ) : null}
-          <Icon
-            name="chevronDown"
-            size={12}
+          <span
             className={cn(
-              "text-muted-foreground/60 transition-transform duration-150",
-              statusBadge ? "ml-1.5" : "ml-auto",
+              "inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground/60 transition-transform duration-150",
               open && "rotate-180",
             )}
-          />
+          >
+            <Icon name="chevronDown" size={12} />
+          </span>
         </summary>
-        <div className="plain-subagent-content ml-1.5 border-l border-primary/25 pl-3.5 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
+        <div className="plain-subagent-content pt-1 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
           <MarkdownMessage text={text} />
         </div>
       </details>
@@ -870,28 +875,28 @@ function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
   const preview = item.text.trim() || formatToolInputPreview(item.input);
   return (
     <details
-      className="plain-tool-call grid gap-0.5 py-0.5 text-muted-foreground"
+      className="plain-tool-call text-muted-foreground"
       data-tool-kind={tone.label.toLowerCase()}
     >
-      <summary className="flex min-w-0 cursor-pointer list-none items-start gap-1.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
-        <span aria-hidden="true" className={cn("grid size-3 shrink-0 self-start place-items-center rounded-sm", tone.className)}>
+      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-1.5 py-0.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true" className={cn("grid size-3 shrink-0 place-items-center rounded-sm", tone.className)}>
           <Icon name={resolveToolCallIconName(tone.label)} size={9} />
         </span>
         <Badge
           variant="secondary"
-          className={cn("h-4 shrink-0 self-start rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
+          className={cn("inline-flex h-4 shrink-0 items-center rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
         >
           {tone.label}
         </Badge>
-        <strong className="min-w-0 flex-1 truncate font-medium text-foreground">
+        <strong className="min-w-0 flex-1 truncate font-medium leading-4 text-foreground">
           {item.title}
         </strong>
-        <span className="ml-auto shrink-0 self-start text-2xs text-muted-foreground/60">
+        <span className="ml-auto inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground/60">
           {resolveToolStatusLabel(item.status)}
         </span>
       </summary>
       {preview ? (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
+        <pre className="mt-0.5 max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
           {preview}
         </pre>
       ) : null}

@@ -146,6 +146,58 @@ test("buildSessionStreamHydrationPlan treats explicit empty timeline cache as al
   assert.deepEqual(plan.messageSessionIds, []);
 });
 
+test("buildSessionStreamHydrationPlan retries stalled loading history when no request is in flight", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([
+      [
+        idleSession.id,
+        {
+          ...idleSession,
+          messageCount: 2,
+        },
+      ],
+    ]),
+    messageHistoryState: {
+      [idleSession.id]: { hasMore: false, loading: true },
+    },
+    messagesBySession: {
+      [idleSession.id]: [{ id: "assistant-1", role: "assistant" }] as AgentMessage[],
+    },
+    sessionTimelineBySession: {},
+    checkedResumeSessionIds: new Set(),
+    pendingTimelineRequestSessionIds: new Set(),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, [idleSession.id]);
+});
+
+test("buildSessionStreamHydrationPlan preserves active loading requests without duplicate retries", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([
+      [
+        idleSession.id,
+        {
+          ...idleSession,
+          messageCount: 2,
+        },
+      ],
+    ]),
+    messageHistoryState: {
+      [idleSession.id]: { hasMore: false, loading: true },
+    },
+    messagesBySession: {
+      [idleSession.id]: [{ id: "assistant-1", role: "assistant" }] as AgentMessage[],
+    },
+    sessionTimelineBySession: {},
+    checkedResumeSessionIds: new Set(),
+    pendingTimelineRequestSessionIds: new Set([idleSession.id]),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, []);
+});
+
 test("buildSessionStreamHydrationPlan trusts canonical timeline cache once paging is complete", () => {
   const plan = buildSessionStreamHydrationPlan({
     sessionIds: [idleSession.id],

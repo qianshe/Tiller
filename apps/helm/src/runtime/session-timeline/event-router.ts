@@ -2,14 +2,14 @@ import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { SessionLiveStateSnapshot } from "@tiller/shared";
 import type { HelmHandlerContext } from "../../handlers/context";
 import type { SessionTimelineWorkerRegistry } from "./worker-registry";
+import type { SessionTimelineFlushScheduler } from "./flush-scheduler";
 import type { SessionLiveStateStore } from "./live-state-store";
-import type { SessionTimelineDispatcher } from "./dispatcher";
 import { createSessionEventPublisher } from "../session/event/publisher";
 
 export type SessionEventRouterDeps = {
   workers: SessionTimelineWorkerRegistry;
   liveStateStore: SessionLiveStateStore;
-  dispatcher: SessionTimelineDispatcher;
+  flushScheduler: SessionTimelineFlushScheduler;
   context: HelmHandlerContext;
 };
 
@@ -24,19 +24,13 @@ export function routeSessionRuntimeEvent(
     case "command-output": {
       const worker = deps.workers.forSession(sessionId);
       worker.enqueue(event);
-      const batches = worker.flush();
-      for (const batch of batches) {
-        deps.dispatcher.dispatch(sessionId, batch);
-      }
+      deps.flushScheduler.schedule(sessionId, event);
       return "timeline" as const;
     }
     case "compaction": {
       const worker = deps.workers.forSession(sessionId);
       worker.enqueue(event);
-      const batches = worker.flush();
-      for (const batch of batches) {
-        deps.dispatcher.dispatch(sessionId, batch);
-      }
+      deps.flushScheduler.schedule(sessionId, event);
       return "timeline" as const;
     }
     case "plan-update": {

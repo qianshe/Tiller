@@ -1,4 +1,10 @@
-import type { SessionRealtimeUpdate } from "./types";
+import {
+  CANONICAL_CONVERSATION_UPDATE_KINDS,
+  COMPATIBILITY_CONVERSATION_UPDATE_KINDS,
+  isCanonicalConversationUpdateKind,
+  isCompatibilityConversationUpdateKind,
+  type SessionRealtimeUpdate,
+} from "./types.js";
 
 type ContractMessage = { id: string; role: "user" | "assistant"; text: string };
 type ContractToolCall = { id: string; title: string };
@@ -72,3 +78,25 @@ const realtimeUpdateContractSamples = [
 ] satisfies ContractUpdate[];
 
 void realtimeUpdateContractSamples;
+
+const canonicalConversationKinds = CANONICAL_CONVERSATION_UPDATE_KINDS satisfies readonly ["timeline_batch"];
+const compatibilityConversationKinds = COMPATIBILITY_CONVERSATION_UPDATE_KINDS satisfies readonly [
+  "user_message",
+  "agent_message",
+  "tool_call",
+  "command_output",
+  "transcript_event",
+];
+
+const conversationUpdateKindChecks = [
+  isCanonicalConversationUpdateKind("timeline_batch"),
+  isCanonicalConversationUpdateKind("user_message"),
+  isCompatibilityConversationUpdateKind("user_message"),
+  isCompatibilityConversationUpdateKind("command_output"),
+  isCompatibilityConversationUpdateKind("timeline_batch"),
+  isCompatibilityConversationUpdateKind("status_change"),
+] as const;
+
+void canonicalConversationKinds;
+void compatibilityConversationKinds;
+void conversationUpdateKindChecks;

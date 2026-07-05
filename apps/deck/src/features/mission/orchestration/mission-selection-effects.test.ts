@@ -93,10 +93,10 @@ test("mission ACP overview can connect inactive agents while a session is active
 });
 
 test("mission starting sessions disable send without showing cancel", () => {
-  assert.match(worktreeSourceText, /sessionCanCancel=\{sessionExecutionPending && activeSessionStatus !== "starting"\}/);
+  assert.match(worktreeSourceText, /sessionCanCancel=\{sessionExecutionPending && composerSessionStatus !== "starting"\}/);
   assert.match(composerShellSourceText, /activeSession && sessionCanCancel/);
   assert.match(composerShellSourceText, /disabled=\{!canSend\}/);
-  assert.match(worktreeModelSourceText, /activeSessionStatus !== "starting" &&/);
+  assert.match(worktreeModelSourceText, /composerSessionStatus !== "starting" &&/);
 });
 
 test("mission selection effects does not auto-select the first project", () => {

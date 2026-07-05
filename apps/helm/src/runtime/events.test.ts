@@ -21,6 +21,7 @@ import {
 } from "./events.js";
 import { createLiveMessageBuffer } from "./live-message-buffer.js";
 import { createSessionTimelineDispatcher } from "./session-timeline/dispatcher.js";
+import { createSessionTimelineFlushScheduler } from "./session-timeline/flush-scheduler.js";
 import { createSessionLiveStateStore } from "./session-timeline/live-state-store.js";
 import { createSessionTimelineWorkerRegistry } from "./session-timeline/worker-registry.js";
 
@@ -157,6 +158,11 @@ function createTestContext(
       });
     },
   });
+  const sessionTimelineFlushScheduler = createSessionTimelineFlushScheduler({
+    workers: sessionTimelineWorkers,
+    dispatcher: sessionTimelineDispatcher,
+    windowMs: 0,
+  });
 
   const baseContext = {
     sessions: new Map([
@@ -218,6 +224,7 @@ function createTestContext(
     baseContext.sessionTimelineWorkers = sessionTimelineWorkers;
     baseContext.sessionLiveStateStore = sessionLiveStateStore;
     baseContext.sessionTimelineDispatcher = sessionTimelineDispatcher;
+    baseContext.sessionTimelineFlushScheduler = sessionTimelineFlushScheduler;
   }
 
   return baseContext as HelmHandlerContext;
@@ -266,6 +273,74 @@ test("runtime message events persist source-neutral session update records", () 
   assert.equal(capture.sessionUpdates?.[0]?.runtimeSessionId, "runtime-1");
   assert.equal(capture.sessionUpdates?.[0]?.updateType, "message");
   assert.equal(JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}").message.text, "hello");
+});
+
+test("runtime accepts late tool-call events when the session is errored but still active", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-error-active", {
+    status: "error",
+  });
+
+  handleRuntimeEvent(
+    "session-error-active",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "late-tool-1",
+        kind: "shell",
+        title: "late tool",
+        status: "running",
+        timestamp: "2026-07-05T21:12:50.000Z",
+        updatedAt: "2026-07-05T21:12:50.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(findStructuredLog(capture, "runtime.event.ignored_late"), undefined);
+  assert.equal(capture.sessionUpdates?.length, 1);
+  assert.equal(capture.timelineEntries?.[0]?.kind, "tool_call");
+});
+
+test("runtime keeps ignoring late tool-call events after cancellation", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-cancelled", {
+    status: "cancelled",
+  });
+
+  handleRuntimeEvent(
+    "session-cancelled",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "late-tool-2",
+        kind: "shell",
+        title: "late tool",
+        status: "running",
+        timestamp: "2026-07-05T21:12:51.000Z",
+        updatedAt: "2026-07-05T21:12:51.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.ok(findStructuredLog(capture, "runtime.event.ignored_late"));
+  assert.equal(capture.sessionUpdates?.length ?? 0, 0);
+  assert.equal(capture.timelineEntries?.length ?? 0, 0);
 });
 
 test("runtime compaction started publishes a canonical timeline batch when the pipeline is available", () => {

@@ -86,19 +86,18 @@ export function submitPromptRequest(
   dependencies.setPrompt("");
   dependencies.setPromptImages([]);
   const images = [...input.promptImages];
+  dependencies.appendExistingSessionPrompt(
+    activeSessionId,
+    messageText,
+    clientMessageId,
+    images,
+  );
   const dispatchPrompt = () => dependencies.dispatch(dependencies.client, "session/prompt", {
     sessionId: activeSessionId,
     text: messageText,
     content,
     clientMessageId,
   });
-  const appendIfNotQueued = (result: unknown) => {
-    const accepted = (result as Record<string, unknown> | null)?.accepted;
-    if (accepted === "queued") {
-      return;
-    }
-    dependencies.appendExistingSessionPrompt(activeSessionId, messageText, clientMessageId, images);
-  };
   if (dependencies.prepareExistingSessionPrompt) {
     void (async () => {
       try {
@@ -106,10 +105,10 @@ export function submitPromptRequest(
       } catch {
         // Best effort: a missed subscription should not block the prompt itself.
       }
-      appendIfNotQueued(await dispatchPrompt());
+      await dispatchPrompt();
     })();
   } else {
-    void dispatchPrompt().then(appendIfNotQueued);
+    void dispatchPrompt();
   }
   return true;
 }

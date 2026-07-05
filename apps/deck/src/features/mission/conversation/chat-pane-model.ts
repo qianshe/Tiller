@@ -152,7 +152,10 @@ function hasOptimisticConversationMessages(
 ) {
   return sessionMessages.some((message) => {
     if (message.role === "user") {
-      return message.id === `${sessionId}-user-pending`;
+      return (
+        message.id === `${sessionId}-user-pending` ||
+        message.id.startsWith(`${sessionId}-user-`)
+      );
     }
     return message.role === "assistant" && message.streaming === true;
   });

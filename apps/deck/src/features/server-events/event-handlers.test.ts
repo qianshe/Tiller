@@ -256,7 +256,7 @@ test("session/list_timeline prepends older canonical history pages", () => {
   });
 });
 
-test("session user_message updates append chat history without mutating canonical timeline", () => {
+test("session user_message compatibility updates are ignored once canonical timeline exists", () => {
   resetStore();
   const existingTimeline: SessionTimelineEntry[] = [
     {
@@ -299,7 +299,32 @@ test("session user_message updates append chat history without mutating canonica
 
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().sessionTimeline["session-1"], existingTimeline);
+  assert.equal(useDeckStore.getState().messages["session-1"], undefined);
+});
+
+test("session user_message compatibility updates still append before canonical timeline delivery starts", () => {
+  resetStore();
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "user_message",
+        message: {
+          id: "user-1",
+          role: "user",
+          text: "hello",
+          timestamp: "2026-06-29T10:00:01.000Z",
+          sequence: 1,
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
   assert.equal(useDeckStore.getState().messages["session-1"]?.[0]?.id, "user-1");
+  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], undefined);
 });
 
 test("session timeline_batch requests an authoritative reload when delivery sequence gaps", () => {
@@ -1898,6 +1923,77 @@ test("successful session/load resume reloads canonical timeline", () => {
         state: "resume-available",
         mode: "reconnect",
         restoreMethod: "session/load",
+        runtimeSessionId: "runtime-s1",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async (_client, method, params) => {
+        dispatched.push({ method, params: (params ?? {}) as Record<string, unknown> });
+      },
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: (value: string) => {
+        feedback = value;
+      },
+      resumeStartRequestsRef: { current: pendingRequests },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(feedback, "已恢复");
+  assert.equal(useDeckStore.getState().sessions[0]?.runtimeSessionId, "runtime-s1");
+  assert.deepEqual(dispatched, [
+    { method: "agent/connections", params: {} },
+    { method: "session/list_timeline", params: { sessionId: "s1", limit: 20 } },
+  ]);
+  assert.deepEqual(useDeckStore.getState().messageHistoryState.s1, {
+    hasMore: true,
+    nextCursor: "cursor-1",
+    loading: true,
+  });
+});
+
+test("successful client-reconnect resume reloads canonical timeline when no canonical entries are loaded yet", () => {
+  resetStore();
+  const pendingRequests = new Set<string>(["s1"]);
+  let feedback = "";
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+  useDeckStore.setState({
+    sessions: [session("s1")],
+    sessionTimeline: {
+      s1: [],
+    },
+    messageHistoryState: {
+      s1: {
+        hasMore: true,
+        nextCursor: "cursor-1",
+        loading: false,
+      },
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/resume",
+    {
+      sessionId: "s1",
+      ok: true,
+      message: "已恢复",
+      resume: {
+        state: "resume-available",
+        mode: "reconnect",
+        restoreMethod: "client-reconnect",
         runtimeSessionId: "runtime-s1",
       },
     },

@@ -194,11 +194,15 @@ function hasCanonicalTimelinePipeline(
   context: HelmHandlerContext,
 ): context is HelmHandlerContext & Required<Pick<
   HelmHandlerContext,
-  "sessionTimelineWorkers" | "sessionTimelineDispatcher" | "sessionLiveStateStore"
+  | "sessionTimelineWorkers"
+  | "sessionTimelineDispatcher"
+  | "sessionTimelineFlushScheduler"
+  | "sessionLiveStateStore"
 >> {
   return Boolean(
     context.sessionTimelineWorkers &&
       context.sessionTimelineDispatcher &&
+      context.sessionTimelineFlushScheduler &&
       context.sessionLiveStateStore,
   );
 }
@@ -208,13 +212,16 @@ function routeCanonicalTimelineEvent(
   event: SessionRuntimeEvent,
   context: HelmHandlerContext & Required<Pick<
     HelmHandlerContext,
-    "sessionTimelineWorkers" | "sessionTimelineDispatcher" | "sessionLiveStateStore"
+    | "sessionTimelineWorkers"
+    | "sessionTimelineDispatcher"
+    | "sessionTimelineFlushScheduler"
+    | "sessionLiveStateStore"
   >>,
 ) {
   return routeSessionRuntimeEvent(sessionId, event, {
     workers: context.sessionTimelineWorkers,
     liveStateStore: context.sessionLiveStateStore,
-    dispatcher: context.sessionTimelineDispatcher,
+    flushScheduler: context.sessionTimelineFlushScheduler,
     context,
   });
 }
@@ -224,7 +231,10 @@ function inferPendingCompactionCompletion(
   event: SessionRuntimeEvent,
   context: HelmHandlerContext & Required<Pick<
     HelmHandlerContext,
-    "sessionTimelineWorkers" | "sessionTimelineDispatcher" | "sessionLiveStateStore"
+    | "sessionTimelineWorkers"
+    | "sessionTimelineDispatcher"
+    | "sessionTimelineFlushScheduler"
+    | "sessionLiveStateStore"
   >>,
 ) {
   if (!shouldInferCompactionCompletionFromEvent(event)) {
@@ -424,6 +434,9 @@ export function handleRuntimeEvent(
         meta: { status: event.status },
       });
       flushLiveAssistantMessage(sessionId, context);
+      if (hasCanonicalTimelinePipeline(context)) {
+        context.sessionTimelineFlushScheduler.flushNow(sessionId);
+      }
       if (event.status === "running") {
         startNextAssistantResponseSegment(sessionId);
       } else {
@@ -537,6 +550,9 @@ export function handleRuntimeEvent(
       return;
     case "permission-request":
       flushLiveAssistantMessage(sessionId, context);
+      if (hasCanonicalTimelinePipeline(context)) {
+        context.sessionTimelineFlushScheduler.flushNow(sessionId);
+      }
       logRuntimeInfo(context, "runtime.permission.requested", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -783,6 +799,9 @@ export function handleRuntimeEvent(
     }
     case "error":
       flushLiveAssistantMessage(sessionId, context);
+      if (hasCanonicalTimelinePipeline(context)) {
+        context.sessionTimelineFlushScheduler.flushNow(sessionId);
+      }
       logRuntimeError(context, "runtime.error", {
         ...runtimeLogFields(sessionId, context),
         seq: nextLiveEventSequence(sessionId),
@@ -918,9 +937,13 @@ function shouldIgnoreLateRuntimeEvent(
   event: SessionRuntimeEvent,
   context: HelmHandlerContext,
 ) {
+  const activeRecord = context.sessions.get(sessionId);
   const current =
-    context.sessions.get(sessionId)?.summary ??
+    activeRecord?.summary ??
     context.sessionStore.list().find((item: { id: string }) => item.id === sessionId);
+  if (current?.status === "error" && activeRecord) {
+    return false;
+  }
   if (current?.status !== "error" && current?.status !== "cancelled") {
     return false;
   }

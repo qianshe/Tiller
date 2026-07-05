@@ -28,6 +28,7 @@ import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 import type { SessionPromptQueueManager } from "../runtime/session/prompt-queue";
 import type { SessionTimelineDispatcher } from "../runtime/session-timeline/dispatcher";
+import type { SessionTimelineFlushScheduler } from "../runtime/session-timeline/flush-scheduler";
 import type { SessionLiveStateStore } from "../runtime/session-timeline/live-state-store";
 import type { SessionTimelineWorkerRegistry } from "../runtime/session-timeline/worker-registry";
 import type { TillerLogger } from "../logging/logger";
@@ -113,6 +114,7 @@ export type HelmHandlerContext = {
   sessionTimelineStore: any;
   sessionTimelineWorkers?: SessionTimelineWorkerRegistry;
   sessionTimelineDispatcher?: SessionTimelineDispatcher;
+  sessionTimelineFlushScheduler?: SessionTimelineFlushScheduler;
   sessionLiveStateStore?: SessionLiveStateStore;
   sessionUpdateStore: any;
   liveMessageBuffer: LiveMessageBuffer;

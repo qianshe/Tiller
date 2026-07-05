@@ -14,6 +14,7 @@ import type { SessionRecord } from "../session/services";
 import type { SessionAttachmentStore, StoredSessionRuntimeDescriptor } from "../../sessions/facade";
 import type { TillerLogger } from "../../logging/logger";
 import type { ProviderHistorySnapshotContent } from "./source";
+import { reduceSessionUpdateRecords } from "../session-updates/records.js";
 
 type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
@@ -129,6 +130,9 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     // source. Passive list/artifact reads must not inspect provider files.
     // Legacy local stores are still safe to materialize into canonical
     // timeline storage once so subsequent reads stay pure-canonical.
+    if (repairCanonicalTimelineFromSessionUpdates(sessionId) === "ready") {
+      return;
+    }
     materializeLegacyCanonicalTimeline(sessionId);
   }
 
@@ -151,6 +155,52 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     }
     options.sessionTimelineStore?.replace(sessionId, history);
     return "ready";
+  }
+
+  function repairCanonicalTimelineFromSessionUpdates(sessionId: string): "ready" | "empty" | "missing" {
+    if (
+      !options.sessionTimelineStore?.list ||
+      !options.sessionTimelineStore.replace ||
+      !options.sessionUpdateStore?.listPage
+    ) {
+      return "missing";
+    }
+    const existingTimeline = options.sessionTimelineStore.list(sessionId) ?? [];
+    const updates = readAllSessionUpdateRecords(sessionId);
+    if (!updates.length) {
+      return existingTimeline.length ? "ready" : "empty";
+    }
+    const repairedTimeline = reduceSessionUpdateRecords(updates).entries;
+    if (!repairedTimeline.length) {
+      return existingTimeline.length ? "ready" : "empty";
+    }
+    if (!shouldReplaceCanonicalTimeline(existingTimeline, repairedTimeline)) {
+      return "ready";
+    }
+    options.sessionTimelineStore.replace(sessionId, repairedTimeline);
+    logProviderHistoryInfo(options, "provider.history.timeline.repaired_from_updates", {
+      sessionId,
+      previousEntries: existingTimeline.length,
+      nextEntries: repairedTimeline.length,
+    });
+    return "ready";
+  }
+
+  function readAllSessionUpdateRecords(sessionId: string) {
+    const records: SessionUpdateRecord[] = [];
+    let before: string | undefined;
+    while (true) {
+      const page = options.sessionUpdateStore?.listPage?.(sessionId, { limit: 200, before });
+      if (!page) {
+        break;
+      }
+      records.push(...page.updates);
+      if (!page.hasMore || !page.nextCursor) {
+        break;
+      }
+      before = page.nextCursor;
+    }
+    return records.sort((left, right) => left.sequence - right.sequence);
   }
 
   function materializeLegacySessionPlan(sessionId: string) {
@@ -204,6 +254,40 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     refreshAuthoritativeSessionHistory,
     resetRefresh,
   };
+}
+
+function shouldReplaceCanonicalTimeline(
+  existingTimeline: SessionTimelineEntry[],
+  repairedTimeline: SessionTimelineEntry[],
+) {
+  if (existingTimeline.length === 0) {
+    return true;
+  }
+  const existingShape = summarizeTimelineShape(existingTimeline);
+  const repairedShape = summarizeTimelineShape(repairedTimeline);
+  return repairedShape.totalEntries > existingShape.totalEntries ||
+    repairedShape.toolCallEntries > existingShape.toolCallEntries ||
+    repairedShape.compactionEntries > existingShape.compactionEntries;
+}
+
+function summarizeTimelineShape(entries: SessionTimelineEntry[]) {
+  return entries.reduce(
+    (summary, entry) => {
+      summary.totalEntries += 1;
+      if (entry.kind === "tool_call") {
+        summary.toolCallEntries += 1;
+      }
+      if (entry.kind === "context_compaction") {
+        summary.compactionEntries += 1;
+      }
+      return summary;
+    },
+    {
+      totalEntries: 0,
+      toolCallEntries: 0,
+      compactionEntries: 0,
+    },
+  );
 }
 
 function readSessionPlanFromUpdateRecord(update: SessionUpdateRecord): AgentPlan | undefined {

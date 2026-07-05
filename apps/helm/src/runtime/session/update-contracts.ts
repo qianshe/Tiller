@@ -14,23 +14,25 @@ import type {
   SessionTimelineEntry,
   SessionTimelineTranscriptEventEntry,
 } from "@tiller/shared";
-import type {
-  SessionAgentMessageUpdate as DomainSessionAgentMessageUpdate,
-  SessionCommandOutputUpdate as DomainSessionCommandOutputUpdate,
-  SessionCommandsAvailableUpdate as DomainSessionCommandsAvailableUpdate,
-  SessionConfigOptionsUpdate as DomainSessionConfigOptionsUpdate,
-  SessionDiffUpdate as DomainSessionDiffUpdate,
-  SessionLiveStateUpdate as DomainSessionLiveStateUpdate,
-  SessionModelOptionsUpdate as DomainSessionModelOptionsUpdate,
-  SessionPlanUpdate as DomainSessionPlanUpdate,
-  SessionPromptQueueUpdate as DomainSessionPromptQueueUpdate,
-  SessionRealtimeUpdate as DomainSessionRealtimeUpdate,
-  SessionStatusUpdate,
-  SessionTimelineBatchUpdate as DomainSessionTimelineBatchUpdate,
-  SessionTranscriptEventUpdate as DomainSessionTranscriptEventUpdate,
-  SessionToolCallUpdate as DomainSessionToolCallUpdate,
-  SessionUpdatedUpdate as DomainSessionUpdatedUpdate,
-  SessionUserMessageUpdate as DomainSessionUserMessageUpdate,
+import {
+  isCanonicalConversationUpdateKind as isDomainCanonicalConversationUpdateKind,
+  isCompatibilityConversationUpdateKind as isDomainCompatibilityConversationUpdateKind,
+  type SessionAgentMessageUpdate as DomainSessionAgentMessageUpdate,
+  type SessionCommandOutputUpdate as DomainSessionCommandOutputUpdate,
+  type SessionCommandsAvailableUpdate as DomainSessionCommandsAvailableUpdate,
+  type SessionConfigOptionsUpdate as DomainSessionConfigOptionsUpdate,
+  type SessionDiffUpdate as DomainSessionDiffUpdate,
+  type SessionLiveStateUpdate as DomainSessionLiveStateUpdate,
+  type SessionModelOptionsUpdate as DomainSessionModelOptionsUpdate,
+  type SessionPlanUpdate as DomainSessionPlanUpdate,
+  type SessionPromptQueueUpdate as DomainSessionPromptQueueUpdate,
+  type SessionRealtimeUpdate as DomainSessionRealtimeUpdate,
+  type SessionStatusUpdate,
+  type SessionTimelineBatchUpdate as DomainSessionTimelineBatchUpdate,
+  type SessionTranscriptEventUpdate as DomainSessionTranscriptEventUpdate,
+  type SessionToolCallUpdate as DomainSessionToolCallUpdate,
+  type SessionUpdatedUpdate as DomainSessionUpdatedUpdate,
+  type SessionUserMessageUpdate as DomainSessionUserMessageUpdate,
 } from "@tiller/domain-contracts";
 
 export type HelmSessionConfigState = {
@@ -40,6 +42,11 @@ export type HelmSessionConfigState = {
 };
 
 export type { SessionStatusUpdate };
+
+export const isCanonicalConversationUpdateKind = isDomainCanonicalConversationUpdateKind;
+
+export const isCompatibilityConversationUpdateKind =
+  isDomainCompatibilityConversationUpdateKind;
 
 export type SessionUserMessageUpdate = DomainSessionUserMessageUpdate<AgentMessage>;
 

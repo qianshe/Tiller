@@ -84,7 +84,7 @@ test("resolveSessionConversationDisplayMode keeps optimistic live session messag
       sessionId: "session-1",
       sessionMessages: [
         {
-          id: "session-1-user-pending",
+          id: "session-1-user-1751650000000",
           role: "user",
           text: "马上要进 timeline 的用户消息",
           timestamp: "2026-05-29T00:00:00.000Z",

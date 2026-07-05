@@ -2520,7 +2520,7 @@ test("plain messages keeps subagents out of adjacent normal tool groups", () => 
   assert.ok(html.indexOf("background_output") < html.indexOf("工具调用 · 2 项"));
 });
 
-test("plain messages keeps tool call icon, badge, title, and status top aligned", () => {
+test("plain messages keeps tool call rows vertically centered with symmetric padding", () => {
   const html = renderPlainMessages({
     toolCalls: [
       {
@@ -2536,11 +2536,13 @@ test("plain messages keeps tool call icon, badge, title, and status top aligned"
   });
 
   assert.match(html, /plain-tool-call/);
-  assert.match(html, /<summary class="flex min-w-0 cursor-pointer list-none items-start gap-1\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
-  assert.match(html, /class="grid size-3 shrink-0 self-start place-items-center rounded-sm/);
-  assert.match(html, /h-4 shrink-0 self-start rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
-  assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium text-foreground">/);
-  assert.match(html, /class="ml-auto shrink-0 self-start text-2xs text-muted-foreground\/60"/);
+  assert.match(html, /<details class="plain-tool-call text-muted-foreground"/);
+  assert.match(html, /<summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5 py-0\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
+  assert.match(html, /class="grid size-3 shrink-0 place-items-center rounded-sm/);
+  assert.match(html, /inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
+  assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium leading-4 text-foreground">/);
+  assert.match(html, /class="ml-auto inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground\/60"/);
+  assert.match(html, /<pre class="mt-0\.5 max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground\/85"/);
 });
 
 test("plain messages surfaces subagent type and task summary when available", () => {
@@ -2566,6 +2568,59 @@ test("plain messages surfaces subagent type and task summary when available", ()
   assert.match(html, /Explore/);
   assert.match(html, /trace async refresh flow/);
   assert.match(html, /运行中/);
+  assert.match(html, /<summary class="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost \[\&amp;::-webkit-details-marker\]:hidden"/);
+  assert.match(html, /class="flex min-w-0 flex-1 items-center gap-2"/);
+  assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center"/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center font-medium leading-none"/);
+  assert.match(html, /class="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground\/70"/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0\.5 text-2xs font-semibold leading-none/);
+  assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground\/60 transition-transform duration-150 rotate-180"/);
+});
+
+test("plain messages removes vertical guide lines from thinking, subagent, and tool group details", () => {
+  const html = renderPlainMessages({
+    thinkingToolCalls: [
+      {
+        id: "assistant-1:thinking",
+        commandId: "assistant-1:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "Reasoning...",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+      },
+    ],
+    toolCalls: [
+      {
+        id: "tool-subagent",
+        kind: "subagent",
+        title: "background_output",
+        status: "running",
+        input: JSON.stringify({
+          subagent_type: "Explore",
+          description: "trace async refresh flow",
+        }),
+        output: "",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+      },
+      {
+        id: "tool-read",
+        kind: "read",
+        title: "Read file",
+        status: "completed",
+        output: "file content",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /class="plain-thinking-content pt-1 text-\[12\.5px\]/);
+  assert.match(html, /class="plain-subagent-content pt-1 text-\[12\.5px\]/);
+  assert.match(html, /class="plain-tool-group-content grid max-h-36 gap-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground"/);
+  assert.doesNotMatch(html, /border-l border-primary\/25/);
 });
 
 test("plain messages does not treat OpenCode task-like payloads as subagents without typed kind", () => {
@@ -3397,7 +3452,7 @@ test("plain message render signature changes when the same render key changes he
   );
 });
 
-test("plain message display keeps fallback messages visible while paged history remains loadable", () => {
+test("plain message display stops merging fallback messages once canonical timeline exists", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {
       id: "assistant-1",
@@ -3436,14 +3491,7 @@ test("plain message display keeps fallback messages visible while paged history 
     },
   ];
 
-  const whilePaged = resolvePlainConversationDisplayItems({
-    displayMessages: liveMessages,
-    timelineItems,
-    showThinking: true,
-    thinkingToolCalls: [],
-    toolCalls: [],
-  });
-  const afterBoundaryResolved = resolvePlainConversationDisplayItems({
+  const displayItems = resolvePlainConversationDisplayItems({
     displayMessages: liveMessages,
     timelineItems,
     showThinking: true,
@@ -3451,8 +3499,53 @@ test("plain message display keeps fallback messages visible while paged history 
     toolCalls: [],
   });
 
-  assert.equal(whilePaged.some((item) => item.kind === "message" && item.message.id === "assistant-live-older"), true);
-  assert.equal(afterBoundaryResolved.some((item) => item.kind === "message" && item.message.id === "assistant-live-older"), true);
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "message" && item.message.id === "assistant-live-older",
+    ),
+    false,
+  );
+});
+
+test("plain message display keeps optimistic user prompts visible alongside canonical timeline", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "canonical-user-entry-1",
+      kind: "user_message",
+      message: {
+        id: "canonical-user-1",
+        role: "user",
+        text: "上一条消息",
+        timestamp: "2026-05-17T10:00:00.000Z",
+      },
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+      sequence: 1,
+    },
+  ];
+  const liveMessages: AgentMessage[] = [
+    {
+      id: "session-1-user-optimistic",
+      role: "user",
+      text: "刚发送的新消息",
+      timestamp: "2026-05-17T10:00:01.000Z",
+    },
+  ];
+
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: liveMessages,
+    timelineItems,
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "message" && item.message.id === "session-1-user-optimistic",
+    ),
+    true,
+  );
 });
 
 test("plain message display uses chronological order from newest-first pages", () => {

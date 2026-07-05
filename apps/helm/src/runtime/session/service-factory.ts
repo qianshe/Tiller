@@ -38,6 +38,7 @@ import { createSessionDiffHydrationService } from "./diff-hydration";
 import { createSessionSummaryHydrationService } from "./summary-hydration";
 import { createRuntimeDescriptorService } from "../descriptor-service";
 import { createSessionTimelineDispatcher } from "../session-timeline/dispatcher";
+import { createSessionTimelineFlushScheduler } from "../session-timeline/flush-scheduler";
 import { createSessionLiveStateStore } from "../session-timeline/live-state-store";
 import { createSessionTimelineWorkerRegistry } from "../session-timeline/worker-registry";
 import {
@@ -212,6 +213,15 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
       });
     },
   });
+  const sessionTimelineFlushScheduler = createSessionTimelineFlushScheduler({
+    workers: sessionTimelineWorkers,
+    dispatcher: sessionTimelineDispatcher,
+  });
+  function resetSessionTimelineRuntimeState(sessionId: string) {
+    sessionTimelineFlushScheduler.remove(sessionId);
+    sessionTimelineWorkers.remove(sessionId);
+    sessionLiveStateStore.remove(sessionId);
+  }
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
   }
@@ -279,6 +289,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     const previousArtifacts = previousBaseline.artifacts;
     const previousPlan = providerHistory.readSessionPlan(sessionId);
     const restorePreviousLocalHistory = () => {
+      resetSessionTimelineRuntimeState(sessionId);
       options.sessionMessageStore.replace(sessionId, previousMessages);
       options.sessionArtifactStore.remove(sessionId);
       for (const output of previousArtifacts.outputs) {
@@ -297,6 +308,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     options.sessionMessageStore.replace(sessionId, []);
     options.sessionArtifactStore.remove(sessionId);
     options.sessionTimelineStore.remove(sessionId);
+    resetSessionTimelineRuntimeState(sessionId);
     providerHistory.resetRefresh(sessionId);
 
     try {
@@ -500,10 +512,15 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     return diffHydration.hydrateDiffsFromWorktreeGit(sessionId, files);
   }
 
+  function deleteLocalSessionData(sessionId: string) {
+    resetSessionTimelineRuntimeState(sessionId);
+    sessionPersistence.deleteLocalSessionData(sessionId);
+  }
+
   return {
     buildResumeInfo,
     clearPermissionRequestsForSession,
-    deleteLocalSessionData: sessionPersistence.deleteLocalSessionData,
+    deleteLocalSessionData,
     handleRuntimeEvent,
     hydrateDiffsFromWorktreeGit,
     hydrateSessionSummary,
@@ -522,6 +539,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     scheduleDeckClientDraftDiscard: runtimeDraftRegistry.scheduleDeckClientDraftDiscard,
     sessionLiveStateStore,
     sessionTimelineDispatcher,
+    sessionTimelineFlushScheduler,
     sessionTimelineWorkers,
     startSessionResume: sessionResume.startSessionResume,
     takeRuntimeDraft: runtimeDraftRegistry.takeRuntimeDraft,

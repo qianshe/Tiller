@@ -485,22 +485,23 @@ export function App() {
     lastFilesScopeKeyRef,
   });
   appActionsRef.current = appActions;
-  const activeSessionSlashCommands = missionView.activeSession?.availableCommands ?? [];
+  const composerSlashSession = missionView.selectedComposerSession ?? missionView.activeSession;
+  const activeSessionSlashCommands = composerSlashSession?.availableCommands ?? [];
   const sessionAvailableCommandsForComposer = useMemo(
     () =>
-      missionView.activeSession && activeSessionSlashCommands.length
+      composerSlashSession && activeSessionSlashCommands.length
         ? {
             ...deckData.sessionAvailableCommands,
-            [missionView.activeSession.id]: activeSessionSlashCommands,
+            [composerSlashSession.id]: activeSessionSlashCommands,
           }
         : deckData.sessionAvailableCommands,
-    [deckData.sessionAvailableCommands, missionView.activeSession, activeSessionSlashCommands],
+    [deckData.sessionAvailableCommands, composerSlashSession, activeSessionSlashCommands],
   );
   const slash = useSlashCommands({
     prompt: runtimeState.prompt,
     setPrompt: runtimeState.setPrompt,
-    activeSessionId: deckData.activeSessionId,
-    activeSessionAgentId: missionView.activeSession?.agentId ?? runtimeState.selectedAgentId,
+    activeSessionId: composerSlashSession?.id ?? deckData.activeSessionId,
+    activeSessionAgentId: composerSlashSession?.agentId ?? runtimeState.selectedAgentId,
     sessionAvailableCommands: sessionAvailableCommandsForComposer,
     agentAvailableCommands: deckData.agentAvailableCommands,
     refreshAgentAvailableCommands: deckData.refreshAgentAvailableCommands,

@@ -51,6 +51,18 @@ test("open session stream hydration reruns when Helm reconnects", () => {
   assert.match(openSessionStreamsSourceText, /connection !== "connected"/);
   assert.match(
     openSessionStreamsSourceText,
+    /pendingTimelineRequestSessionIdsRef\.current\.clear\(\)/,
+  );
+  assert.match(
+    openSessionStreamsSourceText,
+    /pendingTimelineRequestSessionIds:\s*pendingTimelineRequestSessionIdsRef\.current/,
+  );
+  assert.match(
+    openSessionStreamsSourceText,
+    /pendingTimelineRequestSessionIdsRef\.current\.add\(sessionId\)[\s\S]*dispatch\(client, "session\/list_timeline"[\s\S]*\.finally\(\(\) => \{\s*pendingTimelineRequestSessionIdsRef\.current\.delete\(sessionId\);/m,
+  );
+  assert.match(
+    openSessionStreamsSourceText,
     /\}, \[openSessionStreamKey, pairingState, connection\]\);/,
   );
   assert.match(

@@ -8,7 +8,6 @@ import {
   isTranscriptEventEntry,
   looksLikeCompactionLifecycleMessage,
   looksLikeContinuationSummary,
-  resolveTimelineRepresentedUserMessageIds,
 } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
@@ -767,7 +766,7 @@ export function resolveLocalHistoryRevealPlan({
 }
 
 export function resolvePlainConversationDisplayItems({
-  sessionId,
+  sessionId: _sessionId,
   displayMessages,
   timelineItems,
   showThinking,
@@ -781,18 +780,56 @@ export function resolvePlainConversationDisplayItems({
   thinkingToolCalls: AgentToolCall[];
   toolCalls: AgentToolCall[];
 }) {
-  return timelineItems.length
-    ? buildPlainConversationItemsFromTimelineWithLiveMessages(
-        sessionId,
-        timelineItems,
-        displayMessages,
-        showThinking,
-      )
-    : buildPlainConversationItems(
-        displayMessages,
-        showThinking ? thinkingToolCalls : [],
-        toolCalls,
-      );
+  if (!timelineItems.length) {
+    return buildPlainConversationItems(
+      displayMessages,
+      showThinking ? thinkingToolCalls : [],
+      toolCalls,
+    );
+  }
+
+  const canonicalItems = buildPlainConversationItemsFromTimeline(timelineItems, showThinking);
+  const optimisticMessages = resolveOptimisticTimelineSupplementMessages(
+    displayMessages,
+    timelineItems,
+  );
+  if (!optimisticMessages.length) {
+    return canonicalItems;
+  }
+
+  const optimisticItems = buildPlainConversationItems(optimisticMessages, [], []);
+  return mergeAdjacentToolItems(
+    mergeAdjacentThinkingItems(
+      [...canonicalItems, ...optimisticItems].sort(comparePlainConversationItems),
+    ),
+  );
+}
+
+function resolveOptimisticTimelineSupplementMessages(
+  displayMessages: AgentMessage[],
+  timelineItems: SessionTimelineEntry[],
+) {
+  const canonicalMessageIds = new Set(
+    timelineItems.flatMap((entry) => {
+      if (entry.kind === "user_message" || entry.kind === "system_message") {
+        return [entry.message.id];
+      }
+      if (entry.kind === "assistant_message") {
+        return [entry.id];
+      }
+      return [];
+    }),
+  );
+
+  return displayMessages.filter((message) => {
+    if (canonicalMessageIds.has(message.id)) {
+      return false;
+    }
+    if (message.role === "user") {
+      return true;
+    }
+    return message.role === "assistant" && message.streaming === true;
+  });
 }
 
 export function resolveRemoteHistoryRevealAction({
@@ -1017,225 +1054,6 @@ function buildPlainConversationItemsFromTimeline(
   );
 }
 
-function buildPlainConversationItemsFromTimelineWithLiveMessages(
-  sessionId: string | null | undefined,
-  timelineItems: SessionTimelineEntry[],
-  messages: AgentMessage[],
-  showThinking: boolean,
-): PlainConversationItem[] {
-  const timelineConversationItems = buildPlainConversationItemsFromTimeline(
-    timelineItems,
-    showThinking,
-  );
-  const hasCompactionTranscriptEvent = timelineItems.some(
-    (entry) => entry.kind === "context_compaction",
-  );
-  const timelineMessageIds = collectTimelineMessageIds(timelineItems);
-  const representedLiveUserMessageIds = resolveTimelineRepresentedUserMessageIds(
-    timelineItems,
-    messages,
-  );
-  const representedLiveAssistantMessageIds = resolveTimelineRepresentedAssistantMessageIds(
-    timelineItems,
-    messages,
-  );
-  const continuationPrefaceMessageIds = resolveContinuationPrefaceMessageIds(messages);
-  const continuationPrefaceAnchor = resolveContinuationPrefaceAnchor(
-    messages,
-    continuationPrefaceMessageIds,
-  );
-  const liveMessageItems = messages.flatMap((message, index) => {
-    if (
-      hasCompactionTranscriptEvent &&
-      (
-        looksLikeContinuationSummary(message.text) ||
-        looksLikeCompactionLifecycleMessage(message.text)
-      )
-    ) {
-      return [];
-    }
-    if (
-      timelineMessageIds.has(message.id) ||
-      representedLiveUserMessageIds.has(message.id) ||
-      representedLiveAssistantMessageIds.has(message.id)
-    ) {
-      return [];
-    }
-    const text = normalizeLocalCommandMessageText(message.text);
-    return text
-      ? [{
-          kind: "message" as const,
-          sourceIndex: timelineConversationItems.length + index,
-          timestamp: message.timestamp,
-          sequence: message.sequence,
-          message: text === message.text ? message : { ...message, text },
-        }]
-      : [];
-  });
-  const continuationPrefaceItems = continuationPrefaceAnchor
-    ? liveMessageItems.filter(
-        (item) => item.kind === "message" &&
-          continuationPrefaceMessageIds.has(item.message.id),
-      )
-    : [];
-  const regularLiveMessageItems = continuationPrefaceItems.length
-    ? liveMessageItems.filter(
-        (item) => item.kind !== "message" ||
-          !continuationPrefaceMessageIds.has(item.message.id),
-      )
-    : liveMessageItems;
-
-  if (!regularLiveMessageItems.length && !continuationPrefaceItems.length) {
-    return timelineConversationItems;
-  }
-
-  const sequencedLiveMessageItems = regularLiveMessageItems.filter(
-    (item) => typeof item.sequence === "number",
-  );
-  const unsequencedLiveMessageItems = regularLiveMessageItems.filter(
-    (item) => typeof item.sequence !== "number",
-  );
-  const optimisticUnsequencedLiveMessageItems = unsequencedLiveMessageItems.filter(
-    (item) => item.kind === "message" && isOptimisticLiveMessage(sessionId, item.message),
-  );
-  const historicalUnsequencedLiveMessageItems = unsequencedLiveMessageItems.filter(
-    (item) => item.kind !== "message" || !isOptimisticLiveMessage(sessionId, item.message),
-  );
-  const mergedSequencedTimelineItems = mergeSequencedLiveMessageItemsIntoTimeline(
-    timelineConversationItems,
-    sequencedLiveMessageItems,
-  );
-  const mergedTimelineAndLiveItems = mergeUnsequencedLiveMessageItemsIntoTimeline(
-    mergedSequencedTimelineItems,
-    historicalUnsequencedLiveMessageItems,
-  );
-  const mergedSequencedItems = mergeAdjacentToolItems(
-    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(mergedTimelineAndLiveItems)),
-  );
-  const itemsWithContinuationPreface = continuationPrefaceItems.length
-    ? insertContinuationPrefaceItems(
-        mergedSequencedItems,
-        continuationPrefaceItems,
-        continuationPrefaceAnchor,
-      )
-    : mergedSequencedItems;
-  return [...itemsWithContinuationPreface, ...optimisticUnsequencedLiveMessageItems];
-}
-
-function isOptimisticLiveMessage(
-  sessionId: string | null | undefined,
-  message: AgentMessage,
-) {
-  if (!sessionId) {
-    return false;
-  }
-  if (message.role === "user") {
-    return message.id === `${sessionId}-user-pending`;
-  }
-  return message.role === "assistant" && message.streaming === true;
-}
-
-function mergeSequencedLiveMessageItemsIntoTimeline(
-  timelineItems: PlainConversationItem[],
-  liveItems: PlainConversationItem[],
-) {
-  if (!timelineItems.length) {
-    return [...liveItems].sort(compareSequencedPlainConversationItems);
-  }
-  if (!liveItems.length) {
-    return timelineItems;
-  }
-
-  const merged = [...timelineItems];
-  const sortedLiveItems = [...liveItems].sort(compareSequencedPlainConversationItems);
-  for (const liveItem of sortedLiveItems) {
-    const insertIndex = resolveSequencedLiveMessageInsertIndex(merged, liveItem);
-    merged.splice(insertIndex, 0, liveItem);
-  }
-  return merged;
-}
-
-function mergeUnsequencedLiveMessageItemsIntoTimeline(
-  timelineItems: PlainConversationItem[],
-  liveItems: PlainConversationItem[],
-) {
-  if (!timelineItems.length) {
-    return [...liveItems].sort(compareUnsequencedPlainConversationItems);
-  }
-  if (!liveItems.length) {
-    return timelineItems;
-  }
-
-  const merged = [...timelineItems];
-  const sortedLiveItems = [...liveItems].sort(compareUnsequencedPlainConversationItems);
-  for (const liveItem of sortedLiveItems) {
-    const insertIndex = resolveUnsequencedLiveMessageInsertIndex(merged, liveItem);
-    merged.splice(insertIndex, 0, liveItem);
-  }
-  return merged;
-}
-
-function resolveSequencedLiveMessageInsertIndex(
-  items: PlainConversationItem[],
-  liveItem: PlainConversationItem,
-) {
-  const liveSequence = liveItem.sequence;
-  if (typeof liveSequence !== "number") {
-    return items.length;
-  }
-
-  let fallbackIndex = items.length;
-  for (let index = 0; index < items.length; index += 1) {
-    const currentItem = items[index];
-    if (!currentItem) {
-      continue;
-    }
-    const currentSequence = currentItem.sequence;
-    if (typeof currentSequence !== "number") {
-      continue;
-    }
-    const timelineDelta = currentSequence - liveSequence;
-    const timestampDelta = comparePlainItemTimestamps(currentItem.timestamp, liveItem.timestamp);
-    const sourceIndexDelta = comparePlainConversationSourceIndex(currentItem, liveItem);
-    const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
-      timelineDelta,
-      timestampDelta,
-    );
-    if (sequenceResetTimestampDelta !== null) {
-      if (sourceIndexDelta !== null) {
-        if (sourceIndexDelta > 0) {
-          return index;
-        }
-        fallbackIndex = index + 1;
-        continue;
-      }
-      if (sequenceResetTimestampDelta > 0) {
-        return index;
-      }
-      fallbackIndex = index + 1;
-      continue;
-    }
-    if (currentSequence > liveSequence) {
-      return index;
-    }
-    if (currentSequence === liveSequence) {
-      if (timestampDelta > 0) {
-        return index;
-      }
-      const sourceIndexDelta = comparePlainConversationSourceIndex(currentItem, liveItem);
-      if (sourceIndexDelta !== null) {
-        if (sourceIndexDelta > 0) {
-          return index;
-        }
-        fallbackIndex = index + 1;
-        continue;
-      }
-    }
-    fallbackIndex = index + 1;
-  }
-  return fallbackIndex;
-}
-
 function compareSequencedPlainConversationItems(
   left: PlainConversationItem,
   right: PlainConversationItem,
@@ -1270,243 +1088,6 @@ function compareSequencedPlainConversationItems(
     return sourceIndexDelta;
   }
   return plainConversationKindRank(left) - plainConversationKindRank(right);
-}
-
-function resolveUnsequencedLiveMessageInsertIndex(
-  items: PlainConversationItem[],
-  liveItem: PlainConversationItem,
-) {
-  for (let index = 0; index < items.length; index += 1) {
-    const currentItem = items[index];
-    if (!currentItem) {
-      continue;
-    }
-    const timestampDelta = comparePlainItemTimestamps(currentItem.timestamp, liveItem.timestamp);
-    if (timestampDelta > 0) {
-      return index;
-    }
-    if (timestampDelta === 0) {
-      const sourceIndexDelta = comparePlainConversationSourceIndex(currentItem, liveItem);
-      if (sourceIndexDelta !== null) {
-        if (sourceIndexDelta > 0) {
-          return index;
-        }
-        continue;
-      }
-      if (plainConversationKindRank(currentItem) > plainConversationKindRank(liveItem)) {
-        return index;
-      }
-    }
-  }
-  return items.length;
-}
-
-function compareUnsequencedPlainConversationItems(
-  left: PlainConversationItem,
-  right: PlainConversationItem,
-) {
-  const transcriptAnchorDelta = compareTranscriptEventAnchorSourceIndex(left, right);
-  if (transcriptAnchorDelta !== null) {
-    return transcriptAnchorDelta;
-  }
-  const timestampDelta = comparePlainItemTimestamps(left.timestamp, right.timestamp);
-  if (timestampDelta !== 0) {
-    return timestampDelta;
-  }
-  const sourceIndexDelta = comparePlainConversationSourceIndex(left, right);
-  if (sourceIndexDelta !== null) {
-    return sourceIndexDelta;
-  }
-  return plainConversationKindRank(left) - plainConversationKindRank(right);
-}
-
-function resolveContinuationPrefaceMessageIds(messages: AgentMessage[]) {
-  const markerIndex = messages.findIndex((message) =>
-    looksLikeContinuationSummary(message.text)
-  );
-  if (markerIndex === -1) {
-    return new Set<string>();
-  }
-  const ids = new Set<string>();
-  for (let index = markerIndex; index < messages.length; index += 1) {
-    const message = messages[index];
-    if (!message) {
-      continue;
-    }
-    if (index > markerIndex && typeof message.sequence === "number") {
-      break;
-    }
-    ids.add(message.id);
-  }
-  return ids;
-}
-
-function resolveContinuationPrefaceAnchor(
-  messages: AgentMessage[],
-  continuationPrefaceMessageIds: ReadonlySet<string>,
-) {
-  return messages.find((message) =>
-    !continuationPrefaceMessageIds.has(message.id) &&
-    typeof message.sequence === "number"
-  );
-}
-
-function insertContinuationPrefaceItems(
-  items: PlainConversationItem[],
-  continuationPrefaceItems: PlainConversationItem[],
-  anchor: AgentMessage | undefined,
-) {
-  if (!continuationPrefaceItems.length || !anchor) {
-    return items;
-  }
-  const insertIndex = resolveContinuationPrefaceInsertIndex(items, anchor);
-  const next = [...items];
-  next.splice(
-    insertIndex,
-    0,
-    ...continuationPrefaceItems.sort(compareUnsequencedPlainConversationItems),
-  );
-  return next;
-}
-
-function resolveContinuationPrefaceInsertIndex(
-  items: PlainConversationItem[],
-  anchor: AgentMessage,
-) {
-  const anchorSequence = anchor.sequence;
-  if (typeof anchorSequence === "number") {
-    for (let index = 0; index < items.length; index += 1) {
-      const currentItem = items[index];
-      if (currentItem?.sequence === anchorSequence) {
-        return index;
-      }
-    }
-    for (let index = 0; index < items.length; index += 1) {
-      const currentItem = items[index];
-      if (
-        typeof currentItem?.sequence === "number" &&
-        currentItem.sequence > anchorSequence
-      ) {
-        return index;
-      }
-    }
-  }
-  const anchorTime = Date.parse(anchor.timestamp);
-  for (let index = 0; index < items.length; index += 1) {
-    const currentItem = items[index];
-    if (!currentItem) {
-      continue;
-    }
-    const currentTime = Date.parse(currentItem.timestamp);
-    if (Number.isFinite(currentTime) && currentTime >= anchorTime) {
-      return index;
-    }
-  }
-  return 0;
-}
-
-function collectTimelineMessageIds(timelineItems: SessionTimelineEntry[]) {
-  const ids = new Set<string>();
-  for (const entry of timelineItems) {
-    if (entry.kind === "user_message" || entry.kind === "system_message") {
-      ids.add(entry.message.id);
-      continue;
-    }
-    if (entry.kind === "assistant_message") {
-      ids.add(entry.id);
-    }
-  }
-  return ids;
-}
-
-function resolveTimelineRepresentedAssistantMessageIds(
-  timelineItems: SessionTimelineEntry[],
-  messages: AgentMessage[],
-) {
-  const candidates = messages.filter((message) =>
-    message.role === "assistant" && Boolean(message.text.trim())
-  );
-  const represented = new Set<string>();
-  for (const snapshot of collectTimelineAssistantMessageSnapshots(timelineItems)) {
-    const matchIndex = findRepresentedAssistantMessageIndex(candidates, snapshot);
-    if (matchIndex === -1) {
-      continue;
-    }
-    const [match] = candidates.splice(matchIndex, 1);
-    if (match) {
-      represented.add(match.id);
-    }
-  }
-  return represented;
-}
-
-type TimelineAssistantMessageSnapshot = {
-  id: string;
-  text: string;
-  timestamp: string;
-  sequence?: number;
-};
-
-function collectTimelineAssistantMessageSnapshots(
-  timelineItems: SessionTimelineEntry[],
-): TimelineAssistantMessageSnapshot[] {
-  const snapshots: TimelineAssistantMessageSnapshot[] = [];
-  for (const entry of timelineItems) {
-    if (entry.kind !== "assistant_message") {
-      continue;
-    }
-    let cumulativeText = "";
-    for (const chunk of entry.chunks) {
-      if (chunk.kind !== "content") {
-        continue;
-      }
-      cumulativeText += chunk.text;
-      const text = cumulativeText.trim();
-      if (!text) {
-        continue;
-      }
-      snapshots.push({
-        id: entry.id,
-        text,
-        timestamp: chunk.timestamp,
-        sequence: chunk.sequence ?? entry.sequence,
-      });
-    }
-  }
-  return snapshots;
-}
-
-function findRepresentedAssistantMessageIndex(
-  candidates: AgentMessage[],
-  snapshot: TimelineAssistantMessageSnapshot,
-) {
-  const idMatchIndex = candidates.findIndex((message) => message.id === snapshot.id);
-  if (idMatchIndex !== -1) {
-    return idMatchIndex;
-  }
-  const snapshotText = snapshot.text.trim();
-  const snapshotTime = Date.parse(snapshot.timestamp);
-  let nearestIndex = -1;
-  let nearestDelta = Number.POSITIVE_INFINITY;
-  for (const [index, message] of candidates.entries()) {
-    if (message.text.trim() !== snapshotText) {
-      continue;
-    }
-    if (
-      typeof snapshot.sequence === "number" &&
-      typeof message.sequence === "number" &&
-      snapshot.sequence === message.sequence
-    ) {
-      return index;
-    }
-    const messageTime = Date.parse(message.timestamp);
-    const delta = Math.abs(messageTime - snapshotTime);
-    if (Number.isFinite(delta) && delta <= 10_000 && delta < nearestDelta) {
-      nearestDelta = delta;
-      nearestIndex = index;
-    }
-  }
-  return nearestIndex;
 }
 
 function toPlainToolConversationItem(

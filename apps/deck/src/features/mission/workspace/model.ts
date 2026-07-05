@@ -22,6 +22,7 @@ export function buildMissionWorktreeModel(input: any) {
     selectedCwd,
     selectedAgentId,
     activeSession,
+    composerSession,
     diffs = {},
     outputs = {},
     toolCalls = {},
@@ -44,11 +45,16 @@ export function buildMissionWorktreeModel(input: any) {
     resumeStartRequestsRef,
     draftModelLoading,
   } = input;
+  const effectiveComposerSession = composerSession ?? activeSession;
+  const effectiveComposerSessionId = effectiveComposerSession?.id ?? activeSessionId;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
   const effectiveWorktreeId = selectedCwd || selectedWorktree?.path;
   const effectiveAgentId = selectedAgentId;
   const activeSessionStatus = activeSession
     ? (statuses[activeSession.id] ?? activeSession.status)
+    : "idle";
+  const composerSessionStatus = effectiveComposerSession
+    ? (statuses[effectiveComposerSession.id] ?? effectiveComposerSession.status)
     : "idle";
   const activeSessionRestoreGate = resolveSessionRestoreGate({
     activeSession,
@@ -57,20 +63,29 @@ export function buildMissionWorktreeModel(input: any) {
       activeSession && resumeStartRequestsRef?.current?.has(activeSession.id),
     ),
   });
+  const composerSessionRestoreGate = resolveSessionRestoreGate({
+    activeSession: effectiveComposerSession,
+    activeSessionStatus: composerSessionStatus,
+    resumeStartPending: Boolean(
+      effectiveComposerSession &&
+        resumeStartRequestsRef?.current?.has(effectiveComposerSession.id),
+    ),
+  });
   const composerModelLoading = Boolean(
-    draftModelLoading || (activeSession && !activeSessionRestoreGate.canChat),
+    draftModelLoading ||
+      (effectiveComposerSession && !composerSessionRestoreGate.canChat),
   );
   const canSend = Boolean(
-    activeSessionRestoreGate.canChat &&
-    activeSessionStatus !== "starting" &&
+    composerSessionRestoreGate.canChat &&
+    composerSessionStatus !== "starting" &&
     (prompt.trim() || promptImages.length) &&
     socketRef.current &&
-    (activeSessionId ||
+    (effectiveComposerSessionId ||
       (effectiveProjectId && effectiveWorktreeId && effectiveAgentId)) &&
     (!composerModelLoading) &&
     (!promptImages.length ||
-      !activeSession ||
-      activeSession.imageInput !== false),
+      !effectiveComposerSession ||
+      effectiveComposerSession.imageInput !== false),
   );
   const activeMissionHelm =
     missionHelms.find((helm: any) => helm.id === effectiveMissionHelmId) ??
@@ -165,17 +180,19 @@ export function buildMissionWorktreeModel(input: any) {
     : [];
   const visibleProjectFiles = [] as ProjectFileSummary[];
   const sessionExecutionPending = Boolean(
-    activeSession && isSessionExecutionPending(activeSessionStatus),
+    effectiveComposerSession && isSessionExecutionPending(composerSessionStatus),
   );
 
   return {
     canSend,
     activeSessionRestoreGate,
+    composerSessionRestoreGate,
     activeMissionHelm,
     activeDiffs,
     activeOutputs,
     activeToolCalls,
     activeSessionStatus,
+    composerSessionStatus,
     pendingToolActivity,
     missionActivityLoading,
     missionDiffCount,

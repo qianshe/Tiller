@@ -547,6 +547,79 @@ test("appendToolCallToSessionTimeline keeps terminal status for weak running fal
   );
 });
 
+test("appendToolCallToSessionTimeline keeps a specialized tool kind and descriptive title when completion falls back to generic metadata", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-2",
+    commandId: "call-2",
+    kind: "read",
+    title: "Read package.json",
+    status: "running",
+    sequence: 2,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-2",
+    commandId: "call-2",
+    kind: "tool",
+    title: "File",
+    status: "completed",
+    output: "{}",
+    sequence: 2,
+  }));
+
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.kind : undefined,
+    "read",
+  );
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.title : undefined,
+    "Read package.json",
+  );
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
+    "completed",
+  );
+});
+
+test("appendToolCallToSessionTimeline keeps subagent classification when a later update downgrades to a generic tool kind", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-3",
+    commandId: "call-3",
+    kind: "subagent",
+    title: "Planner agent",
+    status: "running",
+    input: JSON.stringify({ agent: "planner" }),
+    sequence: 3,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-3",
+    commandId: "call-3",
+    kind: "tool",
+    title: "Tool call call-3",
+    status: "completed",
+    output: "done",
+    sequence: 3,
+  }));
+
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.kind : undefined,
+    "subagent",
+  );
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.title : undefined,
+    "Planner agent",
+  );
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
+    "completed",
+  );
+});
+
 test("SessionTimelineBatch is the only canonical write envelope", () => {
   const batch: SessionTimelineBatch = {
     replace: false,

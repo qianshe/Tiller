@@ -71,8 +71,16 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
     setMessageHistoryState,
   } = options;
   const openSessionResumeCheckRef = useRef<Set<string>>(new Set());
+  const pendingTimelineRequestSessionIdsRef = useRef<Set<string>>(new Set());
   const openSessionTopicSubscriptionsRef = useRef<Set<string>>(new Set());
   const openSessionStreamKey = openSessions.map((session) => session.id).join("|");
+
+  useEffect(() => {
+    if (connection === "connected") {
+      return;
+    }
+    pendingTimelineRequestSessionIdsRef.current.clear();
+  }, [connection]);
 
   useEffect(() => {
     const client = rpcClientRef.current;
@@ -131,6 +139,7 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
       messagesBySession,
       sessionTimelineBySession,
       checkedResumeSessionIds: openSessionResumeCheckRef.current,
+      pendingTimelineRequestSessionIds: pendingTimelineRequestSessionIdsRef.current,
     });
 
     if (messageSessionIds.length > 0) {
@@ -138,9 +147,12 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
         return markSessionHistoryEntriesLoading(current, messageSessionIds);
       });
       messageSessionIds.forEach((sessionId) => {
+        pendingTimelineRequestSessionIdsRef.current.add(sessionId);
         void dispatch(client, "session/list_timeline", {
           sessionId,
           limit: DEFAULT_MESSAGE_PAGE_LIMIT,
+        }).finally(() => {
+          pendingTimelineRequestSessionIdsRef.current.delete(sessionId);
         });
       });
     }

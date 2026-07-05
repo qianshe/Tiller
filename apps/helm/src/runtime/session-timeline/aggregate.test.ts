@@ -95,6 +95,86 @@ test("aggregate merges streaming assistant messages into the same entry", () => 
   }
 });
 
+test("aggregate concatenates assistant delta chunks instead of overwriting them", () => {
+  let aggregate = createEmptySessionTimelineAggregate("session-3b");
+
+  aggregate = applySessionRuntimeEvent(aggregate, {
+    type: "message",
+    message: {
+      id: "assistant-delta-1",
+      role: "assistant",
+      text: "Let me check",
+      timestamp: "2026-07-03T22:40:01.000Z",
+      streaming: true,
+    },
+  });
+
+  aggregate = applySessionRuntimeEvent(aggregate, {
+    type: "message",
+    message: {
+      id: "assistant-delta-1",
+      role: "assistant",
+      text: " how",
+      timestamp: "2026-07-03T22:40:02.000Z",
+      streaming: true,
+    },
+  });
+
+  aggregate = applySessionRuntimeEvent(aggregate, {
+    type: "message",
+    message: {
+      id: "assistant-delta-1",
+      role: "assistant",
+      text: "。",
+      timestamp: "2026-07-03T22:40:03.000Z",
+      streaming: false,
+    },
+  });
+
+  assert.equal(aggregate.entries.length, 1);
+  const entry = aggregate.entries[0];
+  assert.equal(entry?.kind, "assistant_message");
+  if (entry?.kind === "assistant_message") {
+    assert.equal(entry.chunks.length, 1);
+    assert.equal(entry.chunks[0]?.text, "Let me check how。");
+    assert.equal(entry.streaming, false);
+  }
+});
+
+test("buildSessionTimelineBatch emits assistant streaming updates even when the entry id stays the same", () => {
+  const before = applySessionRuntimeEvent(
+    createEmptySessionTimelineAggregate("session-3c"),
+    {
+      type: "message",
+      message: {
+        id: "assistant-stream-1",
+        role: "assistant",
+        text: "Now",
+        timestamp: "2026-07-04T10:00:01.000Z",
+        streaming: true,
+      },
+    },
+  );
+
+  const after = applySessionRuntimeEvent(before, {
+    type: "message",
+    message: {
+      id: "assistant-stream-1",
+      role: "assistant",
+      text: " thinking",
+      timestamp: "2026-07-04T10:00:02.000Z",
+      streaming: true,
+    },
+  });
+
+  const batch = buildSessionTimelineBatch(before, after);
+  assert.ok(batch);
+  assert.equal(batch?.entries[0]?.kind, "assistant_message");
+  if (batch?.entries[0]?.kind === "assistant_message") {
+    assert.equal(batch.entries[0].chunks[0]?.text, "Now thinking");
+  }
+});
+
 test("aggregate nests thinking into assistant entry", () => {
   let aggregate = createEmptySessionTimelineAggregate("session-4");
 
@@ -119,6 +199,102 @@ test("aggregate nests thinking into assistant entry", () => {
   if (entry?.kind === "assistant_message") {
     assert.equal(entry.chunks[0]?.kind, "thinking");
     assert.equal(entry.chunks[0]?.text, "Let me think...");
+  }
+});
+
+test("aggregate concatenates thinking delta chunks instead of overwriting them", () => {
+  let aggregate = createEmptySessionTimelineAggregate("session-4b");
+
+  aggregate = applySessionRuntimeEvent(aggregate, {
+    type: "tool-call",
+    toolCall: {
+      id: "assistant-think-1:thinking",
+      commandId: "assistant-think-1:thinking",
+      kind: "think",
+      title: "Thinking",
+      status: "running",
+      output: "Let me",
+      timestamp: "2026-07-03T22:41:01.000Z",
+      updatedAt: "2026-07-03T22:41:01.000Z",
+    },
+  });
+
+  aggregate = applySessionRuntimeEvent(aggregate, {
+    type: "tool-call",
+    toolCall: {
+      id: "assistant-think-1:thinking",
+      commandId: "assistant-think-1:thinking",
+      kind: "think",
+      title: "Thinking",
+      status: "running",
+      output: " think",
+      timestamp: "2026-07-03T22:41:02.000Z",
+      updatedAt: "2026-07-03T22:41:02.000Z",
+    },
+  });
+
+  aggregate = applySessionRuntimeEvent(aggregate, {
+    type: "tool-call",
+    toolCall: {
+      id: "assistant-think-1:thinking",
+      commandId: "assistant-think-1:thinking",
+      kind: "think",
+      title: "Thinking",
+      status: "completed",
+      output: "。",
+      timestamp: "2026-07-03T22:41:03.000Z",
+      updatedAt: "2026-07-03T22:41:03.000Z",
+    },
+  });
+
+  assert.equal(aggregate.entries.length, 1);
+  const entry = aggregate.entries[0];
+  assert.equal(entry?.kind, "assistant_message");
+  if (entry?.kind === "assistant_message") {
+    assert.equal(entry.chunks.length, 1);
+    assert.equal(entry.chunks[0]?.kind, "thinking");
+    assert.equal(entry.chunks[0]?.text, "Let me think。");
+  }
+});
+
+test("buildSessionTimelineBatch emits thinking streaming updates even when the assistant entry is reused", () => {
+  const before = applySessionRuntimeEvent(
+    createEmptySessionTimelineAggregate("session-4c"),
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "assistant-think-stream:thinking",
+        commandId: "assistant-think-stream:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "Let me",
+        timestamp: "2026-07-04T10:01:01.000Z",
+        updatedAt: "2026-07-04T10:01:01.000Z",
+      },
+    },
+  );
+
+  const after = applySessionRuntimeEvent(before, {
+    type: "tool-call",
+    toolCall: {
+      id: "assistant-think-stream:thinking",
+      commandId: "assistant-think-stream:thinking",
+      kind: "think",
+      title: "Thinking",
+      status: "running",
+      output: " think",
+      timestamp: "2026-07-04T10:01:02.000Z",
+      updatedAt: "2026-07-04T10:01:02.000Z",
+    },
+  });
+
+  const batch = buildSessionTimelineBatch(before, after);
+  assert.ok(batch);
+  assert.equal(batch?.entries[0]?.kind, "assistant_message");
+  if (batch?.entries[0]?.kind === "assistant_message") {
+    assert.equal(batch.entries[0].chunks[0]?.kind, "thinking");
+    assert.equal(batch.entries[0].chunks[0]?.text, "Let me think");
   }
 });
 

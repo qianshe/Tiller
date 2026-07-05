@@ -4,6 +4,7 @@ import type {
   AgentMessage,
   PromptTraceEvent,
   SessionSummary,
+  SessionTimelineBatch,
   SessionTimelineEntry,
   SessionUpdateRecord,
 } from "@tiller/shared";
@@ -13,6 +14,9 @@ import { sendPromptToSession, drainPromptQueue } from "./router";
 import { createSessionPromptQueueManager } from "./prompt-queue";
 import { createLiveMessageBuffer } from "../live-message-buffer";
 import { flushLiveAssistantMessage, handleRuntimeEvent } from "../events";
+import { createSessionTimelineFlushScheduler } from "../session-timeline/flush-scheduler";
+import { createSessionTimelineWorker } from "../session-timeline/worker";
+import { createSessionLiveStateStore } from "../session-timeline/live-state-store";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -61,6 +65,7 @@ function createContext(options: {
     prompt: (text: string, content?: any[]) => Promise<void>;
     sessionCapabilities?: { imageInput?: boolean };
   };
+  canonicalTimeline?: boolean;
   restoreOk?: boolean;
   summary?: Partial<SessionSummary>;
 } = {}) {
@@ -69,6 +74,7 @@ function createContext(options: {
   const persisted: AgentMessage[] = [];
   const sessionUpdates: SessionUpdateRecord[] = [];
   const timelineEntries: SessionTimelineEntry[] = [];
+  const canonicalBatches: SessionTimelineBatch[] = [];
   const broadcasts: Array<{ method: string; params: any }> = [];
   const traceEvents: PromptTraceEvent[] = [];
   const subscriptions: string[] = [];
@@ -82,6 +88,28 @@ function createContext(options: {
       runtime: options.activeRuntime,
     });
   }
+  const timelineWorker = options.canonicalTimeline
+    ? createSessionTimelineWorker({ sessionId })
+    : null;
+  const sessionTimelineDispatcher = timelineWorker
+    ? {
+        dispatch: (_sessionId: string, batch: SessionTimelineBatch) => {
+          canonicalBatches.push(batch);
+          timelineEntries.splice(0, timelineEntries.length, ...batch.entries);
+        },
+      }
+    : null;
+  const sessionTimelineFlushScheduler = timelineWorker && sessionTimelineDispatcher
+    ? createSessionTimelineFlushScheduler({
+        workers: {
+          forSession: () => timelineWorker,
+          has: () => true,
+          remove: () => undefined,
+        },
+        dispatcher: sessionTimelineDispatcher,
+        windowMs: 0,
+      })
+    : null;
   const context = {
     socketId: "socket-1",
     sessions,
@@ -117,6 +145,18 @@ function createContext(options: {
       listPage: () => ({ entries: timelineEntries, hasMore: false }),
       remove: () => timelineEntries.splice(0, timelineEntries.length),
     },
+    ...(timelineWorker
+      ? {
+          sessionTimelineWorkers: {
+            forSession: () => timelineWorker,
+            has: () => true,
+            remove: () => undefined,
+          },
+          sessionTimelineDispatcher,
+          sessionTimelineFlushScheduler,
+          sessionLiveStateStore: createSessionLiveStateStore(),
+        }
+      : {}),
     updateSessionSummary: (_sessionId: string, mutate: (current: SessionSummary) => SessionSummary) => {
       currentSummary = mutate(currentSummary);
       const record = sessions.get(_sessionId);
@@ -157,7 +197,17 @@ function createContext(options: {
       };
     },
   } as unknown as HelmHandlerContext;
-  return { context, persisted, sessionUpdates, timelineEntries, broadcasts, sessions, traceEvents, subscriptions };
+  return {
+    context,
+    persisted,
+    sessionUpdates,
+    timelineEntries,
+    canonicalBatches,
+    broadcasts,
+    sessions,
+    traceEvents,
+    subscriptions,
+  };
 }
 
 test("sendPromptToSession dispatches through an active runtime", async () => {
@@ -215,6 +265,48 @@ test("sendPromptToSession records the local user prompt as a timeline entry befo
     ["user_message"],
   );
   assert.equal(timelineEntries[0]?.id, "client-timeline");
+});
+
+test("sendPromptToSession routes local user prompts through canonical timeline batches before runtime dispatch", async () => {
+  const snapshotsDuringPrompt: Array<Array<[string, number | undefined]>> = [];
+  const { context, canonicalBatches, broadcasts, timelineEntries } = createContext({
+    canonicalTimeline: true,
+    activeRuntime: {
+      prompt: async () => {
+        snapshotsDuringPrompt.push(
+          timelineEntries.map((entry) => [entry.kind, "sequence" in entry ? entry.sequence : undefined]),
+        );
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "canonical prompt", clientMessageId: "client-canonical" },
+    context,
+  );
+  await flushPromises();
+
+  assert.equal(canonicalBatches.length, 1);
+  assert.deepEqual(
+    canonicalBatches[0]?.entries.map((entry) => entry.kind),
+    ["user_message"],
+  );
+  assert.deepEqual(
+    snapshotsDuringPrompt,
+    [[[
+      "user_message",
+      canonicalBatches[0]?.entries[0] && "sequence" in canonicalBatches[0].entries[0]
+        ? canonicalBatches[0].entries[0].sequence
+        : undefined,
+    ]]],
+  );
+  assert.equal(
+    broadcasts.some(
+      (item) => item.method === "session/update" && item.params.update.kind === "user_message",
+    ),
+    false,
+  );
 });
 
 test("sendPromptToSession appends prompts after restored timeline history", async () => {

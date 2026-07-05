@@ -100,6 +100,65 @@ test("worktree model allows sending once restored to same-process runtime", () =
   assert.equal(model.activeSessionRestoreGate.canChat, true);
 });
 
+test("worktree model keeps composer send enabled for a focused idle session even if another session is restoring", () => {
+  const active = {
+    ...baseInput().activeSession,
+    id: "session-1",
+    status: "idle",
+    resume: {
+      state: "resume-available",
+      mode: "reconnect",
+      restoreMethod: "session/load",
+    },
+  };
+  const focused = {
+    ...baseInput().activeSession,
+    id: "session-2",
+    status: "idle",
+    resume: {
+      state: "resume-available",
+      mode: "same-process",
+      restoreMethod: "client-reconnect",
+    },
+  };
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSessionId: active.id,
+    activeSession: active,
+    composerSession: focused,
+    statuses: {
+      [active.id]: "idle",
+      [focused.id]: "idle",
+    },
+    resumeStartRequestsRef: { current: new Set([active.id]) },
+  }));
+
+  assert.equal(model.canSend, true);
+});
+
+test("worktree model does not expose cancel-only composer state for a focused idle session", () => {
+  const active = {
+    ...baseInput().activeSession,
+    id: "session-1",
+    status: "running",
+  };
+  const focused = {
+    ...baseInput().activeSession,
+    id: "session-2",
+    status: "idle",
+  };
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSessionId: active.id,
+    activeSession: active,
+    composerSession: focused,
+    statuses: {
+      [active.id]: "running",
+      [focused.id]: "idle",
+    },
+  }));
+
+  assert.equal(model.sessionExecutionPending, false);
+});
+
 test("worktree model blocks new-session sends while draft runtime is still prewarming", () => {
   const model = buildMissionWorktreeModel(baseInput({
     activeSession: null,

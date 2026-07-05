@@ -30,6 +30,7 @@ const openSessionStreamsSource = readFileSync(resolve(currentDir, "../workspace/
 const chatWindowActionsSource = readFileSync(resolve(currentDir, "../workspace/chat-window-actions.ts"), "utf8");
 const runtimeOverviewActionsSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview-actions.ts"), "utf8");
 const runtimeOverviewSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview.ts"), "utf8");
+const gitSyncSource = readFileSync(resolve(currentDir, "../workspace/git-sync.ts"), "utf8");
 const missionViewModelSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-view-model.ts"),
   "utf8",
@@ -223,9 +224,9 @@ test("ACP model loading badge is not limited to OpenCode", () => {
 
 test("mission composer uses restore-aware model loading state", () => {
   assert.match(worktreeModelSource, /composerModelLoading/);
-  assert.match(worktreeModelSource, /activeSession && !activeSessionRestoreGate\.canChat/);
+  assert.match(worktreeModelSource, /effectiveComposerSession && !composerSessionRestoreGate\.canChat/);
   assert.match(worktreeSource, /draftModelLoading=\{composerModelLoading\}/);
-  assert.match(worktreeSource, /modelSettingsLocked=\{Boolean\(activeSession && !activeSessionRestoreGate\.canChat\)\}/);
+  assert.match(worktreeSource, /modelSettingsLocked=\{Boolean\(composerSession && !composerSessionRestoreGate\.canChat\)\}/);
 });
 
 test("mission loading gates omit model-loading hint while ACP is still connecting", () => {
@@ -267,8 +268,9 @@ test("mission composer requires active-session config readiness before settings 
 
 test("mission composer falls back to active session available commands", () => {
   assert.match(appRootSource, /activeSessionSlashCommands/);
-  assert.match(appRootSource, /missionView\.activeSession\?\.availableCommands/);
-  assert.match(appRootSource, /\[missionView\.activeSession\.id\]: activeSessionSlashCommands/);
+  assert.match(appRootSource, /const composerSlashSession = missionView\.selectedComposerSession \?\? missionView\.activeSession;/);
+  assert.match(appRootSource, /composerSlashSession\?\.availableCommands/);
+  assert.match(appRootSource, /\[composerSlashSession\.id\]: activeSessionSlashCommands/);
 });
 
 test("ACP runtime overview refreshes after restore and does not stay connected during reconnect", () => {
@@ -661,7 +663,9 @@ test("mission tool call rows stay compact", () => {
   assert.match(plainMessagesSource, /plain-assistant-segment-dot size-1\.5 rounded-full ring-2/);
   assert.match(plainMessagesSource, /plain-thinking[^\n]+rounded-\[8px\][^\n]+bg-surface-sunken\/55/);
   assert.match(plainMessagesSource, /plain-tool-group[^\n]+rounded-\[8px\][^\n]+bg-surface-sunken\/55/);
-  assert.match(plainMessagesSource, /plain-tool-call grid gap-0\.5 py-0\.5/);
+  assert.match(plainMessagesSource, /plain-tool-call text-muted-foreground/);
+  assert.match(plainMessagesSource, /<summary className=\"flex min-w-0 cursor-pointer list-none items-center gap-1\.5 py-0\.5 text-2xs leading-4/);
+  assert.match(plainMessagesSource, /<pre className=\"mt-0\.5 max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground\/85\"/);
   assert.match(plainMessagesSource, /resolveToolCallIconName/);
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+max-h-36/);
   assert.doesNotMatch(plainMessagesSource, />混合</);
@@ -1087,8 +1091,8 @@ test("mission commit refreshes git status and graph after success", () => {
 
 test("mission graph auto-load does not loop after a completed fetch", () => {
   assert.match(
-    worktreeSource,
-    /if \(\s*currentGraph\?\.loading \|\|\s*currentGraph\?\.lastUpdated \|\|\s*\(currentGraph && currentGraph\.commits\.length > 0\)\s*\) \{/,
+    gitSyncSource,
+    /return !currentGraph\?\.loading &&\s*!currentGraph\?\.lastUpdated &&\s*\(currentGraph\?\.commits\?\.length \?\? 0\) === 0;/,
   );
 });
 

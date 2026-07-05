@@ -13,7 +13,11 @@ import type {
   SessionTimelineEntry,
   SessionTimelineTranscriptEventEntry,
 } from "@tiller/shared";
-import type { SessionRealtimeUpdate as DomainSessionRealtimeUpdate } from "@tiller/domain-contracts";
+import {
+  isCanonicalConversationUpdateKind as isDomainCanonicalConversationUpdateKind,
+  isCompatibilityConversationUpdateKind as isDomainCompatibilityConversationUpdateKind,
+  type SessionRealtimeUpdate as DomainSessionRealtimeUpdate,
+} from "@tiller/domain-contracts";
 
 export type DeckSessionConfigState = Partial<
   Pick<RuntimeSessionSummary, "agentMode" | "model" | "reasoningEffort">
@@ -42,3 +46,8 @@ export type SessionUpdateParams = {
   sessionId: string;
   update: DeckSessionRealtimeUpdate;
 };
+
+export const isCanonicalConversationUpdateKind = isDomainCanonicalConversationUpdateKind;
+
+export const isCompatibilityConversationUpdateKind =
+  isDomainCompatibilityConversationUpdateKind;
