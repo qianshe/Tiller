@@ -32,8 +32,8 @@ export class MermaidViewportController {
   private pinchOrigin: PinchOrigin | null = null;
 
   constructor(options: MermaidViewportOptions = {}) {
-    this.minScale = options.minScale ?? 0.25;
-    this.maxScale = options.maxScale ?? 4;
+    this.minScale = options.minScale ?? 0.5;
+    this.maxScale = options.maxScale ?? 8;
     this.zoomStep = options.zoomStep ?? 0.25;
   }
 
@@ -43,6 +43,14 @@ export class MermaidViewportController {
 
   getTransformStyle(): string {
     return `translate(-50%, -50%) translate(${this.state.x}px, ${this.state.y}px) scale(${this.state.scale})`;
+  }
+
+  canZoomIn(): boolean {
+    return this.state.scale < this.maxScale;
+  }
+
+  canZoomOut(): boolean {
+    return this.state.scale > this.minScale;
   }
 
   zoomIn(): MermaidViewportState {

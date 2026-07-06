@@ -945,7 +945,7 @@ function renderPlainMessageContent(
           className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden"
           data-mission-swipe-lock="true"
         >
-          <MarkdownMessage text={segmented.markdown} />
+          <MarkdownMessage text={segmented.markdown} renderMermaid={false} />
         </div>
         {segmented.tail ? <PlainStreamingText text={segmented.tail} tail /> : null}
       </>

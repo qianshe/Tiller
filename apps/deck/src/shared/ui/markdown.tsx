@@ -50,7 +50,8 @@ const MAX_HIGHLIGHT_CACHE_SIZE = 256;
 const markdownHighlightCache = new Map<string, MarkdownHighlight>();
 let mermaidRenderSequence = 0;
 
-const markdownComponents: Components = {
+function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: boolean } = {}): Components {
+  return {
   a({ children, href, ...props }) {
     const external = Boolean(href && /^(https?:)?\/\//i.test(href));
     return (
@@ -245,7 +246,7 @@ const markdownComponents: Components = {
   pre({ children }) {
     const code = extractTextFromReactNode(children).replace(/\n$/, "");
     const language = findCodeLanguage(children);
-    if (language === MERMAID_LANGUAGE) {
+    if (renderMermaid && language === MERMAID_LANGUAGE) {
       return <MarkdownMermaidBlock code={code} />;
     }
 
@@ -255,19 +256,28 @@ const markdownComponents: Components = {
       </MarkdownCodeBlock>
     );
   },
-};
+  };
+}
+
+const markdownComponents = createMarkdownComponents();
+const markdownComponentsWithoutMermaid = createMarkdownComponents({ renderMermaid: false });
 
 export const MarkdownMessage = memo(function MarkdownMessage({
   text,
+  renderMermaid = true,
 }: {
   text: string;
+  renderMermaid?: boolean;
 }) {
   const normalizedText = useMemo(() => normalizeMarkdownMessageText(text), [text]);
+  const components = renderMermaid
+    ? markdownComponents
+    : markdownComponentsWithoutMermaid;
 
   return (
     <div className="markdown-message space-y-2 text-[12px] leading-[1.5] text-foreground">
       <ReactMarkdown
-        components={markdownComponents}
+        components={components}
         remarkPlugins={markdownRemarkPlugins}
         rehypePlugins={markdownRehypePlugins}
       >
@@ -596,6 +606,8 @@ function MermaidFullscreenViewer({
   const [viewportState, setViewportState] = useState<MermaidViewportState>(() =>
     controllerRef.current.getState(),
   );
+  const canZoomIn = controllerRef.current.canZoomIn();
+  const canZoomOut = controllerRef.current.canZoomOut();
 
   useEffect(() => {
     if (open) {
@@ -744,11 +756,23 @@ function MermaidFullscreenViewer({
             <DialogDescription>单指拖动平移，双指或滚轮缩放。</DialogDescription>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Button type="button" variant="secondary" size="sm" onClick={zoomOut}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={zoomOut}
+              disabled={!canZoomOut}
+            >
               缩小
             </Button>
             <span className="min-w-12 text-center">{Math.round(viewportState.scale * 100)}%</span>
-            <Button type="button" variant="secondary" size="sm" onClick={zoomIn}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={zoomIn}
+              disabled={!canZoomIn}
+            >
               放大
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={resetViewport}>

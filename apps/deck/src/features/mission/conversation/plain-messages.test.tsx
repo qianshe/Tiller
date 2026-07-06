@@ -3997,6 +3997,42 @@ test("streaming assistant messages render completed markdown blocks before the a
   assert.match(html, /slash 命令的数据流如下：/);
 });
 
+test("streaming assistant Mermaid blocks stay as code until the message finishes", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-streaming-mermaid",
+          role: "assistant",
+          text: [
+            "先给出已经稳定的结论：",
+            "",
+            "```mermaid",
+            "flowchart TD",
+            "  A[stream] --> B[jitter]",
+            "```",
+            "",
+            "后续说明仍在继续输出中。",
+          ].join("\n"),
+          timestamp: "2026-07-06T00:00:00.000Z",
+          streaming: true,
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-message/);
+  assert.match(html, /markdown-code-block/);
+  assert.match(html, /language-mermaid/);
+  assert.doesNotMatch(html, /markdown-mermaid-block/);
+  assert.match(html, /plain-message-streaming-tail/);
+});
+
 test("user messages render as plain text and keep the collapse affordance", () => {
   const longUserMessage = [
     "# 标题",

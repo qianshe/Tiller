@@ -222,6 +222,7 @@ export function MissionChatPane({
   const [parallelGridSingleRow, setParallelGridSingleRow] = useState(false);
   const canCreateTask = projectOptions.length > 0;
   const activeSessionId = activeSession?.id ?? null;
+  const messageHistoryStateRef = useRef(messageHistoryState);
   const handleSelectSessionView = useStableEvent(onSelectSessionView);
   const handleRenameSession = useStableEvent(onRenameSession);
   const handleCloseSessionView = useStableEvent(onCloseSessionView);
@@ -257,6 +258,7 @@ export function MissionChatPane({
       `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionTimelineById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}`
     )
     .join("|");
+  const observedSessionIdsKey = openSessions.map((session) => session.id).join("\u0000");
   const [dragOver, setDragOver] = useState(false);
   const sessionDragType = "application/x-tiller-session-id";
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -287,6 +289,10 @@ export function MissionChatPane({
     }
     onChatMainScroll(event);
   };
+
+  useEffect(() => {
+    messageHistoryStateRef.current = messageHistoryState;
+  }, [messageHistoryState]);
 
   useEffect(() => {
     const grid = sessionGridRef.current;
@@ -563,7 +569,7 @@ export function MissionChatPane({
         if (!body) {
           continue;
         }
-        const historyLoading = Boolean(messageHistoryState[sessionId]?.loading);
+        const historyLoading = Boolean(messageHistoryStateRef.current[sessionId]?.loading);
         if (!shouldAutoScrollSessionBody({
           stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
           historyLoading,
@@ -579,24 +585,17 @@ export function MissionChatPane({
         sessionBodyStickToBottomRef.current[sessionId] = true;
       }
     });
-    openSessions.forEach((session) => {
-      const content = chatMain.querySelector<HTMLElement>(`[data-session-card-content="${CSS.escape(session.id)}"]`);
+    const observedSessionIds = observedSessionIdsKey
+      ? observedSessionIdsKey.split("\u0000")
+      : [];
+    observedSessionIds.forEach((sessionId) => {
+      const content = chatMain.querySelector<HTMLElement>(`[data-session-card-content="${CSS.escape(sessionId)}"]`);
       if (content) {
         observer.observe(content);
       }
     });
     return () => observer.disconnect();
-  }, [
-    activeSessionId,
-    activeSessionMessages,
-    activeSessionToolCalls,
-    chatMainRef,
-    messageHistoryState,
-    openSessions,
-    sessionMessagesById,
-    sessionToolCallsById,
-    visibleSessionStreamCounts,
-  ]);
+  }, [chatMainRef, observedSessionIdsKey]);
 
   return (
     <div className={className} style={style} data-mission-mobile-pane="chat" data-testid="mission-chat-pane">

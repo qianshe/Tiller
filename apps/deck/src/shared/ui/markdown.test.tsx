@@ -135,6 +135,19 @@ test("markdown waits for a closing Mermaid fence before rendering a diagram shel
   assert.match(html, /markdown-code-block/);
 });
 
+test("markdown can defer Mermaid diagrams to a plain code block", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage
+      text={["```mermaid", "flowchart TD", "  A --> B", "```"].join("\n")}
+      renderMermaid={false}
+    />,
+  );
+
+  assert.doesNotMatch(html, /markdown-mermaid-block/);
+  assert.match(html, /markdown-code-block/);
+  assert.match(html, /language-mermaid/);
+});
+
 test("markdown code highlighting reuses cached results for identical code", async () => {
   clearMarkdownHighlightCache();
 
