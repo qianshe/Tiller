@@ -932,6 +932,47 @@ test("runtime-ready session updates refresh ACP connection inventory", () => {
   assert.deepEqual(dispatched, ["agent/connections"]);
 });
 
+test("session_updated replaces stale model data on the active session summary", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessions: [
+      {
+        ...session("s1"),
+        projectId: "p1",
+        cwd: "D:/repo",
+        agentId: "claude-code",
+        model: "claude-sonnet-old",
+        modelOptions: [{ id: "claude-sonnet-old", name: "Claude Sonnet Old" }],
+      },
+    ],
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "session_updated",
+        session: {
+          ...session("s1"),
+          projectId: "p1",
+          cwd: "D:/repo",
+          agentId: "claude-code",
+          runtimeSessionId: "runtime-new",
+          model: "claude-sonnet-new",
+          modelOptions: [{ id: "claude-sonnet-new", name: "Claude Sonnet New" }],
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "claude-sonnet-new");
+  assert.deepEqual(useDeckStore.getState().sessions[0]?.modelOptions, [
+    { id: "claude-sonnet-new", name: "Claude Sonnet New" },
+  ]);
+});
+
 test("activity RPC notifications append assistant messages without changing session prompt metadata", () => {
   resetStore();
   useDeckStore.setState({

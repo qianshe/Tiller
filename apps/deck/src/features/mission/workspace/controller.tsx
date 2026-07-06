@@ -1,5 +1,5 @@
 import type { AgentMessage, SessionSummary } from "@tiller/shared";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   canGenerateAssistantHandoff,
   generateAssistantHandoffDraft,
@@ -41,6 +41,7 @@ import {
   formatInspectorWorktreeSummaryLabel,
 } from "./worktree-summary";
 import { joinClassNames } from "../utils/session-render-state";
+import { shouldRefreshModelPickerOptions } from "../utils/model-picker-refresh";
 import { reconcileMissionDiffs, shouldPrimeGitGraphLoad } from "./git-sync";
 
 export function MissionWorktree(props: any) {
@@ -227,6 +228,7 @@ export function MissionWorktree(props: any) {
   } = props;
   const [selectedCommitDiffPaths, setSelectedCommitDiffPaths] = useState<Set<string>>(() => new Set());
   const [assistantHandoffBusy, setAssistantHandoffBusy] = useState(false);
+  const modelPickerRefreshBySessionRef = useRef<Record<string, string | null>>({});
   const canHandoffAssistantMessage =
     canGenerateAssistantHandoff(deckPreferences.promptEnhancer) &&
     typeof setPrompt === "function" &&
@@ -284,6 +286,43 @@ export function MissionWorktree(props: any) {
     isMissionMobile,
   });
   const composerSession = selectedComposerSession ?? activeSession;
+  const handleOpenModelPicker = useCallback(() => {
+    if (!composerSession?.id) {
+      return;
+    }
+
+    const lastRefreshedRuntimeSessionId =
+      modelPickerRefreshBySessionRef.current[composerSession.id];
+
+    if (!shouldRefreshModelPickerOptions({
+      activeSessionId: composerSession.id,
+      runtimeSessionId: composerSession.runtimeSessionId,
+      lastRefreshedRuntimeSessionId,
+    })) {
+      return;
+    }
+
+    modelPickerRefreshBySessionRef.current[composerSession.id] =
+      composerSession.runtimeSessionId ?? null;
+
+    updateSessionDraftPreferences({
+      agentMode: effectiveDraftAgentMode,
+      model: resolveCombinedModelValue(
+        effectiveDraftModelBase,
+        effectiveDraftReasoningEffort,
+        draftAllModelOptions,
+      ),
+      reasoningEffort: effectiveDraftReasoningEffort,
+    });
+  }, [
+    composerSession,
+    updateSessionDraftPreferences,
+    effectiveDraftAgentMode,
+    effectiveDraftModelBase,
+    effectiveDraftReasoningEffort,
+    draftAllModelOptions,
+    resolveCombinedModelValue,
+  ]);
   const {
     canSend,
     activeSessionRestoreGate,
@@ -1047,6 +1086,7 @@ export function MissionWorktree(props: any) {
               promptEnhancerStatus={props.promptEnhancerStatus || ""}
               sessionCanCancel={sessionExecutionPending && composerSessionStatus !== "starting"}
               cancelSession={cancelSession}
+              onOpenModelPicker={handleOpenModelPicker}
               canSend={canSend}
             />
           ) : null}{" "}

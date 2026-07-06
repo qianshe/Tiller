@@ -668,6 +668,47 @@ test("configureSessionRuntime applies config through an active runtime", async (
   assert.equal(broadcasts.at(-1)?.params.update.kind, "session_updated");
 });
 
+test("configureSessionRuntime returns current model state and options for a no-op active-session configure", async () => {
+  const configured: any[] = [];
+  const currentOptions = [
+    { id: "model", name: "Model", category: "model", currentValue: "gpt-5.5", options: [] },
+  ];
+
+  const { context } = createContext({
+    summary: {
+      model: "gpt-5.5",
+      modelOptions: [{ id: "gpt-5.5", name: "gpt-5.5" }],
+      configOptions: currentOptions as any,
+    },
+    activeRuntime: {
+      prompt: async () => undefined,
+      configure: async (next: any) => {
+        configured.push(next);
+        return {
+          runtimeApplied: false,
+          state: { model: "gpt-5.5", reasoningEffort: "medium" },
+          modelState: {
+            currentModelId: "gpt-5.5",
+            options: [{ id: "gpt-5.5", name: "gpt-5.5" }, { id: "gpt-5.6", name: "gpt-5.6" }],
+          },
+          options: currentOptions as any,
+        };
+      },
+      sessionCapabilities: { imageInput: true },
+    } as any,
+  });
+
+  const { configureSessionRuntime } = await import("./router");
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", model: "gpt-5.5", reasoningEffort: "medium" },
+    context,
+  );
+
+  assert.equal(configured.length, 1);
+  assert.equal(result.state.model, "gpt-5.5");
+  assert.deepEqual(result.options, currentOptions);
+});
+
 test("configureSessionRuntime persists explicit model over runtime default state", async () => {
   const { context, broadcasts } = createContext({
     activeRuntime: {

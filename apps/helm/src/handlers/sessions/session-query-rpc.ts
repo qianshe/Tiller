@@ -197,6 +197,12 @@ export async function resumeSession(params: { sessionId: string }, context: Helm
     messageChars: result.message.length,
   });
   if (result.ok) {
+    if (result.session) {
+      broadcastSessionUpdate(context, params.sessionId, {
+        kind: "session_updated",
+        session: result.session,
+      });
+    }
     const queue = context.promptQueue.snapshot(params.sessionId);
     if (queue.queued.length > 0 || queue.inFlight) {
       broadcastSessionUpdate(context, params.sessionId, {

@@ -203,6 +203,7 @@ export type HelmHandlerContext = {
   startSessionResume: (sessionId: string) => Promise<{
     ok: boolean;
     resume: SessionSummary["resume"] extends infer R ? NonNullable<R> : never;
+    session?: SessionSummary;
     message: string;
   }>;
   handleRuntimeEvent: (

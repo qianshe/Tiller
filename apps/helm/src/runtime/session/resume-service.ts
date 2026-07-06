@@ -236,7 +236,10 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
           planEntries: historySnapshot.plan?.entries.length ?? 0,
         });
       }
-      const restoredModel = summary.model ?? runtime.sessionConfigState?.model;
+      const restoredRuntimeModel =
+        runtime.sessionConfigState?.model ??
+        runtime.sessionModelState?.currentModelId;
+      const restoredModel = restoredRuntimeModel ?? summary.model;
       const resolvedRestoredConfigOptions = resolveConfigOptionsForSelection({
         incomingOptions: runtime.sessionConfigOptions,
         previousOptions: summary.configOptions,
@@ -267,6 +270,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       return {
         ok: true,
         resume: options.buildResumeInfo(restoredSummary, restoreAgent),
+        session: restoredSummary,
         message: `ACP ${restoreMethod} completed for this session.`,
       };
     } catch (error) {

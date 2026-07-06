@@ -1054,3 +1054,112 @@ test("session restore reanchors trailing compaction rows even when replay omits 
     ],
   );
 });
+
+test("session restore prefers runtime model state over stale persisted summary values", async () => {
+  const sessionId = "session-stale-model";
+  const summary: SessionSummary = {
+    id: sessionId,
+    title: "旧会话",
+    status: "idle",
+    projectId: "project-1",
+    projectName: "Tiller",
+    helmId: "helm-1",
+    agentId: "claude-code",
+    agentName: "Claude Code",
+    cwd: "D:/repo",
+    createdAt: "2026-07-06T00:00:00.000Z",
+    updatedAt: "2026-07-06T00:00:00.000Z",
+    messageCount: 4,
+    runtimeSessionId: "runtime-old",
+    model: "claude-sonnet-old",
+    modelOptions: [{ id: "claude-sonnet-old", name: "Claude Sonnet Old" }],
+  };
+  const worktree: WorktreeSummary = {
+    name: "main",
+    path: "D:/repo",
+  };
+  const stored = { summary: undefined as SessionSummary | undefined };
+
+  const service = createSessionResumeService({
+    sessions: new Map(),
+    sessionStore: {
+      list: () => [summary],
+      upsert: (next: SessionSummary) => {
+        stored.summary = next;
+      },
+    },
+    sessionMessageStore: { list: () => [], replace: () => undefined },
+    sessionArtifactStore: { remove: () => undefined },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "claude-code",
+        runtimeSessionId: "runtime-old",
+        capabilities: { sessionResume: true },
+        lastSeenAt: summary.updatedAt,
+        state: "resumeable",
+      }),
+    },
+    providerLifecycle: {
+      createRuntime: async () => ({
+        runtimeSessionId: "runtime-new",
+        sessionCapabilities: { sessionResume: true },
+        sessionConfigState: { model: "claude-sonnet-new" },
+        sessionModelState: {
+          currentModelId: "claude-sonnet-new",
+          options: [{ id: "claude-sonnet-new", name: "Claude Sonnet New" }],
+        },
+        sessionConfigOptions: [],
+        prompt: async () => undefined,
+        cancel: () => undefined,
+      }),
+    },
+    providerHistory: {
+      hasHistoryContent: () => false,
+      applyAuthoritativeProviderHistory: () => undefined,
+      refreshAuthoritativeSessionHistory: async () => undefined,
+    } as any,
+    getAgents: () => [{
+      id: "claude-code",
+      name: "Claude Code",
+      command: "claude-code",
+      transport: "stdio",
+      protocol: "acp",
+    }],
+    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+    createHandlerContext: () => ({
+      sessionMessageStore: { append: () => undefined },
+      sessionArtifactStore: {
+        appendOutput: () => undefined,
+        appendToolCall: () => undefined,
+        replaceDiffs: () => undefined,
+      },
+      sessionUpdateStore: { replaceSession: () => undefined },
+    } as any),
+    resolveStoredSessionWorktree: () => worktree,
+    buildResumeInfo: () => ({
+      mode: "same-process",
+      state: "resume-available",
+      reason: "resume",
+      checkedAt: "2026-07-06T00:00:00.000Z",
+      runtimeSessionId: "runtime-new",
+      restoreMethod: "session/resume",
+    }),
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    persistRuntimeDescriptor: () => undefined,
+    handleRuntimeEvent: () => undefined,
+    logConnectionLifecycle: () => undefined,
+    logger: { debug: () => undefined, error: () => undefined } as any,
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  const result = await service.startSessionResume(sessionId);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.session?.model, "claude-sonnet-new");
+  assert.deepEqual(result.session?.modelOptions, [
+    { id: "claude-sonnet-new", name: "Claude Sonnet New" },
+  ]);
+  assert.equal(stored.summary?.model, "claude-sonnet-new");
+});

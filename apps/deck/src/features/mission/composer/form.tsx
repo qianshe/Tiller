@@ -121,6 +121,7 @@ type MissionComposerProps = {
   promptEnhancerStatus: string;
   sessionCanCancel: boolean;
   cancelSession: (sessionId: string) => void;
+  onOpenModelPicker?: () => void;
   canSend: boolean;
 };
 export function MissionComposer({
@@ -195,6 +196,7 @@ export function MissionComposer({
   promptEnhancerStatus,
   sessionCanCancel,
   cancelSession,
+  onOpenModelPicker,
   canSend,
 }: MissionComposerProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -465,6 +467,7 @@ export function MissionComposer({
                     showReasoningSelect={showDraftReasoningSelect}
                     resolveReasoningLabel={resolveReasoningLabel}
                     reasoningOptions={draftReasoningOptions}
+                    onOpenModelPicker={onOpenModelPicker}
                   />
                 </div>
               </div>
