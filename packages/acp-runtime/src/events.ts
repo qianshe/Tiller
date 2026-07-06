@@ -5,7 +5,7 @@ import {
 } from "@tiller/shared";
 import type { AcpRuntimeProviderConfig, AgentToolCall, SessionStatus } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "./runtime-types";
-import { mapAdapterSessionUpdate, normalizeAdapterToolCall, SUPPRESS_SESSION_UPDATE } from "./adapters";
+import { mapAdapterSessionUpdate, normalizeAdapterToolCall, summarizeAdapterCompactionSignal, SUPPRESS_SESSION_UPDATE } from "./adapters";
 import type { AcpSessionUpdateProjection } from "./adapters";
 import { extractAvailableCommands } from "./available-command-events";
 import { extractCommandChunk, extractPermissionRequest } from "./command-events";
@@ -70,6 +70,7 @@ export function mapSessionUpdateNotification(
     sessionId,
     updateType,
     update,
+    text,
   });
   if (isSuppressedAdapterSessionUpdate(adapterEvent)) {
     return null;
@@ -86,7 +87,7 @@ export function mapSessionUpdateNotification(
     };
   }
 
-  if (text && (updateType === "agent_message_chunk" || updateType === "user_message_chunk")) {
+  if (text && isMessageChunkUpdateType(updateType)) {
     return {
       sessionId,
       event: {
@@ -207,6 +208,7 @@ export function summarizeSessionUpdateNotification(
   options: { providerId?: string } = {},
 ) {
   const update = params?.update;
+  const sessionId = stringFrom(params?.sessionId ?? params?.session_id);
   const updateType = resolveSessionUpdateType(update);
   const text = extractTextContent(update?.content ?? update?.delta ?? update?.message);
   const compactionProbe = summarizeCompactionProbe({
@@ -216,7 +218,7 @@ export function summarizeSessionUpdateNotification(
     mappedEventType,
   });
   return {
-    sessionId: stringFrom(params?.sessionId ?? params?.session_id),
+    sessionId,
     updateType: typeof updateType === "string" ? updateType : undefined,
     updateKeys: objectKeys(update),
     contentShape: describeContentShape(update?.content ?? update?.delta ?? update?.message),
@@ -282,7 +284,7 @@ function extractCompactionEvent(
       messageId: explicitPhase === "completed" ? resolveMessageId(sessionId, update) : undefined,
     };
   }
-  if (!text || !looksLikeContinuationSummary(text)) {
+  if (!text || !isMessageChunkUpdateType(updateType) || !looksLikeContinuationSummary(text)) {
     return null;
   }
   return {
@@ -361,15 +363,19 @@ function resolveExplicitCompactionPhase(
   if (candidatePhase && isCompactionRelatedUpdateType(updateType)) {
     return candidatePhase;
   }
-  if (isCompactionStartedText(text)) {
+  if (isMessageChunkUpdateType(updateType) && isCompactionStartedText(text)) {
     return "started";
   }
-  if (isCompactionCompletedText(text)) {
+  if (isMessageChunkUpdateType(updateType) && isCompactionCompletedText(text)) {
     return "completed";
   }
   return isCompactionRelatedUpdateType(updateType)
     ? normalizeCompactionPhase(updateType)
     : null;
+}
+
+function isMessageChunkUpdateType(updateType: string | undefined) {
+  return updateType === "agent_message_chunk" || updateType === "user_message_chunk";
 }
 
 function summarizeCompactionProbe(args: {
@@ -385,7 +391,9 @@ function summarizeCompactionProbe(args: {
   const matchedContinuationSummary = normalizedText
     ? looksLikeContinuationSummary(normalizedText)
     : false;
-  const providerSignal = summarizeProviderCompactionSignal(args.providerId, normalizedText);
+  const providerSignal = normalizedText
+    ? summarizeAdapterCompactionSignal(args.providerId, normalizedText)
+    : null;
   const updateTypeCompactionRelated = isCompactionRelatedUpdateType(args.updateType);
 
   if (
@@ -415,24 +423,6 @@ function summarizeLifecycleCompactionPhase(text: string) {
     return "completed" as const;
   }
   return null;
-}
-
-function summarizeProviderCompactionSignal(providerId: string | undefined, text: string) {
-  if (providerId !== "codex" || !text) {
-    return null;
-  }
-
-  const prefix = "context compacted";
-  if (!text.toLowerCase().startsWith(prefix)) {
-    return null;
-  }
-
-  const trailingText = text.slice(prefix.length).trim();
-  return {
-    kind: "codex_context_compacted_prefix" as const,
-    exactMatch: trailingText.length === 0,
-    hasTrailingText: trailingText.length > 0,
-  };
 }
 
 function normalizeCompactionPhase(value: unknown) {

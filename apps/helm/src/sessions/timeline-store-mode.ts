@@ -4,7 +4,7 @@ import {
   type SessionTimelineBlockMode,
   type SessionTimelineStore,
 } from "@tiller/persistence";
-import type { SessionTimelineBatch, SessionTimelineEntry } from "@tiller/shared";
+import type { AgentMessage, AgentToolCall, SessionTimelineBatch, SessionTimelineEntry } from "@tiller/shared";
 
 export type TimelineStoreModeOptions = {
   sqlitePath: string;
@@ -65,6 +65,22 @@ function createDualTimelineStore(options: DualTimelineStoreOptions): ClosableTim
   }
 
   return {
+    upsertMessage(sessionId: string, message: AgentMessage) {
+      if (!options.rowStore.upsertMessage || !options.blockStore.upsertMessage) {
+        return undefined;
+      }
+      const row = options.rowStore.upsertMessage(sessionId, message);
+      const block = options.blockStore.upsertMessage(sessionId, message);
+      return readStore === options.blockStore ? block : row;
+    },
+    upsertToolCall(sessionId: string, toolCall: AgentToolCall) {
+      if (!options.rowStore.upsertToolCall || !options.blockStore.upsertToolCall) {
+        return undefined;
+      }
+      const row = options.rowStore.upsertToolCall(sessionId, toolCall);
+      const block = options.blockStore.upsertToolCall(sessionId, toolCall);
+      return readStore === options.blockStore ? block : row;
+    },
     replace(sessionId: string, entries: SessionTimelineEntry[]) {
       const row = options.rowStore.replace(sessionId, entries);
       const block = options.blockStore.replace(sessionId, entries);

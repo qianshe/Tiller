@@ -1,4 +1,5 @@
 import type { AcpRuntimeProviderConfig, AgentCapabilities, AgentToolCall } from "@tiller/shared";
+import type { SessionRuntimeEvent } from "../runtime-types";
 import { createClaudeAcpAdapter } from "./claude/index";
 import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
@@ -57,6 +58,28 @@ export function normalizeAdapterToolCall(
     return context.toolCall;
   }
   return resolveAcpAgentAdapter(resolvedProvider).normalizeToolCall?.(context) ?? context.toolCall;
+}
+
+export function summarizeAdapterCompactionSignal(
+  providerId: string | undefined,
+  text: string,
+) {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return null;
+  }
+  return resolveAcpAgentAdapter(provider).summarizeCompactionSignal?.(text) ?? null;
+}
+
+export function expandAdapterRuntimeEvent(
+  providerId: string | undefined,
+  event: SessionRuntimeEvent,
+) {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return null;
+  }
+  return resolveAcpAgentAdapter(provider).expandRuntimeEvent?.(event) ?? null;
 }
 
 export function resolveAdapterCompactionDetailsVisibility(

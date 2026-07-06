@@ -61,6 +61,8 @@ export type SessionPlanStore = {
 };
 
 export type SessionTimelineStore = {
+  upsertMessage?: (sessionId: string, message: AgentMessage) => SessionTimelineEntry | undefined;
+  upsertToolCall?: (sessionId: string, toolCall: AgentToolCall) => SessionTimelineEntry | undefined;
   replace: (sessionId: string, entries: SessionTimelineEntry[]) => SessionTimelineEntry[];
   list: (sessionId: string) => SessionTimelineEntry[];
   listPage: (sessionId: string, options?: SessionTimelinePageOptions) => SessionTimelinePage;

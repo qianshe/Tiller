@@ -1,5 +1,5 @@
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "../sessions/facade";
-import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import { expandAdapterRuntimeEvent, type SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type {
   AgentMessage,
   SessionSummary,
@@ -395,6 +395,23 @@ export function flushLiveAssistantMessage(sessionId: string, context: HelmHandle
   return true;
 }
 
+function resolveRuntimeProviderId(
+  sessionId: string,
+  context: Pick<HelmHandlerContext, "sessions" | "sessionStore">,
+) {
+  const record = context.sessions.get(sessionId);
+  const summary = context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId);
+  return record?.agent?.id ?? record?.summary?.agentId ?? summary?.agentId;
+}
+
+function expandProviderRuntimeEvents(
+  sessionId: string,
+  event: SessionRuntimeEvent,
+  context: Pick<HelmHandlerContext, "sessions" | "sessionStore">,
+) {
+  return expandAdapterRuntimeEvent(resolveRuntimeProviderId(sessionId, context), event) ?? [event];
+}
+
 
 export function handleRuntimeEvent(
   sessionId: string,
@@ -422,10 +439,27 @@ export function handleRuntimeEvent(
   if (event.type !== "command-output") {
     flushCommandOutputSummaries(sessionId, context);
   }
-  if (hasCanonicalTimelinePipeline(context) && hasPendingTimelineCompaction(sessionId, context)) {
+  const expandedEvents = expandProviderRuntimeEvents(sessionId, event, context);
+  const skipPendingCompactionInference =
+    expandedEvents.length !== 1 || expandedEvents[0] !== event;
+  if (
+    hasCanonicalTimelinePipeline(context) &&
+    hasPendingTimelineCompaction(sessionId, context) &&
+    !skipPendingCompactionInference
+  ) {
     inferPendingCompactionCompletion(sessionId, event, context);
   }
 
+  for (const expandedEvent of expandedEvents) {
+    handleNormalizedRuntimeEvent(sessionId, expandedEvent, context);
+  }
+}
+
+function handleNormalizedRuntimeEvent(
+  sessionId: string,
+  event: SessionRuntimeEvent,
+  context: HelmHandlerContext,
+) {
   switch (event.type) {
     case "status":
       emitFirstHelmPromptTrace(context, {

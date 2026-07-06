@@ -53,6 +53,7 @@ export type AcpSessionUpdateProjectionContext = {
   sessionId: string;
   updateType: string | undefined;
   update: unknown;
+  text: string | null;
   now?: string;
 };
 
@@ -66,6 +67,7 @@ export type AcpCompactionDetailsVisibility = "hidden";
 export const SUPPRESS_SESSION_UPDATE = { kind: "suppress-session-update" } as const;
 
 export type AcpSessionUpdateProjection = SessionRuntimeEvent | typeof SUPPRESS_SESSION_UPDATE;
+export type AcpCompactionSignalSummary = { kind: string } & Record<string, unknown>;
 
 export type ProviderAdapterPluginManifest = {
   kind: "provider-adapter-plugin-placeholder";
@@ -85,7 +87,9 @@ export type AcpAgentAdapter = {
   resolveCleanup(context: AcpCleanupContext): ProviderCleanupPlan;
   resolveRequestTimeout?(context: AcpRequestTimeoutContext): number | undefined;
   mapSessionUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
+  expandRuntimeEvent?(event: SessionRuntimeEvent): SessionRuntimeEvent[] | null;
   normalizeToolCall?(context: AcpToolCallNormalizationContext): AgentToolCall;
+  summarizeCompactionSignal?(text: string): AcpCompactionSignalSummary | null;
   resolveCompactionDetailsVisibility?(): AcpCompactionDetailsVisibility | undefined;
   readTranscriptPlan?(context: AcpHistoryContext): AgentPlan | null;
   readTranscriptMessages?(context: AcpHistoryContext): AgentMessage[];

@@ -67,7 +67,7 @@ test("reimport resets replay timeline and restores it on failure", () => {
   );
   assert.match(
     source,
-    /options\.sessionArtifactStore\.remove\(sessionId\);\s*options\.sessionTimelineStore\.remove\(sessionId\);\s*providerHistory\.resetRefresh\(sessionId\);/u,
+    /options\.sessionArtifactStore\.remove\(sessionId\);\s*options\.sessionTimelineStore\.remove\(sessionId\);\s*resetSessionTimelineRuntimeState\(sessionId\);\s*providerHistory\.resetRefresh\(sessionId\);/u,
   );
 });
 

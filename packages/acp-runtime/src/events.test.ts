@@ -196,6 +196,125 @@ test("mapSessionUpdateNotification maps continuation summaries into completed co
   );
 });
 
+test("mapSessionUpdateNotification maps Codex context compacted chunks into completed compaction events", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_compaction_chunk",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "msg_codex_compaction_chunk",
+          timestamp: "2026-07-06T17:30:00.000Z",
+          content: { type: "text", text: "Context compacted" },
+        },
+      },
+    },
+    {
+      provider: {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      providerId: "codex",
+    },
+  );
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "compaction");
+  if (mapped?.event.type !== "compaction") {
+    throw new Error("Expected compaction event");
+  }
+  assert.equal(mapped.event.phase, "completed");
+  assert.equal(mapped.event.source, "provider");
+  assert.equal(mapped.event.timestamp, "2026-07-06T17:30:00.000Z");
+  assert.equal(mapped.event.messageId, "msg_codex_compaction_chunk");
+});
+
+for (const provider of [
+  {
+    id: "claude-acp",
+    name: "Claude",
+    command: "claude-acp",
+  },
+  {
+    id: "opencode",
+    name: "OpenCode",
+    command: "opencode",
+  },
+]) {
+  test(`mapSessionUpdateNotification keeps shared continuation-summary fallback for ${provider.id}`, () => {
+    const mapped = mapSessionUpdateNotification(
+      {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: `sess_${provider.id}_compaction_summary`,
+          update: {
+            sessionUpdate: "agent_message_chunk",
+            messageId: `msg_${provider.id}_compaction_summary`,
+            content: {
+              type: "text",
+              text: "This session is being continued from a previous conversation that ran out of context.",
+            },
+          },
+        },
+      },
+      {
+        provider: {
+          id: provider.id,
+          name: provider.name,
+          command: provider.command,
+          transport: "stdio",
+          protocol: "acp",
+        },
+        providerId: provider.id,
+      },
+    );
+
+    assert.ok(mapped);
+    assert.equal(mapped?.event.type, "compaction");
+    if (mapped?.event.type !== "compaction") {
+      throw new Error("Expected compaction event");
+    }
+    assert.equal(mapped.event.phase, "completed");
+    assert.equal(mapped.event.source, "heuristic");
+  });
+}
+
+test("mapSessionUpdateNotification does not classify tool output summaries as compaction events", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_tool_output_summary",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "toolu_read_1",
+        title: "Read apps\\deck\\src\\features\\server-events\\event-handlers.test.ts",
+        status: "completed",
+        rawOutput:
+          'This session is being continued from a previous conversation that ran out of context.\\n\\nimport assert from "node:assert/strict";',
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.id, "toolu_read_1");
+  assert.equal(mapped.event.toolCall.status, "completed");
+  assert.match(
+    mapped.event.toolCall.output ?? "",
+    /This session is being continued from a previous conversation that ran out of context\./,
+  );
+});
+
 test("mapSessionUpdateNotification does not treat ordinary compacting text as a compaction lifecycle signal", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

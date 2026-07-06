@@ -502,6 +502,68 @@ test("runtime assistant messages publish canonical timeline batches when the pip
   assert.equal(timelineBatchUpdate?.params?.update?.batch?.entries[0]?.kind, "assistant_message");
 });
 
+test("runtime Codex mixed compaction chunks split into a compaction entry and stripped assistant message", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-canonical-codex-mixed-compaction",
+    {
+      agentId: "codex",
+      agentName: "Codex",
+    },
+    {
+      useCanonicalPipeline: true,
+    },
+  );
+
+  handleRuntimeEvent(
+    "session-canonical-codex-mixed-compaction",
+    {
+      type: "message",
+      message: {
+        id: "reply-mixed",
+        role: "assistant",
+        text: "Context compacted 我先做个完成度确认，再继续往下处理。",
+        timestamp: "2026-07-06T18:00:00.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.timelineEntries?.map((entry) => entry.kind),
+    ["context_compaction", "assistant_message"],
+  );
+  const compactionEntry = capture.timelineEntries?.find((entry) => entry.kind === "context_compaction");
+  assert.equal(compactionEntry?.kind, "context_compaction");
+  if (compactionEntry?.kind === "context_compaction") {
+    assert.equal(
+      compactionEntry.id,
+      "compaction:session-canonical-codex-mixed-compaction:reply-mixed:compaction-marker",
+    );
+    assert.equal(compactionEntry.phase, "completed");
+    assert.equal(compactionEntry.summaryText, undefined);
+    assert.equal(compactionEntry.detailsVisibility, "hidden");
+  }
+  const assistantEntry = capture.timelineEntries?.find((entry) => entry.kind === "assistant_message");
+  assert.equal(assistantEntry?.kind, "assistant_message");
+  if (assistantEntry?.kind === "assistant_message") {
+    assert.equal(assistantEntry.chunks[0]?.text, "我先做个完成度确认，再继续往下处理。");
+  }
+  assert.deepEqual(
+    capture.sessionUpdates?.map((record) => record.updateType),
+    ["compaction", "message"],
+  );
+});
+
 test("runtime tool calls publish canonical timeline batches without compatibility tool_call updates", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

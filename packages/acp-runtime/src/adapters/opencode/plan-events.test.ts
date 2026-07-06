@@ -7,6 +7,7 @@ test("mapOpenCodePlanUpdate converts todowrite tool calls into plan updates", ()
   const event = mapOpenCodePlanUpdate({
     sessionId: "session-opencode-plan",
     updateType: "tool_call_update",
+    text: null,
     update: {
       toolCall: {
         id: "call-todo",
@@ -43,6 +44,7 @@ test("mapOpenCodePlanUpdate ignores non-todo tool calls", () => {
   const event = mapOpenCodePlanUpdate({
     sessionId: "session-opencode-plan",
     updateType: "tool_call_update",
+    text: null,
     update: {
       toolCall: {
         id: "call-read",
@@ -60,6 +62,7 @@ test("mapOpenCodePlanUpdate suppresses count-only todo tool calls", () => {
   const event = mapOpenCodePlanUpdate({
     sessionId: "session-opencode-plan",
     updateType: "tool_call_update",
+    text: null,
     update: {
       toolCall: {
         id: "call-todo-count",

@@ -1,4 +1,5 @@
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { SessionSummary } from "@tiller/shared";
 import type { SessionLiveStateSnapshot } from "@tiller/shared";
 import type { HelmHandlerContext } from "../../handlers/context";
 import type { SessionTimelineWorkerRegistry } from "./worker-registry";
@@ -18,17 +19,18 @@ export function routeSessionRuntimeEvent(
   event: SessionRuntimeEvent,
   deps: SessionEventRouterDeps,
 ) {
+  const providerId = resolveSessionProviderId(sessionId, deps.context);
   switch (event.type) {
     case "message":
     case "tool-call":
     case "command-output": {
-      const worker = deps.workers.forSession(sessionId);
+      const worker = deps.workers.forSession(sessionId, { providerId });
       worker.enqueue(event);
       deps.flushScheduler.schedule(sessionId, event);
       return "timeline" as const;
     }
     case "compaction": {
-      const worker = deps.workers.forSession(sessionId);
+      const worker = deps.workers.forSession(sessionId, { providerId });
       worker.enqueue(event);
       deps.flushScheduler.schedule(sessionId, event);
       return "timeline" as const;
@@ -50,6 +52,15 @@ export function routeSessionRuntimeEvent(
     default:
       return "passthrough" as const;
   }
+}
+
+function resolveSessionProviderId(
+  sessionId: string,
+  context: HelmHandlerContext,
+) {
+  const record = context.sessions.get(sessionId);
+  const summary = context.sessionStore?.list?.().find((item: SessionSummary) => item.id === sessionId);
+  return record?.agent?.id ?? record?.summary?.agentId ?? summary?.agentId;
 }
 
 function publishLiveState(

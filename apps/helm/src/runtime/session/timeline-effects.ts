@@ -17,10 +17,16 @@ export function persistTimelineMessage(
   sessionId: string,
   message: AgentMessage,
 ) {
-  if (!context.sessionTimelineStore) {
+  const store = context.sessionTimelineStore as (NonNullable<HelmHandlerContext["sessionTimelineStore"]> & {
+    upsertMessage?: (sessionId: string, message: AgentMessage) => SessionTimelineEntry | undefined;
+  }) | undefined;
+  if (!store) {
     return undefined;
   }
-  const entries = context.sessionTimelineStore.list(sessionId);
+  if (store.upsertMessage) {
+    return store.upsertMessage(sessionId, message);
+  }
+  const entries = store.list(sessionId);
   appendMessageToSessionTimeline(entries, message);
   return replaceTimelineEntries(context, sessionId, entries, resolveMessageEntryId(message));
 }
@@ -30,10 +36,16 @@ export function persistTimelineToolCall(
   sessionId: string,
   toolCall: AgentToolCall,
 ) {
-  if (!context.sessionTimelineStore) {
+  const store = context.sessionTimelineStore as (NonNullable<HelmHandlerContext["sessionTimelineStore"]> & {
+    upsertToolCall?: (sessionId: string, toolCall: AgentToolCall) => SessionTimelineEntry | undefined;
+  }) | undefined;
+  if (!store) {
     return undefined;
   }
-  const entries = context.sessionTimelineStore.list(sessionId);
+  if (store.upsertToolCall) {
+    return store.upsertToolCall(sessionId, toolCall);
+  }
+  const entries = store.list(sessionId);
   appendToolCallToSessionTimeline(entries, toolCall);
   return replaceTimelineEntries(context, sessionId, entries, resolveToolCallEntryId(toolCall));
 }

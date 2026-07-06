@@ -80,6 +80,7 @@ export {
   createGenericAcpAdapter,
   createOpenClawAcpAdapter,
   createOpenCodeAcpAdapter,
+  expandAdapterRuntimeEvent,
   OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS,
   resolveAcpAgentAdapter,
   resolveAcpLaunchConfig,
