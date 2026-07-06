@@ -204,15 +204,24 @@ function isSuppressedAdapterSessionUpdate(
 export function summarizeSessionUpdateNotification(
   params: any,
   mappedEventType?: SessionRuntimeEvent["type"],
+  options: { providerId?: string } = {},
 ) {
   const update = params?.update;
   const updateType = resolveSessionUpdateType(update);
+  const text = extractTextContent(update?.content ?? update?.delta ?? update?.message);
+  const compactionProbe = summarizeCompactionProbe({
+    providerId: options.providerId,
+    updateType,
+    text,
+    mappedEventType,
+  });
   return {
     sessionId: stringFrom(params?.sessionId ?? params?.session_id),
     updateType: typeof updateType === "string" ? updateType : undefined,
     updateKeys: objectKeys(update),
     contentShape: describeContentShape(update?.content ?? update?.delta ?? update?.message),
     mappedEventType: mappedEventType ?? null,
+    ...(compactionProbe ? { compactionProbe } : {}),
   };
 }
 
@@ -361,6 +370,69 @@ function resolveExplicitCompactionPhase(
   return isCompactionRelatedUpdateType(updateType)
     ? normalizeCompactionPhase(updateType)
     : null;
+}
+
+function summarizeCompactionProbe(args: {
+  providerId?: string;
+  updateType?: string;
+  text: string | null;
+  mappedEventType?: SessionRuntimeEvent["type"];
+}) {
+  const normalizedText = args.text?.trim() || "";
+  const matchedLifecyclePhase = normalizedText
+    ? summarizeLifecycleCompactionPhase(normalizedText)
+    : null;
+  const matchedContinuationSummary = normalizedText
+    ? looksLikeContinuationSummary(normalizedText)
+    : false;
+  const providerSignal = summarizeProviderCompactionSignal(args.providerId, normalizedText);
+  const updateTypeCompactionRelated = isCompactionRelatedUpdateType(args.updateType);
+
+  if (
+    !matchedLifecyclePhase &&
+    !matchedContinuationSummary &&
+    !providerSignal &&
+    !updateTypeCompactionRelated &&
+    args.mappedEventType !== "compaction"
+  ) {
+    return null;
+  }
+
+  return {
+    textChars: normalizedText.length,
+    updateTypeCompactionRelated,
+    matchedLifecyclePhase,
+    matchedContinuationSummary,
+    ...(providerSignal ? { providerSignal } : {}),
+  };
+}
+
+function summarizeLifecycleCompactionPhase(text: string) {
+  if (looksLikeCompactionStartedMessage(text)) {
+    return "started" as const;
+  }
+  if (looksLikeCompactionCompletedMessage(text)) {
+    return "completed" as const;
+  }
+  return null;
+}
+
+function summarizeProviderCompactionSignal(providerId: string | undefined, text: string) {
+  if (providerId !== "codex" || !text) {
+    return null;
+  }
+
+  const prefix = "context compacted";
+  if (!text.toLowerCase().startsWith(prefix)) {
+    return null;
+  }
+
+  const trailingText = text.slice(prefix.length).trim();
+  return {
+    kind: "codex_context_compacted_prefix" as const,
+    exactMatch: trailingText.length === 0,
+    hasTrailingText: trailingText.length > 0,
+  };
 }
 
 function normalizeCompactionPhase(value: unknown) {

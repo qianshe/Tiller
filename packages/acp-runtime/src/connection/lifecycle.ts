@@ -681,7 +681,11 @@ export class AcpConnection {
     writeLogLine(
       this.state.logFile,
       "session-update",
-      JSON.stringify(summarizeSessionUpdateNotification(params, mapped?.event.type)),
+      JSON.stringify(
+        summarizeSessionUpdateNotification(params, mapped?.event.type, {
+          providerId: this.state.provider.id,
+        }),
+      ),
     );
     if (!mapped) {
       return;

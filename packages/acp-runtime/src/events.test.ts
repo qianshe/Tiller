@@ -30,6 +30,42 @@ test("summarizeSessionUpdateNotification reports update shape without text conte
   assert.doesNotMatch(JSON.stringify(summary), /敏感正文/);
 });
 
+test("summarizeSessionUpdateNotification reports Codex compaction prefix diagnostics without text content", () => {
+  const mixedText = "Context compacted 我先做个完成度确认，再直接给你推荐方案落地后的预期效果喵~";
+  const summary = summarizeSessionUpdateNotification(
+    {
+      sessionId: "sess_codex_compaction",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "msg_compaction_mixed",
+        content: { type: "text", text: mixedText },
+      },
+    },
+    "message",
+    { providerId: "codex" },
+  );
+
+  assert.deepEqual(summary, {
+    sessionId: "sess_codex_compaction",
+    updateType: "agent_message_chunk",
+    updateKeys: ["content", "messageId", "sessionUpdate"],
+    contentShape: { kind: "object", type: "text", keys: ["text", "type"] },
+    mappedEventType: "message",
+    compactionProbe: {
+      textChars: mixedText.length,
+      updateTypeCompactionRelated: false,
+      matchedLifecyclePhase: null,
+      matchedContinuationSummary: false,
+      providerSignal: {
+        kind: "codex_context_compacted_prefix",
+        exactMatch: false,
+        hasTrailingText: true,
+      },
+    },
+  });
+  assert.doesNotMatch(JSON.stringify(summary), /Context compacted|完成度确认|预期效果/);
+});
+
 test("mapSessionUpdateNotification maps agent text chunks into Tiller message events", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
