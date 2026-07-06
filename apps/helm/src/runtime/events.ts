@@ -642,12 +642,26 @@ function handleNormalizedRuntimeEvent(
       }
       bumpAssistantStreamSegment(sessionId);
       if (hasCanonicalTimelinePipeline(context)) {
-        persistRuntimeSessionUpdate(sessionId, event, context);
-        routeCanonicalTimelineEvent(sessionId, event, context);
-        recordRuntimeToolCallArtifact(context, sessionId, {
+        const orderedToolCall = {
           ...event.toolCall,
           sequence: nextLiveEventSequence(sessionId),
-        });
+        };
+        const mergedToolCall = recordRuntimeToolCallArtifact(
+          context,
+          sessionId,
+          orderedToolCall,
+        );
+        persistRuntimeSessionUpdate(
+          sessionId,
+          { ...event, toolCall: mergedToolCall },
+          context,
+          orderedToolCall.sequence,
+        );
+        routeCanonicalTimelineEvent(
+          sessionId,
+          { ...event, toolCall: mergedToolCall },
+          context,
+        );
         return;
       }
       flushLiveAssistantMessage(sessionId, context);
@@ -671,20 +685,33 @@ function handleNormalizedRuntimeEvent(
       });
       bumpAssistantStreamSegment(sessionId);
       if (hasCanonicalTimelinePipeline(context)) {
-        persistRuntimeSessionUpdate(sessionId, event, context);
-        routeCanonicalTimelineEvent(sessionId, event, context);
         const orderedChunkForArtifacts = {
           ...event.chunk,
           sequence: nextLiveEventSequence(sessionId),
         };
+        const mergedToolCall = event.toolCall
+          ? recordRuntimeToolCallArtifact(context, sessionId, {
+              ...event.toolCall,
+              sequence: orderedChunkForArtifacts.sequence,
+            })
+          : undefined;
+        persistRuntimeSessionUpdate(
+          sessionId,
+          mergedToolCall
+            ? { ...event, toolCall: mergedToolCall }
+            : event,
+          context,
+          orderedChunkForArtifacts.sequence,
+        );
+        routeCanonicalTimelineEvent(
+          sessionId,
+          mergedToolCall
+            ? { ...event, toolCall: mergedToolCall }
+            : event,
+          context,
+        );
         recordCommandOutputSummary(sessionId, event.chunk, orderedChunkForArtifacts.sequence);
         recordRuntimeCommandOutputArtifact(context, sessionId, orderedChunkForArtifacts);
-        if (event.toolCall) {
-          recordRuntimeToolCallArtifact(context, sessionId, {
-            ...event.toolCall,
-            sequence: orderedChunkForArtifacts.sequence,
-          });
-        }
         return;
       }
       flushLiveAssistantMessage(sessionId, context);

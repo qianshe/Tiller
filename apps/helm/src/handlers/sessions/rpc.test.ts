@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { AgentToolCall, SessionTimelineEntry, SessionUpdateRecord } from "@tiller/shared";
 import { handleSessionRpcNotification, handleSessionRpcRequest } from "./rpc";
 import { createSessionPromptQueueManager } from "../../runtime/session/prompt-queue";
 import { createSessionUpdateRecord } from "../../runtime/session-updates/reducer";
-import type { SessionUpdateRecord } from "@tiller/shared";
 
 function createPromptQueueContextExtras() {
   const promptQueue = createSessionPromptQueueManager();
@@ -18,9 +18,9 @@ function flushPromises() {
   return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-test("session/get_artifacts repairs stale running thinking for idle sessions", async () => {
+test("session/get_artifacts reads stale running thinking repaired during refresh", async () => {
   const sessionId = "session-thinking-history";
-  let toolCalls = [
+  let toolCalls: AgentToolCall[] = [
     {
       id: "think-1",
       commandId: "think-1",
@@ -48,7 +48,15 @@ test("session/get_artifacts repairs stale running thinking for idle sessions", a
           },
         ],
       },
-      refreshAuthoritativeSessionHistory: async () => undefined,
+      refreshAuthoritativeSessionHistory: async () => {
+        toolCalls = [
+          {
+            ...toolCalls[0],
+            status: "completed" as const,
+            updatedAt: "2026-05-17T10:00:10.000Z",
+          },
+        ];
+      },
       sessionArtifactStore: {
         get: () => ({ outputs: [], diffs: [], toolCalls }),
         getPage: () => ({ outputs: [], diffs: [], toolCalls, hasMore: false }),
@@ -170,9 +178,9 @@ test("session/get_artifacts reconstructs outputs and tool calls from canonical t
   assert.deepEqual(result.diffs, [{ path: "a.ts", status: "modified", additions: 1, deletions: 0 }]);
 });
 
-test("session/get_artifacts repairs legacy subagent tool calls for history compatibility", async () => {
+test("session/get_artifacts reads legacy subagent tool calls materialized during refresh", async () => {
   const sessionId = "session-subagent-history";
-  let toolCalls = [
+  let toolCalls: AgentToolCall[] = [
     {
       id: "call-subagent-history",
       kind: "tool" as const,
@@ -193,7 +201,9 @@ test("session/get_artifacts repairs legacy subagent tool calls for history compa
       sessionStore: {
         list: () => [{ id: sessionId, agentId: "codex", status: "idle", updatedAt: "2026-06-21T10:00:10.000Z" }],
       },
-      refreshAuthoritativeSessionHistory: async () => undefined,
+      refreshAuthoritativeSessionHistory: async () => {
+        toolCalls = [{ ...toolCalls[0], kind: "subagent" as const }];
+      },
       sessionArtifactStore: {
         get: () => ({ outputs: [], diffs: [], toolCalls }),
         getPage: () => ({ outputs: [], diffs: [], toolCalls, hasMore: false }),
@@ -207,6 +217,75 @@ test("session/get_artifacts repairs legacy subagent tool calls for history compa
 
   assert.equal(result.toolCalls[0]?.kind, "subagent");
   assert.equal(result.toolCalls[0]?.title, "spawn_agents_on_csv");
+});
+
+test("session/list_timeline reads legacy mcp tool calls materialized during refresh", async () => {
+  const sessionId = "session-timeline-mcp-history";
+  let timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:call-1",
+      kind: "tool_call" as const,
+      toolCall: {
+        id: "call-1",
+        kind: "tool" as const,
+        title: "Tool call call-1",
+        status: "completed" as const,
+        input: JSON.stringify({
+          server: "sanshu",
+          tool: "zhi",
+          arguments: { message: "review" },
+        }),
+        timestamp: "2026-07-06T00:00:01.000Z",
+        updatedAt: "2026-07-06T00:00:02.000Z",
+      },
+      timestamp: "2026-07-06T00:00:01.000Z",
+      updatedAt: "2026-07-06T00:00:02.000Z",
+    },
+  ];
+
+  const result = await handleSessionRpcRequest(
+    "session/list_timeline",
+    { sessionId, limit: 20 },
+    {
+      sessions: new Map(),
+      sessionStore: {
+        list: () => [{
+          id: sessionId,
+          agentId: "codex",
+          status: "idle",
+          updatedAt: "2026-07-06T00:00:10.000Z",
+        }],
+      },
+      refreshAuthoritativeSessionHistory: async () => {
+        const firstEntry = timeline[0];
+        if (!firstEntry || firstEntry.kind !== "tool_call") {
+          throw new Error("expected legacy tool_call timeline entry");
+        }
+        timeline = [
+          {
+            ...firstEntry,
+            toolCall: {
+              ...firstEntry.toolCall,
+              kind: "mcp" as const,
+              title: "Tool: sanshu/zhi",
+            },
+            updatedAt: firstEntry.toolCall.updatedAt,
+          },
+        ];
+      },
+      sessionTimelineStore: {
+        list: () => timeline,
+        listPage: () => ({ entries: timeline, hasMore: false }),
+        replace: (_sessionId: string, entries: typeof timeline) => {
+          timeline = entries;
+          return entries;
+        },
+      },
+    } as any,
+  ) as any;
+
+  assert.equal(result.entries[0]?.toolCall?.kind, "mcp");
+  assert.equal(result.entries[0]?.toolCall?.title, "Tool: sanshu/zhi");
 });
 
 test("session/list_timeline reads canonical history materialized during refresh", async () => {
@@ -2517,9 +2596,9 @@ test("session/draft preserves explicit reasoning until authoritative config opti
   assert.equal(draftSessionConfig.model, "claude-haiku-4-5");
 });
 
-test("session/list_timeline repairs provider tool calls before refresh materializes canonical history", async () => {
+test("session/list_timeline reads provider tool calls repaired during refresh materialization", async () => {
   const sessionId = "session-opencode-tool-repair";
-  let toolCalls = [{
+  let toolCalls: AgentToolCall[] = [{
     id: "call-1",
     kind: "tool" as const,
     title: "Tool call call-1",
@@ -2564,7 +2643,12 @@ test("session/list_timeline repairs provider tool calls before refresh materiali
         }],
       },
       refreshAuthoritativeSessionHistory: async () => {
-        const repaired = toolCalls[0];
+        const repaired = {
+          ...toolCalls[0],
+          kind: "write" as const,
+          title: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+        };
+        toolCalls = [repaired];
         return timelineStore.replace(sessionId, [
           {
             id: "tool:call-1",

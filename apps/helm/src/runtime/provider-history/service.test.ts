@@ -324,6 +324,64 @@ test("provider history refresh does not load provider files", async () => {
   await assert.doesNotReject(service.refreshAuthoritativeSessionHistory("session-1"));
 });
 
+test("provider history refresh normalizes stored tool calls before handler reads", async () => {
+  const sessionId = "session-normalize-stored-tool-calls";
+  let toolCalls: AgentToolCall[] = [
+    {
+      id: "call-1",
+      kind: "tool",
+      title: "Tool call call-1",
+      status: "completed",
+      input: JSON.stringify({
+        server: "sanshu",
+        tool: "zhi",
+        arguments: { message: "review" },
+      }),
+      timestamp: "2026-07-06T00:00:01.000Z",
+      updatedAt: "2026-07-06T00:00:02.000Z",
+    },
+  ];
+  let timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:call-1",
+      kind: "tool_call",
+      toolCall: toolCalls[0]!,
+      timestamp: "2026-07-06T00:00:01.000Z",
+      updatedAt: "2026-07-06T00:00:02.000Z",
+    },
+  ];
+  const service = createTestProviderHistoryService(
+    {},
+    {
+      sessionStore: { list: () => [summary(sessionId)] },
+      sessionArtifactStore: {
+        get: () => ({ toolCalls, outputs: [], diffs: [] }),
+        replaceToolCalls: (_sessionId, nextToolCalls) => {
+          toolCalls = nextToolCalls;
+        },
+      },
+      sessionTimelineStore: {
+        list: () => timeline,
+        replace: (_sessionId, entries) => {
+          timeline = entries;
+          return entries;
+        },
+      },
+    },
+  );
+
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+
+  assert.equal(toolCalls[0]?.kind, "mcp");
+  assert.equal(toolCalls[0]?.title, "Tool: sanshu/zhi");
+  const firstEntry = timeline[0];
+  if (!firstEntry || firstEntry.kind !== "tool_call") {
+    assert.fail("expected repaired tool_call timeline entry");
+  }
+  assert.equal(firstEntry.toolCall.kind, "mcp");
+  assert.equal(firstEntry.toolCall.title, "Tool: sanshu/zhi");
+});
+
 test("provider history refresh materializes canonical timeline from legacy local stores once", async () => {
   const sessionId = "session-materialize-canonical";
   const messages: AgentMessage[] = [
@@ -388,6 +446,61 @@ test("provider history refresh materializes canonical timeline from legacy local
 
   assert.deepEqual(timeline, expected);
   assert.equal(replaces, 1);
+});
+
+test("provider history refresh normalizes canonical timeline rebuilt from session updates", async () => {
+  const sessionId = "session-normalize-updates-tool-calls";
+  const updates = [
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 1,
+      source: "acp_live",
+      event: {
+        type: "tool-call",
+        toolCall: {
+          id: "call-1",
+          kind: "tool",
+          title: "Tool call call-1",
+          status: "completed",
+          input: JSON.stringify({
+            server: "sanshu",
+            tool: "zhi",
+            arguments: { message: "review" },
+          }),
+          timestamp: "2026-07-06T00:00:01.000Z",
+          updatedAt: "2026-07-06T00:00:02.000Z",
+          sequence: 1,
+        },
+      },
+    }),
+  ];
+  let timeline: SessionTimelineEntry[] = [];
+  const service = createTestProviderHistoryService(
+    {
+      listPage: () => ({
+        updates,
+        hasMore: false,
+      }),
+    },
+    {
+      sessionStore: { list: () => [summary(sessionId)] },
+      sessionTimelineStore: {
+        list: () => timeline,
+        replace: (_sessionId, entries) => {
+          timeline = entries;
+          return entries;
+        },
+      },
+    },
+  );
+
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+
+  assert.equal(timeline[0]?.kind, "tool_call");
+  assert.equal(timeline[0]?.toolCall.kind, "mcp");
+  assert.equal(timeline[0]?.toolCall.title, "Tool: sanshu/zhi");
 });
 
 test("provider history refresh repairs incomplete canonical timeline from persisted session updates", async () => {

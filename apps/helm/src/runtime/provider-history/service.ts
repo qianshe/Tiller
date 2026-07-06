@@ -15,6 +15,7 @@ import type { SessionAttachmentStore, StoredSessionRuntimeDescriptor } from "../
 import type { TillerLogger } from "../../logging/logger";
 import type { ProviderHistorySnapshotContent } from "./source";
 import { reduceSessionUpdateRecords } from "../session-updates/records.js";
+import { repairSessionToolCalls, repairTimelineToolCalls } from "./tool-call-repair.js";
 
 type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
@@ -130,10 +131,10 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     // source. Passive list/artifact reads must not inspect provider files.
     // Legacy local stores are still safe to materialize into canonical
     // timeline storage once so subsequent reads stay pure-canonical.
-    if (repairCanonicalTimelineFromSessionUpdates(sessionId) === "ready") {
-      return;
+    if (repairCanonicalTimelineFromSessionUpdates(sessionId) !== "ready") {
+      materializeLegacyCanonicalTimeline(sessionId);
     }
-    materializeLegacyCanonicalTimeline(sessionId);
+    repairPersistedToolCallHistory(sessionId);
   }
 
   function materializeLegacyCanonicalTimeline(sessionId: string): "ready" | "empty" | "missing" {
@@ -246,6 +247,47 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     providerHistoryPlans.delete(sessionId);
   }
 
+  function repairPersistedToolCallHistory(sessionId: string) {
+    const summary = resolveSessionSummary(sessionId, options);
+    const providerId = summary?.agentId;
+    if (!summary || !providerId) {
+      return;
+    }
+
+    const artifacts = options.sessionArtifactStore.get(sessionId);
+    const repairedArtifacts = repairSessionToolCalls(
+      { sessionId, providerId, summary },
+      artifacts.toolCalls,
+    );
+    if (repairedArtifacts.changedCount > 0) {
+      options.sessionArtifactStore.replaceToolCalls(sessionId, repairedArtifacts.toolCalls);
+      logProviderHistoryInfo(options, "provider.history.tool_calls.normalized", {
+        sessionId,
+        count: repairedArtifacts.changedCount,
+      });
+    }
+
+    if (!options.sessionTimelineStore?.list || !options.sessionTimelineStore.replace) {
+      return;
+    }
+    const timeline = options.sessionTimelineStore.list(sessionId) ?? [];
+    if (!timeline.length) {
+      return;
+    }
+    const repairedTimeline = repairTimelineToolCalls(
+      { sessionId, providerId, summary },
+      timeline,
+    );
+    if (repairedTimeline.changedCount === 0) {
+      return;
+    }
+    options.sessionTimelineStore.replace(sessionId, repairedTimeline.timeline);
+    logProviderHistoryInfo(options, "provider.history.timeline.tool_calls.normalized", {
+      sessionId,
+      count: repairedTimeline.changedCount,
+    });
+  }
+
   return {
     hasHistoryContent,
     migrateLegacySessionHistory,
@@ -254,6 +296,14 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     refreshAuthoritativeSessionHistory,
     resetRefresh,
   };
+}
+
+function resolveSessionSummary(
+  sessionId: string,
+  options: Pick<ProviderHistoryServiceOptions, "sessionStore" | "sessions">,
+) {
+  return options.sessions.get(sessionId)?.summary ??
+    options.sessionStore.list().find((item) => item.id === sessionId);
 }
 
 function shouldReplaceCanonicalTimeline(

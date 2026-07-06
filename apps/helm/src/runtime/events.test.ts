@@ -604,6 +604,68 @@ test("runtime tool calls publish canonical timeline batches without compatibilit
   assert.equal(legacyToolCallUpdate, undefined);
 });
 
+test("runtime canonical tool-call persistence keeps stronger artifact classifications", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-classified-tool", {}, {
+    useCanonicalPipeline: true,
+  });
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => ({
+    outputs: [],
+    diffs: [],
+    toolCalls: [
+      {
+        ...toolCall,
+        kind: "mcp",
+        title: "Tool: sanshu/zhi",
+      },
+    ],
+  });
+
+  handleRuntimeEvent(
+    "session-canonical-classified-tool",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-1",
+        kind: "tool",
+        title: "Tool call call-1",
+        status: "completed",
+        timestamp: "2026-07-06T00:00:01.000Z",
+        updatedAt: "2026-07-06T00:00:02.000Z",
+        input: JSON.stringify({
+          project_root_path: "D:/myProject/tools/Tiller",
+          message: "review",
+          predefined_options: ["按当前结果结束（推荐）"],
+        }),
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  ) as any;
+  const toolCallEntry = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call",
+  );
+  const persistedUpdatePayload = JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}") as {
+    type?: string;
+    toolCall?: AgentToolCall;
+  };
+
+  assert.equal(toolCallEntry?.toolCall.kind, "mcp");
+  assert.equal(toolCallEntry?.toolCall.title, "Tool: sanshu/zhi");
+  assert.equal(persistedUpdatePayload.type, "tool-call");
+  assert.equal(persistedUpdatePayload.toolCall?.kind, "mcp");
+  assert.equal(persistedUpdatePayload.toolCall?.title, "Tool: sanshu/zhi");
+});
+
 test("runtime plan updates publish live_state snapshots when the pipeline is available", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
