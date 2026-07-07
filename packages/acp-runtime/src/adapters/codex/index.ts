@@ -2,7 +2,10 @@ import type { AcpAgentAdapter } from "../types";
 import { isCommandNamed, resolveDefaultLaunch } from "../shared";
 import { applyCodexSessionLaunchArgs } from "../session-config";
 import { expandCodexRuntimeEvent, summarizeCodexCompactionSignal } from "./compaction-events";
+import { extractCodexPlanFromToolCall, isCodexPlanToolCall } from "./plan-events";
 import { mapCodexSessionUpdate } from "./session-updates";
+import { readCodexTranscriptPlanFromDisk } from "./transcript/plan";
+import { readCodexTranscriptToolCallsFromDisk } from "./transcript/tool-calls";
 import { normalizeCodexToolCall } from "./tool-calls";
 
 export function createCodexAcpAdapter(): AcpAgentAdapter {
@@ -25,6 +28,12 @@ export function createCodexAcpAdapter(): AcpAgentAdapter {
     mapSessionUpdate: mapCodexSessionUpdate,
     expandRuntimeEvent: expandCodexRuntimeEvent,
     normalizeToolCall: ({ toolCall, update }) => normalizeCodexToolCall(toolCall, update),
+    readTranscriptPlan: ({ runtimeSessionId, cwd }) =>
+      readCodexTranscriptPlanFromDisk({ runtimeSessionId, cwd }),
+    readTranscriptToolCalls: ({ runtimeSessionId, cwd }) =>
+      readCodexTranscriptToolCallsFromDisk({ runtimeSessionId, cwd }),
+    extractPlanFromToolCall: extractCodexPlanFromToolCall,
+    isPlanToolCall: isCodexPlanToolCall,
     summarizeCompactionSignal: summarizeCodexCompactionSignal,
     resolveCompactionDetailsVisibility: () => "hidden",
   };

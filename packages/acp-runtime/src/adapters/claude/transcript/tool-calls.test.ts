@@ -103,10 +103,15 @@ test("extractClaudeToolCallsFromTranscriptText restores Claude transcript tool n
     [
       ["tool-read", "read", "Read"],
       ["tool-bash", "shell", "Bash"],
-      ["tool-mcp", "mcp", "mcpServers_search_context"],
+      ["tool-mcp", "mcp", "Tool: search_context"],
     ],
   );
   assert.match(toolCalls[0]?.input ?? "", /mobile-composer-density-and-commit-button/);
   assert.match(toolCalls[1]?.input ?? "", /grep -nE 'isMobile\|py-1'/);
   assert.match(toolCalls[2]?.input ?? "", /session creation flow/);
+  assert.deepEqual(toolCalls[2]?.mcp, {
+    toolName: "search_context",
+    source: "provider-title",
+    rawTitle: "mcpServers_search_context",
+  });
 });

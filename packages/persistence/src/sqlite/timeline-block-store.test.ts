@@ -484,6 +484,46 @@ test("timeline block store keeps previous session data when replace fails while 
   }
 });
 
+test("timeline block store normalizes legacy tool call entries when reading", () => {
+  withStore(({ store }) => {
+    store.replace("session-1", [{
+      id: "tool:call-1",
+      kind: "tool_call",
+      toolCall: toolCall({
+        id: "call-1",
+        kind: "tool",
+        status: "completed",
+        title: "Tool call call-1",
+        input: JSON.stringify({
+          server: "sanshu",
+          tool: "zhi",
+          arguments: { message: "review" },
+        }),
+        sequence: 1,
+      }),
+      timestamp: at(1),
+      updatedAt: at(1),
+      sequence: 1,
+    }]);
+
+    const entries = store.list("session-1");
+    const page = store.listPage("session-1", { limit: 10 });
+
+    assert.equal(entries[0]?.kind, "tool_call");
+    assert.equal(entries[0]?.kind === "tool_call" ? entries[0].toolCall.kind : undefined, "mcp");
+    assert.equal(
+      entries[0]?.kind === "tool_call" ? entries[0].toolCall.title : undefined,
+      "Tool: sanshu/zhi",
+    );
+    assert.equal(page.entries[0]?.kind, "tool_call");
+    assert.equal(page.entries[0]?.kind === "tool_call" ? page.entries[0].toolCall.kind : undefined, "mcp");
+    assert.equal(
+      page.entries[0]?.kind === "tool_call" ? page.entries[0].toolCall.title : undefined,
+      "Tool: sanshu/zhi",
+    );
+  });
+});
+
 test("timeline block store matches sqlite row store page contract", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-block-contract-"));
   const rowStore = createSqliteSessionTimelineStore(join(tempDir, "rows.sqlite")) as InternalTimelineRowStore;

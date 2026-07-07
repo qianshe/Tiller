@@ -250,7 +250,7 @@ export function createMissionVisualFixture({
   }
   const permissionRequest: PermissionRequest = {
     id: "visual-permission-1",
-    command: `Approve MCP tool call :: ${JSON.stringify({ server_name: "mcp_router", request: { name: "search_context" } })}`,
+    command: `Approve MCP tool call :: ${JSON.stringify({ server_name: "workspace_tools", request: { name: "search_context" } })}`,
     reason: "需要读取代码上下文以完成 UI 复核。",
     cwd: "D:/myProject/tools/Tiller",
     options: [
@@ -412,7 +412,7 @@ flowchart LR
         {
           id: "visual-tool-1",
           kind: "tool",
-          title: "mcp_router/search_context",
+          title: "workspace_tools/search_context",
           status: "waiting_for_permission",
           commandId: "visual-command-1",
           output: "",

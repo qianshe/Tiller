@@ -473,6 +473,53 @@ test("sqlite timeline store persists ordered unified entries", () => {
   }
 });
 
+test("sqlite timeline store normalizes legacy tool call entries when reading", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath);
+
+  try {
+    store.replace("session-1", [{
+      id: "tool:call-1",
+      kind: "tool_call",
+      toolCall: toolCall({
+        id: "call-1",
+        kind: "tool",
+        status: "completed",
+        title: "Tool call call-1",
+        input: JSON.stringify({
+          server: "sanshu",
+          tool: "zhi",
+          arguments: { message: "review" },
+        }),
+        sequence: 1,
+      }),
+      timestamp: at(1),
+      updatedAt: at(1),
+      sequence: 1,
+    }]);
+
+    const persisted = store.list("session-1");
+    const page = store.listPage("session-1", { limit: 10 });
+
+    assert.equal(persisted[0]?.kind, "tool_call");
+    assert.equal(persisted[0]?.kind === "tool_call" ? persisted[0].toolCall.kind : undefined, "mcp");
+    assert.equal(
+      persisted[0]?.kind === "tool_call" ? persisted[0].toolCall.title : undefined,
+      "Tool: sanshu/zhi",
+    );
+    assert.equal(page.entries[0]?.kind, "tool_call");
+    assert.equal(page.entries[0]?.kind === "tool_call" ? page.entries[0].toolCall.kind : undefined, "mcp");
+    assert.equal(
+      page.entries[0]?.kind === "tool_call" ? page.entries[0].toolCall.title : undefined,
+      "Tool: sanshu/zhi",
+    );
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("timeline message window pagination includes tool entries between the latest content messages", () => {
   const entries = buildSessionTimelineFromLegacy({
     messages: [

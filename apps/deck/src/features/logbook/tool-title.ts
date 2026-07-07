@@ -1,6 +1,19 @@
-import type { AgentToolCall } from "@tiller/shared";
+import {
+  formatAgentToolCallMcpName,
+  resolveAgentToolCallMcp,
+  type AgentToolCall,
+} from "@tiller/shared";
+
+export function resolveDisplayToolKind(call: AgentToolCall): AgentToolCall["kind"] {
+  if (call.kind === "shell" && isStructuredSearchInput(parseToolCallInputObject(call.input))) {
+    return "search";
+  }
+  return call.kind;
+}
 
 export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
+  const displayKind = resolveDisplayToolKind(call);
+
   // Codex reports SKILL.md reads as a generic `tool` kind with the shell command
   // stuffed into title/input — so always probe for a skill name first.
   const skillNameFromCommand = extractSkillNameFromCommandSources(call);
@@ -8,7 +21,7 @@ export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
     return `Skill: ${skillNameFromCommand}`;
   }
 
-  if (call.kind !== "shell") {
+  if (displayKind !== "shell") {
     const openCodeSkillName = extractOpenCodeSkillNameFromToolOutput(
       call.output,
     );
@@ -17,21 +30,27 @@ export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
     }
   }
 
-  if (call.kind === "shell") {
+  if (displayKind === "shell") {
     return summarizeCommand(call.input ?? call.title ?? fallback);
   }
 
-  const title = isInformativeToolTitle(call.title, call.id) ? call.title : fallback;
-  if (call.kind === "mcp") {
-    return stripToolPrefix(title);
+  const mcp = resolveAgentToolCallMcp({
+    existing: call.mcp,
+    input: call.input,
+    title: call.title,
+  });
+  if (mcp) {
+    return formatAgentToolCallMcpName(mcp);
   }
+
+  const title = isInformativeToolTitle(call.title, call.id) ? call.title : fallback;
   if (isNamespacedToolTitle(title)) {
     return stripToolPrefix(title);
   }
-  if (call.kind === "read" || call.kind === "write") {
-    return extractFilePathFromStructuredInput(parseToolCallInputObject(call.input)) ?? stripLeadingActionVerb(title, call.kind);
+  if (displayKind === "read" || displayKind === "write") {
+    return extractFilePathFromStructuredInput(parseToolCallInputObject(call.input)) ?? stripLeadingActionVerb(title, displayKind);
   }
-  if (call.kind === "search") {
+  if (displayKind === "search") {
     return summarizeSearchInput(title, parseToolCallInputObject(call.input)) ?? title;
   }
   return title;
@@ -124,6 +143,21 @@ function summarizeSearchInput(
   title: string,
   parsed: Record<string, unknown> | null,
 ) {
+  const query = extractStructuredSearchQuery(parsed);
+  if (!query) {
+    return undefined;
+  }
+  const normalizedTitle = stripToolPrefix(title).trim();
+  if (searchTitleAlreadyContainsQuery(normalizedTitle, query)) {
+    return normalizedTitle;
+  }
+  const prefix = isInformativeSearchTitle(normalizedTitle) ? normalizedTitle : "Search";
+  return `${prefix}: ${truncateInline(query, 56)}`;
+}
+
+function extractStructuredSearchQuery(
+  parsed: Record<string, unknown> | null,
+) {
   if (!parsed) {
     return undefined;
   }
@@ -134,12 +168,35 @@ function summarizeSearchInput(
     parsed.searchString ??
     parsed.substring_pattern ??
     parsed.substringPattern;
-  if (typeof query !== "string" || !query.trim()) {
-    return undefined;
+  return typeof query === "string" && query.trim() ? query.trim() : undefined;
+}
+
+function isStructuredSearchInput(
+  parsed: Record<string, unknown> | null,
+) {
+  if (!parsed || !extractStructuredSearchQuery(parsed)) {
+    return false;
   }
-  const normalizedTitle = stripToolPrefix(title).trim();
-  const prefix = normalizedTitle && !/^Tool call\b/u.test(normalizedTitle) ? normalizedTitle : "Search";
-  return `${prefix}: ${truncateInline(query.trim(), 56)}`;
+
+  if (extractCommandFromParsedInput(parsed) !== undefined) {
+    return false;
+  }
+  return true;
+}
+
+function isInformativeSearchTitle(title: string) {
+  return Boolean(
+    title &&
+    !/^Tool call\b/u.test(title) &&
+    !/^(shell|tool|unknown)$/iu.test(title),
+  );
+}
+
+function searchTitleAlreadyContainsQuery(title: string, query: string) {
+  const normalizedTitle = title.toLowerCase();
+  const normalizedQuery = query.toLowerCase();
+  return normalizedTitle.includes(normalizedQuery) ||
+    normalizedTitle.includes(`\`${normalizedQuery}\``);
 }
 
 function compactDisplayPath(path: string) {

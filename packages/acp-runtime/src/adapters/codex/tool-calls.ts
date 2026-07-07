@@ -1,4 +1,5 @@
 import type { AgentToolCall } from "@tiller/shared";
+import { extractCodexSkillNameFromText, formatCodexSkillTitle } from "./skill-tools";
 
 const CODEX_SUBAGENT_TOOL_TITLE = /^spawn_agents_/u;
 
@@ -6,8 +7,18 @@ export function normalizeCodexToolCall(
   toolCall: AgentToolCall,
   _update: any,
 ): AgentToolCall {
+  if (looksLikeCodexWebFetchToolCall(toolCall)) {
+    return { ...toolCall, kind: "fetch" };
+  }
   if (looksLikeCodexSubagentToolCall(toolCall)) {
     return { ...toolCall, kind: "subagent" };
+  }
+  const skillName = extractCodexSkillNameFromToolCall(toolCall);
+  if (skillName) {
+    return { ...toolCall, kind: "skill", title: formatCodexSkillTitle(skillName) };
+  }
+  if (looksLikeCodexShellPayload(toolCall)) {
+    return { ...toolCall, kind: "shell" };
   }
   return toolCall;
 }
@@ -36,4 +47,101 @@ function parseJsonRecord(input: string | undefined) {
   } catch {
     return null;
   }
+}
+
+function looksLikeCodexWebFetchToolCall(toolCall: AgentToolCall) {
+  if (toolCall.kind !== "search") {
+    return false;
+  }
+  if (/^web_search_/u.test(toolCall.id.trim())) {
+    return true;
+  }
+  const title = toolCall.title.trim();
+  if (!/^Searching(?:\s+the\s+Web|\s+for:)/iu.test(title)) {
+    return false;
+  }
+  const input = parseJsonRecord(toolCall.input);
+  if (!input) {
+    return title === "Searching the Web";
+  }
+  const action = input.action;
+  if (action && typeof action === "object" && !Array.isArray(action)) {
+    const actionType = (action as { type?: unknown }).type;
+    if (typeof actionType === "string" && actionType.trim().toLowerCase() === "search") {
+      return true;
+    }
+  }
+  return typeof input.query === "string" && input.query.trim().length > 0;
+}
+
+function looksLikeCodexShellPayload(toolCall: AgentToolCall) {
+  const input = parseJsonRecord(toolCall.input);
+  if (!input) {
+    return false;
+  }
+  if (typeof input.command === "string" || Array.isArray(input.command)) {
+    return true;
+  }
+  if (Array.isArray(input.parsed_cmd)) {
+    return input.parsed_cmd.some((item) =>
+      Boolean(item) &&
+      typeof item === "object" &&
+      typeof (item as { cmd?: unknown }).cmd === "string" &&
+      (item as { cmd: string }).cmd.trim().length > 0
+    );
+  }
+  return false;
+}
+
+function extractCodexSkillNameFromToolCall(toolCall: AgentToolCall) {
+  const input = parseJsonRecord(toolCall.input);
+  const candidates = [
+    commandValueToString(input?.command),
+    commandValueToString(input?.cmd),
+    commandValueToString(input?.script),
+    commandValueToString(input?.shell),
+    parsedCommandValueToString(input?.parsed_cmd),
+    toolCall.title,
+  ];
+  for (const candidate of candidates) {
+    const skillName = extractCodexSkillNameFromText(candidate);
+    if (skillName) {
+      return skillName;
+    }
+  }
+  return undefined;
+}
+
+function parsedCommandValueToString(value: unknown) {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  for (const item of value) {
+    if (
+      item &&
+      typeof item === "object" &&
+      typeof (item as { cmd?: unknown }).cmd === "string"
+    ) {
+      const command = (item as { cmd: string }).cmd.trim();
+      if (command) {
+        return command;
+      }
+    }
+  }
+  return undefined;
+}
+
+function commandValueToString(value: unknown) {
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+  if (Array.isArray(value)) {
+    const parts = value
+      .map((item) => typeof item === "string" ? item.trim() : String(item))
+      .filter(Boolean);
+    if (parts.length) {
+      return parts.join(" ");
+    }
+  }
+  return undefined;
 }

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -17,6 +17,9 @@ import {
   resolveAdapterCompactionDetailsVisibility,
   resolveAdapterRequestTimeout,
   resolveAdapterPluginManifest,
+  extractAdapterPlanFromToolCall,
+  isAdapterPlanToolCall,
+  readAdapterTranscriptPlan,
   readAdapterTranscriptMessages,
   readAdapterTranscriptToolCalls,
   resolvePreferredAgentId,
@@ -214,6 +217,122 @@ test("Claude transcript tool-call repair stays behind the Claude adapter", () =>
   );
 });
 
+test("Codex transcript tool-call repair stays behind the Codex adapter", () => {
+  assert.equal(
+    typeof resolveAcpAgentAdapter({
+      id: "codex",
+      name: "Codex",
+      command: "codex-acp",
+      transport: "stdio",
+      protocol: "acp",
+    }).readTranscriptToolCalls,
+    "function",
+  );
+  assert.deepEqual(
+    readAdapterTranscriptToolCalls({
+      provider: {
+        id: "custom",
+        name: "Custom",
+        command: "custom-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      runtimeSessionId: "runtime-1",
+      cwd: "D:/repo",
+    }),
+    [],
+  );
+});
+
+test("Codex transcript plan repair stays behind the Codex adapter", () => {
+  assert.equal(
+    typeof resolveAcpAgentAdapter({
+      id: "codex",
+      name: "Codex",
+      command: "codex-acp",
+      transport: "stdio",
+      protocol: "acp",
+    }).readTranscriptPlan,
+    "function",
+  );
+  assert.equal(
+    readAdapterTranscriptPlan({
+      provider: {
+        id: "custom",
+        name: "Custom",
+        command: "custom-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      runtimeSessionId: "runtime-1",
+      cwd: "D:/repo",
+    }),
+    null,
+  );
+});
+
+test("tool-call plan repair stays behind provider adapters", () => {
+  assert.deepEqual(
+    extractAdapterPlanFromToolCall("opencode", {
+      id: "call-opencode-todo",
+      kind: "write",
+      title: "2 todos",
+      status: "completed",
+      input: JSON.stringify({
+        todos: [
+          { content: "读文件", status: "completed" },
+          { content: "写总结", status: "pending" },
+        ],
+      }),
+      timestamp: "2026-07-07T14:55:12.252Z",
+      updatedAt: "2026-07-07T14:55:12.518Z",
+    }),
+    {
+      updatedAt: "2026-07-07T14:55:12.518Z",
+      entries: [
+        { content: "读文件", priority: "medium", status: "completed" },
+        { content: "写总结", priority: "medium", status: "pending" },
+      ],
+    },
+  );
+  assert.equal(
+    extractAdapterPlanFromToolCall("custom", {
+      id: "call-custom",
+      kind: "write",
+      title: "2 todos",
+      status: "completed",
+      input: JSON.stringify({ todos: [{ content: "不会被恢复", status: "pending" }] }),
+      timestamp: "2026-07-07T14:55:12.252Z",
+      updatedAt: "2026-07-07T14:55:12.518Z",
+    }),
+    null,
+  );
+  assert.equal(
+    isAdapterPlanToolCall("opencode", {
+      id: "call-opencode-todo",
+      kind: "write",
+      title: "2 todos",
+      status: "completed",
+      input: JSON.stringify({ todos: [{ content: "读文件", status: "completed" }] }),
+      timestamp: "2026-07-07T14:55:12.252Z",
+      updatedAt: "2026-07-07T14:55:12.518Z",
+    }),
+    true,
+  );
+  assert.equal(
+    isAdapterPlanToolCall("custom", {
+      id: "call-custom",
+      kind: "write",
+      title: "2 todos",
+      status: "completed",
+      input: JSON.stringify({ todos: [{ content: "不会被恢复", status: "pending" }] }),
+      timestamp: "2026-07-07T14:55:12.252Z",
+      updatedAt: "2026-07-07T14:55:12.518Z",
+    }),
+    false,
+  );
+});
+
 test("resolveAdapterPluginManifest exposes a disabled placeholder without loading plugins", () => {
   const manifest = resolveAdapterPluginManifest();
 
@@ -331,6 +450,44 @@ test("resolveLaunchSpec does not apply session config a second time", () => {
 
   assert.equal(launch.args.filter((arg) => arg.includes("model=")).length, 1);
   assert.equal(launch.args.some((arg) => arg.includes("model_reasoning_effort")), false);
+});
+
+test("resolveLaunchSpec unwraps npm cmd shims that forward directly to packaged executables", () => {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-opencode-cmd-"));
+  const commandPath = join(tempDir, "opencode.cmd");
+  const executablePath = join(tempDir, "node_modules", "opencode-ai", "bin", "opencode.exe");
+
+  try {
+    writeFileSync(
+      commandPath,
+      [
+        "@ECHO off",
+        "GOTO start",
+        ":find_dp0",
+        "SET dp0=%~dp0",
+        "EXIT /b",
+        ":start",
+        "SETLOCAL",
+        "CALL :find_dp0",
+        "\"%dp0%\\node_modules\\opencode-ai\\bin\\opencode.exe\"   %*",
+        "",
+      ].join("\r\n"),
+      "utf8",
+    );
+
+    const launch = resolveLaunchSpec(commandPath, ["acp", "--port", "0"]);
+
+    assert.deepEqual(launch, {
+      command: executablePath,
+      args: ["acp", "--port", "0"],
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("Codex adapter appends model and reasoning config flags", () => {

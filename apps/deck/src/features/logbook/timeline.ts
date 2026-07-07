@@ -1,7 +1,11 @@
 import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
 
 import { coalesceDisplayMessages } from "./message-history";
-import { resolveDisplayToolTitle, resolveMergedToolTitle } from "./tool-title";
+import {
+  resolveDisplayToolKind,
+  resolveDisplayToolTitle,
+  resolveMergedToolTitle,
+} from "./tool-title";
 
 export function sortAgentMessagesByTimeline(items: AgentMessage[]) {
   return items
@@ -96,7 +100,7 @@ export function groupToolCalls(
         commandId: key,
         title: resolveDisplayToolTitle(call, key),
         status: call.status,
-        toolKind: call.kind,
+        toolKind: resolveDisplayToolKind(call),
         timestamp: call.timestamp,
         sequence: call.sequence,
         text: call.output ?? "",
@@ -113,7 +117,10 @@ export function groupToolCalls(
     }
     current.sequence = minTimelineSequence(current.sequence, call.sequence);
     current.status = call.status;
-    current.toolKind = call.kind === "unknown" ? current.toolKind : call.kind;
+    current.toolKind = mergeGroupedToolKind(
+      current.toolKind,
+      resolveDisplayToolKind(call),
+    );
     current.title = resolveMergedToolTitle(
       current.title,
       resolveDisplayToolTitle(call, key),
@@ -255,6 +262,19 @@ function shouldPreferSearchRepair(
   return current.kind === "shell" &&
     incoming.kind === "search" &&
     Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt);
+}
+
+function mergeGroupedToolKind(
+  currentKind: AgentToolCall["kind"],
+  incomingKind: AgentToolCall["kind"],
+) {
+  if (incomingKind === "unknown") {
+    return currentKind;
+  }
+  if (currentKind === "unknown" || currentKind === "shell" && incomingKind === "search") {
+    return incomingKind;
+  }
+  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
 }
 
 function minTimelineSequence(current: number | undefined, incoming: number | undefined) {

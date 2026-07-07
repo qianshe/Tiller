@@ -24,7 +24,7 @@ import type {
   TrustedDeviceSummary,
   WorktreeSummary,
 } from "@tiller/shared";
-import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
+import type { SessionPlanStore, StoredSessionRuntimeDescriptor } from "../sessions/facade";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 import type { SessionPromptQueueManager } from "../runtime/session/prompt-queue";
 import type { SessionTimelineDispatcher } from "../runtime/session-timeline/dispatcher";
@@ -111,6 +111,7 @@ export type HelmHandlerContext = {
   sessionArtifactStore: any;
   sessionAttachmentStore: any;
   sessionRuntimeStore: any;
+  sessionPlanStore: SessionPlanStore;
   sessionTimelineStore: any;
   sessionTimelineWorkers?: SessionTimelineWorkerRegistry;
   sessionTimelineDispatcher?: SessionTimelineDispatcher;

@@ -1,6 +1,7 @@
-import { mapSessionUpdateNotification } from "@tiller/acp-runtime";
+import { isAdapterPlanToolCall, mapSessionUpdateNotification } from "@tiller/acp-runtime";
 import { isFallbackToolCallTitle } from "@tiller/persistence";
-import type { AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
+import type { AgentToolCall, SessionSummary, SessionTimelineEntry, SessionUpdateRecord } from "@tiller/shared";
+import { hasToolCallChanged } from "../tool-call-repair/change-detection";
 
 type ToolCallRepairContext = {
   providerId: string;
@@ -18,12 +19,20 @@ type TimelineToolCallRepairResult = {
   timeline: SessionTimelineEntry[];
 };
 
+type SessionUpdateToolCallRepairResult = {
+  changedCount: number;
+  updates: SessionUpdateRecord[];
+};
+
 export function repairSessionToolCalls(
   context: ToolCallRepairContext,
   toolCalls: AgentToolCall[],
 ): ToolCallRepairResult {
-  let changedCount = 0;
-  const repairedToolCalls = toolCalls.map((toolCall) => {
+  const filteredToolCalls = toolCalls.filter((toolCall) =>
+    shouldRetainPersistedToolCall(context, toolCall)
+  );
+  let changedCount = toolCalls.length - filteredToolCalls.length;
+  const repairedToolCalls = filteredToolCalls.map((toolCall) => {
     const repairedToolCall = repairToolCall(context, toolCall);
     if (hasToolCallChanged(toolCall, repairedToolCall)) {
       changedCount += 1;
@@ -42,24 +51,68 @@ export function repairTimelineToolCalls(
   timeline: SessionTimelineEntry[],
 ): TimelineToolCallRepairResult {
   let changedCount = 0;
-  const repairedTimeline = timeline.map((entry) => {
+  const repairedTimeline: SessionTimelineEntry[] = [];
+  for (const entry of timeline) {
     if (entry.kind !== "tool_call") {
-      return entry;
+      repairedTimeline.push(entry);
+      continue;
+    }
+    if (!shouldRetainPersistedToolCall(context, entry.toolCall)) {
+      changedCount += 1;
+      continue;
     }
     const repairedToolCall = repairToolCall(context, entry.toolCall);
     if (!hasToolCallChanged(entry.toolCall, repairedToolCall)) {
-      return entry;
+      repairedTimeline.push(entry);
+      continue;
     }
     changedCount += 1;
-    return {
+    repairedTimeline.push({
       ...entry,
       toolCall: repairedToolCall,
       updatedAt: repairedToolCall.updatedAt,
-    } satisfies SessionTimelineEntry;
-  });
+    } satisfies SessionTimelineEntry);
+  }
   return {
     changedCount,
     timeline: changedCount > 0 ? repairedTimeline : timeline,
+  };
+}
+
+export function repairSessionUpdateToolCalls(
+  context: ToolCallRepairContext,
+  updates: SessionUpdateRecord[],
+): SessionUpdateToolCallRepairResult {
+  let changedCount = 0;
+  const repairedUpdates: SessionUpdateRecord[] = [];
+  for (const update of updates) {
+    if (update.updateType !== "tool-call") {
+      repairedUpdates.push(update);
+      continue;
+    }
+    const parsedToolCall = readToolCallUpdate(update);
+    if (!parsedToolCall) {
+      repairedUpdates.push(update);
+      continue;
+    }
+    if (!shouldRetainPersistedToolCall(context, parsedToolCall)) {
+      changedCount += 1;
+      continue;
+    }
+    const repairedToolCall = repairToolCall(context, parsedToolCall);
+    if (!hasToolCallChanged(parsedToolCall, repairedToolCall)) {
+      repairedUpdates.push(update);
+      continue;
+    }
+    changedCount += 1;
+    repairedUpdates.push({
+      ...update,
+      payloadJson: JSON.stringify({ type: "tool-call", toolCall: repairedToolCall }),
+    });
+  }
+  return {
+    changedCount,
+    updates: changedCount > 0 ? repairedUpdates : updates,
   };
 }
 
@@ -135,6 +188,13 @@ function repairLegacySubagentToolCall(toolCall: AgentToolCall) {
   };
 }
 
+function shouldRetainPersistedToolCall(
+  context: ToolCallRepairContext,
+  toolCall: AgentToolCall,
+) {
+  return !isAdapterPlanToolCall(context.providerId, toolCall);
+}
+
 function looksLikeLegacySubagentToolCall(toolCall: AgentToolCall) {
   if (!/^spawn_agents_/u.test(toolCall.title.trim())) {
     return false;
@@ -161,15 +221,14 @@ function parseJsonRecord(input: string | undefined) {
   }
 }
 
-function hasToolCallChanged(left: AgentToolCall, right: AgentToolCall) {
-  return left.kind !== right.kind ||
-    left.title !== right.title ||
-    left.status !== right.status ||
-    left.commandId !== right.commandId ||
-    left.input !== right.input ||
-    left.output !== right.output ||
-    left.stream !== right.stream ||
-    left.timestamp !== right.timestamp ||
-    left.updatedAt !== right.updatedAt ||
-    left.sequence !== right.sequence;
+function readToolCallUpdate(update: SessionUpdateRecord) {
+  try {
+    const parsed = JSON.parse(update.payloadJson) as {
+      type?: unknown;
+      toolCall?: AgentToolCall;
+    };
+    return parsed.type === "tool-call" && parsed.toolCall ? parsed.toolCall : null;
+  } catch {
+    return null;
+  }
 }

@@ -362,8 +362,10 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /sessionToolCalls=\{/);
   assert.match(chatPaneSource, /memo\(function MissionChatSessionCard/);
   assert.match(chatPaneSource, /data-session-card-body=\{session\.id\}/);
-  assert.match(chatPaneSource, /changedSessionIds\.forEach/);
+  assert.match(chatPaneSource, /scrollSessionBodiesToBottom\(changedSessionIds, nextSnapshot, previousSnapshot\);/);
   assert.match(chatPaneSource, /if \(messageCount > 0 \|\| timelineCount > 0 \|\| toolCallCount > 0\)/);
+  assert.match(chatPaneSource, /scrollSessionBodiesToBottom/);
+  assert.match(chatPaneSource, /if \(isPaneResizing\) \{\s*return;\s*\}/);
   assert.match(chatPaneSource, /sessionBodyScrollPositionRef/);
   assert.match(chatPaneSource, /bodyScrollSnapshot\.scrollTop/);
   assert.doesNotMatch(chatPaneSource, /scrollBottom/);
@@ -371,7 +373,8 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /messageHistoryStateRef\.current = messageHistoryState/);
   assert.match(chatPaneSource, /const observedSessionIdsKey = openSessions\.map\(\(session\) => session\.id\)\.join/);
   assert.match(chatPaneSource, /const historyLoading = Boolean\(messageHistoryStateRef\.current\[sessionId\]\?\.loading\)/);
-  assert.match(chatPaneSource, /\}, \[chatMainRef, observedSessionIdsKey\]\);/);
+  assert.match(chatPaneSource, /paneResizeVersion/);
+  assert.match(chatPaneSource, /\}, \[chatMainRef, isPaneResizing, observedSessionIdsKey, paneResizeVersion\]\);/);
   assert.match(chatPaneSource, /const handleBodyScroll = useCallback/);
   assert.match(chatPaneSource, /onBodyScroll=\{handleBodyScroll\}/);
   assert.match(chatPaneSource, /useLayoutEffect\(\(\) => \{/);
@@ -887,12 +890,39 @@ test("mission layout hook exposes mobile pane state and intelligent defaults", (
   assert.match(missionLayoutHookSource, /MISSION_MOBILE_WIDTH = 1081/);
   assert.match(missionLayoutHookSource, /selectedMissionMobilePane/);
   assert.match(missionLayoutHookSource, /setSelectedMissionMobilePane/);
+  assert.match(missionLayoutHookSource, /const \[isMissionPaneResizing, setIsMissionPaneResizing\] = useState\(false\);/);
+  assert.match(missionLayoutHookSource, /const \[missionPaneResizeVersion, setMissionPaneResizeVersion\] = useState\(0\);/);
   assert.match(missionLayoutHookSource, /hasActiveConversation \? "chat" : "project"/);
   assert.match(appRootSource, /hasActiveConversation: Boolean\(missionView\.activeSession \|\| deckData\.draftChatWindow\)/);
   assert.match(missionLayoutHookSource, /window\.innerWidth/);
   assert.match(missionLayoutHookSource, /matchMedia\("\(max-width: 1080px\)"\)/);
   assert.match(missionLayoutHookSource, /Math\.min\(layoutWidth, documentWidth\)/);
+  assert.match(missionLayoutHookSource, /const missionLayoutMeasureFrameRef = useRef<number \| null>\(null\);/);
+  assert.match(missionLayoutHookSource, /if \(missionLayoutMeasureFrameRef\.current !== null\) \{\s*return;\s*\}/);
+  assert.match(missionLayoutHookSource, /missionLayoutMeasureFrameRef\.current = window\.requestAnimationFrame\(\(\) => \{/);
+  assert.match(
+    missionLayoutHookSource,
+    /setMissionViewportWidth\(\(currentWidth\) =>[\s\S]*currentWidth === nextWidth \? currentWidth : nextWidth[\s\S]*\);/,
+  );
+  assert.match(missionLayoutHookSource, /window\.cancelAnimationFrame\(missionLayoutMeasureFrameRef\.current\);/);
+  assert.match(missionLayoutHookSource, /setIsMissionPaneResizing\(true\);/);
+  assert.match(missionLayoutHookSource, /setIsMissionPaneResizing\(false\);/);
+  assert.match(missionLayoutHookSource, /setMissionPaneResizeVersion\(\(currentVersion\) => currentVersion \+ 1\);/);
+  assert.match(missionLayoutHookSource, /isMissionPaneResizing,/);
+  assert.match(missionLayoutHookSource, /missionPaneResizeVersion,/);
   assert.doesNotMatch(missionLayoutHookSource, /MISSION_OUTER_GUTTER/);
+});
+
+test("mission pane drag state is threaded into the chat pane resize guards", () => {
+  assert.match(missionRouteSource, /isMissionPaneResizing=\{isMissionPaneResizing\}/);
+  assert.match(missionRouteSource, /missionPaneResizeVersion=\{missionPaneResizeVersion\}/);
+  assert.match(worktreeSource, /isPaneResizing=\{isMissionPaneResizing\}/);
+  assert.match(worktreeSource, /paneResizeVersion=\{missionPaneResizeVersion\}/);
+  assert.match(chatPaneComponentSource, /isPaneResizing\?: boolean;/);
+  assert.match(chatPaneComponentSource, /paneResizeVersion\?: number;/);
+  assert.match(chatPaneComponentSource, /isPaneResizing = false,/);
+  assert.match(chatPaneComponentSource, /paneResizeVersion = 0,/);
+  assert.match(chatPaneComponentSource, /if \(isPaneResizing\) \{\s*return;\s*\}/);
 });
 
 test("mission mobile uses explicit edge paging zones instead of draggable cards", () => {

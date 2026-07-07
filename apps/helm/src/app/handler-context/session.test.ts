@@ -15,6 +15,7 @@ test("handler session context groups runtime dependencies and preserves queue dr
     sessionArtifactStore: { id: "sessionArtifactStore" },
     sessionAttachmentStore: { id: "sessionAttachmentStore" },
     sessionRuntimeStore: { id: "sessionRuntimeStore" },
+    sessionPlanStore: { id: "sessionPlanStore" },
     sessionTimelineStore: { id: "sessionTimelineStore" },
     sessionTimelineFlushScheduler,
     sessionUpdateStore: { id: "sessionUpdateStore" },
@@ -61,6 +62,7 @@ test("handler session context groups runtime dependencies and preserves queue dr
   assert.equal(context.permissionIndex, permissionIndex);
   assert.equal(context.approvalIndex, permissionIndex);
   assert.deepEqual(context.sessionAttachmentStore, { id: "sessionAttachmentStore" });
+  assert.deepEqual(context.sessionPlanStore, { id: "sessionPlanStore" });
   assert.deepEqual(context.sessionUpdateStore, { id: "sessionUpdateStore" });
   assert.equal(context.sessionTimelineFlushScheduler, sessionTimelineFlushScheduler);
   assert.deepEqual(calls, [{ sessionId: "session-1", context: { socketId: "socket-a" } }]);

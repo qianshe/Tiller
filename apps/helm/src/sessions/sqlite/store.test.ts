@@ -392,6 +392,44 @@ test("sqlite artifact store preserves strong tool metadata when sparse updates a
   }
 });
 
+test("sqlite artifact store lets later search repairs override stale shell classifications", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-search-repair-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.appendToolCall(
+        "session-1",
+        createToolCall("toolu_search_repair", "2026-07-07T10:00:00.000Z", {
+          kind: "shell",
+          title: "grep -l \"tool-call-repair\"",
+          input: "{\"output_mode\":\"files_with_matches\",\"pattern\":\"tool-call-repair\"}",
+          status: "completed",
+          updatedAt: "2026-07-07T10:00:00.000Z",
+        }),
+      );
+      store.appendToolCall(
+        "session-1",
+        createToolCall("toolu_search_repair", "2026-07-07T10:00:00.000Z", {
+          kind: "search",
+          title: "Grep",
+          input: "{\"output_mode\":\"files_with_matches\",\"pattern\":\"tool-call-repair\"}",
+          status: "completed",
+          updatedAt: "2026-07-07T10:00:01.000Z",
+        }),
+      );
+
+      const [toolCall] = store.get("session-1").toolCalls;
+      assert.equal(toolCall?.kind, "search");
+      assert.equal(toolCall?.title, "Grep");
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("sqlite artifact store replaces cumulative thinking output instead of appending duplicates", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-thinking-output-"));
   try {

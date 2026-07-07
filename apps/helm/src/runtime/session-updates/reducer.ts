@@ -215,7 +215,7 @@ function upsertToolCall(toolCalls: AgentToolCall[], incoming: AgentToolCall) {
   next[existingIndex] = {
     ...current,
     ...incoming,
-    kind: resolveToolCallKind(current.kind, incoming.kind),
+    kind: resolveToolCallKind(current, incoming),
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
     id: current.id,
     timestamp: current.timestamp,
@@ -250,10 +250,13 @@ function mergeText(current: string | undefined, incoming: string | undefined) {
 }
 
 function resolveToolCallKind(
-  currentKind: AgentToolCall["kind"],
-  incomingKind: AgentToolCall["kind"],
+  current: AgentToolCall,
+  incoming: AgentToolCall,
 ) {
-  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+  if (shouldPreferSearchRepair(current, incoming)) {
+    return incoming.kind;
+  }
+  return isHigherConfidenceToolKind(incoming.kind, current.kind) ? incoming.kind : current.kind;
 }
 
 function isHigherConfidenceToolKind(
@@ -275,6 +278,15 @@ function isHigherConfidenceToolKind(
     mcp: 4,
   };
   return rank[incomingKind] > rank[currentKind];
+}
+
+function shouldPreferSearchRepair(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  return current.kind === "shell" &&
+    incoming.kind === "search" &&
+    Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt);
 }
 
 function resolveToolCallTitle(

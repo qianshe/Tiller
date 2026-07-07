@@ -58,6 +58,26 @@ test("groupToolCalls shows MCP titles without the generic Tool prefix", () => {
   assert.equal(grouped[1]?.title, "sanshu/zhi");
 });
 
+test("groupToolCalls prefers explicit MCP metadata over legacy provider titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-claude-mcp",
+      kind: "mcp",
+      title: "mcpServers_search_context",
+      mcp: {
+        toolName: "search_context",
+        source: "provider-title",
+        rawTitle: "mcpServers_search_context",
+      },
+      status: "completed",
+      timestamp: "2026-04-30T13:22:48.627Z",
+      updatedAt: "2026-04-30T13:22:48.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "search_context");
+});
+
 test("groupToolCalls removes duplicated read and write verbs from titles", () => {
   const grouped = groupToolCalls([
     {
@@ -157,6 +177,46 @@ test("groupToolCalls summarizes search tools from structured query inputs", () =
   assert.equal(grouped[1]?.title, "Glob: apps/deck/**/*.tsx");
 });
 
+test("groupToolCalls treats shell-shaped structured Grep payloads as search activity", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-grep",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "Tiller",
+        glob: "**/README.md",
+        output_mode: "files_with_matches",
+      }),
+      timestamp: "2026-07-07T08:06:52.322Z",
+      updatedAt: "2026-07-07T08:06:53.266Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "search");
+  assert.equal(grouped[0]?.title, "Search: Tiller");
+});
+
+test("groupToolCalls treats shell-shaped Find payloads as search while preserving resolved titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-find",
+      kind: "shell",
+      title: "Find `**/AGENTS.md`",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "**/AGENTS.md",
+      }),
+      timestamp: "2026-07-07T14:42:00.952Z",
+      updatedAt: "2026-07-07T14:42:02.458Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "search");
+  assert.equal(grouped[0]?.title, "Find `**/AGENTS.md`");
+});
+
 test("resolveToolCallTone displays todo as a generic built-in activity", () => {
   assert.deepEqual(resolveToolCallTone("todo", "0 todos"), {
     label: "Todo",
@@ -170,6 +230,14 @@ test("resolveToolCallTone trusts explicit kinds over subagent-like titles", () =
     label: "Search",
     className: "tool-call-mcp",
     icon: "⌕",
+  });
+});
+
+test("resolveToolCallTone does not infer MCP from bare router-style tool names", () => {
+  assert.deepEqual(resolveToolCallTone("tool", "search_context"), {
+    label: "Tool",
+    className: "tool-call-generic",
+    icon: "·",
   });
 });
 

@@ -371,6 +371,37 @@ test("session/list_timeline reads canonical history materialized during refresh"
   );
 });
 
+test("session/list_timeline includes stored plan when live state has no plan", async () => {
+  const sessionId = "session-timeline-stored-plan";
+  const storedPlan = {
+    updatedAt: "2026-07-07T15:05:41.229Z",
+    entries: [
+      { content: "读文件", priority: "medium", status: "completed" },
+      { content: "AST 搜索", priority: "medium", status: "in_progress" },
+    ],
+  };
+
+  const result = await handleSessionRpcRequest(
+    "session/list_timeline",
+    { sessionId, limit: 20 },
+    {
+      refreshAuthoritativeSessionHistory: async () => undefined,
+      sessionArtifactStore: {
+        get: () => ({ outputs: [], diffs: [], toolCalls: [] }),
+      },
+      sessionTimelineStore: {
+        listPage: () => ({ entries: [], hasMore: false }),
+      },
+      sessionPlanStore: {
+        get: () => storedPlan,
+      },
+      readSessionLiveState: () => ({ promptQueue: { queued: [], inFlight: null } }),
+    } as any,
+  ) as any;
+
+  assert.deepEqual(result.liveState?.plan, storedPlan);
+});
+
 test("session/list_timeline treats existing timeline as the primary history", async () => {
   const sessionId = "session-existing-timeline-primary";
   const timeline = [

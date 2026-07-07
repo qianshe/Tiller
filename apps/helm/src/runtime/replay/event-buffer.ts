@@ -237,7 +237,7 @@ function upsertToolCall(toolCalls: Map<string, AgentToolCall>, next: AgentToolCa
   toolCalls.set(next.id, {
     ...current,
     ...next,
-    kind: resolveToolCallKind(current?.kind, next.kind),
+    kind: resolveToolCallKind(current, next),
     title: resolveToolCallTitle(current?.title, next.title, next.id),
     timestamp: current?.timestamp ?? next.timestamp,
     sequence: current?.sequence ?? next.sequence,
@@ -251,11 +251,14 @@ function isFiniteTimelineSequence(value: number | undefined): value is number {
 }
 
 function resolveToolCallKind(
-  currentKind: AgentToolCallKind | undefined,
-  incomingKind: AgentToolCallKind,
+  current: AgentToolCall | undefined,
+  incoming: AgentToolCall,
 ) {
-  if (!currentKind) return incomingKind;
-  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+  if (!current) return incoming.kind;
+  if (shouldPreferSearchRepair(current, incoming)) {
+    return incoming.kind;
+  }
+  return isHigherConfidenceToolKind(incoming.kind, current.kind) ? incoming.kind : current.kind;
 }
 
 function isHigherConfidenceToolKind(
@@ -277,6 +280,15 @@ function isHigherConfidenceToolKind(
     mcp: 4,
   };
   return rank[incomingKind] > rank[currentKind];
+}
+
+function shouldPreferSearchRepair(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  return current.kind === "shell" &&
+    incoming.kind === "search" &&
+    Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt);
 }
 
 function resolveToolCallTitle(

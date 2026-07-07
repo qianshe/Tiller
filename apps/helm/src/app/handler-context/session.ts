@@ -12,6 +12,7 @@ export type HandlerSessionContext = Pick<
   | "sessionArtifactStore"
   | "sessionAttachmentStore"
   | "sessionRuntimeStore"
+  | "sessionPlanStore"
   | "sessionTimelineStore"
   | "sessionTimelineWorkers"
   | "sessionTimelineDispatcher"
@@ -61,6 +62,7 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   sessionArtifactStore: unknown;
   sessionAttachmentStore: unknown;
   sessionRuntimeStore: unknown;
+  sessionPlanStore: unknown;
   sessionTimelineStore: unknown;
   sessionTimelineWorkers?: unknown;
   sessionTimelineDispatcher?: unknown;
@@ -121,6 +123,7 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         sessionArtifactStore: options.sessionArtifactStore,
         sessionAttachmentStore: options.sessionAttachmentStore,
         sessionRuntimeStore: options.sessionRuntimeStore,
+        sessionPlanStore: options.sessionPlanStore,
         sessionTimelineStore: options.sessionTimelineStore,
         sessionTimelineWorkers: options.sessionTimelineWorkers,
         sessionTimelineDispatcher: options.sessionTimelineDispatcher,

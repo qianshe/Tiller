@@ -453,3 +453,40 @@ test("mergeToolCallHistory prefers repaired search kind over stale shell for str
   assert.equal(merged[0]?.kind, "search");
   assert.equal(merged[0]?.title, "Grep");
 });
+
+test("groupToolCalls keeps search display kind when later shell-shaped updates reuse the same command", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "toolu_01Grep",
+      commandId: "toolu_01Grep",
+      kind: "search",
+      title: "Grep",
+      status: "running",
+      input: JSON.stringify({
+        pattern: "Tiller",
+        glob: "**/README.md",
+        output_mode: "files_with_matches",
+      }),
+      timestamp: "2026-07-07T08:06:52.322Z",
+      updatedAt: "2026-07-07T08:06:52.322Z",
+    },
+    {
+      id: "toolu_01Grep",
+      commandId: "toolu_01Grep",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "Tiller",
+        glob: "**/README.md",
+        output_mode: "files_with_matches",
+      }),
+      output: "Found 2 files",
+      timestamp: "2026-07-07T08:06:52.322Z",
+      updatedAt: "2026-07-07T08:06:53.266Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "search");
+  assert.equal(grouped[0]?.title, "Search: Tiller");
+});

@@ -218,6 +218,7 @@ const handlerSessionContextFactory = createHandlerSessionContextFactory({
   sessionArtifactStore,
   sessionAttachmentStore,
   sessionRuntimeStore,
+  sessionPlanStore,
   sessionTimelineStore,
   sessionTimelineWorkers,
   sessionTimelineDispatcher,

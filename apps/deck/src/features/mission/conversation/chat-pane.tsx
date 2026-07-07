@@ -72,6 +72,13 @@ type HistoryState = {
   loading: boolean;
 };
 
+type SessionBodyScrollSnapshot = {
+  messageCount: number;
+  toolCallCount: number;
+  contentLength: number;
+  historyLoading: boolean;
+};
+
 type MissionPendingApproval = {
   sessionId: string;
   request: PermissionRequest;
@@ -82,6 +89,8 @@ type MissionChatPaneProps = {
   className: string;
   style: CSSProperties;
   isMissionMobile: boolean;
+  isPaneResizing?: boolean;
+  paneResizeVersion?: number;
   chatMainRef: RefObject<HTMLDivElement | null>;
   onChatMainScroll: UIEventHandler<HTMLDivElement>;
   helmConnected: boolean;
@@ -156,6 +165,8 @@ export function MissionChatPane({
   className,
   style,
   isMissionMobile,
+  isPaneResizing = false,
+  paneResizeVersion = 0,
   chatMainRef,
   onChatMainScroll,
   helmConnected,
@@ -304,6 +315,9 @@ export function MissionChatPane({
     }
 
     const updateSingleRowState = () => {
+      if (isPaneResizing) {
+        return;
+      }
       const cards = Array.from(grid.children).filter(
         (child): child is HTMLElement => child instanceof HTMLElement,
       );
@@ -318,6 +332,9 @@ export function MissionChatPane({
       );
     };
 
+    if (isPaneResizing) {
+      return;
+    }
     updateSingleRowState();
     const ResizeObserverCtor = window.ResizeObserver;
     if (!ResizeObserverCtor) {
@@ -328,7 +345,7 @@ export function MissionChatPane({
     observer.observe(grid);
     Array.from(grid.children).forEach((child) => observer.observe(child));
     return () => observer.disconnect();
-  }, [draftWindow, openSessions.length]);
+  }, [draftWindow, isPaneResizing, openSessions.length, paneResizeVersion]);
 
   useEffect(() => {
     if (!menuOpen && !projectMenuOpen) {
@@ -377,7 +394,7 @@ export function MissionChatPane({
     };
   }, [chatMainRef, openSessions.length, shouldLockChatMainScroll]);
 
-  const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number; contentLength: number; historyLoading: boolean }>>({});
+  const sessionBodyScrollSnapshotRef = useRef<Record<string, SessionBodyScrollSnapshot>>({});
   const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
   const sessionBodyStickToBottomRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
@@ -406,6 +423,51 @@ export function MissionChatPane({
     sessionBodyStickToBottomRef.current[sessionId] =
       body.scrollHeight - body.scrollTop - body.clientHeight <= STICK_TO_BOTTOM_THRESHOLD;
   }, []);
+  const scrollSessionBodiesToBottom = useCallback((
+    sessionIds: readonly string[],
+    nextSnapshot: Record<string, SessionBodyScrollSnapshot>,
+    previousSnapshot: Record<string, SessionBodyScrollSnapshot> = {},
+  ) => {
+    const chatMain = chatMainRef.current;
+    if (!chatMain) {
+      return;
+    }
+    sessionIds.forEach((sessionId) => {
+      const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
+      if (!body) {
+        return;
+      }
+      const current = nextSnapshot[sessionId];
+      const previous = previousSnapshot[sessionId];
+      const allowAfterInitialHistoryLoad = Boolean(
+        previous?.historyLoading &&
+        !current?.historyLoading &&
+        (previous.messageCount ?? 0) === 0 &&
+        (previous.toolCallCount ?? 0) === 0 &&
+        (previous.contentLength ?? 0) === 0 &&
+        (
+          (current?.messageCount ?? 0) > 0 ||
+          (current?.toolCallCount ?? 0) > 0 ||
+          (current?.contentLength ?? 0) > 0
+        ),
+      );
+      if (!shouldAutoScrollSessionBody({
+        stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
+        historyLoading: current?.historyLoading,
+        historyRevealLocked: isPlainHistoryRevealLocked(body),
+        previousHistoryLoading: previous?.historyLoading,
+        allowAfterInitialHistoryLoad,
+      })) {
+        return;
+      }
+      body.scrollTop = body.scrollHeight;
+      sessionBodyScrollPositionRef.current[sessionId] = {
+        scrollTop: body.scrollTop,
+        scrollHeight: body.scrollHeight,
+      };
+      sessionBodyStickToBottomRef.current[sessionId] = true;
+    });
+  }, [chatMainRef]);
   const draftCard = draftWindow ? (
     <DraftSessionCard
       draftWindow={draftWindow}
@@ -461,7 +523,7 @@ export function MissionChatPane({
     }
     const changedSessionIds: string[] = [];
     const previousSnapshot = sessionBodyScrollSnapshotRef.current;
-    const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number; contentLength: number; historyLoading: boolean }> = {};
+    const nextSnapshot: Record<string, SessionBodyScrollSnapshot> = {};
 
     openSessions.forEach((session) => {
       const sessionTimelineItems = sessionTimelineById[session.id];
@@ -504,46 +566,12 @@ export function MissionChatPane({
     });
 
     sessionBodyScrollSnapshotRef.current = nextSnapshot;
-    if (!changedSessionIds.length) {
+    if (isPaneResizing || !changedSessionIds.length) {
       return;
     }
 
     const scrollChangedBodies = () => {
-      changedSessionIds.forEach((sessionId) => {
-        const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
-        if (!body) {
-          return;
-        }
-        const current = nextSnapshot[sessionId];
-        const previous = previousSnapshot[sessionId];
-        const allowAfterInitialHistoryLoad = Boolean(
-          previous?.historyLoading &&
-          !current?.historyLoading &&
-          (previous.messageCount ?? 0) === 0 &&
-          (previous.toolCallCount ?? 0) === 0 &&
-          (previous.contentLength ?? 0) === 0 &&
-          (
-            (current?.messageCount ?? 0) > 0 ||
-            (current?.toolCallCount ?? 0) > 0 ||
-            (current?.contentLength ?? 0) > 0
-          ),
-        );
-        if (!shouldAutoScrollSessionBody({
-          stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
-          historyLoading: current?.historyLoading,
-          historyRevealLocked: isPlainHistoryRevealLocked(body),
-          previousHistoryLoading: previous?.historyLoading,
-          allowAfterInitialHistoryLoad,
-        })) {
-          return;
-        }
-        body.scrollTop = body.scrollHeight;
-        sessionBodyScrollPositionRef.current[sessionId] = {
-          scrollTop: body.scrollTop,
-          scrollHeight: body.scrollHeight,
-        };
-        sessionBodyStickToBottomRef.current[sessionId] = true;
-      });
+      scrollSessionBodiesToBottom(changedSessionIds, nextSnapshot, previousSnapshot);
     };
 
     scrollChangedBodies();
@@ -555,10 +583,31 @@ export function MissionChatPane({
       window.clearTimeout(timeout);
       window.clearTimeout(lateTimeout);
     };
-  }, [activeSessionId, activeSessionMessages, activeSessionToolCalls, chatMainRef, messageHistoryState, openSessions, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
+  }, [activeSessionId, activeSessionMessages, activeSessionToolCalls, chatMainRef, isPaneResizing, messageHistoryState, openSessions, scrollSessionBodiesToBottom, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
 
   useEffect(() => {
-    if (!shouldAnchorActiveParallelCard || !activeSessionId) {
+    if (isPaneResizing || paneResizeVersion === 0 || openSessions.length === 0) {
+      return;
+    }
+    const reconcileBodyScroll = () => {
+      scrollSessionBodiesToBottom(
+        openSessions.map((session) => session.id),
+        sessionBodyScrollSnapshotRef.current,
+      );
+    };
+    reconcileBodyScroll();
+    const frame = window.requestAnimationFrame(reconcileBodyScroll);
+    const timeout = window.setTimeout(reconcileBodyScroll, 160);
+    const lateTimeout = window.setTimeout(reconcileBodyScroll, 800);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+      window.clearTimeout(lateTimeout);
+    };
+  }, [isPaneResizing, openSessions, paneResizeVersion, scrollSessionBodiesToBottom]);
+
+  useEffect(() => {
+    if (isPaneResizing || !shouldAnchorActiveParallelCard || !activeSessionId) {
       return;
     }
     const anchorActiveCard = () => {
@@ -585,15 +634,18 @@ export function MissionChatPane({
       window.clearTimeout(timeout);
       window.clearTimeout(lateTimeout);
     };
-  }, [activeSessionId, chatMainRef, openSessions.length, shouldAnchorActiveParallelCard]);
+  }, [activeSessionId, chatMainRef, isPaneResizing, openSessions.length, paneResizeVersion, shouldAnchorActiveParallelCard]);
 
   useEffect(() => {
     const chatMain = chatMainRef.current;
     const ResizeObserverCtor = window.ResizeObserver;
-    if (!chatMain || !ResizeObserverCtor) {
+    if (!chatMain || !ResizeObserverCtor || isPaneResizing) {
       return;
     }
     const observer = new ResizeObserverCtor((entries) => {
+      if (isPaneResizing) {
+        return;
+      }
       for (const entry of entries) {
         const content = entry.target;
         if (!(content instanceof HTMLElement)) {
@@ -633,7 +685,7 @@ export function MissionChatPane({
       }
     });
     return () => observer.disconnect();
-  }, [chatMainRef, observedSessionIdsKey]);
+  }, [chatMainRef, isPaneResizing, observedSessionIdsKey, paneResizeVersion]);
 
   return (
     <div className={className} style={style} data-mission-mobile-pane="chat" data-testid="mission-chat-pane">

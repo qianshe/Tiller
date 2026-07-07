@@ -836,6 +836,11 @@ test("mapSessionUpdateNotification derives generic tool names from nested tool f
     throw new Error("Expected tool-call event");
   }
   assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/find_symbol");
+  assert.deepEqual(mapped.event.toolCall.mcp, {
+    serverName: "mcp_router",
+    toolName: "find_symbol",
+    source: "structured-tool-name",
+  });
 });
 
 test("mapSessionUpdateNotification derives Codex mcp tool names from rawInput server and tool", () => {
@@ -863,6 +868,11 @@ test("mapSessionUpdateNotification derives Codex mcp tool names from rawInput se
     throw new Error("Expected tool-call event");
   }
   assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/activate_project");
+  assert.deepEqual(mapped.event.toolCall.mcp, {
+    serverName: "mcp_router",
+    toolName: "activate_project",
+    source: "structured-input",
+  });
   assert.equal(mapped.event.toolCall.input, JSON.stringify({
     server: "mcp_router",
     tool: "activate_project",
@@ -892,6 +902,11 @@ test("mapSessionUpdateNotification classifies MCP tools from rawInput server and
   }
   assert.equal(mapped.event.toolCall.kind, "mcp");
   assert.equal(mapped.event.toolCall.title, "Tool: sanshu/zhi");
+  assert.deepEqual(mapped.event.toolCall.mcp, {
+    serverName: "sanshu",
+    toolName: "zhi",
+    source: "structured-input",
+  });
 });
 
 test("mapSessionUpdateNotification derives MCP tools from server_name and request.name payloads", () => {
@@ -920,6 +935,11 @@ test("mapSessionUpdateNotification derives MCP tools from server_name and reques
   }
   assert.equal(mapped.event.toolCall.kind, "mcp");
   assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/find_symbol");
+  assert.deepEqual(mapped.event.toolCall.mcp, {
+    serverName: "mcp_router",
+    toolName: "find_symbol",
+    source: "structured-input",
+  });
   assert.equal(mapped.event.toolCall.input, JSON.stringify({
     server_name: "mcp_router",
     request: { name: "find_symbol" },
@@ -1540,6 +1560,142 @@ test("mapSessionUpdateNotification keeps explicit shell kind for grep-like termi
   assert.equal(mapped.event.toolCall.kind, "shell");
 });
 
+test("mapSessionUpdateNotification classifies Codex shell command arrays as shell", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-shell-array",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-shell-array",
+          title: "rg -n \"typecheck\" AGENTS.md",
+          status: "completed",
+          input: JSON.stringify({
+            command: [
+              "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.3.0_x64__8wekyb3d8bbwe\\pwsh.exe",
+              "-Command",
+              "rg -n \"typecheck\" AGENTS.md",
+            ],
+            parsed_cmd: [{ type: "unknown", cmd: "rg -n \"typecheck\" AGENTS.md" }],
+          }),
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "shell");
+});
+
+test("mapSessionUpdateNotification keeps Codex web search placeholders as fetch", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-web-search-placeholder",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "ws-placeholder",
+          kind: "fetch",
+          title: "Searching the Web",
+          status: "running",
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "fetch");
+  assert.equal(mapped.event.toolCall.title, "Searching the Web");
+});
+
+test("mapSessionUpdateNotification classifies Codex skill file shell reads as skill", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-skill-shell",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-skill-shell",
+          title: "Get-Content 'C:/Users/qjq/.codex/plugins/cache/openai-curated/superpowers/d6169bef/skills/using-superpowers/SKILL.md' -TotalCount 220",
+          status: "completed",
+          input: JSON.stringify({
+            command: [
+              "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.3.0_x64__8wekyb3d8bbwe\\pwsh.exe",
+              "-Command",
+              "Get-Content 'C:/Users/qjq/.codex/plugins/cache/openai-curated/superpowers/d6169bef/skills/using-superpowers/SKILL.md' -TotalCount 220",
+            ],
+            parsed_cmd: [{
+              type: "unknown",
+              cmd: "Get-Content 'C:/Users/qjq/.codex/plugins/cache/openai-curated/superpowers/d6169bef/skills/using-superpowers/SKILL.md' -TotalCount 220",
+            }],
+          }),
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "skill");
+  assert.equal(
+    mapped.event.toolCall.title,
+    "Skill: superpowers:using-superpowers",
+  );
+});
+
+test("mapSessionUpdateNotification classifies Codex command arrays as shell before filename write heuristics", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-shell-path",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-shell-path",
+          title: "Get-Content 'D:\\myProject\\tools\\Tiller\\apps\\helm\\tool-write-test.txt'",
+          status: "completed",
+          input: JSON.stringify({
+            command: [
+              "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.3.0_x64__8wekyb3d8bbwe\\pwsh.exe",
+              "-Command",
+              "Get-Content 'D:\\myProject\\tools\\Tiller\\apps\\helm\\tool-write-test.txt'",
+            ],
+            parsed_cmd: [{
+              type: "unknown",
+              cmd: "Get-Content 'D:\\myProject\\tools\\Tiller\\apps\\helm\\tool-write-test.txt'",
+            }],
+          }),
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "shell");
+});
+
 test("mapSessionUpdateNotification keeps Claude Bash grep commands as shell", () => {
   const mapped = mapSessionUpdateNotification(
     {
@@ -1633,6 +1789,35 @@ test("mapSessionUpdateNotification repairs Claude Grep payloads that were mislab
   assert.equal(mapped.event.toolCall.kind, "search");
 });
 
+test("mapSessionUpdateNotification classifies shell-labeled Find payloads with structured patterns as search", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-structured-find-search",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-structured-find-search",
+        kind: "shell",
+        title: "Find `**/AGENTS.md`",
+        rawInput: {
+          pattern: "**/AGENTS.md",
+        },
+        status: "completed",
+        timestamp: "2026-07-07T14:42:00.952Z",
+        updatedAt: "2026-07-07T14:42:02.458Z",
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "search");
+  assert.equal(mapped.event.toolCall.title, "Find `**/AGENTS.md`");
+});
+
 test("mapSessionUpdateNotification classifies Claude native Grep command titles as search when input is structured search payload", () => {
   const mapped = mapSessionUpdateNotification(
     {
@@ -1693,6 +1878,13 @@ test("mapSessionUpdateNotification classifies Claude mcp__ prefixed tools as mcp
     throw new Error("Expected tool-call event");
   }
   assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/codebase_search");
+  assert.deepEqual(mapped.event.toolCall.mcp, {
+    serverName: "mcp_router",
+    toolName: "codebase_search",
+    source: "provider-title",
+    rawTitle: "mcp__mcp-router__codebase_search",
+  });
 });
 
 test("mapSessionUpdateNotification applies OpenCode provider live tool classification", () => {
@@ -1725,6 +1917,42 @@ test("mapSessionUpdateNotification applies OpenCode provider live tool classific
   }
   assert.equal(mapped.event.toolCall.kind, "read");
   assert.equal(mapped.event.toolCall.title, "apps\\deck\\src\\features\\logbook\\message-history.ts");
+});
+
+test("mapSessionUpdateNotification classifies OpenCode title-only MCP tools as mcp", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-mcp-live",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-mcp-search",
+            kind: "search",
+            title: "mcp-router_search_for_pattern: tool_call|toolCall|tool_name|toolName",
+            status: "completed",
+            input: "{\"pattern\":\"tool_call|toolCall|tool_name|toolName\"}",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/search_for_pattern");
+  assert.deepEqual(mapped.event.toolCall.mcp, {
+    serverName: "mcp_router",
+    toolName: "search_for_pattern",
+    source: "provider-title",
+    rawTitle: "mcp-router_search_for_pattern: tool_call|toolCall|tool_name|toolName",
+  });
 });
 
 test("mapSessionUpdateNotification repairs OpenCode path-only tool call history", () => {
@@ -1827,6 +2055,51 @@ test("mapSessionUpdateNotification lets provider adapters project todo updates i
   }
   assert.deepEqual(mapped.event.plan.entries, [
     { content: "Adapter projection", priority: "medium", status: "completed" },
+  ]);
+});
+
+test("mapSessionUpdateNotification projects OpenCode count-title todo updates when rawInput carries todos", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-plan-rawinput",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            title: "3 todos",
+            kind: "write",
+            rawInput: {
+              todos: [
+                { content: "读文件", status: "completed" },
+                { content: "AST 搜索", status: "in_progress" },
+                { content: "写总结", status: "pending" },
+              ],
+            },
+          },
+        },
+      },
+    },
+    {
+      provider: {
+        id: "opencode",
+        name: "OpenCode",
+        command: "opencode",
+        transport: "stdio",
+        protocol: "acp",
+      },
+    },
+  );
+
+  assert.equal(mapped?.event.type, "plan-update");
+  if (mapped?.event.type !== "plan-update") {
+    throw new Error("Expected plan-update event");
+  }
+  assert.deepEqual(mapped.event.plan.entries, [
+    { content: "读文件", priority: "medium", status: "completed" },
+    { content: "AST 搜索", priority: "medium", status: "in_progress" },
+    { content: "写总结", priority: "medium", status: "pending" },
   ]);
 });
 

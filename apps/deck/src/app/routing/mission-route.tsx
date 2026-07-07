@@ -85,6 +85,8 @@ export function renderMissionRoute(source: MissionRouteSource) {
     toggleMissionProjectNode,
     startMissionPaneResize,
     nudgeMissionPane,
+    isMissionPaneResizing,
+    missionPaneResizeVersion,
     missionChatPaneStyle,
     chatMainRef,
     handleChatMainScroll,
@@ -270,6 +272,8 @@ export function renderMissionRoute(source: MissionRouteSource) {
       toggleMissionProjectNode={toggleMissionProjectNode}
       startMissionPaneResize={startMissionPaneResize}
       nudgeMissionPane={nudgeMissionPane}
+      isMissionPaneResizing={isMissionPaneResizing}
+      missionPaneResizeVersion={missionPaneResizeVersion}
       missionChatPaneStyle={missionChatPaneStyle}
       chatMainRef={chatMainRef}
       handleChatMainScroll={handleChatMainScroll}

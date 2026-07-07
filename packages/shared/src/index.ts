@@ -7,3 +7,4 @@ export * from "./prompt-trace";
 export * from "./utils/continuation-summary";
 export * from "./utils/local-command-message";
 export * from "./utils/replay-duplicate";
+export * from "./utils/tool-call-mcp";

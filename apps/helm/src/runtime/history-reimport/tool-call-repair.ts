@@ -1,4 +1,4 @@
-import { readAdapterTranscriptToolCalls } from "@tiller/acp-runtime";
+import { isAdapterPlanToolCall, readAdapterTranscriptToolCalls } from "@tiller/acp-runtime";
 import {
   buildSessionTimelineFromLegacy,
   type AcpAgentProvider,
@@ -10,7 +10,9 @@ import {
   type SessionTimelineEntry,
   type SessionUpdateRecord,
 } from "@tiller/shared";
+import { normalizePersistedAgentToolCall } from "@tiller/persistence";
 import type { TillerLogger } from "../../logging/logger";
+import { hasToolCallChanged } from "../tool-call-repair/change-detection";
 
 type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
@@ -82,16 +84,21 @@ export function applyTranscriptToolCallRepair(input: {
 }) {
   const artifacts = input.sessionArtifactStore.get(input.sessionId);
   const currentTimeline = input.sessionTimelineStore?.list?.(input.sessionId) ?? [];
+  const providerId = input.agent?.id ?? input.summary.agentId;
   const replayToolCalls = artifacts.toolCalls.length
     ? artifacts.toolCalls
     : currentTimeline
         .filter((entry): entry is Extract<SessionTimelineEntry, { kind: "tool_call" }> => entry.kind === "tool_call")
         .map((entry) => entry.toolCall);
+  const filteredReplayToolCalls = replayToolCalls.filter((toolCall) =>
+    shouldRetainTranscriptRepairedToolCall(providerId, toolCall)
+  );
   const { repairedToolCalls, changedToolCalls } = mergeTranscriptToolCalls(
-    replayToolCalls,
+    filteredReplayToolCalls,
     input.transcriptToolCalls,
   );
-  if (!changedToolCalls.length) {
+  const removedToolCallCount = replayToolCalls.length - filteredReplayToolCalls.length;
+  if (!changedToolCalls.length && removedToolCallCount === 0) {
     return false;
   }
 
@@ -121,7 +128,9 @@ function mergeTranscriptToolCalls(
   transcriptToolCalls: AgentToolCall[],
 ) {
   const transcriptById = new Map(
-    transcriptToolCalls.map((toolCall) => [toolCall.id, toolCall] as const),
+    transcriptToolCalls
+      .map((toolCall) => normalizePersistedAgentToolCall(toolCall) ?? toolCall)
+      .map((toolCall) => [toolCall.id, toolCall] as const),
   );
   const changedToolCalls: AgentToolCall[] = [];
   const repairedToolCalls = replayToolCalls.map((toolCall) => {
@@ -178,31 +187,28 @@ function repairTimelineToolCalls(
   const repairedById = new Map(
     repairedToolCalls.map((toolCall) => [toolCall.id, toolCall] as const),
   );
-  return timeline.map((entry) => {
+  const repairedTimeline: SessionTimelineEntry[] = [];
+  for (const entry of timeline) {
     if (entry.kind !== "tool_call") {
-      return entry;
+      repairedTimeline.push(entry);
+      continue;
     }
     const repairedToolCall = repairedById.get(entry.toolCall.id);
     if (!repairedToolCall) {
-      return entry;
+      continue;
     }
-    return {
+    repairedTimeline.push({
       ...entry,
       toolCall: repairedToolCall,
       updatedAt: repairedToolCall.updatedAt,
-    } satisfies SessionTimelineEntry;
-  });
+    } satisfies SessionTimelineEntry);
+  }
+  return repairedTimeline;
 }
 
-function hasToolCallChanged(left: AgentToolCall, right: AgentToolCall) {
-  return left.kind !== right.kind ||
-    left.title !== right.title ||
-    left.status !== right.status ||
-    left.commandId !== right.commandId ||
-    left.input !== right.input ||
-    left.output !== right.output ||
-    left.stream !== right.stream ||
-    left.timestamp !== right.timestamp ||
-    left.updatedAt !== right.updatedAt ||
-    left.sequence !== right.sequence;
+function shouldRetainTranscriptRepairedToolCall(
+  providerId: string | undefined,
+  toolCall: AgentToolCall,
+) {
+  return !isAdapterPlanToolCall(providerId, toolCall);
 }

@@ -168,6 +168,40 @@ test("session update reducer replaces repeated tool input snapshots instead of c
   );
 });
 
+test("session update reducer lets later search repairs override stale shell classifications", () => {
+  const finalState = [
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "toolu_search_repair",
+        kind: "shell" as const,
+        title: "grep -l \"tool-call-repair\"",
+        status: "completed" as const,
+        input: "{\"output_mode\":\"files_with_matches\",\"pattern\":\"tool-call-repair\"}",
+        timestamp: at(1),
+        updatedAt: at(1),
+        sequence: 1,
+      },
+    },
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "toolu_search_repair",
+        kind: "search" as const,
+        title: "Grep",
+        status: "completed" as const,
+        input: "{\"output_mode\":\"files_with_matches\",\"pattern\":\"tool-call-repair\"}",
+        timestamp: at(1),
+        updatedAt: at(2),
+        sequence: 1,
+      },
+    },
+  ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
+
+  assert.equal(finalState.toolCalls[0]?.kind, "search");
+  assert.equal(finalState.toolCalls[0]?.title, "Grep");
+});
+
 test("session update reducer rebuilds one merged compaction row from started lifecycle plus summary enrichment", () => {
   const records: SessionUpdateRecord[] = [
     {

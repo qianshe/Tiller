@@ -15,6 +15,7 @@ import {
   type SessionTimelinePositionedEntry,
   type SessionTimelinePageOptions,
 } from "../timeline-store";
+import { normalizePersistedAgentToolCall } from "../normalize.js";
 import {
   openSessionDatabase,
   runTransaction,
@@ -560,6 +561,16 @@ function replaceSessionTimelineMessageAnchors(db: DatabaseSync, sessionId: strin
 }
 
 function normalizePersistedTimelineEntry(entry: SessionTimelineEntry): SessionTimelineEntry {
+  if (entry.kind === "tool_call") {
+    const normalizedToolCall = normalizePersistedAgentToolCall(entry.toolCall) ?? entry.toolCall;
+    return normalizedToolCall === entry.toolCall
+      ? entry
+      : {
+        ...entry,
+        toolCall: normalizedToolCall,
+        updatedAt: normalizedToolCall.updatedAt,
+      };
+  }
   if (entry.kind !== "assistant_message") {
     return entry;
   }

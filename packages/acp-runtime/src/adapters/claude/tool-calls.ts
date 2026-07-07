@@ -1,4 +1,8 @@
-import type { AgentToolCall } from "@tiller/shared";
+import {
+  formatAgentToolCallMcpTitle,
+  resolveAgentToolCallMcp,
+  type AgentToolCall,
+} from "@tiller/shared";
 
 const CLAUDE_SUBAGENT_TOOL_NAME = /^agent$/iu;
 const CLAUDE_TASK_SUBAGENT_TOOL_NAME = /^task$/iu;
@@ -9,19 +13,40 @@ export function normalizeClaudeToolCall(
   toolCall: AgentToolCall,
   update: any,
 ): AgentToolCall {
+  const source = update?.toolCall ?? update?.tool_call ?? update;
   if (CLAUDE_SUBAGENT_TOOL_NAME.test(toolCall.title ?? "")) {
     return { ...toolCall, kind: "subagent" };
   }
   if (isSubagentPayload(toolCall, update)) {
     return { ...toolCall, kind: "subagent" };
   }
-  if (looksLikeClaudeMcpTool(toolCall, update)) {
-    return { ...toolCall, kind: "mcp" };
+  const mcp = resolveAgentToolCallMcp({
+    existing: toolCall.mcp,
+    input: source?.rawInput ?? source?.raw_input ?? source?.input ?? toolCall.input,
+    title: toolCall.title,
+    rawTitle: stringFrom(
+      source?.title ??
+        source?.label ??
+        source?.displayName ??
+        source?.display_name ??
+        source?.name ??
+        source?.toolName ??
+        source?.tool_name ??
+        source?.tool,
+    ),
+  });
+  if (mcp) {
+    return { ...toolCall, kind: "mcp", title: formatAgentToolCallMcpTitle(mcp), mcp };
   }
-  if (toolCall.kind === "search" && looksLikeShellCommandPayload(toolCall, update)) {
+  const structuredSearchPayload = looksLikeStructuredSearchPayload(toolCall, update);
+  if (
+    toolCall.kind === "search" &&
+    looksLikeShellCommandPayload(toolCall, update) &&
+    !structuredSearchPayload
+  ) {
     return { ...toolCall, kind: "shell" };
   }
-  if (toolCall.kind === "shell" && looksLikeStructuredSearchPayload(toolCall, update)) {
+  if (toolCall.kind === "shell" && structuredSearchPayload) {
     return { ...toolCall, kind: "search" };
   }
   return toolCall;
@@ -45,21 +70,6 @@ function isSubagentPayload(toolCall: AgentToolCall, update: any): boolean {
 function looksLikeShellCommandPayload(toolCall: AgentToolCall, update: any): boolean {
   const candidates = extractCommandTextCandidates(toolCall, update);
   return candidates.some(looksLikeShellCommandText);
-}
-
-function looksLikeClaudeMcpTool(toolCall: AgentToolCall, update: any): boolean {
-  const source = update?.toolCall ?? update?.tool_call ?? update;
-  const candidates = [
-    toolCall.title,
-    stringFrom(source?.title),
-    stringFrom(source?.name),
-    stringFrom(source?.toolName),
-    stringFrom(source?.tool_name),
-    stringFrom(source?.tool),
-  ]
-    .filter((value): value is string => Boolean(value?.trim()))
-    .map((value) => value.trim().toLowerCase());
-  return candidates.some((value) => value.startsWith("mcp__") || value.startsWith("mcpservers_"));
 }
 
 function looksLikeStructuredSearchPayload(toolCall: AgentToolCall, update: any): boolean {

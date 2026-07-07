@@ -1,5 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
-import type { AgentToolCall } from "@tiller/shared";
+import {
+  formatAgentToolCallMcpTitle,
+  resolveAgentToolCallMcp,
+  type AgentToolCall,
+} from "@tiller/shared";
 import { resolveClaudeTranscriptPath, type ClaudeTranscriptPlanOptions } from "./plan";
 
 type PendingToolUse = {
@@ -56,12 +60,18 @@ export function extractClaudeToolCallsFromTranscriptText(raw: string): AgentTool
       if (!toolUse) {
         continue;
       }
+      const mcp = resolveAgentToolCallMcp({
+        input: toolUse.input,
+        title: toolUse.name,
+        rawTitle: toolUse.name,
+      });
       sequence += 1;
       toolCalls.push({
         id: toolUse.id,
-        kind: inferClaudeTranscriptToolKind(toolUse.name),
-        title: normalizeClaudeTranscriptToolTitle(toolUse.name),
+        kind: mcp ? "mcp" : inferClaudeTranscriptToolKind(toolUse.name),
+        title: mcp ? formatAgentToolCallMcpTitle(mcp) : normalizeClaudeTranscriptToolTitle(toolUse.name),
         status: partRecord.is_error === true ? "failed" : "completed",
+        ...(mcp ? { mcp } : {}),
         input: stringifyToolPayload(toolUse.input),
         output:
           stringifyToolResultContent(partRecord.content) ??

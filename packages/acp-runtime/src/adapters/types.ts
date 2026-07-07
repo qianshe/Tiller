@@ -94,4 +94,6 @@ export type AcpAgentAdapter = {
   readTranscriptPlan?(context: AcpHistoryContext): AgentPlan | null;
   readTranscriptMessages?(context: AcpHistoryContext): AgentMessage[];
   readTranscriptToolCalls?(context: AcpHistoryContext): AgentToolCall[];
+  extractPlanFromToolCall?(toolCall: AgentToolCall): AgentPlan | null;
+  isPlanToolCall?(toolCall: AgentToolCall): boolean;
 };

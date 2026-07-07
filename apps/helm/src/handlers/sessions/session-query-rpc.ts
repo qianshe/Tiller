@@ -119,13 +119,17 @@ export async function listTimeline(
     window: "message",
   });
   const liveState = context.readSessionLiveState?.(params.sessionId);
+  const storedPlan = context.sessionPlanStore?.get?.(params.sessionId);
+  const effectiveLiveState = storedPlan && !liveState?.plan
+    ? { ...(liveState ?? {}), plan: storedPlan }
+    : liveState;
   return {
     sessionId: params.sessionId,
     before: params.before,
     entries: page.entries,
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
-    ...(liveState ? { liveState } : {}),
+    ...(effectiveLiveState ? { liveState: effectiveLiveState } : {}),
   };
 }
 

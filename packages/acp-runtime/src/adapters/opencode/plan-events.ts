@@ -14,12 +14,13 @@ export function mapOpenCodePlanUpdate(
   }
   const source = sourceFrom(context.update);
   const toolName = stringFrom(source.tool ?? source.toolName ?? source.tool_name ?? source.name).toLowerCase();
-  if (!/todo[_-]?write|todo[_-]?read|todos?/u.test(toolName)) {
+  const todos = extractTodoList(source);
+  const countOnlyTodo = isCountOnlyTodoUpdate(source);
+  if (!isOpenCodePlanToolName(toolName) && !todos && !countOnlyTodo) {
     return null;
   }
-  const todos = extractTodoList(source);
   if (!todos) {
-    return isCountOnlyTodoUpdate(source) ? SUPPRESS_SESSION_UPDATE : null;
+    return countOnlyTodo ? SUPPRESS_SESSION_UPDATE : null;
   }
   const plan = extractOpenCodePlanFromSource(source, context.now ?? new Date().toISOString());
   if (!plan) {
@@ -32,13 +33,18 @@ export function mapOpenCodePlanUpdate(
 }
 
 export function extractOpenCodePlanFromToolCall(toolCall: AgentToolCall): AgentPlan | null {
-  if (toolCall.kind !== "todo") {
-    return null;
-  }
   return extractOpenCodePlanFromSource({
     input: toolCall.input,
     output: toolCall.output,
+    title: toolCall.title,
   }, toolCall.updatedAt ?? toolCall.timestamp);
+}
+
+export function isOpenCodePlanToolCall(toolCall: AgentToolCall) {
+  return toolCall.kind === "todo" ||
+    isCountOnlyTodoUpdate({ title: toolCall.title }) ||
+    isOpenCodePlanToolName(toolCall.title) ||
+    Boolean(extractOpenCodePlanFromToolCall(toolCall));
 }
 
 function extractOpenCodePlanFromSource(
@@ -70,6 +76,10 @@ function isCountOnlyTodoUpdate(source: Record<string, unknown>) {
   return /^\d+\s+todos?$/iu.test(title);
 }
 
+function isOpenCodePlanToolName(value: string) {
+  return /todo[_-]?write|todo[_-]?read|todos?/u.test(value.trim().toLowerCase());
+}
+
 function sourceFrom(update: unknown): Record<string, unknown> {
   if (!update || typeof update !== "object") {
     return {};
@@ -84,6 +94,8 @@ function sourceFrom(update: unknown): Record<string, unknown> {
 function extractTodoList(source: Record<string, unknown>): Array<Record<string, unknown>> | null {
   const input = parseInput(
     nestedInput(source.state) ??
+      source.rawInput ??
+      source.raw_input ??
       source.input ??
       source.arguments ??
       source.args ??

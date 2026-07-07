@@ -10,12 +10,17 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 import { buildSessionTimelineFromLegacy } from "@tiller/shared";
+import { extractAdapterPlanFromToolCall } from "@tiller/acp-runtime";
 import type { SessionRecord } from "../session/services";
 import type { SessionAttachmentStore, StoredSessionRuntimeDescriptor } from "../../sessions/facade";
 import type { TillerLogger } from "../../logging/logger";
 import type { ProviderHistorySnapshotContent } from "./source";
 import { reduceSessionUpdateRecords } from "../session-updates/records.js";
-import { repairSessionToolCalls, repairTimelineToolCalls } from "./tool-call-repair.js";
+import {
+  repairSessionToolCalls,
+  repairSessionUpdateToolCalls,
+  repairTimelineToolCalls,
+} from "./tool-call-repair.js";
 
 type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
@@ -99,6 +104,12 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       providerHistoryPlans.set(sessionId, stored);
       return stored;
     }
+    const restored = readLegacySessionPlanFromUpdates(sessionId);
+    if (isVisibleAgentPlan(restored)) {
+      providerHistoryPlans.set(sessionId, restored);
+      options.sessionPlanStore.replace(sessionId, restored);
+      return restored;
+    }
     return undefined;
   }
 
@@ -134,6 +145,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     if (repairCanonicalTimelineFromSessionUpdates(sessionId) !== "ready") {
       materializeLegacyCanonicalTimeline(sessionId);
     }
+    readSessionPlan(sessionId);
     repairPersistedToolCallHistory(sessionId);
   }
 
@@ -278,13 +290,29 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       { sessionId, providerId, summary },
       timeline,
     );
-    if (repairedTimeline.changedCount === 0) {
+    if (repairedTimeline.changedCount > 0) {
+      options.sessionTimelineStore.replace(sessionId, repairedTimeline.timeline);
+      logProviderHistoryInfo(options, "provider.history.timeline.tool_calls.normalized", {
+        sessionId,
+        count: repairedTimeline.changedCount,
+      });
+    }
+
+    const updates = readAllSessionUpdateRecords(sessionId);
+    if (!updates.length || !options.sessionUpdateStore?.replaceSession) {
       return;
     }
-    options.sessionTimelineStore.replace(sessionId, repairedTimeline.timeline);
-    logProviderHistoryInfo(options, "provider.history.timeline.tool_calls.normalized", {
+    const repairedUpdates = repairSessionUpdateToolCalls(
+      { sessionId, providerId, summary },
+      updates,
+    );
+    if (repairedUpdates.changedCount === 0) {
+      return;
+    }
+    options.sessionUpdateStore.replaceSession(sessionId, repairedUpdates.updates);
+    logProviderHistoryInfo(options, "provider.history.session_updates.tool_calls.normalized", {
       sessionId,
-      count: repairedTimeline.changedCount,
+      count: repairedUpdates.changedCount,
     });
   }
 
@@ -341,14 +369,20 @@ function summarizeTimelineShape(entries: SessionTimelineEntry[]) {
 }
 
 function readSessionPlanFromUpdateRecord(update: SessionUpdateRecord): AgentPlan | undefined {
-  if (update.updateType !== "plan-update") {
-    return undefined;
-  }
   try {
-    const parsed = JSON.parse(update.payloadJson) as { type?: unknown; plan?: unknown };
-    return parsed.type === "plan-update" && isVisibleAgentPlan(parsed.plan)
-      ? parsed.plan
-      : undefined;
+    const parsed = JSON.parse(update.payloadJson) as {
+      type?: unknown;
+      plan?: unknown;
+      toolCall?: AgentToolCall;
+    };
+    if (parsed.type === "plan-update" && isVisibleAgentPlan(parsed.plan)) {
+      return parsed.plan;
+    }
+    if (update.updateType !== "tool-call" || !parsed.toolCall) {
+      return undefined;
+    }
+    const recovered = extractAdapterPlanFromToolCall(update.providerId, parsed.toolCall);
+    return isVisibleAgentPlan(recovered ?? undefined) ? recovered ?? undefined : undefined;
   } catch {
     return undefined;
   }

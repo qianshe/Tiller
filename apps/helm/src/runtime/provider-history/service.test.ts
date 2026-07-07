@@ -63,6 +63,59 @@ test("readSessionPlan skips empty stored plans", () => {
   assert.equal(service.readSessionPlan(sessionId), undefined);
 });
 
+test("readSessionPlan recovers OpenCode plans from persisted todo tool-call updates", () => {
+  const sessionId = "session-opencode-plan-from-tool-call";
+  const service = createTestProviderHistoryService(
+    {
+      listPage: () => ({
+        updates: [{
+          sessionId,
+          runtimeSessionId: "runtime-1",
+          providerId: "opencode",
+          sequence: 1,
+          source: "acp_load_replay",
+          updateType: "tool-call",
+          receivedAt: "2026-07-07T15:05:41.190Z",
+          payloadJson: JSON.stringify({
+            type: "tool-call",
+            toolCall: {
+              id: "call-opencode-todo",
+              kind: "write",
+              title: "3 todos",
+              input: JSON.stringify({
+                todos: [
+                  { content: "读文件", status: "completed" },
+                  { content: "AST 搜索", status: "in_progress" },
+                  { content: "写总结", status: "pending" },
+                ],
+              }),
+              timestamp: "2026-07-07T14:55:12.252Z",
+              updatedAt: "2026-07-07T14:55:12.518Z",
+            },
+          }),
+        }],
+        hasMore: false,
+      }),
+    },
+    {
+      sessionPlanStore: {
+        get: () => undefined,
+        replace: (_sessionId, plan) => plan,
+        remove: () => undefined,
+      },
+    },
+  );
+
+  assert.deepEqual(service.readSessionPlan(sessionId), {
+    updatedAt: "2026-07-07T14:55:12.518Z",
+    entries: [
+      { content: "读文件", priority: "medium", status: "completed" },
+      { content: "AST 搜索", priority: "medium", status: "in_progress" },
+      { content: "写总结", priority: "medium", status: "pending" },
+    ],
+  });
+});
+
 test("recordSessionPlan persists visible plans to the plan store", () => {
   const sessionId = "session-record-visible-plan";
   const plan: AgentPlan = {
@@ -380,6 +433,150 @@ test("provider history refresh normalizes stored tool calls before handler reads
   }
   assert.equal(firstEntry.toolCall.kind, "mcp");
   assert.equal(firstEntry.toolCall.title, "Tool: sanshu/zhi");
+});
+
+test("provider history refresh prunes OpenCode todo-count history from timeline and session updates", async () => {
+  const sessionId = "session-opencode-plan-history-pruned";
+  const originalToolCalls: AgentToolCall[] = [
+    {
+      id: "call-plan",
+      kind: "write",
+      title: "2 todos",
+      status: "completed",
+      input: JSON.stringify({
+        todos: [
+          { content: "读文件", status: "completed" },
+          { content: "写总结", status: "pending" },
+        ],
+      }),
+      timestamp: "2026-07-07T14:55:12.252Z",
+      updatedAt: "2026-07-07T14:55:12.518Z",
+    },
+    {
+      id: "call-search",
+      kind: "search",
+      title: "Search",
+      status: "completed",
+      timestamp: "2026-07-07T14:56:12.252Z",
+      updatedAt: "2026-07-07T14:56:12.518Z",
+    },
+  ];
+  let toolCalls: AgentToolCall[] = [...originalToolCalls];
+  let timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:call-plan",
+      kind: "tool_call",
+      toolCall: toolCalls[0]!,
+      timestamp: toolCalls[0]!.timestamp,
+      updatedAt: toolCalls[0]!.updatedAt,
+    },
+    {
+      id: "tool:call-search",
+      kind: "tool_call",
+      toolCall: toolCalls[1]!,
+      timestamp: toolCalls[1]!.timestamp,
+      updatedAt: toolCalls[1]!.updatedAt,
+    },
+  ];
+  let replacedUpdates: SessionUpdateRecord[] = [];
+  const service = createTestProviderHistoryService(
+    {
+      listPage: () => ({
+        updates: [
+          {
+            sessionId,
+            runtimeSessionId: "runtime-1",
+            providerId: "opencode",
+            sequence: 1,
+            source: "acp_load_replay",
+            updateType: "tool-call",
+            receivedAt: "2026-07-07T15:05:41.190Z",
+            payloadJson: JSON.stringify({
+              type: "tool-call",
+              toolCall: toolCalls[0],
+            }),
+          },
+          {
+            sessionId,
+            runtimeSessionId: "runtime-1",
+            providerId: "opencode",
+            sequence: 2,
+            source: "acp_load_replay",
+            updateType: "tool-call",
+            receivedAt: "2026-07-07T15:05:42.190Z",
+            payloadJson: JSON.stringify({
+              type: "tool-call",
+              toolCall: toolCalls[1],
+            }),
+          },
+        ],
+        hasMore: false,
+      }),
+    },
+    {
+      sessionStore: {
+        list: () => [{ ...summary(sessionId), agentId: "opencode", agentName: "OpenCode" }],
+      },
+      sessionUpdateStore: {
+        replaceSession: (_sessionId: string, updates: SessionUpdateRecord[]) => {
+          replacedUpdates = updates;
+        },
+        listPage: () => ({
+          updates: [
+            {
+              sessionId,
+              runtimeSessionId: "runtime-1",
+              providerId: "opencode",
+              sequence: 1,
+              source: "acp_load_replay",
+              updateType: "tool-call",
+              receivedAt: "2026-07-07T15:05:41.190Z",
+              payloadJson: JSON.stringify({
+                type: "tool-call",
+                toolCall: originalToolCalls[0],
+              }),
+            },
+            {
+              sessionId,
+              runtimeSessionId: "runtime-1",
+              providerId: "opencode",
+              sequence: 2,
+              source: "acp_load_replay",
+              updateType: "tool-call",
+              receivedAt: "2026-07-07T15:05:42.190Z",
+              payloadJson: JSON.stringify({
+                type: "tool-call",
+                toolCall: originalToolCalls[1],
+              }),
+            },
+          ],
+          hasMore: false,
+        }),
+      },
+      sessionArtifactStore: {
+        get: () => ({ toolCalls, outputs: [], diffs: [] }),
+        replaceToolCalls: (_sessionId, nextToolCalls) => {
+          toolCalls = nextToolCalls;
+        },
+      },
+      sessionTimelineStore: {
+        list: () => timeline,
+        replace: (_sessionId, entries) => {
+          timeline = entries;
+          return entries;
+        },
+      },
+    },
+  );
+
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+
+  assert.deepEqual(toolCalls.map((toolCall) => toolCall.id), ["call-search"]);
+  assert.deepEqual(
+    timeline.filter((entry) => entry.kind === "tool_call").map((entry) => entry.toolCall.id),
+    ["call-search"],
+  );
+  assert.deepEqual(replacedUpdates.map((update) => update.sequence), [2]);
 });
 
 test("provider history refresh materializes canonical timeline from legacy local stores once", async () => {

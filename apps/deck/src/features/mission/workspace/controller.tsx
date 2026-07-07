@@ -130,6 +130,8 @@ export function MissionWorktree(props: any) {
     toggleMissionProjectNode,
     startMissionPaneResize,
     nudgeMissionPane,
+    isMissionPaneResizing,
+    missionPaneResizeVersion,
     missionChatPaneStyle,
     chatMainRef,
     handleChatMainScroll,
@@ -941,6 +943,8 @@ export function MissionWorktree(props: any) {
           className={chatPaneClassName}
           style={missionChatPaneStyle}
           isMissionMobile={isMissionMobile}
+          isPaneResizing={isMissionPaneResizing}
+          paneResizeVersion={missionPaneResizeVersion}
           chatMainRef={chatMainRef}
           onChatMainScroll={handleChatMainScroll}
           helmConnected={helmConnected}

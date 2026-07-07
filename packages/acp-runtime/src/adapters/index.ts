@@ -1,4 +1,9 @@
-import type { AcpRuntimeProviderConfig, AgentCapabilities, AgentToolCall } from "@tiller/shared";
+import type {
+  AcpRuntimeProviderConfig,
+  AgentCapabilities,
+  AgentPlan,
+  AgentToolCall,
+} from "@tiller/shared";
 import type { SessionRuntimeEvent } from "../runtime-types";
 import { createClaudeAcpAdapter } from "./claude/index";
 import { createCodexAcpAdapter } from "./codex/index";
@@ -102,6 +107,28 @@ export function readAdapterTranscriptMessages(context: AcpHistoryContext) {
 
 export function readAdapterTranscriptToolCalls(context: AcpHistoryContext) {
   return resolveAcpAgentAdapter(context.provider).readTranscriptToolCalls?.(context) ?? [];
+}
+
+export function extractAdapterPlanFromToolCall(
+  providerId: string | undefined,
+  toolCall: AgentToolCall,
+): AgentPlan | null {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return null;
+  }
+  return resolveAcpAgentAdapter(provider).extractPlanFromToolCall?.(toolCall) ?? null;
+}
+
+export function isAdapterPlanToolCall(
+  providerId: string | undefined,
+  toolCall: AgentToolCall,
+) {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return false;
+  }
+  return resolveAcpAgentAdapter(provider).isPlanToolCall?.(toolCall) ?? false;
 }
 
 function inferProviderFromId(providerId: string | undefined): AcpRuntimeProviderConfig | undefined {

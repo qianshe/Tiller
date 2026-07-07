@@ -111,9 +111,14 @@ test("applyTranscriptToolCallRepair upgrades generic replay tool calls from Clau
     [
       ["tool-read", "read", "Read"],
       ["tool-bash", "shell", "Bash"],
-      ["tool-mcp", "mcp", "mcpServers_search_context"],
+      ["tool-mcp", "mcp", "Tool: search_context"],
     ],
   );
+  assert.deepEqual(toolCalls[2]?.mcp, {
+    toolName: "search_context",
+    source: "provider-title",
+    rawTitle: "mcpServers_search_context",
+  });
   assert.equal(appendedUpdates.length, 3);
   assert.deepEqual(
     appendedUpdates.map((record) => [record.source, record.updateType]),
@@ -214,6 +219,378 @@ test("applyTranscriptToolCallRepair repairs timeline-only tool calls when artifa
   assert.equal(
     repairedToolEntry?.kind === "tool_call" ? repairedToolEntry.toolCall.title : undefined,
     "Grep",
+  );
+});
+
+test("applyTranscriptToolCallRepair upgrades generic replay tool calls from Codex transcript metadata", () => {
+  const sessionId = "session-codex-tool-repair";
+  let toolCalls: AgentToolCall[] = [
+    toolCall("call-shell", "tool", "Tool call call_she…", 2, "D:\\myProject\\tools\\Tiller"),
+    toolCall("call-mcp", "tool", "Tool call call_mcp…", 4, "{\"project\":\"Tiller\"}"),
+    toolCall("call-write", "tool", "Tool call call_wri…", 6, "Success."),
+    toolCall("call-subagent", "tool", "Tool call call_sub…", 8, "{\"agent_id\":\"agent-1\"}"),
+  ];
+
+  const repaired = applyTranscriptToolCallRepair({
+    sessionId,
+    summary: createSummary(sessionId),
+    agent: {
+      id: "codex",
+      name: "Codex",
+      kind: "custom" as const,
+      command: "codex-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    transcriptToolCalls: [
+      {
+        id: "call-shell",
+        kind: "shell",
+        title: "Get-Location",
+        status: "completed",
+        input: JSON.stringify({ command: "Get-Location" }),
+        timestamp: "2026-07-07T11:05:55.558Z",
+        updatedAt: "2026-07-07T11:06:03.385Z",
+        sequence: 2,
+      },
+      {
+        id: "call-mcp",
+        kind: "mcp",
+        title: "Tool: mcp_router/get_current_config",
+        status: "completed",
+        input: "{}",
+        mcp: {
+          serverName: "mcp_router",
+          toolName: "get_current_config",
+          source: "structured-tool-name",
+          rawTitle: "mcp__mcp_router/get_current_config",
+        },
+        timestamp: "2026-07-07T11:09:21.692Z",
+        updatedAt: "2026-07-07T11:09:21.845Z",
+        sequence: 4,
+      },
+      {
+        id: "call-write",
+        kind: "write",
+        title: "Edit D:/myProject/tools/Tiller/apps/helm/tool-write-test.txt",
+        status: "completed",
+        input:
+          "*** Begin Patch\n*** Add File: D:/myProject/tools/Tiller/apps/helm/tool-write-test.txt\n+ok\n*** End Patch\n",
+        timestamp: "2026-07-07T12:12:35.875Z",
+        updatedAt: "2026-07-07T12:12:35.940Z",
+        sequence: 6,
+      },
+      {
+        id: "call-subagent",
+        kind: "subagent",
+        title: "spawn_agent",
+        status: "completed",
+        input: JSON.stringify({ fork_context: true, message: "只读测试" }),
+        timestamp: "2026-07-07T12:39:49.467Z",
+        updatedAt: "2026-07-07T12:39:59.696Z",
+        sequence: 8,
+      },
+    ],
+    sessionMessageStore: {
+      list: () => [message("user-1", "修复 Codex 工具调用", 1)],
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls,
+      }),
+      replaceToolCalls: (_sessionId, nextToolCalls) => {
+        toolCalls = nextToolCalls;
+      },
+    },
+    sessionTimelineStore: {
+      replace: (_sessionId, entries) => entries,
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: () => undefined,
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.deepEqual(
+    toolCalls.map((toolCall) => [toolCall.id, toolCall.kind, toolCall.title]),
+    [
+      ["call-shell", "shell", "Get-Location"],
+      ["call-mcp", "mcp", "Tool: mcp_router/get_current_config"],
+      ["call-write", "write", "Edit D:/myProject/tools/Tiller/apps/helm/tool-write-test.txt"],
+      ["call-subagent", "subagent", "spawn_agent"],
+    ],
+  );
+});
+
+test("applyTranscriptToolCallRepair rewrites Codex web search transcript history to fetch", () => {
+  const sessionId = "session-codex-web-tool-repair";
+  let toolCalls: AgentToolCall[] = [
+    toolCall("call-web", "tool", "Tool call call_web…", 2, "{\"query\":\"OpenAI developer docs Responses API official\"}"),
+  ];
+
+  const repaired = applyTranscriptToolCallRepair({
+    sessionId,
+    summary: {
+      ...createSummary(sessionId),
+      agentId: "codex",
+      agentName: "Codex",
+    },
+    agent: {
+      id: "codex",
+      name: "Codex",
+      kind: "custom" as const,
+      command: "codex-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    transcriptToolCalls: [
+      {
+        id: "call-web",
+        kind: "fetch",
+        title: "Searching for: OpenAI developer docs Responses API official",
+        status: "completed",
+        input: JSON.stringify({
+          query: "OpenAI developer docs Responses API official",
+          action: {
+            type: "search",
+            query: "OpenAI developer docs Responses API official",
+          },
+        }),
+        timestamp: "2026-07-07T14:25:37.376Z",
+        updatedAt: "2026-07-07T14:25:37.376Z",
+        sequence: 2,
+      },
+    ],
+    sessionMessageStore: {
+      list: () => [message("user-1", "测试 web 搜索", 1)],
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls,
+      }),
+      replaceToolCalls: (_sessionId, nextToolCalls) => {
+        toolCalls = nextToolCalls;
+      },
+    },
+    sessionTimelineStore: {
+      replace: (_sessionId, entries) => entries,
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: () => undefined,
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.deepEqual(
+    toolCalls.map((toolCall) => [toolCall.id, toolCall.kind, toolCall.title]),
+    [["call-web", "fetch", "Searching for: OpenAI developer docs Responses API official"]],
+  );
+});
+
+test("applyTranscriptToolCallRepair prunes Codex update_plan tool-call history", () => {
+  const sessionId = "session-codex-plan-tool-repair";
+  let toolCalls: AgentToolCall[] = [
+    toolCall("call-plan", "todo", "update_plan", 2, "{\"ok\":true}"),
+    toolCall("call-shell", "tool", "Tool call call_she…", 4, "D:\\myProject\\tools\\Tiller"),
+  ];
+  let timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:call-plan",
+      kind: "tool_call",
+      toolCall: toolCalls[0]!,
+      timestamp: toolCalls[0]!.timestamp,
+      updatedAt: toolCalls[0]!.updatedAt,
+      sequence: 2,
+    },
+    {
+      id: "tool:call-shell",
+      kind: "tool_call",
+      toolCall: toolCalls[1]!,
+      timestamp: toolCalls[1]!.timestamp,
+      updatedAt: toolCalls[1]!.updatedAt,
+      sequence: 4,
+    },
+  ];
+
+  const repaired = applyTranscriptToolCallRepair({
+    sessionId,
+    summary: {
+      ...createSummary(sessionId),
+      agentId: "codex",
+      agentName: "Codex",
+    },
+    agent: {
+      id: "codex",
+      name: "Codex",
+      kind: "custom" as const,
+      command: "codex-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    transcriptToolCalls: [
+      {
+        id: "call-shell",
+        kind: "shell",
+        title: "Get-Location",
+        status: "completed",
+        input: JSON.stringify({ command: "Get-Location" }),
+        timestamp: "2026-07-07T11:05:55.558Z",
+        updatedAt: "2026-07-07T11:06:03.385Z",
+        sequence: 4,
+      },
+    ],
+    sessionMessageStore: {
+      list: () => [message("user-1", "修复 Codex 计划工具", 1)],
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls,
+      }),
+      replaceToolCalls: (_sessionId, nextToolCalls) => {
+        toolCalls = nextToolCalls;
+      },
+    },
+    sessionTimelineStore: {
+      list: () => timeline,
+      replace: (_sessionId, entries) => {
+        timeline = entries;
+        return entries;
+      },
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: () => undefined,
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.deepEqual(
+    toolCalls.map((toolCall) => [toolCall.id, toolCall.kind, toolCall.title]),
+    [["call-shell", "shell", "Get-Location"]],
+  );
+  assert.deepEqual(
+    timeline.filter((entry) => entry.kind === "tool_call").map((entry) => entry.toolCall.id),
+    ["call-shell"],
+  );
+});
+
+test("applyTranscriptToolCallRepair prunes OpenCode todo-count tool-call history", () => {
+  const sessionId = "session-opencode-plan-tool-repair";
+  let toolCalls: AgentToolCall[] = [
+    {
+      id: "call-plan",
+      kind: "write",
+      title: "2 todos",
+      status: "completed",
+      input: JSON.stringify({
+        todos: [
+          { content: "读文件", status: "completed" },
+          { content: "写总结", status: "pending" },
+        ],
+      }),
+      timestamp: "2026-07-07T11:05:54.558Z",
+      updatedAt: "2026-07-07T11:05:55.385Z",
+      sequence: 2,
+    },
+    {
+      id: "call-search",
+      kind: "search",
+      title: "Search",
+      status: "completed",
+      timestamp: "2026-07-07T11:05:55.558Z",
+      updatedAt: "2026-07-07T11:06:03.385Z",
+      sequence: 4,
+    },
+  ];
+  let timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:call-plan",
+      kind: "tool_call",
+      toolCall: toolCalls[0]!,
+      timestamp: toolCalls[0]!.timestamp,
+      updatedAt: toolCalls[0]!.updatedAt,
+      sequence: 2,
+    },
+    {
+      id: "tool:call-search",
+      kind: "tool_call",
+      toolCall: toolCalls[1]!,
+      timestamp: toolCalls[1]!.timestamp,
+      updatedAt: toolCalls[1]!.updatedAt,
+      sequence: 4,
+    },
+  ];
+
+  const repaired = applyTranscriptToolCallRepair({
+    sessionId,
+    summary: {
+      ...createSummary(sessionId),
+      agentId: "opencode",
+      agentName: "OpenCode",
+    },
+    agent: {
+      id: "opencode",
+      name: "OpenCode",
+      kind: "custom" as const,
+      command: "opencode",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    transcriptToolCalls: [toolCalls[1]!],
+    sessionMessageStore: {
+      list: () => [message("user-1", "修复 OpenCode 计划工具", 1)],
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls,
+      }),
+      replaceToolCalls: (_sessionId, nextToolCalls) => {
+        toolCalls = nextToolCalls;
+      },
+    },
+    sessionTimelineStore: {
+      list: () => timeline,
+      replace: (_sessionId, entries) => {
+        timeline = entries;
+        return entries;
+      },
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: () => undefined,
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.deepEqual(
+    toolCalls.map((toolCall) => [toolCall.id, toolCall.kind, toolCall.title]),
+    [["call-search", "search", "Search"]],
+  );
+  assert.deepEqual(
+    timeline.filter((entry) => entry.kind === "tool_call").map((entry) => entry.toolCall.id),
+    ["call-search"],
   );
 });
 

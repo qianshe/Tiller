@@ -1,5 +1,10 @@
 import type { AgentMessage, AgentToolCall, AgentToolCallKind, CommandChunk } from "@tiller/shared";
-import { findEquivalentReplayDuplicateMessageIndex } from "@tiller/shared";
+import {
+  findEquivalentReplayDuplicateMessageIndex,
+  formatAgentToolCallMcpTitle,
+  resolveAgentToolCallMcp,
+  resolveStructuredToolName,
+} from "@tiller/shared";
 
 export function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
   return normalizeSessionMessages([...messages, message]);
@@ -31,8 +36,9 @@ export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): 
   return {
     ...current,
     ...incoming,
-    kind: resolveToolCallKind(current.kind, incoming.kind),
+    kind: resolveMergedToolCallKind(current, incoming),
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
+    mcp: incoming.mcp ?? current.mcp,
     output: mergeToolCallOutput(current.output, incoming.output),
     input: incoming.input ?? current.input,
     timestamp: current.timestamp,
@@ -100,6 +106,16 @@ export function resolveToolCallKind(
   return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
 }
 
+function resolveMergedToolCallKind(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  if (shouldPreferSearchRepair(current, incoming)) {
+    return incoming.kind;
+  }
+  return resolveToolCallKind(current.kind, incoming.kind);
+}
+
 export function isHigherConfidenceToolKind(
   incomingKind: AgentToolCallKind,
   currentKind: AgentToolCallKind,
@@ -121,6 +137,41 @@ export function isHigherConfidenceToolKind(
   return rank[incomingKind] > rank[currentKind];
 }
 
+function shouldPreferSearchRepair(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  return current.kind === "shell" &&
+    incoming.kind === "search" &&
+    Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt);
+}
+
+export function normalizePersistedAgentToolCall(
+  toolCall: AgentToolCall | null,
+): AgentToolCall | null {
+  if (!toolCall) {
+    return null;
+  }
+
+  const normalizedKind = normalizePersistedAgentToolCallKind(toolCall.kind);
+  const mcp = resolveAgentToolCallMcp({
+    existing: toolCall.mcp,
+    input: toolCall.input,
+    title: toolCall.title,
+    rawTitle: toolCall.mcp?.rawTitle,
+  });
+  if (!mcp || (normalizedKind !== "mcp" && !isHigherConfidenceToolKind("mcp", normalizedKind))) {
+    return { ...toolCall, kind: normalizedKind };
+  }
+
+  return {
+    ...toolCall,
+    kind: "mcp",
+    title: resolveQualifiedMcpToolCallTitle(mcp),
+    mcp,
+  };
+}
+
 export function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {
   if (isInformativeToolCallTitle(incomingTitle, id) && !isFallbackToolCallTitle(incomingTitle)) {
     return incomingTitle;
@@ -135,6 +186,43 @@ export function isFallbackToolCallTitle(title: string | undefined) {
 export function isInformativeToolCallTitle(title: string | undefined, id: string) {
   const normalized = title?.trim();
   return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
+}
+
+function resolveQualifiedMcpToolCallTitle(mcp: NonNullable<AgentToolCall["mcp"]>) {
+  return formatAgentToolCallMcpTitle(mcp);
+}
+
+function normalizePersistedAgentToolCallKind(value: unknown): AgentToolCallKind {
+  if (value === "terminal") return "shell";
+  if (value === "edit") return "write";
+  return typeof value === "string"
+    ? ([
+      "mcp",
+      "skill",
+      "read",
+      "write",
+      "search",
+      "shell",
+      "fetch",
+      "think",
+      "todo",
+      "subagent",
+      "tool",
+      "unknown",
+    ] as const).includes(value as AgentToolCallKind)
+      ? (value as AgentToolCallKind)
+      : "unknown"
+    : "unknown";
+}
+
+function toolNameFromInput(input: string | undefined) {
+  return resolveStructuredToolName(input);
+}
+
+function primitiveStringFrom(value: unknown) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
 }
 
 export function compareHistoryPosition(

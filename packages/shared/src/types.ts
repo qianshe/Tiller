@@ -410,11 +410,25 @@ export type AgentToolCallKind =
   | "tool"
   | "unknown";
 
+export type AgentToolCallMcpSource =
+  | "structured-input"
+  | "structured-tool-name"
+  | "qualified-title"
+  | "provider-title";
+
+export type AgentToolCallMcp = {
+  serverName?: string;
+  toolName: string;
+  source: AgentToolCallMcpSource;
+  rawTitle?: string;
+};
+
 export type AgentToolCall = {
   id: string;
   kind: AgentToolCallKind;
   title: string;
   status: AgentToolCallStatus;
+  mcp?: AgentToolCallMcp;
   commandId?: string;
   input?: string;
   output?: string;
