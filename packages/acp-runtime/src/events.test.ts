@@ -2018,6 +2018,39 @@ test("mapSessionUpdateNotification suppresses OpenCode count-only todo tools", (
   assert.equal(mapped, null);
 });
 
+test("mapSessionUpdateNotification suppresses OpenCode title-only todowrite frames without todo payload", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-todo",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-todo-empty-frame",
+            title: "todowrite",
+            kind: "write",
+            input: "{}",
+            status: "completed",
+          },
+        },
+      },
+    },
+    {
+      provider: {
+        id: "opencode",
+        name: "OpenCode",
+        command: "opencode",
+        transport: "stdio",
+        protocol: "acp",
+      },
+    },
+  );
+
+  assert.equal(mapped, null);
+});
+
 test("mapSessionUpdateNotification lets provider adapters project todo updates into plans", () => {
   const mapped = mapSessionUpdateNotification(
     {

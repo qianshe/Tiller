@@ -13,6 +13,8 @@ import {
 import { normalizePersistedAgentToolCall } from "@tiller/persistence";
 import type { TillerLogger } from "../../logging/logger";
 import { hasToolCallChanged } from "../tool-call-repair/change-detection";
+import { isStaleOpenCodeRunningWriteToolCall } from "../tool-call-repair/stale-open-code-write";
+import { dedupeCodexWebFetchToolCalls } from "../tool-call-repair/codex-web-fetch-dedupe";
 
 type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
@@ -90,8 +92,11 @@ export function applyTranscriptToolCallRepair(input: {
     : currentTimeline
         .filter((entry): entry is Extract<SessionTimelineEntry, { kind: "tool_call" }> => entry.kind === "tool_call")
         .map((entry) => entry.toolCall);
-  const filteredReplayToolCalls = replayToolCalls.filter((toolCall) =>
-    shouldRetainTranscriptRepairedToolCall(providerId, toolCall)
+  const filteredReplayToolCalls = dedupeCodexWebFetchToolCalls(
+    providerId,
+    replayToolCalls.filter((toolCall) =>
+      shouldRetainTranscriptRepairedToolCall(input.summary, providerId, toolCall)
+    ),
   );
   const { repairedToolCalls, changedToolCalls } = mergeTranscriptToolCalls(
     filteredReplayToolCalls,
@@ -207,8 +212,16 @@ function repairTimelineToolCalls(
 }
 
 function shouldRetainTranscriptRepairedToolCall(
+  summary: Pick<SessionSummary, "cwd" | "status">,
   providerId: string | undefined,
   toolCall: AgentToolCall,
 ) {
+  if (isStaleOpenCodeRunningWriteToolCall({
+    providerId,
+    summary,
+    toolCall,
+  })) {
+    return false;
+  }
   return !isAdapterPlanToolCall(providerId, toolCall);
 }

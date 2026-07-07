@@ -44,7 +44,18 @@ export function extractCodexPlanFromToolCall(toolCall: AgentToolCall): AgentPlan
 export function isCodexPlanToolCall(toolCall: AgentToolCall) {
   return toolCall.kind === "todo" ||
     isCodexPlanToolName(toolCall.title) ||
+    looksLikeCodexGenericPlanUpdate(toolCall) ||
     Boolean(extractCodexPlanFromToolCall(toolCall));
+}
+
+function looksLikeCodexGenericPlanUpdate(toolCall: AgentToolCall) {
+  if (toolCall.kind !== "tool") {
+    return false;
+  }
+  if (!/^Tool call call_/u.test(toolCall.title.trim())) {
+    return false;
+  }
+  return toolCall.output?.trim() === "Plan updated";
 }
 
 function extractCodexPlanFromSource(

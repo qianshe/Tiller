@@ -331,6 +331,18 @@ test("tool-call plan repair stays behind provider adapters", () => {
     }),
     false,
   );
+  assert.equal(
+    isAdapterPlanToolCall("codex", {
+      id: "call-codex-plan-generic",
+      kind: "tool",
+      title: "Tool call call_oDqR…",
+      status: "completed",
+      output: "Plan updated",
+      timestamp: "2026-07-07T16:35:26.089Z",
+      updatedAt: "2026-07-07T16:35:26.089Z",
+    }),
+    true,
+  );
 });
 
 test("resolveAdapterPluginManifest exposes a disabled placeholder without loading plugins", () => {

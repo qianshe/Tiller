@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
 import { repairSessionToolCalls, repairSessionUpdateToolCalls, repairTimelineToolCalls } from "./tool-call-repair.js";
 
@@ -82,6 +85,38 @@ test("repairSessionToolCalls upgrades OpenCode title-only MCP history to mcp", (
     source: "provider-title",
     rawTitle: "mcp-router_codebase_search: ACP tool registration, tool definitions exposed via ACP",
   });
+});
+
+test("repairSessionToolCalls prunes stale OpenCode running writes when target file is missing", () => {
+  const sessionId = "session-opencode-stale-write-history";
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-opencode-stale-write-"));
+  const missingPath = join(tempDir, "__todolist-test-done.txt");
+  const toolCalls: AgentToolCall[] = [
+    {
+      id: "call-stale-write",
+      kind: "write",
+      title: "write",
+      status: "running",
+      input: JSON.stringify({
+        filePath: missingPath,
+        content: "todolist 第三次测试通过\n",
+      }),
+      timestamp: "2026-07-08T00:58:00.000Z",
+      updatedAt: "2026-07-08T00:58:00.000Z",
+    },
+  ];
+
+  const repaired = repairSessionToolCalls(
+    {
+      sessionId,
+      providerId: "opencode",
+      summary: { ...summary(sessionId, "opencode", "OpenCode"), status: "idle" },
+    },
+    toolCalls,
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  assert.deepEqual(repaired.toolCalls, []);
 });
 
 test("repairSessionToolCalls repairs Codex shell history stored as tool or write", () => {
@@ -215,6 +250,64 @@ test("repairTimelineToolCalls rewrites Codex web_search timeline history to fetc
   );
 });
 
+test("repairTimelineToolCalls prunes duplicate Codex web_search entries when ws fetch exists", () => {
+  const sessionId = "session-codex-web-dedupe-timeline";
+  const timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:ws_1",
+      kind: "tool_call",
+      toolCall: {
+        id: "ws_1",
+        kind: "fetch",
+        title: "Searching for: OpenAI developer docs Responses API official",
+        status: "completed",
+        input: JSON.stringify({
+          query: "OpenAI developer docs Responses API official",
+          action: {
+            type: "search",
+            query: "OpenAI developer docs Responses API official",
+          },
+        }),
+        timestamp: "2026-07-07T15:52:59.600Z",
+        updatedAt: "2026-07-07T15:52:59.600Z",
+      },
+      timestamp: "2026-07-07T15:52:59.600Z",
+      updatedAt: "2026-07-07T15:52:59.600Z",
+      sequence: 1,
+    },
+    {
+      id: "tool:web_search_1",
+      kind: "tool_call",
+      toolCall: {
+        id: "web_search_1",
+        kind: "fetch",
+        title: "OpenAI developer docs Responses API official",
+        status: "completed",
+        timestamp: "2026-07-07T15:52:59.645Z",
+        updatedAt: "2026-07-07T15:52:59.645Z",
+      },
+      timestamp: "2026-07-07T15:52:59.645Z",
+      updatedAt: "2026-07-07T15:52:59.645Z",
+      sequence: 2,
+    },
+  ];
+
+  const repaired = repairTimelineToolCalls(
+    {
+      sessionId,
+      providerId: "codex",
+      summary: summary(sessionId, "codex", "Codex"),
+    },
+    timeline,
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  assert.deepEqual(
+    repaired.timeline.filter((entry) => entry.kind === "tool_call").map((entry) => entry.toolCall.id),
+    ["ws_1"],
+  );
+});
+
 test("repairTimelineToolCalls prunes Codex update_plan history for old sessions", () => {
   const sessionId = "session-codex-plan-history";
   const timeline: SessionTimelineEntry[] = [
@@ -280,6 +373,62 @@ test("repairTimelineToolCalls prunes Codex update_plan history for old sessions"
   );
 });
 
+test("repairTimelineToolCalls prunes generic Codex plan-updated tool calls", () => {
+  const sessionId = "session-codex-generic-plan-history";
+  const timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:call-plan",
+      kind: "tool_call",
+      toolCall: {
+        id: "call-plan",
+        kind: "tool",
+        title: "Tool call call_plan…",
+        status: "completed",
+        output: "Plan updated",
+        timestamp: "2026-07-07T16:35:26.089Z",
+        updatedAt: "2026-07-07T16:35:26.089Z",
+      },
+      timestamp: "2026-07-07T16:35:26.089Z",
+      updatedAt: "2026-07-07T16:35:26.089Z",
+      sequence: 1,
+    },
+    {
+      id: "tool:call-shell",
+      kind: "tool_call",
+      toolCall: {
+        id: "call-shell",
+        kind: "tool",
+        title: "Get-Location",
+        status: "completed",
+        input: JSON.stringify({
+          command: ["pwsh.exe", "-Command", "Get-Location"],
+          parsed_cmd: [{ type: "unknown", cmd: "Get-Location" }],
+        }),
+        timestamp: "2026-07-07T16:35:26.100Z",
+        updatedAt: "2026-07-07T16:35:26.100Z",
+      },
+      timestamp: "2026-07-07T16:35:26.100Z",
+      updatedAt: "2026-07-07T16:35:26.100Z",
+      sequence: 2,
+    },
+  ];
+
+  const repaired = repairTimelineToolCalls(
+    {
+      sessionId,
+      providerId: "codex",
+      summary: summary(sessionId, "codex", "Codex"),
+    },
+    timeline,
+  );
+
+  assert.equal(repaired.changedCount, 2);
+  assert.deepEqual(
+    repaired.timeline.filter((entry) => entry.kind === "tool_call").map((entry) => entry.toolCall.id),
+    ["call-shell"],
+  );
+});
+
 test("repairTimelineToolCalls prunes OpenCode todo-count history for old sessions", () => {
   const sessionId = "session-opencode-plan-history";
   const timeline: SessionTimelineEntry[] = [
@@ -335,6 +484,45 @@ test("repairTimelineToolCalls prunes OpenCode todo-count history for old session
     repaired.timeline.filter((entry) => entry.kind === "tool_call").map((entry) => entry.toolCall.id),
     ["call-search"],
   );
+});
+
+test("repairTimelineToolCalls prunes stale OpenCode running writes when target file is missing", () => {
+  const sessionId = "session-opencode-stale-write-timeline";
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-opencode-stale-write-"));
+  const missingPath = join(tempDir, "__todolist-test-done.txt");
+  const timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:call-stale-write",
+      kind: "tool_call",
+      toolCall: {
+        id: "call-stale-write",
+        kind: "write",
+        title: "write",
+        status: "running",
+        input: JSON.stringify({
+          filePath: missingPath,
+          content: "todolist 第三次测试通过\n",
+        }),
+        timestamp: "2026-07-08T00:58:00.000Z",
+        updatedAt: "2026-07-08T00:58:00.000Z",
+      },
+      timestamp: "2026-07-08T00:58:00.000Z",
+      updatedAt: "2026-07-08T00:58:00.000Z",
+      sequence: 1,
+    },
+  ];
+
+  const repaired = repairTimelineToolCalls(
+    {
+      sessionId,
+      providerId: "opencode",
+      summary: { ...summary(sessionId, "opencode", "OpenCode"), status: "idle" },
+    },
+    timeline,
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  assert.deepEqual(repaired.timeline, []);
 });
 
 test("repairSessionUpdateToolCalls prunes OpenCode todo-count updates", () => {
@@ -440,4 +628,130 @@ test("repairSessionUpdateToolCalls rewrites Codex web_search updates to fetch", 
   };
   assert.equal(payload.toolCall.kind, "fetch");
   assert.equal(payload.toolCall.title, "OpenAI developer docs Responses API official");
+});
+
+test("repairSessionUpdateToolCalls prunes duplicate Codex web_search updates when ws fetch exists", () => {
+  const sessionId = "session-codex-web-dedupe-updates";
+  const repaired = repairSessionUpdateToolCalls(
+    {
+      sessionId,
+      providerId: "codex",
+      summary: summary(sessionId, "codex", "Codex"),
+    },
+    [
+      {
+        sessionId,
+        runtimeSessionId: "runtime-1",
+        providerId: "codex",
+        sequence: 1,
+        source: "acp_load_replay",
+        updateType: "tool-call",
+        receivedAt: "2026-07-07T15:55:57.700Z",
+        payloadJson: JSON.stringify({
+          type: "tool-call",
+          toolCall: {
+            id: "ws_1",
+            kind: "fetch",
+            title: "Searching for: OpenAI developer docs Responses API official",
+            status: "completed",
+            input: JSON.stringify({
+              query: "OpenAI developer docs Responses API official",
+              action: {
+                type: "search",
+                query: "OpenAI developer docs Responses API official",
+              },
+            }),
+            timestamp: "2026-07-07T15:55:57.700Z",
+            updatedAt: "2026-07-07T15:55:57.700Z",
+          },
+        }),
+      },
+      {
+        sessionId,
+        runtimeSessionId: "runtime-1",
+        providerId: "codex",
+        sequence: 2,
+        source: "acp_load_replay",
+        updateType: "tool-call",
+        receivedAt: "2026-07-07T15:55:57.848Z",
+        payloadJson: JSON.stringify({
+          type: "tool-call",
+          toolCall: {
+            id: "web_search_1",
+            kind: "fetch",
+            title: "OpenAI developer docs Responses API official",
+            status: "completed",
+            timestamp: "2026-07-07T15:55:57.846Z",
+            updatedAt: "2026-07-07T15:55:57.846Z",
+          },
+        }),
+      },
+    ],
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  assert.deepEqual(
+    repaired.updates.map((update) => update.sequence),
+    [1],
+  );
+});
+
+test("repairSessionUpdateToolCalls prunes generic Codex plan-updated tool calls", () => {
+  const sessionId = "session-codex-generic-plan-updates";
+  const repaired = repairSessionUpdateToolCalls(
+    {
+      sessionId,
+      providerId: "codex",
+      summary: summary(sessionId, "codex", "Codex"),
+    },
+    [
+      {
+        sessionId,
+        runtimeSessionId: "runtime-1",
+        providerId: "codex",
+        sequence: 1,
+        source: "acp_load_replay",
+        updateType: "tool-call",
+        receivedAt: "2026-07-07T16:35:26.089Z",
+        payloadJson: JSON.stringify({
+          type: "tool-call",
+          toolCall: {
+            id: "call-plan",
+            kind: "tool",
+            title: "Tool call call_plan…",
+            status: "completed",
+            output: "Plan updated",
+            timestamp: "2026-07-07T16:35:26.089Z",
+            updatedAt: "2026-07-07T16:35:26.089Z",
+          },
+        }),
+      },
+      {
+        sessionId,
+        runtimeSessionId: "runtime-1",
+        providerId: "codex",
+        sequence: 2,
+        source: "acp_load_replay",
+        updateType: "tool-call",
+        receivedAt: "2026-07-07T16:35:26.100Z",
+        payloadJson: JSON.stringify({
+          type: "tool-call",
+          toolCall: {
+            id: "call-shell",
+            kind: "shell",
+            title: "Get-Location",
+            status: "completed",
+            timestamp: "2026-07-07T16:35:26.100Z",
+            updatedAt: "2026-07-07T16:35:26.100Z",
+          },
+        }),
+      },
+    ],
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  assert.deepEqual(
+    repaired.updates.map((update) => update.sequence),
+    [2],
+  );
 });

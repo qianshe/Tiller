@@ -77,6 +77,26 @@ test("mapOpenCodePlanUpdate suppresses count-only todo tool calls", () => {
   assert.equal(event, SUPPRESS_SESSION_UPDATE);
 });
 
+test("mapOpenCodePlanUpdate suppresses title-only todowrite frames without todo payload", () => {
+  const event = mapOpenCodePlanUpdate({
+    sessionId: "session-opencode-plan",
+    updateType: "tool_call_update",
+    text: null,
+    update: {
+      toolCall: {
+        id: "call-todo-empty-frame",
+        title: "todowrite",
+        kind: "write",
+        input: "{}",
+        status: "completed",
+      },
+    },
+    now: "2026-06-02T00:00:00.000Z",
+  });
+
+  assert.equal(event, SUPPRESS_SESSION_UPDATE);
+});
+
 test("mapOpenCodePlanUpdate projects title-only todo updates when rawInput carries the todo list", () => {
   const event = mapOpenCodePlanUpdate({
     sessionId: "session-opencode-plan",

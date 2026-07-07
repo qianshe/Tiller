@@ -2,6 +2,8 @@ import { isAdapterPlanToolCall, mapSessionUpdateNotification } from "@tiller/acp
 import { isFallbackToolCallTitle } from "@tiller/persistence";
 import type { AgentToolCall, SessionSummary, SessionTimelineEntry, SessionUpdateRecord } from "@tiller/shared";
 import { hasToolCallChanged } from "../tool-call-repair/change-detection";
+import { isStaleOpenCodeRunningWriteToolCall } from "../tool-call-repair/stale-open-code-write";
+import { dedupeCodexWebFetchToolCalls } from "../tool-call-repair/codex-web-fetch-dedupe";
 
 type ToolCallRepairContext = {
   providerId: string;
@@ -28,10 +30,12 @@ export function repairSessionToolCalls(
   context: ToolCallRepairContext,
   toolCalls: AgentToolCall[],
 ): ToolCallRepairResult {
-  const filteredToolCalls = toolCalls.filter((toolCall) =>
+  const dedupedToolCalls = dedupeCodexWebFetchToolCalls(context.providerId, toolCalls);
+  const filteredToolCalls = dedupedToolCalls.filter((toolCall) =>
     shouldRetainPersistedToolCall(context, toolCall)
   );
-  let changedCount = toolCalls.length - filteredToolCalls.length;
+  let changedCount = toolCalls.length - dedupedToolCalls.length;
+  changedCount += dedupedToolCalls.length - filteredToolCalls.length;
   const repairedToolCalls = filteredToolCalls.map((toolCall) => {
     const repairedToolCall = repairToolCall(context, toolCall);
     if (hasToolCallChanged(toolCall, repairedToolCall)) {
@@ -50,11 +54,21 @@ export function repairTimelineToolCalls(
   context: ToolCallRepairContext,
   timeline: SessionTimelineEntry[],
 ): TimelineToolCallRepairResult {
+  const toolCalls = timeline
+    .filter((entry): entry is Extract<SessionTimelineEntry, { kind: "tool_call" }> => entry.kind === "tool_call")
+    .map((entry) => entry.toolCall);
+  const retainedToolCallIds = new Set(
+    dedupeCodexWebFetchToolCalls(context.providerId, toolCalls).map((toolCall) => toolCall.id),
+  );
   let changedCount = 0;
   const repairedTimeline: SessionTimelineEntry[] = [];
   for (const entry of timeline) {
     if (entry.kind !== "tool_call") {
       repairedTimeline.push(entry);
+      continue;
+    }
+    if (!retainedToolCallIds.has(entry.toolCall.id)) {
+      changedCount += 1;
       continue;
     }
     if (!shouldRetainPersistedToolCall(context, entry.toolCall)) {
@@ -83,6 +97,15 @@ export function repairSessionUpdateToolCalls(
   context: ToolCallRepairContext,
   updates: SessionUpdateRecord[],
 ): SessionUpdateToolCallRepairResult {
+  const updateToolCalls = updates
+    .map((update) => ({ update, toolCall: readToolCallUpdate(update) }))
+    .filter((entry): entry is { update: SessionUpdateRecord; toolCall: AgentToolCall } => Boolean(entry.toolCall));
+  const retainedToolCallIds = new Set(
+    dedupeCodexWebFetchToolCalls(
+      context.providerId,
+      updateToolCalls.map((entry) => entry.toolCall),
+    ).map((toolCall) => toolCall.id),
+  );
   let changedCount = 0;
   const repairedUpdates: SessionUpdateRecord[] = [];
   for (const update of updates) {
@@ -93,6 +116,10 @@ export function repairSessionUpdateToolCalls(
     const parsedToolCall = readToolCallUpdate(update);
     if (!parsedToolCall) {
       repairedUpdates.push(update);
+      continue;
+    }
+    if (!retainedToolCallIds.has(parsedToolCall.id)) {
+      changedCount += 1;
       continue;
     }
     if (!shouldRetainPersistedToolCall(context, parsedToolCall)) {
@@ -192,6 +219,13 @@ function shouldRetainPersistedToolCall(
   context: ToolCallRepairContext,
   toolCall: AgentToolCall,
 ) {
+  if (isStaleOpenCodeRunningWriteToolCall({
+    providerId: context.providerId,
+    summary: context.summary,
+    toolCall,
+  })) {
+    return false;
+  }
   return !isAdapterPlanToolCall(context.providerId, toolCall);
 }
 

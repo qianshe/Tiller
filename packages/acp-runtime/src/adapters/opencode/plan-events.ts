@@ -13,14 +13,14 @@ export function mapOpenCodePlanUpdate(
     return null;
   }
   const source = sourceFrom(context.update);
-  const toolName = stringFrom(source.tool ?? source.toolName ?? source.tool_name ?? source.name).toLowerCase();
+  const toolName = resolveOpenCodePlanToolName(source);
   const todos = extractTodoList(source);
-  const countOnlyTodo = isCountOnlyTodoUpdate(source);
-  if (!isOpenCodePlanToolName(toolName) && !todos && !countOnlyTodo) {
+  const todoToolFrame = isOpenCodePlanToolName(toolName) || isCountOnlyTodoUpdate(source);
+  if (!todoToolFrame && !todos) {
     return null;
   }
   if (!todos) {
-    return countOnlyTodo ? SUPPRESS_SESSION_UPDATE : null;
+    return SUPPRESS_SESSION_UPDATE;
   }
   const plan = extractOpenCodePlanFromSource(source, context.now ?? new Date().toISOString());
   if (!plan) {
@@ -78,6 +78,19 @@ function isCountOnlyTodoUpdate(source: Record<string, unknown>) {
 
 function isOpenCodePlanToolName(value: string) {
   return /todo[_-]?write|todo[_-]?read|todos?/u.test(value.trim().toLowerCase());
+}
+
+function resolveOpenCodePlanToolName(source: Record<string, unknown>) {
+  return stringFrom(
+    source.tool ??
+      source.toolName ??
+      source.tool_name ??
+      source.name ??
+      source.title ??
+      source.label ??
+      source.displayName ??
+      source.display_name,
+  ).toLowerCase();
 }
 
 function sourceFrom(update: unknown): Record<string, unknown> {

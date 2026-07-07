@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type {
   AgentMessage,
   AgentToolCall,
@@ -399,6 +402,110 @@ test("applyTranscriptToolCallRepair rewrites Codex web search transcript history
   );
 });
 
+test("applyTranscriptToolCallRepair prunes duplicate Codex web_search replay entries when ws fetch already exists", () => {
+  const sessionId = "session-codex-web-tool-dedupe";
+  let toolCalls: AgentToolCall[] = [
+    {
+      id: "ws_1",
+      kind: "fetch",
+      title: "Searching for: OpenAI developer docs Responses API official",
+      status: "completed",
+      input: JSON.stringify({
+        query: "OpenAI developer docs Responses API official",
+        action: {
+          type: "search",
+          query: "OpenAI developer docs Responses API official",
+        },
+      }),
+      timestamp: "2026-07-07T14:25:37.376Z",
+      updatedAt: "2026-07-07T14:25:37.376Z",
+      sequence: 2,
+    },
+    {
+      id: "web_search_1",
+      kind: "fetch",
+      title: "OpenAI developer docs Responses API official",
+      status: "completed",
+      timestamp: "2026-07-07T14:25:38.376Z",
+      updatedAt: "2026-07-07T14:25:38.376Z",
+      sequence: 3,
+    },
+  ];
+  let timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:ws_1",
+      kind: "tool_call",
+      toolCall: toolCalls[0]!,
+      timestamp: toolCalls[0]!.timestamp,
+      updatedAt: toolCalls[0]!.updatedAt,
+      sequence: 2,
+    },
+    {
+      id: "tool:web_search_1",
+      kind: "tool_call",
+      toolCall: toolCalls[1]!,
+      timestamp: toolCalls[1]!.timestamp,
+      updatedAt: toolCalls[1]!.updatedAt,
+      sequence: 3,
+    },
+  ];
+
+  const repaired = applyTranscriptToolCallRepair({
+    sessionId,
+    summary: {
+      ...createSummary(sessionId),
+      agentId: "codex",
+      agentName: "Codex",
+    },
+    agent: {
+      id: "codex",
+      name: "Codex",
+      kind: "custom" as const,
+      command: "codex-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    transcriptToolCalls: [toolCalls[0]!],
+    sessionMessageStore: {
+      list: () => [message("user-1", "修复 Codex web 重复", 1)],
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls,
+      }),
+      replaceToolCalls: (_sessionId, nextToolCalls) => {
+        toolCalls = nextToolCalls;
+      },
+    },
+    sessionTimelineStore: {
+      list: () => timeline,
+      replace: (_sessionId, entries) => {
+        timeline = entries;
+        return entries;
+      },
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: () => undefined,
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.deepEqual(
+    toolCalls.map((toolCall) => [toolCall.id, toolCall.kind, toolCall.title]),
+    [["ws_1", "fetch", "Searching for: OpenAI developer docs Responses API official"]],
+  );
+  assert.deepEqual(
+    timeline.filter((entry) => entry.kind === "tool_call").map((entry) => entry.toolCall.id),
+    ["ws_1"],
+  );
+});
+
 test("applyTranscriptToolCallRepair prunes Codex update_plan tool-call history", () => {
   const sessionId = "session-codex-plan-tool-repair";
   let toolCalls: AgentToolCall[] = [
@@ -592,6 +699,87 @@ test("applyTranscriptToolCallRepair prunes OpenCode todo-count tool-call history
     timeline.filter((entry) => entry.kind === "tool_call").map((entry) => entry.toolCall.id),
     ["call-search"],
   );
+});
+
+test("applyTranscriptToolCallRepair prunes stale OpenCode running writes when target file is missing", () => {
+  const sessionId = "session-opencode-stale-write-tool-repair";
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-opencode-stale-write-"));
+  const missingPath = join(tempDir, "__todolist-test-done.txt");
+  let toolCalls: AgentToolCall[] = [
+    {
+      id: "call-stale-write",
+      kind: "write",
+      title: "write",
+      status: "running",
+      input: JSON.stringify({
+        filePath: missingPath,
+        content: "todolist 第三次测试通过\n",
+      }),
+      timestamp: "2026-07-08T00:58:00.000Z",
+      updatedAt: "2026-07-08T00:58:00.000Z",
+      sequence: 2,
+    },
+  ];
+  let timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:call-stale-write",
+      kind: "tool_call",
+      toolCall: toolCalls[0]!,
+      timestamp: toolCalls[0]!.timestamp,
+      updatedAt: toolCalls[0]!.updatedAt,
+      sequence: 2,
+    },
+  ];
+
+  const repaired = applyTranscriptToolCallRepair({
+    sessionId,
+    summary: {
+      ...createSummary(sessionId),
+      agentId: "opencode",
+      agentName: "OpenCode",
+      status: "idle",
+    },
+    agent: {
+      id: "opencode",
+      name: "OpenCode",
+      kind: "custom" as const,
+      command: "opencode",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    transcriptToolCalls: [],
+    sessionMessageStore: {
+      list: () => [message("user-1", "修复 OpenCode 悬挂 write", 1)],
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls,
+      }),
+      replaceToolCalls: (_sessionId, nextToolCalls) => {
+        toolCalls = nextToolCalls;
+      },
+    },
+    sessionTimelineStore: {
+      list: () => timeline,
+      replace: (_sessionId, entries) => {
+        timeline = entries;
+        return entries;
+      },
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: () => undefined,
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.deepEqual(toolCalls, []);
+  assert.deepEqual(timeline, []);
 });
 
 function createSummary(sessionId: string) {
