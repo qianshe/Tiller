@@ -4,6 +4,7 @@ import {
   Textarea,
 } from "../../../shared/ui";
 import {
+  type FormEvent as ReactFormEvent,
   type ClipboardEvent as ReactClipboardEvent,
   type Dispatch,
   type FormEvent,
@@ -124,6 +125,21 @@ type MissionComposerProps = {
   onOpenModelPicker?: () => void;
   canSend: boolean;
 };
+
+export function insertTextAtSelection(
+  value: string,
+  selectionStart: number | null | undefined,
+  selectionEnd: number | null | undefined,
+  insertedText: string,
+) {
+  const start = selectionStart ?? value.length;
+  const end = selectionEnd ?? value.length;
+  return {
+    nextValue: `${value.slice(0, start)}${insertedText}${value.slice(end)}`,
+    nextCaret: start + insertedText.length,
+  };
+}
+
 export function MissionComposer({
   activeSession,
   contextSession,
@@ -201,6 +217,8 @@ export function MissionComposer({
 }: MissionComposerProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [contextPicker, setContextPicker] = useState<"project" | "worktree" | null>("worktree");
+  const skipNextMobileLineBreakInputRef = useRef(false);
+  const explicitMobileSubmitRef = useRef(false);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const activeSessionModelKnown = Boolean(activeSession?.model?.trim());
   const modelConfigMissing = activeSession
@@ -224,6 +242,86 @@ export function MissionComposer({
   const worktreePickerAvailable = !composerSession && draftWorktreeOptions.length > 0;
   const projectPickerOpen = worktreePickerOpen && contextPicker === "project";
   const draftWorktreePickerOpen = worktreePickerOpen && contextPicker === "worktree";
+  const promptRows = isMobile ? 1 : 2;
+  const composerShellClassName = isMobile
+    ? "chat-input-area draft-toolbar mission-composer border-t border-border-ghost px-2 py-1 bg-surface"
+    : "chat-input-area draft-toolbar mission-composer border-t border-border-ghost px-2 py-1.5 bg-surface";
+  const composerDeckClassName = isMobile
+    ? "chat-input-form mission-composer-deck wb-pane-sunken px-1.5 py-1 w-full max-w-[min(1120px,calc(100%_-_32px))] mx-auto grid gap-0"
+    : "chat-input-form mission-composer-deck wb-pane-sunken px-2 py-1.5 w-full max-w-[min(1120px,calc(100%_-_32px))] mx-auto grid gap-0.5";
+  const composerContextClassName = isMobile
+    ? "mission-composer-context flex min-w-0 items-center gap-1"
+    : "mission-composer-context flex min-w-0 items-center gap-1.5";
+  const composerContextGroupClassName = isMobile
+    ? "flex min-w-0 items-center gap-1"
+    : "flex min-w-0 items-center gap-1.5";
+  const composerPromptClassName = isMobile
+    ? "min-h-8 w-full resize-none rounded-none border-0 bg-transparent px-0.5 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+    : "min-h-[48px] w-full resize-none rounded-none border-0 bg-transparent px-1 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0";
+  const composerSidecarClassName = isMobile
+    ? "mission-composer-sidecar grid min-h-6 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1"
+    : "mission-composer-sidecar grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5";
+  const composerToolsClassName = isMobile
+    ? "mission-composer-tools relative flex min-w-0 items-center gap-0.5 text-muted-foreground"
+    : "mission-composer-tools relative flex min-w-0 items-center gap-1 text-muted-foreground";
+  const composerStatusClassName = isMobile
+    ? "col-start-2 self-center justify-self-center pointer-events-none flex h-5 w-fit max-w-[min(12rem,42%)] items-center rounded bg-surface-sunken/80 px-1.5 py-0 text-center shadow-sm"
+    : "col-start-2 self-center justify-self-center pointer-events-none flex h-6 w-fit max-w-[min(18rem,50%)] items-center rounded bg-surface-sunken/80 px-2 py-0 text-center shadow-sm";
+  const composerActionsClassName = isMobile
+    ? "mission-composer-actions flex min-w-0 items-center justify-end gap-0.5"
+    : "mission-composer-actions flex min-w-0 items-center justify-end gap-1";
+  const composerSendButtonClassName = isMobile
+    ? "mission-send-prompt-button h-[var(--control-h-sm)] px-2.5 text-action font-medium"
+    : "mission-send-prompt-button h-ctl-md px-3 text-action font-medium";
+  const syncPromptLineBreak = (target: HTMLTextAreaElement) => {
+    const { nextValue, nextCaret } = insertTextAtSelection(
+      target.value,
+      target.selectionStart,
+      target.selectionEnd,
+      "\n",
+    );
+    setPrompt(nextValue);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        missionPromptRef.current?.setSelectionRange(nextCaret, nextCaret);
+      });
+    }
+  };
+  const handleComposerPromptKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      isMobile &&
+      !slashPopupOpen &&
+      event.key === "Enter" &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.nativeEvent.isComposing
+    ) {
+      skipNextMobileLineBreakInputRef.current = true;
+      event.preventDefault();
+      syncPromptLineBreak(event.currentTarget);
+      return;
+    }
+    handleMissionPromptKeyDown(event);
+  };
+  const handleComposerPromptBeforeInput = (event: ReactFormEvent<HTMLTextAreaElement>) => {
+    if (isMobile && !slashPopupOpen) {
+      const nativeEvent = event.nativeEvent as InputEvent;
+      const inputType = nativeEvent.inputType;
+      if (
+        !nativeEvent.isComposing &&
+        (inputType === "insertLineBreak" || inputType === "insertParagraph")
+      ) {
+        event.preventDefault();
+        if (skipNextMobileLineBreakInputRef.current) {
+          skipNextMobileLineBreakInputRef.current = false;
+          return;
+        }
+        syncPromptLineBreak(event.currentTarget);
+      }
+    }
+  };
   const toggleContextPicker = (picker: "project" | "worktree") => {
     const shouldOpen = contextPicker !== picker || !worktreePickerOpen;
     setAgentPickerOpen(false);
@@ -233,17 +331,24 @@ export function MissionComposer({
 
   return (
     <div
-      className="chat-input-area draft-toolbar mission-composer border-t border-border-ghost px-2 py-1.5 bg-surface"
+      className={composerShellClassName}
       data-mission-swipe-lock="true"
       data-testid="mission-composer"
     >
       <form
-        className="chat-input-form mission-composer-deck wb-pane-sunken px-2 py-1.5 w-full max-w-[min(1120px,calc(100%_-_32px))] mx-auto grid gap-1.5"
-        onSubmit={(event) => submitPrompt(event, composerSession)}
+        className={composerDeckClassName}
+        onSubmit={(event) => {
+          if (isMobile && !explicitMobileSubmitRef.current) {
+            event.preventDefault();
+            return;
+          }
+          explicitMobileSubmitRef.current = false;
+          submitPrompt(event, composerSession);
+        }}
         data-testid="composer-form"
       >
-        <div className="mission-composer-context flex min-w-0 items-center gap-1.5">
-          <div ref={worktreePickerRef} className="flex min-w-0 items-center gap-1.5">
+        <div className={composerContextClassName}>
+          <div ref={worktreePickerRef} className={composerContextGroupClassName}>
             <div className="relative min-w-0">
               <button
                 type="button"
@@ -358,11 +463,13 @@ export function MissionComposer({
             ref={missionPromptRef}
             value={prompt}
             onChange={(event) => setPrompt(event.target.value)}
-            onKeyDown={handleMissionPromptKeyDown}
+            onKeyDown={handleComposerPromptKeyDown}
+            onBeforeInput={handleComposerPromptBeforeInput}
             onPaste={handleMissionPromptPaste}
             placeholder={draftPromptPlaceholder}
-            rows={2}
-            className="min-h-[48px] w-full resize-none rounded-none border-0 bg-transparent px-1 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+            rows={promptRows}
+            enterKeyHint={isMobile ? "enter" : undefined}
+            className={composerPromptClassName}
             data-testid="composer-input"
           />
           {slashPopupOpen ? (
@@ -374,9 +481,9 @@ export function MissionComposer({
             />
           ) : null}
         </div>
-        <div className="mission-composer-sidecar grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5">
+        <div className={composerSidecarClassName}>
           <div
-            className="mission-composer-tools relative flex min-w-0 items-center gap-1 text-muted-foreground"
+            className={composerToolsClassName}
             onBlur={(event) => {
               if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
                 setToolsOpen(false);
@@ -474,12 +581,12 @@ export function MissionComposer({
             ) : null}
           </div>
           <MissionStatusBar
-            className="col-start-2 self-center justify-self-center pointer-events-none flex h-6 w-fit max-w-[min(18rem,50%)] items-center rounded bg-surface-sunken/80 px-2 py-0 text-center shadow-sm"
+            className={composerStatusClassName}
             modelLoading={modelConfigLoading}
             promptEnhancing={promptEnhancerBusy}
             promptEnhancerStatus={promptEnhancerStatus}
           />
-          <div className="mission-composer-actions flex min-w-0 items-center justify-end gap-1">
+          <div className={composerActionsClassName}>
             {deckPreferences.promptEnhancer.enabled && !showInterruptOnly ? (
               <Button
                 variant="outline"
@@ -510,14 +617,17 @@ export function MissionComposer({
                 />
               </Button>
             ) : null}
-            {!showInterruptOnly ? (
-              <Button
-                size="sm"
-                type="submit"
-                className="mission-send-prompt-button h-ctl-md px-3 text-action font-medium"
-                disabled={!canSend}
-                aria-label="发送"
-                title="发送"
+                {!showInterruptOnly ? (
+                  <Button
+                    size="sm"
+                    type="submit"
+                    className={composerSendButtonClassName}
+                    disabled={!canSend}
+                    aria-label="发送"
+                    title="发送"
+                onClick={() => {
+                  explicitMobileSubmitRef.current = true;
+                }}
               >
                 发送 <Icon name="send" size={11} />
               </Button>

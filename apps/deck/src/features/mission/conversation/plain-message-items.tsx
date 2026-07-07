@@ -19,6 +19,7 @@ const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
+const ASSISTANT_MESSAGE_FRAME_CLASS = "mr-auto w-[calc(100%-0.625rem)] max-w-[calc(100%-0.625rem)]";
 const ASSISTANT_MESSAGE_RAIL_CLASS = "grid-cols-[0.375rem_minmax(0,1fr)] gap-x-1";
 const USER_MESSAGE_RAIL_CLASS = "w-fit max-w-[min(56rem,76%)]";
 
@@ -288,7 +289,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         isSystem
           ? "mr-auto grid w-full max-w-full items-start"
           : isAssistant
-            ? `mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start`
+            ? `${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start`
             : "ml-auto grid w-full justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
@@ -521,7 +522,7 @@ export function PlainThinkingItem({
   }, [shouldAutoOpen]);
 
   return (
-    <div className={`plain-thinking-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
+    <div className={`plain-thinking-row ${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
       <span aria-hidden="true" />
       <details
         className="plain-thinking min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
@@ -628,7 +629,7 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
   }, [group.length, open]);
 
   return (
-    <div className={`plain-tool-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
+    <div className={`plain-tool-row ${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
       <span aria-hidden="true" />
       <details
         className="plain-tool-group min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
@@ -696,7 +697,7 @@ export function PlainSubagentItem({
   }, [shouldAutoOpen]);
 
   return (
-    <div className={`plain-subagent-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
+    <div className={`plain-subagent-row ${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
       <span aria-hidden="true" />
       <details
         className="plain-subagent min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"

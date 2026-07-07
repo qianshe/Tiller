@@ -221,6 +221,7 @@ export function MissionChatPane({
   const [menuOpen, setMenuOpen] = useState(false);
   const [parallelGridSingleRow, setParallelGridSingleRow] = useState(false);
   const canCreateTask = projectOptions.length > 0;
+  const canCreateTaskDirectly = projectOptions.length === 1;
   const activeSessionId = activeSession?.id ?? null;
   const messageHistoryStateRef = useRef(messageHistoryState);
   const handleSelectSessionView = useStableEvent(onSelectSessionView);
@@ -415,6 +416,43 @@ export function MissionChatPane({
       onClose={onCloseDraftWindow}
     />
   ) : null;
+  const projectCreateMenu = projectOptions.length > 1 ? (
+    <div
+      role="menu"
+      className="absolute right-0 top-[calc(100%+4px)] z-50 w-[220px] overflow-hidden rounded-[8px] py-1"
+      style={{
+        background: "var(--popover-glass)",
+        backdropFilter: "blur(20px)",
+        boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
+        animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+      }}
+    >
+      {projectOptions.map((project) => (
+        <MenuItem
+          key={project.id}
+          icon="folder"
+          onClick={() => {
+            onCreateTask(project.id);
+            setProjectMenuOpen(false);
+          }}
+        >
+          {project.name}
+        </MenuItem>
+      ))}
+    </div>
+  ) : null;
+  const handleCreateTaskFromEmptyState = () => {
+    if (!canCreateTask) {
+      return;
+    }
+    if (canCreateTaskDirectly) {
+      onCreateTask(projectOptions[0]!.id);
+      setProjectMenuOpen(false);
+      return;
+    }
+    setProjectMenuOpen((current) => !current);
+    setMenuOpen(false);
+  };
 
   useEffect(() => {
     const chatMain = chatMainRef.current;
@@ -640,31 +678,7 @@ export function MissionChatPane({
             >
               <Icon name="plus" size={12} />
             </button>
-            {projectMenuOpen ? (
-              <div
-                role="menu"
-                className="absolute right-0 top-[calc(100%+4px)] z-50 w-[220px] overflow-hidden rounded-[8px] py-1"
-                style={{
-                  background: "var(--popover-glass)",
-                  backdropFilter: "blur(20px)",
-                  boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
-                  animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
-                }}
-              >
-                {projectOptions.map((project) => (
-                  <MenuItem
-                    key={project.id}
-                    icon="folder"
-                    onClick={() => {
-                      onCreateTask(project.id);
-                      setProjectMenuOpen(false);
-                    }}
-                  >
-                    {project.name}
-                  </MenuItem>
-                ))}
-              </div>
-            ) : null}
+            {projectMenuOpen ? projectCreateMenu : null}
           </div>
           <div ref={menuRef} className="relative">
             <button
@@ -819,9 +833,41 @@ export function MissionChatPane({
                   onRespondToPermission={handleRespondToPermission}
                   showThinkingToggle={isMissionMobile}
                   onToggleThinking={onToggleThinking}
+                  showCreateTaskAction={isMissionMobile}
+                  onCreateTask={onCreateTask}
                 />
               ))}
             </div>
+        ) : isMissionMobile ? (
+          <div className="flex min-h-full items-center justify-center px-6 py-10">
+            <div ref={projectMenuRef} className="relative">
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
+                  canCreateTask
+                    ? "border-primary/30 bg-primary-soft/15 text-primary hover:border-primary/50 hover:bg-primary-soft/25"
+                    : "cursor-not-allowed border-border-ghost bg-surface-sunken text-muted-foreground/60",
+                )}
+                disabled={!canCreateTask}
+                aria-haspopup={canCreateTaskDirectly ? undefined : "menu"}
+                aria-expanded={canCreateTaskDirectly ? undefined : projectMenuOpen}
+                aria-label="新建会话"
+                title={
+                  !canCreateTask
+                    ? "没有可用项目"
+                    : canCreateTaskDirectly
+                      ? "在当前项目中新建会话"
+                      : "选择项目创建会话"
+                }
+                onClick={handleCreateTaskFromEmptyState}
+              >
+                <Icon name="plus" size={14} />
+                <span>新建会话</span>
+              </button>
+              {projectMenuOpen ? projectCreateMenu : null}
+            </div>
+          </div>
         ) : null}{" "}
       </div>{" "}
       {children}
@@ -844,6 +890,7 @@ type MissionChatSessionCardProps = {
   onBodyScroll: (sessionId: string, body: HTMLDivElement) => void;
   onClear: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
+  onCreateTask: (projectId: string) => void;
   onDismissCompletedPlan: (sessionId: string, planKey: string) => void;
   onFocus: (sessionId: string) => void;
   onLoadOlderMessages: (sessionId: string) => void;
@@ -870,6 +917,7 @@ type MissionChatSessionCardProps = {
   showPermissionWorktree: boolean;
   showThinking: boolean;
   showThinkingToggle: boolean;
+  showCreateTaskAction: boolean;
   timelineItems: SessionTimelineEntry[];
 };
 
@@ -888,6 +936,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   onBodyScroll,
   onClear,
   onClose,
+  onCreateTask,
   onDismissCompletedPlan,
   onFocus,
   onLoadOlderMessages,
@@ -910,6 +959,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   showPermissionWorktree,
   showThinking,
   showThinkingToggle,
+  showCreateTaskAction,
   timelineItems,
 }: MissionChatSessionCardProps) {
   const sessionTimeline = useMemo(
@@ -983,6 +1033,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       onRename={onRename}
       onClear={onClear}
       onClose={onClose}
+      onCreateTask={onCreateTask}
       onDismissCompletedPlan={onDismissCompletedPlan}
       restoreNotice={restoreNotice}
       toolLoading={toolLoading}
@@ -994,6 +1045,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       showThinkingToggle={showThinkingToggle}
       showThinking={showThinking}
       onToggleThinking={onToggleThinking}
+      showCreateTaskAction={showCreateTaskAction}
     >
       {hasSessionContent ? (
         <MissionMessageTimeline

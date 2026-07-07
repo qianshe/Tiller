@@ -399,7 +399,7 @@ export function App() {
   });
   const layout = useMissionLayout({
     activeView: route.activeView,
-    hasActiveSession: Boolean(missionView.activeSession),
+    hasActiveConversation: Boolean(missionView.activeSession || deckData.draftChatWindow),
   });
   const layoutContext = buildAppLayoutContext(layout);
   const panelContext = buildMissionPanelContext(panelPages);

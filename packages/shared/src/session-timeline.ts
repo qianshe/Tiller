@@ -641,7 +641,7 @@ function mergeToolCallEntry(
       kind: resolveMergedToolCallKind(current.toolCall, incoming.toolCall),
       title: resolveMergedToolCallTitle(current.toolCall, incoming.toolCall),
       status: resolveMergedToolCallStatus(current.toolCall, incoming.toolCall),
-      input: mergeOptionalText(current.toolCall.input, incoming.toolCall.input),
+      input: incoming.toolCall.input ?? current.toolCall.input,
       output: mergeOptionalText(current.toolCall.output, incoming.toolCall.output),
       timestamp: current.toolCall.timestamp,
       sequence: current.toolCall.sequence ?? incoming.toolCall.sequence,

@@ -583,6 +583,39 @@ test("appendToolCallToSessionTimeline keeps a specialized tool kind and descript
   );
 });
 
+test("appendToolCallToSessionTimeline replaces repeated tool input snapshots instead of concatenating JSON", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-input",
+    commandId: "call-input",
+    kind: "shell",
+    title: "Terminal",
+    status: "running",
+    input: "{}",
+    sequence: 3,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "call-input",
+    commandId: "call-input",
+    kind: "shell",
+    title: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+    status: "completed",
+    input: JSON.stringify({
+      command: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+    }),
+    sequence: 3,
+  }));
+
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.input : undefined,
+    JSON.stringify({
+      command: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+    }),
+  );
+});
+
 test("appendToolCallToSessionTimeline keeps subagent classification when a later update downgrades to a generic tool kind", () => {
   const entries: SessionTimelineEntry[] = [];
 

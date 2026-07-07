@@ -83,9 +83,11 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
   assert.match(html, /Thinking/);
   assert.doesNotMatch(html, /Thinking · Tab 替换边界探索/);
   assert.match(html, /完整 Thinking 内容/);
+  assert.match(html, /plain-thinking-row[^"]*w-\[calc\(100%-0\.625rem\)\][^"]*max-w-\[calc\(100%-0\.625rem\)\]/);
   assert.match(html, /plain-thinking-row[^"]*grid-cols-\[0\.375rem_minmax\(0,1fr\)\][^"]*gap-x-1/);
   assert.match(html, /plain-thinking[^"]*rounded-\[8px\][^"]*bg-surface-sunken\/55/);
-  assert.match(html, /plain-thinking-content[^"]*border-l/);
+  assert.match(html, /plain-thinking-content[^"]*text-\[12\.5px\][^"]*leading-\[1\.5\]/);
+  assert.doesNotMatch(html, /plain-thinking-content[^"]*border-l/);
   assert.match(html, /aria-label="展开 Thinking"/);
   assert.doesNotMatch(html, /plain-thinking[^"]*rounded-xl/);
   assert.doesNotMatch(html, /plain-thinking[^"]*bg-surface-elevated/);

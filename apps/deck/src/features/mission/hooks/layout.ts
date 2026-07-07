@@ -36,7 +36,7 @@ const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081;
 const MISSION_MOBILE_WIDTH = 1081;
 type MissionLayoutOptions = {
   activeView: unknown;
-  hasActiveSession: boolean;
+  hasActiveConversation: boolean;
 };
 
 function getMissionPaneMax(pane: MissionPaneId) {
@@ -240,7 +240,7 @@ function shouldCollapseDisplayForChat(
 }
 
 export function useMissionLayout(options: MissionLayoutOptions) {
-  const { activeView, hasActiveSession } = options;
+  const { activeView, hasActiveConversation } = options;
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(
     DEFAULT_MISSION_PANE_WIDTHS,
   );
@@ -249,7 +249,7 @@ export function useMissionLayout(options: MissionLayoutOptions) {
   const [missionInspectorCollapsed, setMissionInspectorCollapsed] =
     useState(true);
   const [selectedMissionMobilePane, setSelectedMissionMobilePane] =
-    useState<MissionMobilePane>(() => (hasActiveSession ? "chat" : "project"));
+    useState<MissionMobilePane>(() => (hasActiveConversation ? "chat" : "project"));
   const missionLayoutRef = useRef<HTMLElement | null>(null);
   const [missionViewportWidth, setMissionViewportWidth] = useState(() =>
     typeof document === "undefined"
@@ -291,8 +291,8 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     if (!isMissionMobile) {
       return;
     }
-    setSelectedMissionMobilePane(hasActiveSession ? "chat" : "project");
-  }, [activeView, hasActiveSession, isMissionMobile]);
+    setSelectedMissionMobilePane(hasActiveConversation ? "chat" : "project");
+  }, [activeView, hasActiveConversation, isMissionMobile]);
 
   const effectiveSidebarCollapsed =
     missionSidebarCollapsed ||

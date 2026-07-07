@@ -1512,6 +1512,65 @@ test("mapSessionUpdateNotification classifies ACP tool kinds without provider sp
   }
 });
 
+test("mapSessionUpdateNotification keeps explicit shell kind for grep-like terminal commands", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-shell-grep",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCall: {
+          id: "call-shell-grep",
+          kind: "shell",
+          title: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+          status: "completed",
+          input: "{}",
+          timestamp: "2026-07-07T00:34:41.000Z",
+          updatedAt: "2026-07-07T00:34:41.000Z",
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "shell");
+});
+
+test("mapSessionUpdateNotification repairs Claude shell command history that was previously mislabeled as search", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-history-shell",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-claude-history-shell",
+            kind: "search",
+            title: "cd /d/myProject/tools/Tiller && grep -n \"tool_call\" apps/helm/src/runtime/events.ts | head",
+            status: "completed",
+            input: "{}{\"command\":\"cd /d/myProject/tools/Tiller && grep -n \\\"tool_call\\\" apps/helm/src/runtime/events.ts | head\"}",
+            timestamp: "2026-07-07T00:34:41.000Z",
+            updatedAt: "2026-07-07T00:34:41.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "claudecode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "shell");
+});
+
 test("mapSessionUpdateNotification applies OpenCode provider live tool classification", () => {
   const mapped = mapSessionUpdateNotification(
     {

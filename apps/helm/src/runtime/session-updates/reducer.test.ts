@@ -126,6 +126,48 @@ test("session update reducer keeps stronger tool classification when sparse patc
   assert.equal(finalState.toolCalls[0]?.output, "ok");
 });
 
+test("session update reducer replaces repeated tool input snapshots instead of concatenating JSON strings", () => {
+  const finalState = [
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "toolu_input_merge",
+        kind: "shell" as const,
+        title: "Terminal",
+        status: "running" as const,
+        input: "{}",
+        timestamp: at(1),
+        updatedAt: at(1),
+        sequence: 1,
+      },
+    },
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "toolu_input_merge",
+        kind: "shell" as const,
+        title: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+        status: "completed" as const,
+        input: JSON.stringify({
+          command: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+          description: "查找 runtime tool call",
+        }),
+        timestamp: at(1),
+        updatedAt: at(2),
+        sequence: 1,
+      },
+    },
+  ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
+
+  assert.equal(
+    finalState.toolCalls[0]?.input,
+    JSON.stringify({
+      command: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+      description: "查找 runtime tool call",
+    }),
+  );
+});
+
 test("session update reducer rebuilds one merged compaction row from started lifecycle plus summary enrichment", () => {
   const records: SessionUpdateRecord[] = [
     {

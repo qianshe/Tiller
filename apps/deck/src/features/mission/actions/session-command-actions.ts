@@ -55,6 +55,7 @@ type UseSessionCommandActionsOptions = {
   selectedModel: string;
   selectedReasoningEffort?: SessionReasoningEffort;
   navigateToView: (view: "sessions") => void;
+  isMobile?: boolean;
   setPrompt: (value: string) => void;
   setPromptImages: (images: AgentPromptImageContent[]) => void;
   createClientUserMessageId: (sessionId: string) => string;
@@ -106,6 +107,7 @@ export function useSessionCommandActions({
   selectedModel,
   selectedReasoningEffort,
   navigateToView,
+  isMobile = false,
   setPrompt,
   setPromptImages,
   createClientUserMessageId,
@@ -201,6 +203,9 @@ export function useSessionCommandActions({
   function submitPromptFromKeyboard(
     event: ReactKeyboardEvent<HTMLTextAreaElement>,
   ) {
+    if (isMobile) {
+      return;
+    }
     if (
       event.key !== "Enter" ||
       event.shiftKey ||

@@ -195,6 +195,7 @@ export function SessionCard({
   onRename,
   onClear,
   onClose,
+  onCreateTask,
   onDismissCompletedPlan,
   restoreNotice,
   toolLoading,
@@ -206,6 +207,7 @@ export function SessionCard({
   showThinkingToggle = false,
   showThinking,
   onToggleThinking,
+  showCreateTaskAction,
   children,
 }: {
   session: SessionSummary;
@@ -216,6 +218,7 @@ export function SessionCard({
   onRename: (session: SessionSummary) => void;
   onClear: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
+  onCreateTask?: (projectId: string) => void;
   onDismissCompletedPlan?: (sessionId: string, planKey: string) => void;
   restoreNotice?: SessionRestoreNotice;
   toolLoading?: MissionToolLoadingState;
@@ -227,6 +230,7 @@ export function SessionCard({
   showThinkingToggle?: boolean;
   showThinking?: boolean;
   onToggleThinking?: () => void;
+  showCreateTaskAction?: boolean;
   children: ReactNode;
 }) {
   const statusTone = resolveSessionStatusTone(session.status);
@@ -243,6 +247,7 @@ export function SessionCard({
     planKey: string;
   } | null>(null);
   const lastAutoFocusedPlanKeyRef = useRef<string | null>(null);
+  const showCreateTaskButton = Boolean(showCreateTaskAction && onCreateTask);
   const planKey = plan ? createAgentPlanDismissalKey(plan) : null;
   const visiblePlan =
     plan &&
@@ -474,16 +479,30 @@ export function SessionCard({
             </div>
           ) : null}
         </div>
-        <button
-          className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
-          title="关闭此 session"
-          onClick={(event) => {
-            event.stopPropagation();
-            onClose(session);
-          }}
-        >
-          <Icon name="x" size={11} />
-        </button>
+        {showCreateTaskButton ? (
+          <button
+            className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-primary-soft/20 hover:text-primary"
+            title="当前项目下新建会话"
+            aria-label="当前项目下新建会话"
+            onClick={(event) => {
+              event.stopPropagation();
+              onCreateTask?.(session.projectId);
+            }}
+          >
+            <Icon name="plus" size={11} />
+          </button>
+        ) : (
+          <button
+            className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+            title="关闭此 session"
+            onClick={(event) => {
+              event.stopPropagation();
+              onClose(session);
+            }}
+          >
+            <Icon name="x" size={11} />
+          </button>
+        )}
       </div>
       <div className="relative min-h-0 flex-1" data-session-scroll-frame={session.id}>
         <div

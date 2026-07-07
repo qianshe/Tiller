@@ -76,3 +76,59 @@ test("respondToPermission dispatches approval response without requiring an acti
     true,
   );
 });
+
+test("submitPromptFromKeyboard requests submit on desktop Enter", () => {
+  const { actions } = createActions();
+  let prevented = false;
+  let submitted = false;
+
+  actions.submitPromptFromKeyboard({
+    key: "Enter",
+    shiftKey: false,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {
+      prevented = true;
+    },
+    currentTarget: {
+      form: {
+        requestSubmit: () => {
+          submitted = true;
+        },
+      },
+    },
+  } as any);
+
+  assert.equal(prevented, true);
+  assert.equal(submitted, true);
+});
+
+test("submitPromptFromKeyboard leaves mobile Enter to the textarea", () => {
+  const { actions } = createActions({ isMobile: true });
+  let prevented = false;
+  let submitted = false;
+
+  actions.submitPromptFromKeyboard({
+    key: "Enter",
+    shiftKey: false,
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    nativeEvent: { isComposing: false },
+    preventDefault: () => {
+      prevented = true;
+    },
+    currentTarget: {
+      form: {
+        requestSubmit: () => {
+          submitted = true;
+        },
+      },
+    },
+  } as any);
+
+  assert.equal(prevented, false);
+  assert.equal(submitted, false);
+});

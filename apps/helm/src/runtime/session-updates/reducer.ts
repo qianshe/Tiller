@@ -220,7 +220,7 @@ function upsertToolCall(toolCalls: AgentToolCall[], incoming: AgentToolCall) {
     id: current.id,
     timestamp: current.timestamp,
     sequence: current.sequence ?? incoming.sequence,
-    input: mergeText(current.input, incoming.input),
+    input: incoming.input ?? current.input,
     output: mergeText(current.output, incoming.output),
   };
   return next;

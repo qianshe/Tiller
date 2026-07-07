@@ -711,7 +711,7 @@ export function MissionWorktree(props: any) {
     "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-canvas",
     !activeSession && "mission-draft-chat",
   ]);
-  const resolvedMissionMobilePane = selectedMissionMobilePane ?? (activeSession ? "chat" : "project");
+  const resolvedMissionMobilePane = selectedMissionMobilePane ?? ((activeSession || draftChatWindow) ? "chat" : "project");
   const currentMobilePaneIndex = MISSION_MOBILE_PANE_ORDER.indexOf(resolvedMissionMobilePane);
   useEffect(() => {
     const visiblePaths = new Set(syncedMissionDiffs.map((diff) => diff.path));
@@ -846,7 +846,9 @@ export function MissionWorktree(props: any) {
   );
   const composerPromptPlaceholder = shouldShowRestoreGateNotice
     ? activeSessionRestoreGate.message
-    : draftPromptPlaceholder;
+    : isMissionMobile
+      ? "输入消息"
+      : draftPromptPlaceholder;
   const missionChatSelectedSessionId = resolveMissionChatSelectedSessionId({
     focusedDraftWindow: Boolean(focusedDraftWindow),
     focusedRealSessionId,
@@ -883,44 +885,44 @@ export function MissionWorktree(props: any) {
             className="h-full min-w-0"
           >
             <MissionSidebar
-          effectiveSidebarCollapsed={isMissionMobile ? false : effectiveSidebarCollapsed}
-          missionSidebarCollapsed={missionSidebarCollapsed}
-          missionSidebarPaneStyle={missionSidebarPaneStyle}
-          handleMissionTreeScroll={handleMissionTreeScroll}
-          setMissionSidebarCollapsed={setMissionSidebarCollapsed}
-          missionHelms={missionHelms}
-          effectiveMissionHelmId={effectiveMissionHelmId}
-          expandedMissionHelmIds={expandedMissionHelmIds}
-          projects={projects}
-          helmConnectionStates={helmConnectionStates}
-          activeProfileId={activeProfileId}
-          connection={connection}
-          toggleMissionHelmNode={toggleMissionHelmNode}
-          missionSelectedProjectId={missionSelectedProjectId}
-          expandedMissionProjectIds={expandedMissionProjectIds}
-          sessions={sessions}
-          sessionCountsByProject={sessionCountsByProject}
-          currentGitBranch={currentGitBranch}
-          missionDiffCount={missionDiffCount}
-          runtimeOverviewItems={runtimeOverviewItems}
-          setActiveSessionId={setActiveSessionId}
-          statuses={statuses}
-          copy={copy}
-          activeSessionId={activeSessionId}
-          highlightedSessionId={focusedRealSessionId ?? activeSessionId}
-          openSessionIds={openSessionIdSet}
-          openSession={openChatSession}
-          renderMissionAgentIcon={renderMissionAgentIcon}
-          resolveDisplaySessionTitle={resolveDisplaySessionTitle}
-          regenerateSessionTitle={regenerateSessionTitle}
-          regeneratingIds={regeneratingIds}
-          formatRelativeTime={formatRelativeTime}
-          setPendingSessionCleanup={setPendingSessionCleanup}
-          sessionHistoryState={sessionHistoryState}
-          toggleMissionProjectNode={toggleMissionProjectNode}
-          setSelectedMissionMobilePane={setSelectedMissionMobilePane}
-          resizer={null}
-        />{" "}
+              effectiveSidebarCollapsed={isMissionMobile ? false : effectiveSidebarCollapsed}
+              missionSidebarCollapsed={missionSidebarCollapsed}
+              missionSidebarPaneStyle={missionSidebarPaneStyle}
+              handleMissionTreeScroll={handleMissionTreeScroll}
+              setMissionSidebarCollapsed={setMissionSidebarCollapsed}
+              missionHelms={missionHelms}
+              effectiveMissionHelmId={effectiveMissionHelmId}
+              expandedMissionHelmIds={expandedMissionHelmIds}
+              projects={projects}
+              helmConnectionStates={helmConnectionStates}
+              activeProfileId={activeProfileId}
+              connection={connection}
+              toggleMissionHelmNode={toggleMissionHelmNode}
+              missionSelectedProjectId={missionSelectedProjectId}
+              expandedMissionProjectIds={expandedMissionProjectIds}
+              sessions={sessions}
+              sessionCountsByProject={sessionCountsByProject}
+              currentGitBranch={currentGitBranch}
+              missionDiffCount={missionDiffCount}
+              runtimeOverviewItems={runtimeOverviewItems}
+              setActiveSessionId={setActiveSessionId}
+              statuses={statuses}
+              copy={copy}
+              activeSessionId={activeSessionId}
+              highlightedSessionId={focusedRealSessionId ?? activeSessionId}
+              openSessionIds={openSessionIdSet}
+              openSession={openChatSession}
+              renderMissionAgentIcon={renderMissionAgentIcon}
+              resolveDisplaySessionTitle={resolveDisplaySessionTitle}
+              regenerateSessionTitle={regenerateSessionTitle}
+              regeneratingIds={regeneratingIds}
+              formatRelativeTime={formatRelativeTime}
+              setPendingSessionCleanup={setPendingSessionCleanup}
+              sessionHistoryState={sessionHistoryState}
+              toggleMissionProjectNode={toggleMissionProjectNode}
+              setSelectedMissionMobilePane={setSelectedMissionMobilePane}
+              resizer={null}
+            />{" "}
           </ResizablePanel>
         ) : null}
         {!isMissionMobile && !effectiveSidebarCollapsed ? (

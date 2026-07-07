@@ -143,11 +143,12 @@ test("mission message timeline keeps chat list props stable for unchanged messag
 
 test("markdown table wrapper keeps horizontal scrolling without generic overflow CSS", () => {
   assert.match(plainMessagesSource, /plain-message-list conversation-timeline mx-auto grid w-full max-w-\[min\(1120px,calc\(100%_-_8px\)\)\]/);
-  assert.match(plainMessagesSource, /mr-auto grid w-full max-w-full/);
+  assert.match(plainMessagesSource, /const ASSISTANT_MESSAGE_FRAME_CLASS = "mr-auto w-\[calc\(100%-0\.625rem\)\] max-w-\[calc\(100%-0\.625rem\)\]"/);
+  assert.match(plainMessagesSource, /\$\{ASSISTANT_MESSAGE_FRAME_CLASS\} grid \$\{ASSISTANT_MESSAGE_RAIL_CLASS\} items-start/);
   assert.match(plainMessagesSource, /ml-auto grid w-full justify-items-end/);
   assert.match(plainMessagesSource, /plain-message-user-row flex w-full min-w-0 max-w-full items-start justify-end gap-1\.5/);
-  assert.match(plainMessagesSource, /plain-thinking-row[^\n]+max-w-full/);
-  assert.match(plainMessagesSource, /plain-tool-row[^\n]+max-w-full/);
+  assert.match(plainMessagesSource, /plain-thinking-row \${ASSISTANT_MESSAGE_FRAME_CLASS} grid \${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground/);
+  assert.match(plainMessagesSource, /plain-tool-row \${ASSISTANT_MESSAGE_FRAME_CLASS} grid \${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground/);
   assert.match(plainMessagesSource, /USER_MESSAGE_RAIL_CLASS = "w-fit max-w-\[min\(56rem,76%\)\]"/);
   assert.match(plainMessagesSource, /\$\{messageBodyClassName\} \$\{USER_MESSAGE_RAIL_CLASS\} min-w-0 break-words/);
   assert.match(plainMessagesSource, /"rounded-\[14px\] border border-primary\/30 bg-primary-soft\/35 px-3 py-2/);
@@ -400,11 +401,15 @@ test("mission chat pane exposes the v6 session grid and more menu actions", () =
   assert.match(chatPaneSource, /application\/x-tiller-session-id/);
   assert.match(chatPaneSource, /dragOver \? "inset 0 0 0 2px var\(--primary\)" : "none"/);
   assert.match(chatPaneSource, /aria-label="新建任务"/);
+  assert.match(chatPaneComponentSource, /aria-label="新建会话"/);
+  assert.match(chatPaneComponentSource, /选择项目创建会话/);
   assert.match(chatPaneComponentSource, /projectOptions\.map\(\(project\) =>/);
   assert.match(chatPaneComponentSource, /onCreateTask\(project\.id\)/);
   assert.match(chatPaneComponentSource, /展示栏/);
   assert.match(chatPaneComponentSource, /Inspector 面板/);
   assert.match(chatPaneComponentSource, />\s*Thinking\s*<\/MenuItem>/);
+  assert.match(chatPaneSource, /showCreateTaskAction=\{isMissionMobile\}/);
+  assert.match(chatPaneSource, /title="当前项目下新建会话"/);
   assert.doesNotMatch(chatPaneComponentSource, />\s*重命名\s*<\/MenuItem>/);
   assert.doesNotMatch(chatPaneComponentSource, />\s*生成摘要\s*<\/MenuItem>/);
   assert.doesNotMatch(chatPaneComponentSource, />\s*导出对话\s*<\/MenuItem>/);
@@ -412,9 +417,10 @@ test("mission chat pane exposes the v6 session grid and more menu actions", () =
   assert.doesNotMatch(chatPaneSource, /DropdownMenuContent/);
 });
 
-test("mission sidebar exposes search while task creation lives in the workbench header", () => {
+test("mission sidebar keeps search while mobile create-session entry lives in chat pane", () => {
   assert.match(sidebarSource, /aria-label="搜索任务"/);
   assert.doesNotMatch(sidebarSource, /aria-label="新建任务"/);
+  assert.doesNotMatch(sidebarSource, /onCreateTask: \(projectId: string\) => void;/);
   assert.doesNotMatch(sidebarProjectNodeSource, /aria-label=\{`在 \$\{project\.name\} 下新建任务`\}/);
   assert.match(sidebarSource, /wb-pane-head-eyebrow whitespace-nowrap">Helm · 任务/);
   // 新建任务只弹出草稿小窗口，不再打开侧边栏 Agent 下拉框
@@ -544,16 +550,34 @@ test("mission chat pane renders draft windows as first-class cards", () => {
 
 test("mission composer mirrors the v6 sunken command deck", () => {
   assert.match(composerSource, /border-t border-border-ghost px-2 py-1\.5 bg-surface/);
-  assert.match(composerSource, /wb-pane-sunken px-2 py-1\.5 w-full max-w-\[min\(1120px,calc\(100%_-_32px\)\)\] mx-auto/);
-  assert.match(composerSource, /rows=\{2\}/);
+  assert.match(composerSource, /wb-pane-sunken px-2 py-1\.5 w-full max-w-\[min\(1120px,calc\(100%_-_32px\)\)\] mx-auto grid gap-0\.5/);
+  assert.match(composerSource, /const composerShellClassName = isMobile/);
+  assert.match(composerSource, /const composerDeckClassName = isMobile/);
+  assert.match(composerSource, /const composerContextClassName = isMobile/);
+  assert.match(composerSource, /const composerPromptClassName = isMobile/);
+  assert.match(composerSource, /const composerSidecarClassName = isMobile/);
+  assert.match(composerSource, /const composerStatusClassName = isMobile/);
+  assert.match(composerSource, /const composerActionsClassName = isMobile/);
+  assert.match(composerSource, /const composerToolsClassName = isMobile/);
+  assert.match(composerSource, /const promptRows = isMobile \? 1 : 2/);
+  assert.match(composerSource, /rows=\{promptRows\}/);
+  assert.match(composerSource, /enterKeyHint=\{isMobile \? "enter" : undefined\}/);
+  assert.match(composerSource, /const skipNextMobileLineBreakInputRef = useRef\(false\)/);
+  assert.match(composerSource, /onBeforeInput=\{handleComposerPromptBeforeInput\}/);
+  assert.match(composerSource, /inputType === "insertLineBreak" \|\| inputType === "insertParagraph"/);
+  assert.match(composerSource, /const explicitMobileSubmitRef = useRef\(false\)/);
+  assert.match(composerSource, /if \(isMobile && !explicitMobileSubmitRef\.current\) \{\s*event\.preventDefault\(\);\s*return;\s*\}/);
+  assert.match(composerSource, /explicitMobileSubmitRef\.current = true/);
   assert.match(composerSource, /const composerSession = contextSession \?\? activeSession/);
   assert.match(composerSource, /composerSession\?\.agentName/);
   assert.match(composerSource, /composerSession\?\.title/);
-  assert.match(composerSource, /onSubmit=\{\(event\) => submitPrompt\(event, composerSession\)\}/);
+  assert.match(composerSource, /onSubmit=\{\(event\) => \{/);
+  assert.match(composerSource, /submitPrompt\(event, composerSession\);/);
   assert.match(composerSource, /aria-label="选择 Worktree"/);
   assert.match(composerSource, /draftWorktreeOptions\.map\(\(worktree\) =>/);
   assert.match(composerSource, /selectDraftWorktree\(worktree\.path\)/);
   assert.match(sessionCommandActionsSource, /function submitPrompt\(event: FormEvent<HTMLFormElement>, targetSession\?: SessionSummary \| null\)/);
+  assert.match(sessionCommandActionsSource, /if \(isMobile\) \{\s*return;\s*\}/);
   assert.match(sessionCommandActionsSource, /const promptSession = targetSession === undefined \? activeSession : targetSession/);
   assert.match(sessionCommandActionsSource, /targetSession === undefined[\s\S]*\? promptSession\?\.id \?\? activeSessionId[\s\S]*: promptSession\?\.id \?\? null/);
   assert.match(sessionCommandActionsSource, /activeSessionId: promptSessionId/);
@@ -655,7 +679,11 @@ test("mission diff and inspector commit controls support full-row review", () =>
   assert.match(inspectorSource, /selectedDiffCount/);
   assert.match(inspectorSource, /取消全选/);
   assert.match(inspectorSource, /全选/);
-  assert.match(inspectorSource, /absolute bottom-2\.5 right-2\.5/);
+  assert.match(inspectorSource, /mission-inspector-commit-editor relative min-w-0 w-full/);
+  assert.match(inspectorSource, /mission-inspector-commit-submit absolute bottom-2 right-2/);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \[data-mission-mobile-pane\] \.mission-inspector-commit-editor \.mission-inspector-commit-submit\s*\{[^}]*position:\s*absolute;/s);
+  assert.match(inspectorSource, /pr-\[7\.5rem\] pb-10/);
+  assert.doesNotMatch(inspectorSource, /grid grid-cols-\[minmax\(0,1fr\)_auto\] items-end gap-2 md:block/);
   assert.match(inspectorSource, /mission-worktree-picker relative grid grid-cols-\[minmax\(0,1fr\)_auto_auto\] items-center gap-1/);
   assert.match(inspectorSource, /min-h-\[96px\]/);
   assert.match(inspectorSource, /h-7 min-w-\[108px\]/);
@@ -840,7 +868,8 @@ test("mission layout hook exposes mobile pane state and intelligent defaults", (
   assert.match(missionLayoutHookSource, /MISSION_MOBILE_WIDTH = 1081/);
   assert.match(missionLayoutHookSource, /selectedMissionMobilePane/);
   assert.match(missionLayoutHookSource, /setSelectedMissionMobilePane/);
-  assert.match(missionLayoutHookSource, /hasActiveSession \? "chat" : "project"/);
+  assert.match(missionLayoutHookSource, /hasActiveConversation \? "chat" : "project"/);
+  assert.match(appRootSource, /hasActiveConversation: Boolean\(missionView\.activeSession \|\| deckData\.draftChatWindow\)/);
   assert.match(missionLayoutHookSource, /window\.innerWidth/);
   assert.match(missionLayoutHookSource, /matchMedia\("\(max-width: 1080px\)"\)/);
   assert.match(missionLayoutHookSource, /Math\.min\(layoutWidth, documentWidth\)/);
@@ -901,6 +930,7 @@ test("mission mobile session selection routes back to chat and keeps desktop thi
   assert.match(chatPaneComponentSource, /!isMissionMobile \? \(\s*<div className=\"wb-pane-head\"/s);
   assert.match(chatPaneComponentSource, /showThinkingToggle=\{isMissionMobile\}/);
   assert.match(chatPaneComponentSource, /onToggleThinking=\{onToggleThinking\}/);
+  assert.match(worktreeSource, /isMissionMobile\s*\?\s*"输入消息"\s*:\s*draftPromptPlaceholder/);
 });
 
 test("mission ACP overview keeps the foldout without the extra bubble wrapper", () => {
@@ -925,7 +955,7 @@ test("mission mobile mode marks panes with identities and shows one selected pan
   assert.match(chatPaneSource, /data-mission-mobile-pane="chat"/);
   assert.match(displayPanelSource, /data-mission-mobile-pane="display"/);
   assert.match(inspectorSource, /data-mission-mobile-pane="inspector"/);
-  assert.match(worktreeSource, /resolvedMissionMobilePane = selectedMissionMobilePane \?\? \(activeSession \? "chat" : "project"\)/);
+  assert.match(worktreeSource, /resolvedMissionMobilePane = selectedMissionMobilePane \?\? \(\(activeSession \|\| draftChatWindow\) \? "chat" : "project"\)/);
   assert.match(worktreeSource, /mission-responsive-mode/);
   assert.match(worktreeSource, /`mission-mobile-pane-\$\{resolvedMissionMobilePane\}`/);
   assert.match(worktreeSource, /selectedPane=\{resolvedMissionMobilePane\}/);
@@ -972,7 +1002,12 @@ test("session scroll-to-bottom button stays absolute inside responsive panes", (
 test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.match(composerSource, /mission-composer/);
   assert.match(composerSource, /data-mission-swipe-lock="true"/);
-  assert.match(composerSource, /rows=\{2\}/);
+  assert.match(composerSource, /rows=\{promptRows\}/);
+  assert.match(composerSource, /py-1 bg-surface/);
+  assert.match(composerSource, /px-1\.5 py-1 w-full max-w-\[min\(1120px,calc\(100%_-_32px\)\)\] mx-auto grid gap-0/);
+  assert.match(composerSource, /min-h-8 w-full resize-none rounded-none border-0 bg-transparent px-0\.5 py-0/);
+  assert.match(composerSource, /mission-composer-sidecar grid min-h-6/);
+  assert.match(composerSource, /mission-send-prompt-button h-\[var\(--control-h-sm\)\] px-2\.5 text-action font-medium/);
   assert.match(composerSource, /mission-image-upload-input/);
   assert.match(composerSource, /accept="image\/\*"/);
   assert.match(composerSource, /onAddPromptImages\(event\.currentTarget\.files\)/);
@@ -980,12 +1015,14 @@ test("mission composer is sticky and swipe-locked on mobile", () => {
   assert.doesNotMatch(composerAttachmentsSource, /mission-composer-notice/);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-pane-chat\s*{[^}]*overflow:\s*hidden;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer/);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer\s*{[^}]*padding:\s*4px 8px max\(4px, env\(safe-area-inset-bottom\)\);/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer-deck\s*{[^}]*gap:\s*2px;/s);
   assert.match(shellStylesSource, /bottom:\s*0;/);
   assert.match(shellStylesSource, /#mission-prompt-input\s*{[^}]*caret-color:\s*var\(--primary\);/s);
-  assert.match(shellStylesSource, /#mission-prompt-input\s*{[^}]*scroll-padding-block:\s*10px;/s);
+  assert.match(shellStylesSource, /#mission-prompt-input\s*{[^}]*scroll-padding-block:\s*4px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*field-sizing:\s*content;/s);
-  assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*min-height:\s*1\.5rem;/s);
-  assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*padding:\s*2px 2px 10px;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*min-height:\s*1\.25rem;/s);
+  assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*padding:\s*3px 2px;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode #mission-prompt-input\s*{[^}]*caret-color:\s*var\(--primary\);/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer-deck\s*{[^}]*padding:\s*0;/s);
   assert.match(shellStylesSource, /\.mission-responsive-mode \.mission-composer-deck\s*{[^}]*box-shadow:\s*none;/s);

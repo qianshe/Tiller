@@ -225,6 +225,7 @@ function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind
     .toLowerCase();
 
   if (explicitKind === "subagent") return "subagent";
+  if (explicitKind && explicitKind !== "tool" && explicitKind !== "unknown") return explicitKind;
   if (isSkillToolInput(toolInput) || /(^|[_-])skill(s)?($|[_-])|execute_skill|load_skill/u.test(raw)) return "skill";
   if (toolName?.includes("/")) return "mcp";
   if (/\b(?:read|view|list|glob)\b/u.test(raw)) return "read";
