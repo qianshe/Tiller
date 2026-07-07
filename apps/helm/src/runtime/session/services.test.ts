@@ -83,3 +83,29 @@ test("reimport can repair missing plans through the provider adapter", () => {
     /appendTranscriptRepairPlanUpdate\(\{[\s\S]*sessionUpdateStore: options\.sessionUpdateStore/u,
   );
 });
+
+test("reimport can repair generic Claude tool calls through the provider adapter transcript", () => {
+  const source = readFileSync(resolve(currentDir, "service-factory.ts"), "utf8");
+
+  assert.match(
+    source,
+    /readAdapterTranscriptToolCallRepair\(\{[\s\S]*summary: recoverySummary/u,
+  );
+  assert.match(
+    source,
+    /applyTranscriptToolCallRepair\(\{[\s\S]*sessionArtifactStore: options\.sessionArtifactStore[\s\S]*sessionUpdateStore: options\.sessionUpdateStore/u,
+  );
+});
+
+test("startSessionResume also repairs generic Claude tool calls through the provider adapter transcript", () => {
+  const source = readFileSync(resolve(currentDir, "service-factory.ts"), "utf8");
+
+  assert.match(
+    source,
+    /async function startSessionResume\([\s\S]*readAdapterTranscriptToolCallRepair\(\{[\s\S]*summary,\s*[\s\S]*agent/u,
+  );
+  assert.match(
+    source,
+    /async function startSessionResume\([\s\S]*applyTranscriptToolCallRepair\(\{[\s\S]*sessionTimelineStore: options\.sessionTimelineStore[\s\S]*sessionUpdateStore: options\.sessionUpdateStore/u,
+  );
+});

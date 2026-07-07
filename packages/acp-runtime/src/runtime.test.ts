@@ -18,6 +18,7 @@ import {
   resolveAdapterRequestTimeout,
   resolveAdapterPluginManifest,
   readAdapterTranscriptMessages,
+  readAdapterTranscriptToolCalls,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
@@ -172,6 +173,33 @@ test("Claude transcript message repair stays behind the Claude adapter", () => {
   );
   assert.deepEqual(
     readAdapterTranscriptMessages({
+      provider: {
+        id: "custom",
+        name: "Custom",
+        command: "custom-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      runtimeSessionId: "runtime-1",
+      cwd: "D:/repo",
+    }),
+    [],
+  );
+});
+
+test("Claude transcript tool-call repair stays behind the Claude adapter", () => {
+  assert.equal(
+    typeof resolveAcpAgentAdapter({
+      id: "claude-acp",
+      name: "Claude Agent",
+      command: "claude-agent-acp",
+      transport: "stdio",
+      protocol: "acp",
+    }).readTranscriptToolCalls,
+    "function",
+  );
+  assert.deepEqual(
+    readAdapterTranscriptToolCalls({
       provider: {
         id: "custom",
         name: "Custom",

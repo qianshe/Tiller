@@ -26,6 +26,8 @@ import { MermaidViewportController, type MermaidViewportState } from "./mermaid-
 const PHASE_LABEL_BOUNDARY = /(\S)(\[(?:🌳木|🔥火|🏔️土|⚔️金|💧水|🔁知)\])/gu;
 const ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY = /(\b[A-Za-z0-9`'"”’)}\]]+\.)(?=[\u4e00-\u9fff])/gu;
 const THINKING_PARAGRAPH_PREFIX = /^(?:Thinking|Thought|思考)\b[:：-]?/iu;
+const MARKDOWN_DELIMITER_CELL = /^:?-{3,}:?$/u;
+const MARKDOWN_DELIMITER_ONLY_LINE = /^[|:\-\s]+$/u;
 
 const markdownRemarkPlugins = [remarkGfm];
 const markdownRehypePlugins = [rehypeSanitize];
@@ -72,7 +74,7 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
     return (
       <h1
         {...props}
-        className={[className, "markdown-heading my-1.5 text-[14.5px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[14.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -84,7 +86,7 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
     return (
       <h2
         {...props}
-        className={[className, "markdown-heading my-1.5 text-[13.5px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[13.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -96,7 +98,7 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
     return (
       <h3
         {...props}
-        className={[className, "markdown-heading my-1 text-[12.5px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[12.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -108,7 +110,7 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
     return (
       <h4
         {...props}
-        className={[className, "markdown-heading my-1 text-[12px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[12px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -120,7 +122,7 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
     return (
       <h5
         {...props}
-        className={[className, "markdown-heading my-1 text-[12px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[12px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -132,7 +134,7 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
     return (
       <h6
         {...props}
-        className={[className, "markdown-heading my-1 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground"]
+        className={[className, "markdown-heading pb-2 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -143,7 +145,7 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
   p({ children, className, node: _node, ...props }) {
     const paragraphClassName = [
       className,
-      "markdown-paragraph leading-[1.65] text-foreground",
+      "markdown-paragraph leading-[1.72] text-foreground",
       isThinkingParagraph(children) ? "markdown-paragraph-thinking italic text-muted-foreground" : null,
     ]
       .filter(Boolean)
@@ -156,14 +158,14 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
   },
   ul({ children, node: _node, ...props }) {
     return (
-      <ul {...props} className="my-1.5 list-disc space-y-1 pl-4 marker:text-primary">
+      <ul {...props} className="list-disc space-y-1 pl-4 marker:text-primary">
         {children}
       </ul>
     );
   },
   ol({ children, node: _node, ...props }) {
     return (
-      <ol {...props} className="my-1.5 list-decimal space-y-1 pl-4 marker:text-primary">
+      <ol {...props} className="list-decimal space-y-1 pl-4 marker:text-primary">
         {children}
       </ol>
     );
@@ -179,7 +181,7 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
     return (
       <blockquote
         {...props}
-        className="my-1.5 border-l-2 border-primary/50 pl-3 text-muted-foreground"
+        className="border-l-2 border-primary/50 pl-3 text-muted-foreground"
       >
         {children}
       </blockquote>
@@ -265,17 +267,22 @@ const markdownComponentsWithoutMermaid = createMarkdownComponents({ renderMermai
 export const MarkdownMessage = memo(function MarkdownMessage({
   text,
   renderMermaid = true,
+  repairMalformedTables = false,
 }: {
   text: string;
   renderMermaid?: boolean;
+  repairMalformedTables?: boolean;
 }) {
-  const normalizedText = useMemo(() => normalizeMarkdownMessageText(text), [text]);
+  const normalizedText = useMemo(
+    () => normalizeMarkdownMessageText(text, { repairMalformedTables }),
+    [text, repairMalformedTables],
+  );
   const components = renderMermaid
     ? markdownComponents
     : markdownComponentsWithoutMermaid;
 
   return (
-    <div className="markdown-message space-y-2 text-[12px] leading-[1.5] text-foreground">
+    <div className="markdown-message space-y-4 text-[12px] leading-[1.5] text-foreground">
       <ReactMarkdown
         components={components}
         remarkPlugins={markdownRemarkPlugins}
@@ -333,12 +340,85 @@ export async function resolveMarkdownCodeHighlight(
   return highlighted;
 }
 
-export function normalizeMarkdownMessageText(text: string) {
+export function normalizeMarkdownMessageText(
+  text: string,
+  { repairMalformedTables = false }: { repairMalformedTables?: boolean } = {},
+) {
+  const normalized = text
+    .replace(ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY, "$1\n\n")
+    .replace(PHASE_LABEL_BOUNDARY, "$1\n\n$2");
   return deferOpenMermaidFence(
-    text
-      .replace(ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY, "$1\n\n")
-      .replace(PHASE_LABEL_BOUNDARY, "$1\n\n$2"),
+    repairMalformedTables
+      ? repairMalformedMarkdownTables(normalized)
+      : normalized,
   );
+}
+
+function repairMalformedMarkdownTables(text: string) {
+  const lines = text.split("\n");
+  let openFence: { marker: "`" | "~"; length: number } | null = null;
+
+  for (let index = 0; index < lines.length - 2; index += 1) {
+    const line = lines[index]?.replace(/\r$/, "") ?? "";
+
+    if (openFence) {
+      const closeMatch = CLOSE_MARKDOWN_FENCE_LINE.exec(line);
+      const closeMarker = closeMatch?.[1];
+      if (
+        closeMarker?.[0] === openFence.marker &&
+        closeMarker.length >= openFence.length
+      ) {
+        openFence = null;
+      }
+      continue;
+    }
+
+    const openMatch = OPEN_MARKDOWN_FENCE_LINE.exec(line);
+    const openMarker = openMatch?.[1];
+    if (openMarker) {
+      openFence = {
+        marker: openMarker[0] as "`" | "~",
+        length: openMarker.length,
+      };
+      continue;
+    }
+
+    const headerCells = splitMarkdownTableCells(line);
+    if (headerCells.length < 2 || headerCells.every((cell) => !cell)) {
+      continue;
+    }
+
+    const delimiterLine = lines[index + 1]?.replace(/\r$/, "") ?? "";
+    const dataLine = lines[index + 2]?.replace(/\r$/, "") ?? "";
+    const delimiterCells = splitMarkdownTableCells(delimiterLine);
+    const dataCells = splitMarkdownTableCells(dataLine);
+
+    if (
+      !MARKDOWN_DELIMITER_ONLY_LINE.test(delimiterLine.trim()) ||
+      delimiterCells.length === 0 ||
+      delimiterCells.length >= headerCells.length ||
+      !delimiterCells.every((cell) => MARKDOWN_DELIMITER_CELL.test(cell)) ||
+      dataCells.length !== headerCells.length
+    ) {
+      continue;
+    }
+
+    lines[index + 1] = `| ${Array.from({ length: headerCells.length }, () => "---").join(" | ")} |`;
+  }
+
+  return lines.join("\n");
+}
+
+function splitMarkdownTableCells(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed.includes("|")) {
+    return [];
+  }
+  return trimmed
+    .replace(/^\|/u, "")
+    .replace(/\|$/u, "")
+    .split(/(?<!\\)\|/u)
+    .map((cell) => cell.trim());
 }
 
 function deferOpenMermaidFence(text: string) {

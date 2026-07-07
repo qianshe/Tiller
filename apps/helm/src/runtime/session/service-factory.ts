@@ -61,6 +61,10 @@ import {
   applyTranscriptMessageRepair,
   readAdapterTranscriptMessageRepair,
 } from "../history-reimport/message-repair";
+import {
+  applyTranscriptToolCallRepair,
+  readAdapterTranscriptToolCallRepair,
+} from "../history-reimport/tool-call-repair";
 import type { TillerLogger } from "../../logging/logger";
 import type { AcpProtocolLoggingOptions } from "@tiller/acp-runtime";
 
@@ -329,7 +333,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
       });
 
       let messages = options.sessionMessageStore.list(sessionId);
-      const artifacts = options.sessionArtifactStore.get(sessionId);
+      let artifacts = options.sessionArtifactStore.get(sessionId);
       let plan = providerHistory.readSessionPlan(sessionId);
       const repairAgent = activeRecord?.agent ?? resolveProviderById(recoverySummary.agentId, options.getAgents());
       if (!plan) {
@@ -382,6 +386,26 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
           if (didRepairMessages) {
             messages = options.sessionMessageStore.list(sessionId);
           }
+        }
+      }
+      const repairedToolCalls = readAdapterTranscriptToolCallRepair({
+        summary: recoverySummary,
+        agent: repairAgent,
+        logger: options.logger,
+      });
+      if (repairedToolCalls.length) {
+        const didRepairToolCalls = applyTranscriptToolCallRepair({
+          sessionId,
+          summary: recoverySummary,
+          agent: repairAgent,
+          transcriptToolCalls: repairedToolCalls,
+          sessionMessageStore: options.sessionMessageStore,
+          sessionArtifactStore: options.sessionArtifactStore,
+          sessionTimelineStore: options.sessionTimelineStore,
+          sessionUpdateStore: options.sessionUpdateStore,
+        });
+        if (didRepairToolCalls) {
+          artifacts = options.sessionArtifactStore.get(sessionId);
         }
       }
       const coverageGap = findAcpReplayCoverageGap({
@@ -517,6 +541,41 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionPersistence.deleteLocalSessionData(sessionId);
   }
 
+  async function startSessionResume(
+    sessionId: string,
+    resumeOptions: { forceReloadActive?: boolean } = {},
+  ) {
+    const result = await sessionResume.startSessionResume(sessionId, resumeOptions);
+    if (!result.ok) {
+      return result;
+    }
+    const summary = options.sessions.get(sessionId)?.summary ??
+      options.sessionStore.list().find((item) => item.id === sessionId);
+    if (!summary) {
+      return result;
+    }
+    const agent = options.sessions.get(sessionId)?.agent ??
+      resolveProviderById(summary.agentId, options.getAgents());
+    const repairedToolCalls = readAdapterTranscriptToolCallRepair({
+      summary,
+      agent,
+      logger: options.logger,
+    });
+    if (repairedToolCalls.length) {
+      applyTranscriptToolCallRepair({
+        sessionId,
+        summary,
+        agent,
+        transcriptToolCalls: repairedToolCalls,
+        sessionMessageStore: options.sessionMessageStore,
+        sessionArtifactStore: options.sessionArtifactStore,
+        sessionTimelineStore: options.sessionTimelineStore,
+        sessionUpdateStore: options.sessionUpdateStore,
+      });
+    }
+    return result;
+  }
+
   return {
     buildResumeInfo,
     clearPermissionRequestsForSession,
@@ -541,7 +600,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionTimelineDispatcher,
     sessionTimelineFlushScheduler,
     sessionTimelineWorkers,
-    startSessionResume: sessionResume.startSessionResume,
+    startSessionResume,
     takeRuntimeDraft: runtimeDraftRegistry.takeRuntimeDraft,
     updateSessionSummary,
   };

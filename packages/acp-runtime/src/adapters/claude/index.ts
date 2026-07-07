@@ -4,6 +4,7 @@ import { normalizeClaudeToolCall } from "./tool-calls";
 import { createClaudePlanUpdateMapper } from "./plan-events";
 import { readClaudeTranscriptMessagesFromDisk } from "./transcript/history";
 import { readClaudeTranscriptPlanFromDisk } from "./transcript/plan";
+import { readClaudeTranscriptToolCallsFromDisk } from "./transcript/tool-calls";
 
 const CLAUDE_ACP_COMMANDS = ["claude-acp", "claude-agent-acp", "claude-code-acp"];
 
@@ -36,5 +37,7 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
       readClaudeTranscriptPlanFromDisk({ runtimeSessionId, cwd }),
     readTranscriptMessages: ({ runtimeSessionId, cwd }) =>
       readClaudeTranscriptMessagesFromDisk({ runtimeSessionId, cwd }),
+    readTranscriptToolCalls: ({ runtimeSessionId, cwd }) =>
+      readClaudeTranscriptToolCallsFromDisk({ runtimeSessionId, cwd }),
   };
 }

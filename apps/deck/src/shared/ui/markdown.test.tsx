@@ -17,6 +17,7 @@ test("markdown tables render inside a responsive scroll wrapper", () => {
   );
 
   assert.match(html, /markdown-table-scroll/);
+  assert.doesNotMatch(html, /-mt-/);
   assert.match(html, /overflow-x-auto/);
   assert.match(html, /overflow-y-hidden/);
   assert.match(html, /max-w-full/);
@@ -44,6 +45,37 @@ test("markdown renders only source tables as tables", () => {
   assert.equal((html.match(/<table/g) ?? []).length, 1);
   assert.match(html, /<th[^>]*>项目<\/th>/);
   assert.match(html, /<td[^>]*>apps\/deck\/src\/features\/logbook\/message-history\.ts<\/td>/);
+});
+
+test("markdown can repair underspecified delimiter rows for completed tables", () => {
+  const text = [
+    "| Plan | 复选框 | 代码验证 | 状态 |",
+    "|---|",
+    "| 2026-07-06-stale-session-model-sync.md | 0/17 | ✅ commit 08f8fd3 完整实现 | 已完成 |",
+    "| 2026-07-03-mission-git-remote-sync-phase-1.md | 0/30 | ❌ 无 `project/git/push\\|pull`、`refreshRemote` | 未完成 |",
+  ].join("\n");
+  const normalized = normalizeMarkdownMessageText(text, { repairMalformedTables: true });
+  const html = renderToStaticMarkup(
+    <MarkdownMessage text={text} repairMalformedTables />,
+  );
+
+  assert.match(normalized, /\| --- \| --- \| --- \| --- \|/);
+  assert.equal((html.match(/<table/g) ?? []).length, 1);
+  assert.match(html, /<th[^>]*>Plan<\/th>/);
+  assert.match(html, /<td[^>]*>2026-07-06-stale-session-model-sync\.md<\/td>/);
+});
+
+test("markdown leaves malformed tables untouched unless repair is enabled", () => {
+  const text = [
+    "| Plan | 复选框 | 代码验证 | 状态 |",
+    "|---|",
+    "| 2026-07-06-stale-session-model-sync.md | 0/17 | ✅ commit 08f8fd3 完整实现 | 已完成 |",
+  ].join("\n");
+  const normalized = normalizeMarkdownMessageText(text);
+  const html = renderToStaticMarkup(<MarkdownMessage text={text} />);
+
+  assert.doesNotMatch(normalized, /\| --- \| --- \| --- \| --- \|/);
+  assert.doesNotMatch(html, /<table/);
 });
 
 test("markdown keeps labeled paragraphs as paragraphs instead of generated tables", () => {
@@ -82,8 +114,10 @@ test("markdown headings stay message-sized instead of using browser default disp
   );
 
   assert.match(html, /markdown-heading/);
+  assert.match(html, /markdown-heading pb-2/);
   assert.match(html, /text-\[14\.5px\]/);
   assert.match(html, /text-\[13\.5px\]/);
+  assert.doesNotMatch(html, /markdown-heading[^"]*my-/);
 });
 
 test("assistant markdown text inserts paragraph breaks at ACP boundary markers", () => {
@@ -165,7 +199,7 @@ test("markdown paragraphs use relaxed line height without extra block margins", 
 
   assert.match(
     html,
-    /<p class="markdown-paragraph[^"]*leading-\[1\.65\][^"]*">第一段内容。<\/p>/,
+    /<p class="markdown-paragraph[^"]*leading-\[1\.72\][^"]*">第一段内容。<\/p>/,
   );
   assert.doesNotMatch(html, /<p class="markdown-paragraph[^"]*my-/);
 });
@@ -177,22 +211,26 @@ test("markdown message container owns top-level block spacing", () => {
 
   assert.match(
     html,
-    /<div class="markdown-message[^"]*space-y-2[^"]*text-\[12px\][^"]*leading-\[1\.5\][^"]*">/,
+    /<div class="markdown-message[^"]*space-y-4[^"]*text-\[12px\][^"]*leading-\[1\.5\][^"]*">/,
   );
 });
 
-test("markdown lists relax internal spacing without changing outer list margins", () => {
+test("markdown lists rely on container spacing while keeping compact internal rhythm", () => {
   const htmlUl = renderToStaticMarkup(
     <MarkdownMessage text={["- 项目 1", "- 项目 2 with wrapped English text"].join("\n")} />,
   );
   const htmlOl = renderToStaticMarkup(
     <MarkdownMessage text={["1. 项目 1", "2. 项目 2 with wrapped English text"].join("\n")} />,
   );
+  const htmlQuote = renderToStaticMarkup(
+    <MarkdownMessage text={"> 引用段落"} />,
+  );
 
-  assert.match(htmlUl, /<ul[^>]*class="[^"]*my-1\.5[^"]*space-y-1[^"]*"/);
-  assert.match(htmlOl, /<ol[^>]*class="[^"]*my-1\.5[^"]*space-y-1[^"]*"/);
+  assert.match(htmlUl, /<ul[^>]*class="[^"]*space-y-1[^"]*"/);
+  assert.match(htmlOl, /<ol[^>]*class="[^"]*space-y-1[^"]*"/);
   assert.match(htmlUl, /<li[^>]*class="[^"]*leading-\[1\.6\][^"]*"/);
   assert.match(htmlOl, /<li[^>]*class="[^"]*leading-\[1\.6\][^"]*"/);
-  assert.doesNotMatch(htmlUl, /my-2\.5/);
-  assert.doesNotMatch(htmlOl, /my-2\.5/);
+  assert.doesNotMatch(htmlUl, /<ul[^>]*class="[^"]*my-/);
+  assert.doesNotMatch(htmlOl, /<ol[^>]*class="[^"]*my-/);
+  assert.doesNotMatch(htmlQuote, /<blockquote[^>]*class="[^"]*my-/);
 });

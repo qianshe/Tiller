@@ -65,6 +65,15 @@ h3 {
   font-size: 0.95rem;
 }
 
+.markdown-message > .markdown-paragraph {
+  padding-bottom: calc(var(--spacing) * 4);
+}
+
+.markdown-message > .markdown-paragraph:last-child,
+.markdown-message > .markdown-heading:last-child {
+  padding-bottom: 0;
+}
+
 .shell.v6-radial-shell {
   width: 100vw;
   height: 100vh;

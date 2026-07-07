@@ -161,7 +161,7 @@ export function mergeToolCallHistory(
     merged[index] = {
       ...existing,
       ...next,
-      kind: resolveToolCallKind(existing.kind, next.kind),
+      kind: resolveToolCallKind(existing, next),
       title: resolveMergedToolTitle(existing.title, next.title, next.id),
       output: mergeToolCallHistoryOutput(existing, next),
       input: next.input ?? existing.input,
@@ -192,10 +192,13 @@ export function isActiveThinkingToolCall(toolCall: AgentToolCall) {
 }
 
 function resolveToolCallKind(
-  currentKind: AgentToolCall["kind"],
-  incomingKind: AgentToolCall["kind"],
+  current: AgentToolCall,
+  incoming: AgentToolCall,
 ) {
-  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+  if (shouldPreferSearchRepair(current, incoming)) {
+    return incoming.kind;
+  }
+  return isHigherConfidenceToolKind(incoming.kind, current.kind) ? incoming.kind : current.kind;
 }
 
 function mergeToolCallHistoryOutput(
@@ -243,6 +246,15 @@ function isHigherConfidenceToolKind(
     mcp: 4,
   };
   return rank[incomingKind] > rank[currentKind];
+}
+
+function shouldPreferSearchRepair(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  return current.kind === "shell" &&
+    incoming.kind === "search" &&
+    Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt);
 }
 
 function minTimelineSequence(current: number | undefined, incoming: number | undefined) {

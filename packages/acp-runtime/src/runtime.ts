@@ -87,6 +87,7 @@ export {
   resolveAdapterCleanupPlan,
   resolveAdapterCompactionDetailsVisibility,
   readAdapterTranscriptMessages,
+  readAdapterTranscriptToolCalls,
   readAdapterTranscriptPlan,
   resolveAdapterRequestTimeout,
   resolveAdapterPluginManifest,

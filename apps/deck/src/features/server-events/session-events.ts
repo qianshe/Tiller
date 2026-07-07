@@ -45,6 +45,7 @@ import {
   applySessionTimelineBatch,
   createEmptyAppliedTimelineState,
 } from "./session-timeline-batches";
+import { deriveToolCallsFromTimeline } from "../mission/utils/timeline-tool-calls";
 
 const CANONICAL_TIMELINE_RELOAD_LIMIT = 20;
 
@@ -313,6 +314,8 @@ export function applySessionResult(
         nextCursor: payload.nextCursor,
         hasMore: Boolean(payload.hasMore),
         liveState: payload.liveState,
+      }, {
+        toolCallsRef,
       });
       return true;
     }
@@ -518,6 +521,7 @@ function applySessionTimelineHistoryResult(
     hasMore: boolean;
     liveState?: SessionLiveStateSnapshot;
   },
+  context: Pick<SessionServerEventContext, "toolCallsRef">,
 ) {
   const shouldReplace = !payload.before;
   store.setSessionTimeline((current) => {
@@ -530,6 +534,12 @@ function applySessionTimelineHistoryResult(
       [payload.sessionId]: nextEntries,
     };
   });
+  const nextTimeline = shouldReplace
+    ? sortSessionTimelineEntries(payload.entries)
+    : sortSessionTimelineEntries(
+        mergeTimelineEntries(payload.entries, store.sessionTimeline[payload.sessionId] ?? []),
+      );
+  syncSessionToolCallsFromTimeline(store, payload.sessionId, nextTimeline, context.toolCallsRef);
   if (shouldReplace) {
     store.setSessionTimelineDeliveryState((current) => ({
       ...current,
@@ -554,7 +564,7 @@ function applySessionTimelineHistoryResult(
 
 function requestCanonicalTimelineReload(
   sessionId: string,
-  context: SessionServerEventContext,
+  context: Pick<SessionServerEventContext, "dispatch" | "rpcClientRef">,
 ) {
   const client = context.rpcClientRef.current;
   if (!client || client.socket?.readyState !== 1) {
@@ -605,7 +615,7 @@ function applyCanonicalTimelineBatch(
   store: DeckStore,
   sessionId: string,
   batch: SessionTimelineBatch,
-  context: SessionServerEventContext,
+  context: Pick<SessionServerEventContext, "dispatch" | "rpcClientRef" | "toolCallsRef">,
 ) {
   const emptyAppliedState = createEmptyAppliedTimelineState();
   const deliveryState = store.sessionTimelineDeliveryState[sessionId];
@@ -622,6 +632,7 @@ function applyCanonicalTimelineBatch(
       ...current,
       [sessionId]: nextState.entries,
     }));
+    syncSessionToolCallsFromTimeline(store, sessionId, nextState.entries, context.toolCallsRef);
   }
   store.setSessionTimelineDeliveryState((current) => ({
     ...current,
@@ -678,6 +689,23 @@ function pruneActiveThinkingToolCalls(
     return;
   }
 
+  store.setToolCalls((current) => {
+    const next = {
+      ...current,
+      [sessionId]: nextSessionToolCalls,
+    };
+    toolCallsRef.current = next;
+    return next;
+  });
+}
+
+function syncSessionToolCallsFromTimeline(
+  store: DeckStore,
+  sessionId: string,
+  entries: SessionTimelineEntry[],
+  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>,
+) {
+  const nextSessionToolCalls = deriveToolCallsFromTimeline(entries);
   store.setToolCalls((current) => {
     const next = {
       ...current,

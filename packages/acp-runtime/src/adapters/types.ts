@@ -93,4 +93,5 @@ export type AcpAgentAdapter = {
   resolveCompactionDetailsVisibility?(): AcpCompactionDetailsVisibility | undefined;
   readTranscriptPlan?(context: AcpHistoryContext): AgentPlan | null;
   readTranscriptMessages?(context: AcpHistoryContext): AgentMessage[];
+  readTranscriptToolCalls?(context: AcpHistoryContext): AgentToolCall[];
 };

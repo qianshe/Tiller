@@ -171,9 +171,15 @@ test("collapsed plain-text user messages use a three-line visual clamp without a
 test("assistant markdown uses readable prose styling without paragraph marker bullets", () => {
   assert.doesNotMatch(plainMessagesSource, /markdown-paragraph\]:before/);
   assert.doesNotMatch(plainMessagesSource, /before:bg-green-500/);
-  assert.match(markdownSource, /markdown-message space-y-2 text-\[12px\] leading-\[1\.5\]/);
-  assert.match(markdownSource, /markdown-heading my-1\.5 text-\[14\.5px\]/);
-  assert.match(markdownSource, /className="my-1\.5 list-disc space-y-1 pl-4/);
+  assert.match(markdownSource, /markdown-message space-y-4 text-\[12px\] leading-\[1\.5\]/);
+  assert.match(markdownSource, /markdown-heading pb-2 text-\[14\.5px\]/);
+  assert.match(shellStylesSource, /\.markdown-message > \.markdown-paragraph\s*{[^}]*padding-bottom:\s*calc\(var\(--spacing\) \* 4\);/s);
+  assert.match(shellStylesSource, /\.markdown-message > \.markdown-paragraph:last-child,\s*\.markdown-message > \.markdown-heading:last-child\s*{[^}]*padding-bottom:\s*0;/s);
+  assert.doesNotMatch(markdownSource, /markdown-heading my-/);
+  assert.match(markdownSource, /className="list-disc space-y-1 pl-4 marker:text-primary"/);
+  assert.doesNotMatch(markdownSource, /className="my-1\.5 list-disc/);
+  assert.doesNotMatch(markdownSource, /className="my-1\.5 list-decimal/);
+  assert.doesNotMatch(markdownSource, /className="my-1\.5 border-l-2/);
   assert.match(markdownSource, /markdown-table-cell border-t border-border-ghost px-2\.5 py-1\.5 align-top text-\[12px\] text-foreground/);
   assert.match(markdownSource, /className="markdown-code-block overflow-hidden/);
   assert.match(markdownSource, /className="overflow-x-auto/);
@@ -196,8 +202,21 @@ test("plain conversation text uses compact small-pane typography", () => {
   assert.match(chatPaneSource, /overflow-y-auto overflow-x-hidden px-2\.5 pb-9 pt-2\.5/);
 });
 
-test("markdown normalizes text only when the source changes", () => {
-  assert.match(markdownSource, /useMemo\(\(\) => normalizeMarkdownMessageText\(text\), \[text\]\)/);
+test("markdown normalizes text only when the source text or repair mode changes", () => {
+  assert.match(
+    markdownSource,
+    /useMemo\(\s*\(\) => normalizeMarkdownMessageText\(text, \{ repairMalformedTables \}\),\s*\[text, repairMalformedTables\],\s*\)/,
+  );
+});
+
+test("completed assistant markdown can opt into malformed table repair without affecting streaming renders", () => {
+  assert.match(markdownSource, /repairMalformedTables = false/);
+  assert.match(markdownSource, /normalizeMarkdownMessageText\(text, \{ repairMalformedTables \}\)/);
+  assert.match(plainMessagesSource, /<MarkdownMessage text=\{message\.text\} repairMalformedTables \/>/);
+  assert.doesNotMatch(
+    plainMessagesSource,
+    /<MarkdownMessage text=\{segmented\.markdown\} renderMermaid=\{false\} repairMalformedTables/u,
+  );
 });
 
 test("assistant streaming messages expose streaming state for lightweight rendering", () => {

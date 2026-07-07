@@ -100,6 +100,10 @@ export function readAdapterTranscriptMessages(context: AcpHistoryContext) {
   return resolveAcpAgentAdapter(context.provider).readTranscriptMessages?.(context) ?? [];
 }
 
+export function readAdapterTranscriptToolCalls(context: AcpHistoryContext) {
+  return resolveAcpAgentAdapter(context.provider).readTranscriptToolCalls?.(context) ?? [];
+}
+
 function inferProviderFromId(providerId: string | undefined): AcpRuntimeProviderConfig | undefined {
   const id = providerId?.trim();
   if (!id) {

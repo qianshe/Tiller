@@ -1540,21 +1540,21 @@ test("mapSessionUpdateNotification keeps explicit shell kind for grep-like termi
   assert.equal(mapped.event.toolCall.kind, "shell");
 });
 
-test("mapSessionUpdateNotification repairs Claude shell command history that was previously mislabeled as search", () => {
+test("mapSessionUpdateNotification keeps Claude Bash grep commands as shell", () => {
   const mapped = mapSessionUpdateNotification(
     {
       jsonrpc: "2.0",
       method: "session/update",
       params: {
-        sessionId: "session-claude-history-shell",
+        sessionId: "session-claude-shell-search",
         update: {
           type: "tool_call_update",
           toolCall: {
-            id: "call-claude-history-shell",
-            kind: "search",
-            title: "cd /d/myProject/tools/Tiller && grep -n \"tool_call\" apps/helm/src/runtime/events.ts | head",
+            id: "call-claude-shell-search",
+            kind: "shell",
+            title: "echo \"=== form.tsx mobile variants ===\"; grep -nE 'isMobile|py-1' apps/deck/src/features/mission/composer/form.tsx 2>/dev/null | head -30",
             status: "completed",
-            input: "{}{\"command\":\"cd /d/myProject/tools/Tiller && grep -n \\\"tool_call\\\" apps/helm/src/runtime/events.ts | head\"}",
+            input: "{\"command\":\"echo \\\"=== form.tsx mobile variants ===\\\"; grep -nE 'isMobile|py-1' apps/deck/src/features/mission/composer/form.tsx 2>/dev/null | head -30\",\"description\":\"检查实现内容是否存在\"}",
             timestamp: "2026-07-07T00:34:41.000Z",
             updatedAt: "2026-07-07T00:34:41.000Z",
           },
@@ -1569,6 +1569,130 @@ test("mapSessionUpdateNotification repairs Claude shell command history that was
     throw new Error("Expected tool-call event");
   }
   assert.equal(mapped.event.toolCall.kind, "shell");
+});
+
+test("mapSessionUpdateNotification repairs Claude non-search shell history that was previously mislabeled as search", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-history-shell",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-claude-history-shell",
+            kind: "search",
+            title: "cd /d/myProject/tools/Tiller && pnpm --filter @tiller/deck lint 2>&1 | tail -15",
+            status: "completed",
+            input: "{}{\"command\":\"cd /d/myProject/tools/Tiller && pnpm --filter @tiller/deck lint 2>&1 | tail -15\"}",
+            timestamp: "2026-07-07T00:34:41.000Z",
+            updatedAt: "2026-07-07T00:34:41.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "claudecode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "shell");
+});
+
+test("mapSessionUpdateNotification repairs Claude Grep payloads that were mislabeled as shell", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-history-grep",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-claude-history-grep",
+            kind: "shell",
+            title: "{\"pattern\":\"Tiller\",\"glob\":\"**/README.md\",\"output_mode\":\"files_with_matches\"}",
+            status: "completed",
+            input: "{\"pattern\":\"Tiller\",\"glob\":\"**/README.md\",\"output_mode\":\"files_with_matches\"}",
+            timestamp: "2026-07-07T16:07:01.000Z",
+            updatedAt: "2026-07-07T16:07:02.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "claudecode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "search");
+});
+
+test("mapSessionUpdateNotification classifies Claude native Grep command titles as search when input is structured search payload", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-native-grep",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-claude-native-grep",
+            kind: "shell",
+            title: "grep -l \"tool-call-repair\"",
+            status: "completed",
+            input: "{\"output_mode\":\"files_with_matches\",\"pattern\":\"tool-call-repair\"}",
+            timestamp: "2026-07-07T09:10:38.372Z",
+            updatedAt: "2026-07-07T09:10:39.092Z",
+          },
+        },
+      },
+    },
+    { providerId: "claudecode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "search");
+});
+
+test("mapSessionUpdateNotification classifies Claude mcp__ prefixed tools as mcp", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-mcp-search",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-claude-mcp-search",
+            kind: "search",
+            title: "mcp__mcp-router__codebase_search",
+            status: "completed",
+            input: "{\"repo_path\":\"D:\\\\myProject\\\\tools\\\\Tiller\",\"search_string\":\"会话历史恢复后如何重新导入工具调用元数据\"}",
+            timestamp: "2026-07-07T09:08:58.265Z",
+            updatedAt: "2026-07-07T09:09:36.321Z",
+          },
+        },
+      },
+    },
+    { providerId: "claudecode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
 });
 
 test("mapSessionUpdateNotification applies OpenCode provider live tool classification", () => {

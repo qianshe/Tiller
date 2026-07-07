@@ -82,8 +82,8 @@ test("groupToolCalls removes duplicated read and write verbs from titles", () =>
   assert.equal(grouped[1]?.title, "docs\\bug\\BUG-004.md");
 });
 
-test("resolveToolCallTone distinguishes read and write kinds", () => {
-  assert.deepEqual(resolveToolCallTone("read", "apps\\deck\\src\\features\\logbook\\message-history.ts"), {
+test("resolveToolCallTone trusts explicit read and write kinds for persisted file paths", () => {
+  assert.deepEqual(resolveToolCallTone("read", "docs/superpowers/plans/2026-07-07-mobile-composer-density-and-commit-button.md"), {
     label: "Read",
     className: "tool-call-read",
     icon: "◫",
@@ -95,11 +95,11 @@ test("resolveToolCallTone distinguishes read and write kinds", () => {
   });
 });
 
-test("resolveToolCallTone prioritizes MCP titles over generic search classification", () => {
+test("resolveToolCallTone trusts explicit search kind over title heuristics", () => {
   assert.deepEqual(resolveToolCallTone("search", "mcp__morph__codebase_search"), {
-    label: "MCP",
+    label: "Search",
     className: "tool-call-mcp",
-    icon: "◇",
+    icon: "⌕",
   });
 });
 

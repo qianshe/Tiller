@@ -89,6 +89,10 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
   if (kind === "subagent") {
     return "Subagent";
   }
+  const labelFromKind = KIND_LABELS[kind];
+  if (labelFromKind && labelFromKind !== "Tool") {
+    return labelFromKind;
+  }
   if (
     /\b(skill|execute_skill|load_skill)\b|[\\/](skills?|plugins)[\\/].*skill\.md|skill\.md/iu.test(
       title,
@@ -105,10 +109,6 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
   ) {
     return "MCP";
   }
-  const labelFromKind = KIND_LABELS[kind];
-  if (labelFromKind && labelFromKind !== "Tool") {
-    return labelFromKind;
-  }
   if (isShellLikeToolTitle(kind, normalized)) {
     return "Shell";
   }
@@ -119,7 +119,7 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
 }
 
 function isNamespacedMcpToolTitle(normalizedTitle: string) {
-  return /^(?:tool:\s*)?[a-z0-9_-]+\/[a-z0-9_-]+(?:\b|$)/u.test(
+  return /^(?:tool:\s*)?[a-z0-9_-]+\/[a-z0-9_-]+$/u.test(
     normalizedTitle.trim(),
   );
 }

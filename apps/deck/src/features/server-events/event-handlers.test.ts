@@ -256,6 +256,63 @@ test("session/list_timeline prepends older canonical history pages", () => {
   });
 });
 
+test("session/list_timeline replaces stale tool call mirrors from canonical timeline", () => {
+  resetStore();
+  useDeckStore.setState({
+    toolCalls: {
+      "session-1": [
+        {
+          id: "call-1",
+          kind: "shell",
+          title: "Shell",
+          status: "completed",
+          input: "{\"pattern\":\"Tiller\",\"glob\":\"**/README.md\",\"output_mode\":\"files_with_matches\"}",
+          output: "Found 2 files",
+          timestamp: "2026-07-07T08:06:52.322Z",
+          updatedAt: "2026-07-07T08:06:52.900Z",
+        } as AgentToolCall,
+      ],
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/list_timeline",
+    {
+      sessionId: "session-1",
+      entries: [
+        {
+          id: "tool:call-1",
+          kind: "tool_call",
+          toolCall: {
+            id: "call-1",
+            kind: "search",
+            title: "Grep",
+            status: "completed",
+            input: "{\"pattern\":\"Tiller\",\"glob\":\"**/README.md\",\"output_mode\":\"files_with_matches\"}",
+            output: "Found 2 files",
+            timestamp: "2026-07-07T08:06:52.322Z",
+            updatedAt: "2026-07-07T08:06:53.266Z",
+            sequence: 1,
+          },
+          timestamp: "2026-07-07T08:06:52.322Z",
+          updatedAt: "2026-07-07T08:06:53.266Z",
+          sequence: 1,
+        },
+      ],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().toolCalls["session-1"]?.map((entry) => [entry.id, entry.kind, entry.title]),
+    [["call-1", "search", "Grep"]],
+  );
+});
+
 test("session user_message compatibility updates are ignored once canonical timeline exists", () => {
   resetStore();
   const existingTimeline: SessionTimelineEntry[] = [
@@ -406,6 +463,67 @@ test("session timeline_batch requests an authoritative reload when delivery sequ
       params: { sessionId: "session-1", limit: 20 },
     },
   ]);
+});
+
+test("session timeline_batch refreshes tool call mirrors from canonical entries", () => {
+  resetStore();
+  useDeckStore.setState({
+    toolCalls: {
+      "session-1": [
+        {
+          id: "call-1",
+          kind: "shell",
+          title: "Shell",
+          status: "completed",
+          input: "{\"pattern\":\"tool-call-repair\",\"output_mode\":\"files_with_matches\"}",
+          output: "Found 4 files",
+          timestamp: "2026-07-07T09:10:38.372Z",
+          updatedAt: "2026-07-07T09:10:38.630Z",
+        } as AgentToolCall,
+      ],
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: false,
+          deliverySequence: 1,
+          lastSequence: 1,
+          entries: [
+            {
+              id: "tool:call-1",
+              kind: "tool_call",
+              toolCall: {
+                id: "call-1",
+                kind: "search",
+                title: "Grep",
+                status: "completed",
+                input: "{\"pattern\":\"tool-call-repair\",\"output_mode\":\"files_with_matches\"}",
+                output: "Found 4 files",
+                timestamp: "2026-07-07T09:10:38.372Z",
+                updatedAt: "2026-07-07T09:10:39.089Z",
+                sequence: 1,
+              },
+              timestamp: "2026-07-07T09:10:38.372Z",
+              updatedAt: "2026-07-07T09:10:39.089Z",
+              sequence: 1,
+            },
+          ],
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    useDeckStore.getState().toolCalls["session-1"]?.map((entry) => [entry.id, entry.kind, entry.title]),
+    [["call-1", "search", "Grep"]],
+  );
 });
 
 test("session live_state snapshots replace plan and prompt queue", () => {
