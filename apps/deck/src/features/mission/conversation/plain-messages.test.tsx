@@ -2254,7 +2254,7 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
   assert.match(html, /第三段 Thinking/);
 });
 
-test("plain messages keeps adjacent thinking tool calls separate when ids differ", () => {
+test("plain messages groups adjacent generic thinking tool calls when ids differ", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -2287,9 +2287,76 @@ test("plain messages keeps adjacent thinking tool calls separate when ids differ
     }),
   );
 
-  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 2);
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 1);
   assert.match(html, /第一轮 Thinking/);
   assert.match(html, /第二轮 Thinking/);
+});
+
+test("plain messages keeps generic thinking groups split across real tool boundaries", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "thinking-before",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "thinking-before:thinking",
+            kind: "thinking",
+            text: "工具前 Thinking",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:00:00.000Z",
+            updatedAt: "2026-05-17T10:00:00.000Z",
+            sequence: 1,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        sequence: 1,
+      },
+      {
+        id: "tool-between",
+        kind: "tool_call",
+        toolCall: {
+          id: "tool-between",
+          kind: "search",
+          title: "Search",
+          status: "completed",
+          input: "{\"query\":\"ACP\"}",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+          sequence: 2,
+        },
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 2,
+      },
+      {
+        id: "thinking-after",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "thinking-after:thinking",
+            kind: "thinking",
+            text: "工具后 Thinking",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:00:02.000Z",
+            updatedAt: "2026-05-17T10:00:02.000Z",
+            sequence: 3,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        sequence: 3,
+      },
+    ],
+  });
+
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 2);
+  assert.match(html, /工具前 Thinking/);
+  assert.match(html, /工具后 Thinking/);
+  assert.match(html, /Search: ACP/);
 });
 
 test("plain messages coalesces adjacent duplicate generic thinking snapshots", () => {

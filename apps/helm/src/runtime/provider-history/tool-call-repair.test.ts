@@ -87,6 +87,60 @@ test("repairSessionToolCalls upgrades OpenCode title-only MCP history to mcp", (
   });
 });
 
+test("repairSessionToolCalls upgrades OpenCode persisted task outputs to subagent", () => {
+  const sessionId = "session-opencode-subagent-history";
+  const toolCalls: AgentToolCall[] = [
+    {
+      id: "call-opencode-subagent-history",
+      kind: "tool",
+      title: "Simple subagent test",
+      status: "completed",
+      output: JSON.stringify({
+        output: [
+          "Task completed in 7s.",
+          "",
+          "Agent: Sisyphus-Junior (category: quick)",
+          "",
+          "<task_metadata>",
+          "session_id: ses_0c2674e30ffeB0TeYbrg38472O",
+          "task_id: ses_0c2674e30ffeB0TeYbrg38472O",
+          "subagent: Sisyphus-Junior",
+          "category: quick",
+          "</task_metadata>",
+          "",
+          "to continue: task(task_id=\"ses_0c2674e30ffeB0TeYbrg38472O\", load_skills=[], run_in_background=false, prompt=\"...\")",
+        ].join("\n"),
+        metadata: {
+          prompt: "回一句 hello from subagent 就行，不要做其他事情。",
+          agent: "Sisyphus-Junior",
+          category: "quick",
+          requested_subagent_type: "sisyphus-junior",
+          description: "Simple subagent test",
+          taskId: "ses_0c2674e30ffeB0TeYbrg38472O",
+          sessionId: "ses_0c2674e30ffeB0TeYbrg38472O",
+          spawnDepth: 1,
+        },
+      }),
+      timestamp: "2026-07-08T04:20:52.593Z",
+      updatedAt: "2026-07-08T04:20:52.593Z",
+    },
+  ];
+
+  const repaired = repairSessionToolCalls(
+    {
+      sessionId,
+      providerId: "opencode",
+      summary: summary(sessionId, "opencode", "OpenCode"),
+    },
+    toolCalls,
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  assert.equal(repaired.toolCalls[0]?.kind, "subagent");
+  assert.ok(typeof repaired.toolCalls[0]?.input === "string");
+  assert.match(repaired.toolCalls[0]?.input ?? "", /"agent":"Sisyphus-Junior"/);
+});
+
 test("repairSessionToolCalls prunes stale OpenCode running writes when target file is missing", () => {
   const sessionId = "session-opencode-stale-write-history";
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-opencode-stale-write-"));
@@ -247,6 +301,64 @@ test("repairTimelineToolCalls rewrites Codex web_search timeline history to fetc
   assert.equal(
     repairedEntry?.kind === "tool_call" ? repairedEntry.toolCall.kind : undefined,
     "fetch",
+  );
+});
+
+test("repairTimelineToolCalls upgrades OpenCode persisted task timeline rows to subagent", () => {
+  const sessionId = "session-opencode-subagent-timeline";
+  const timeline: SessionTimelineEntry[] = [
+    {
+      id: "tool:call-opencode-subagent-timeline",
+      kind: "tool_call",
+      toolCall: {
+        id: "call-opencode-subagent-timeline",
+        kind: "tool",
+        title: "Simple subagent test",
+        status: "completed",
+        output: JSON.stringify({
+          output: [
+            "Task completed in 7s.",
+            "",
+            "<task_metadata>",
+            "session_id: ses_0c2674e30ffeB0TeYbrg38472O",
+            "task_id: ses_0c2674e30ffeB0TeYbrg38472O",
+            "</task_metadata>",
+            "",
+            "to continue: task(task_id=\"ses_0c2674e30ffeB0TeYbrg38472O\", load_skills=[], run_in_background=false, prompt=\"...\")",
+          ].join("\n"),
+          metadata: {
+            prompt: "回一句 hello from subagent 就行，不要做其他事情。",
+            agent: "Sisyphus-Junior",
+            description: "Simple subagent test",
+            taskId: "ses_0c2674e30ffeB0TeYbrg38472O",
+            sessionId: "ses_0c2674e30ffeB0TeYbrg38472O",
+            spawnDepth: 1,
+          },
+        }),
+        timestamp: "2026-07-08T04:20:52.593Z",
+        updatedAt: "2026-07-08T04:20:52.593Z",
+      },
+      timestamp: "2026-07-08T04:20:52.593Z",
+      updatedAt: "2026-07-08T04:20:52.593Z",
+      sequence: 1,
+    },
+  ];
+
+  const repaired = repairTimelineToolCalls(
+    {
+      sessionId,
+      providerId: "opencode",
+      summary: summary(sessionId, "opencode", "OpenCode"),
+    },
+    timeline,
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  const repairedEntry = repaired.timeline[0];
+  assert.equal(repairedEntry?.kind, "tool_call");
+  assert.equal(
+    repairedEntry?.kind === "tool_call" ? repairedEntry.toolCall.kind : undefined,
+    "subagent",
   );
 });
 

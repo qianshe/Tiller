@@ -1955,6 +1955,108 @@ test("mapSessionUpdateNotification classifies OpenCode title-only MCP tools as m
   });
 });
 
+test("mapSessionUpdateNotification classifies OpenCode task calls as subagents from live input", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-subagent-live",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-subagent-live",
+            kind: "tool",
+            title: "task",
+            status: "in_progress",
+            input: JSON.stringify({
+              description: "Simple subagent test",
+              category: "quick",
+              load_skills: [],
+              prompt: "回一句 hello from subagent 就行，不要做其他事情。",
+              run_in_background: false,
+            }),
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "Simple subagent test");
+});
+
+test("mapSessionUpdateNotification classifies OpenCode completed task outputs as subagents", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-subagent-complete",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-subagent-complete",
+            kind: "tool",
+            title: "Simple subagent test",
+            status: "completed",
+            output: JSON.stringify({
+              output: [
+                "Task completed in 7s.",
+                "",
+                "Agent: Sisyphus-Junior (category: quick)",
+                "",
+                "---",
+                "",
+                "hello from subagent",
+                "",
+                "<task_metadata>",
+                "session_id: ses_0c2674e30ffeB0TeYbrg38472O",
+                "task_id: ses_0c2674e30ffeB0TeYbrg38472O",
+                "subagent: Sisyphus-Junior",
+                "category: quick",
+                "</task_metadata>",
+                "",
+                "to continue: task(task_id=\"ses_0c2674e30ffeB0TeYbrg38472O\", load_skills=[], run_in_background=false, prompt=\"...\")",
+              ].join("\n"),
+              metadata: {
+                truncated: false,
+                prompt: "回一句 hello from subagent 就行，不要做其他事情。",
+                agent: "Sisyphus-Junior",
+                category: "quick",
+                requested_subagent_type: "sisyphus-junior",
+                load_skills: [],
+                description: "Simple subagent test",
+                run_in_background: false,
+                taskId: "ses_0c2674e30ffeB0TeYbrg38472O",
+                sessionId: "ses_0c2674e30ffeB0TeYbrg38472O",
+                sync: true,
+                spawnDepth: 1,
+              },
+            }),
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "Simple subagent test");
+  assert.ok(typeof mapped.event.toolCall.input === "string");
+  assert.match(mapped.event.toolCall.input ?? "", /"agent":"Sisyphus-Junior"/);
+  assert.match(mapped.event.toolCall.input ?? "", /"description":"Simple subagent test"/);
+});
+
 test("mapSessionUpdateNotification repairs OpenCode path-only tool call history", () => {
   const mapped = mapSessionUpdateNotification(
     {

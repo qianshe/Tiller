@@ -1171,20 +1171,11 @@ function shouldMergeAdjacentThinkingItems(
   if (!isGenericThinkingToolCall(current) || !isGenericThinkingToolCall(incoming)) {
     return false;
   }
-  const currentText = resolveThinkingText(current);
-  const incomingText = resolveThinkingText(incoming);
-  if (!currentText || !incomingText) {
-    return true;
-  }
-  return incomingText.startsWith(currentText) || currentText.endsWith(incomingText);
+  return true;
 }
 
 function isGenericThinkingToolCall(toolCall: AgentToolCall) {
   return /^thinking$/iu.test(toolCall.title.trim());
-}
-
-function resolveThinkingText(toolCall: AgentToolCall) {
-  return (toolCall.output ?? toolCall.input ?? "").trim();
 }
 
 function mergeAdjacentMessageItems(
@@ -1227,8 +1218,8 @@ function mergeThinkingToolCalls(
     id: current.id,
     title: resolveMergedThinkingTitle(current.title, incoming.title),
     status: resolveMergedThinkingStatus(current.status, incoming.status),
-    output: mergeOptionalText(current.output, incoming.output),
-    input: mergeOptionalText(current.input, incoming.input),
+    output: mergeThinkingText(current.output, incoming.output),
+    input: mergeThinkingText(current.input, incoming.input),
     timestamp: current.timestamp,
     updatedAt: incoming.updatedAt,
   };
@@ -1248,7 +1239,7 @@ function resolveMergedThinkingStatus(
   return incoming;
 }
 
-function mergeOptionalText(
+function mergeThinkingText(
   current: string | undefined,
   incoming: string | undefined,
 ) {
@@ -1261,7 +1252,7 @@ function mergeOptionalText(
   if (incoming.startsWith(current)) {
     return incoming;
   }
-  return `${current}${incoming}`;
+  return `${current}\n\n${incoming}`;
 }
 
 function isAcpPromptWrapperEcho(message: AgentMessage, messages: AgentMessage[]) {
