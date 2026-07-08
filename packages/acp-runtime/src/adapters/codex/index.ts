@@ -4,6 +4,7 @@ import { applyCodexSessionLaunchArgs } from "../session-config";
 import { expandCodexRuntimeEvent, summarizeCodexCompactionSignal } from "./compaction-events";
 import { extractCodexPlanFromToolCall, isCodexPlanToolCall } from "./plan-events";
 import { mapCodexSessionUpdate } from "./session-updates";
+import { readCodexTranscriptMessagesFromDisk } from "./transcript/history";
 import { readCodexTranscriptPlanFromDisk } from "./transcript/plan";
 import { readCodexTranscriptToolCallsFromDisk } from "./transcript/tool-calls";
 import { normalizeCodexToolCall } from "./tool-calls";
@@ -30,6 +31,8 @@ export function createCodexAcpAdapter(): AcpAgentAdapter {
     normalizeToolCall: ({ toolCall, update }) => normalizeCodexToolCall(toolCall, update),
     readTranscriptPlan: ({ runtimeSessionId, cwd }) =>
       readCodexTranscriptPlanFromDisk({ runtimeSessionId, cwd }),
+    readTranscriptMessages: ({ runtimeSessionId, cwd }) =>
+      readCodexTranscriptMessagesFromDisk({ runtimeSessionId, cwd }),
     readTranscriptToolCalls: ({ runtimeSessionId, cwd }) =>
       readCodexTranscriptToolCallsFromDisk({ runtimeSessionId, cwd }),
     extractPlanFromToolCall: extractCodexPlanFromToolCall,

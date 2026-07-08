@@ -13,6 +13,8 @@ import {
 } from "@tiller/shared";
 import type { TillerLogger } from "../../logging/logger";
 
+const MESSAGE_TIMESTAMP_SKEW_MS = 60_000;
+
 type SessionMessageStore = {
   list(sessionId: string): AgentMessage[];
   replace(sessionId: string, messages: AgentMessage[]): void;
@@ -120,11 +122,18 @@ function applyVisibleMessageRepair(input: {
     input.repairMessages,
     replayMessages,
   );
-  if (!missingAssistantMessages.length) {
+  const hasTimestampSkew = hasVisibleMessageTimestampSkew(
+    input.repairMessages,
+    replayMessages,
+  );
+  if (!missingAssistantMessages.length && !hasTimestampSkew) {
     return false;
   }
 
-  const repairedMessages = buildRepairedVisibleMessages(input.repairMessages, replayMessages);
+  const {
+    repairedMessages,
+    changedMessages,
+  } = buildRepairedVisibleMessages(input.repairMessages, replayMessages);
   if (!repairedMessages.length) {
     return false;
   }
@@ -141,9 +150,7 @@ function applyVisibleMessageRepair(input: {
   );
   appendTranscriptRepairMessageUpdates({
     ...input,
-    messages: missingAssistantMessages.map((message) =>
-      repairedMessages.find((candidate) => candidate.id === message.id) ?? message
-    ),
+    messages: changedMessages,
   });
   return true;
 }
@@ -153,36 +160,69 @@ function buildRepairedVisibleMessages(
   replayMessages: AgentMessage[],
 ) {
   const repaired: AgentMessage[] = [];
-  const usedReplayUserIndexes = new Set<number>();
+  const changed: AgentMessage[] = [];
+  const usedReplayIndexes = new Set<number>();
   for (const transcriptMessage of transcriptMessages) {
-    if (transcriptMessage.role === "user") {
-      const replayUserIndex = findReplayUserIndex(replayMessages, transcriptMessage, usedReplayUserIndexes);
-      if (replayUserIndex === -1) {
-        continue;
-      }
-      usedReplayUserIndexes.add(replayUserIndex);
-      const replayUser = replayMessages[replayUserIndex];
-      if (replayUser) {
-        repaired.push({ ...replayUser });
-      }
+    const replayIndex = findReplayMessageIndex(
+      replayMessages,
+      transcriptMessage,
+      usedReplayIndexes,
+    );
+    if (replayIndex !== -1) {
+      usedReplayIndexes.add(replayIndex);
+    }
+    const repairedMessage = buildRepairedVisibleMessage(
+      transcriptMessage,
+      replayIndex === -1 ? undefined : replayMessages[replayIndex],
+    );
+    if (!repairedMessage) {
       continue;
     }
-    if (transcriptMessage.role === "assistant") {
-      repaired.push({ ...transcriptMessage });
+    repaired.push(repairedMessage);
+    if (
+      replayIndex === -1 ||
+      hasVisibleMessageChanged(replayMessages[replayIndex], repairedMessage)
+    ) {
+      changed.push(repairedMessage);
     }
   }
 
   const transcriptText = normalizedCombinedText(transcriptMessages);
-  for (const replayMessage of replayMessages) {
-    if (replayMessage.role !== "system" && isTextCovered(replayMessage.text, transcriptText)) {
+  for (const [index, replayMessage] of replayMessages.entries()) {
+    if (
+      usedReplayIndexes.has(index) ||
+      (replayMessage.role !== "system" && isTextCovered(replayMessage.text, transcriptText))
+    ) {
       continue;
     }
     repaired.push({ ...replayMessage });
   }
-  return repaired;
+  return {
+    repairedMessages: repaired,
+    changedMessages: changed,
+  };
 }
 
-function findReplayUserIndex(
+function buildRepairedVisibleMessage(
+  transcriptMessage: AgentMessage,
+  replayMessage: AgentMessage | undefined,
+) {
+  if (!replayMessage) {
+    return transcriptMessage.role === "assistant" ? { ...transcriptMessage } : undefined;
+  }
+  return {
+    ...replayMessage,
+    text: transcriptMessage.role === "assistant"
+      ? transcriptMessage.text
+      : replayMessage.text,
+    timestamp: shouldUseTranscriptMessageTimestamp(replayMessage, transcriptMessage)
+      ? transcriptMessage.timestamp
+      : replayMessage.timestamp,
+    sequence: replayMessage.sequence ?? transcriptMessage.sequence,
+  } satisfies AgentMessage;
+}
+
+function findReplayMessageIndex(
   replayMessages: AgentMessage[],
   transcriptMessage: AgentMessage,
   usedIndexes: Set<number>,
@@ -190,9 +230,59 @@ function findReplayUserIndex(
   const normalizedTranscriptText = normalizeComparableText(transcriptMessage.text);
   return replayMessages.findIndex((message, index) =>
     !usedIndexes.has(index) &&
-    message.role === "user" &&
+    message.role === transcriptMessage.role &&
     normalizeComparableText(message.text) === normalizedTranscriptText
   );
+}
+
+function hasVisibleMessageChanged(
+  replayMessage: AgentMessage | undefined,
+  repairedMessage: AgentMessage,
+) {
+  if (!replayMessage) {
+    return true;
+  }
+  return replayMessage.timestamp !== repairedMessage.timestamp ||
+    replayMessage.text !== repairedMessage.text ||
+    replayMessage.role !== repairedMessage.role;
+}
+
+function hasVisibleMessageTimestampSkew(
+  transcriptMessages: AgentMessage[],
+  replayMessages: AgentMessage[],
+) {
+  const usedReplayIndexes = new Set<number>();
+  for (const transcriptMessage of transcriptMessages) {
+    const replayIndex = findReplayMessageIndex(
+      replayMessages,
+      transcriptMessage,
+      usedReplayIndexes,
+    );
+    if (replayIndex === -1) {
+      continue;
+    }
+    usedReplayIndexes.add(replayIndex);
+    const replayMessage = replayMessages[replayIndex];
+    if (
+      replayMessage &&
+      exceedsTimestampSkew(replayMessage.timestamp, transcriptMessage.timestamp)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function exceedsTimestampSkew(left: string, right: string) {
+  const delta = Math.abs(Date.parse(left) - Date.parse(right));
+  return Number.isFinite(delta) && delta > MESSAGE_TIMESTAMP_SKEW_MS;
+}
+
+function shouldUseTranscriptMessageTimestamp(
+  replayMessage: AgentMessage,
+  transcriptMessage: AgentMessage,
+) {
+  return exceedsTimestampSkew(replayMessage.timestamp, transcriptMessage.timestamp);
 }
 
 function findMissingTranscriptAssistantMessages(

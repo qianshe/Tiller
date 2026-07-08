@@ -594,7 +594,14 @@ function mergeMessageEntry(
   return {
     ...incoming,
     message: incoming.message,
-    timestamp: current.timestamp,
+    timestamp: shouldPreferIncomingTextTimestamp(
+      current.message.text,
+      incoming.message.text,
+      current.timestamp,
+      incoming.timestamp,
+    )
+      ? incoming.timestamp
+      : current.timestamp,
     updatedAt: incoming.updatedAt,
     sequence: current.sequence ?? incoming.sequence,
   };
@@ -608,7 +615,14 @@ function mergeContentChunk(
     ...incoming,
     id: current.id,
     text: mergeOptionalText(current.text, incoming.text) ?? "",
-    timestamp: current.timestamp,
+    timestamp: shouldPreferIncomingTextTimestamp(
+      current.text,
+      incoming.text,
+      current.timestamp,
+      incoming.timestamp,
+    )
+      ? incoming.timestamp
+      : current.timestamp,
     sequence: current.sequence ?? incoming.sequence,
   };
 }
@@ -643,10 +657,14 @@ function mergeToolCallEntry(
       status: resolveMergedToolCallStatus(current.toolCall, incoming.toolCall),
       input: incoming.toolCall.input ?? current.toolCall.input,
       output: mergeOptionalText(current.toolCall.output, incoming.toolCall.output),
-      timestamp: current.toolCall.timestamp,
+      timestamp: shouldPreferIncomingToolTimestamp(current.toolCall, incoming.toolCall)
+        ? incoming.toolCall.timestamp
+        : current.toolCall.timestamp,
       sequence: current.toolCall.sequence ?? incoming.toolCall.sequence,
     },
-    timestamp: current.timestamp,
+    timestamp: shouldPreferIncomingToolTimestamp(current.toolCall, incoming.toolCall)
+      ? incoming.timestamp
+      : current.timestamp,
     sequence: current.sequence ?? incoming.sequence,
   };
 }
@@ -862,6 +880,34 @@ function compareSequenceResetTimestampDelta(
   return Math.sign(timelineDelta) === Math.sign(timestampDelta)
     ? null
     : timestampDelta;
+}
+
+function shouldPreferIncomingTextTimestamp(
+  currentText: string,
+  incomingText: string,
+  currentTimestamp: string,
+  incomingTimestamp: string,
+) {
+  return normalizeComparableText(currentText) === normalizeComparableText(incomingText) &&
+    exceedsTimestampSkew(currentTimestamp, incomingTimestamp);
+}
+
+function shouldPreferIncomingToolTimestamp(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  return current.kind === incoming.kind &&
+    current.title.trim() === incoming.title.trim() &&
+    exceedsTimestampSkew(current.timestamp, incoming.timestamp);
+}
+
+function normalizeComparableText(text: string) {
+  return text.replace(/[*_~`]/gu, "").replace(/\s+/gu, " ").trim();
+}
+
+function exceedsTimestampSkew(left: string, right: string) {
+  const delta = Math.abs(Date.parse(left) - Date.parse(right));
+  return Number.isFinite(delta) && delta > TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS;
 }
 
 function minDefined(values: Array<number | undefined>) {

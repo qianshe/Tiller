@@ -214,7 +214,127 @@ test("applyTranscriptMessageRepair preserves existing tool-call interleaving", (
       ["assistant_message", "assistant-1"],
       ["assistant_message", "thinking-1"],
       ["user_message", "user-2"],
-      ["assistant_message", "assistant-2-transcript"],
+      ["assistant_message", "assistant-2"],
+    ],
+  );
+});
+
+test("applyTranscriptMessageRepair reanchors Codex transcript web fetch between repaired messages", () => {
+  const sessionId = "session-codex-repair-web-order";
+  let messages: AgentMessage[] = [
+    {
+      id: "user-1",
+      role: "user",
+      text: "再测试一下web搜索能力",
+      timestamp: "2026-07-08T04:45:06.316Z",
+      sequence: 80,
+    },
+    {
+      id: "assistant-1",
+      role: "assistant",
+      text: "[🌳木] 目标是再做一轮 `web` 搜索测试，并给你一个可复核的结果。",
+      timestamp: "2026-07-08T04:45:06.317Z",
+      sequence: 81,
+    },
+    {
+      id: "assistant-2",
+      role: "assistant",
+      text: "又做了一轮 `web` 搜索测试，能力正常，主人，喵~",
+      timestamp: "2026-07-08T04:45:06.320Z",
+      sequence: 83,
+    },
+  ];
+  let timeline: SessionTimelineEntry[] = [];
+
+  const repaired = applyTranscriptMessageRepair({
+    sessionId,
+    summary: {
+      ...createSummary(sessionId),
+      agentId: "codex",
+      agentName: "Codex",
+    },
+    agent: {
+      id: "codex",
+      name: "Codex",
+      kind: "custom" as const,
+      command: "codex-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    transcriptMessages: [
+      {
+        id: "codex-transcript-message-1",
+        role: "user",
+        text: "再测试一下web搜索能力",
+        timestamp: "2026-07-07T17:12:51.998Z",
+        sequence: 1,
+      },
+      {
+        id: "codex-transcript-message-2",
+        role: "assistant",
+        text: "[🌳木] 目标是再做一轮 `web` 搜索测试，并给你一个可复核的结果。",
+        timestamp: "2026-07-07T17:12:52.100Z",
+        sequence: 2,
+      },
+      {
+        id: "codex-transcript-message-3",
+        role: "assistant",
+        text: "又做了一轮 `web` 搜索测试，能力正常，主人，喵~",
+        timestamp: "2026-07-07T17:13:15.465Z",
+        sequence: 3,
+      },
+    ],
+    sessionMessageStore: {
+      list: () => messages,
+      replace: (_sessionId, nextMessages) => {
+        messages = nextMessages;
+      },
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls: [{
+          id: "ws_1",
+          kind: "fetch",
+          title: "Searching for: site:developers.openai.com Responses API OpenAI",
+          status: "completed",
+          timestamp: "2026-07-07T17:13:09.352Z",
+          updatedAt: "2026-07-07T17:13:09.352Z",
+        }],
+      }),
+    },
+    sessionTimelineStore: {
+      replace: (_sessionId, entries) => {
+        timeline = entries;
+        return entries;
+      },
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: () => undefined,
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.deepEqual(
+    messages.map((message) => [message.id, message.timestamp]),
+    [
+      ["user-1", "2026-07-07T17:12:51.998Z"],
+      ["assistant-1", "2026-07-07T17:12:52.100Z"],
+      ["assistant-2", "2026-07-07T17:13:15.465Z"],
+    ],
+  );
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["user_message", "user-1"],
+      ["assistant_message", "assistant-1"],
+      ["tool_call", "tool:ws_1"],
+      ["assistant_message", "assistant-2"],
     ],
   );
 });

@@ -193,6 +193,7 @@ test("extractCodexToolCallsFromTranscriptText restores Codex tool kinds and titl
     source: "structured-tool-name",
     rawTitle: "mcp__mcp_router/get_current_config",
   });
+  assert.equal(toolCalls[0]?.sequence, undefined);
   assert.equal(toolCalls.some((toolCall) => toolCall.id === "call-plan"), false);
 });
 

@@ -65,7 +65,11 @@ export function extractCodexToolCallsFromTranscriptText(raw: string): AgentToolC
       const directToolCall = readCodexEventToolCall(payload, timestamp);
       if (directToolCall) {
         sequence += 1;
-        toolCalls.push({ ...directToolCall, sequence });
+        toolCalls.push(
+          /^ws(?:_|-)/u.test(directToolCall.id.trim())
+            ? directToolCall
+            : { ...directToolCall, sequence },
+        );
       }
       continue;
     }
