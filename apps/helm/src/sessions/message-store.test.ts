@@ -339,6 +339,31 @@ test("session message normalize refreshes duplicate replay timestamps without du
   ]);
 });
 
+test("session message normalize prefers the later full assistant snapshot over a trailing fragment", () => {
+  const store = createInMemoryMessageStore();
+  store.append("session-1", {
+    id: "assistant-1",
+    role: "assistant",
+    text: "Line 2\nLine 3\nLine 4",
+    timestamp: "2026-04-30T13:17:41.000Z",
+  });
+  store.append("session-1", {
+    id: "assistant-1",
+    role: "assistant",
+    text: "Line 1\nLine 2\nLine 3\nLine 4",
+    timestamp: "2026-04-30T13:22:46.686Z",
+  });
+
+  assert.deepEqual(store.list("session-1"), [
+    {
+      id: "assistant-1",
+      role: "assistant",
+      text: "Line 1\nLine 2\nLine 3\nLine 4",
+      timestamp: "2026-04-30T13:17:41.000Z",
+    },
+  ]);
+});
+
 test("session message normalize replaces a session with authoritative history order", () => {
   const store = createInMemoryMessageStore();
   store.append("session-1", {

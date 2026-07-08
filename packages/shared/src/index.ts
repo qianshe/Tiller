@@ -4,6 +4,7 @@ export * from "./session-live-state";
 export * from "./session-transcript";
 export * from "./session-update-record";
 export * from "./prompt-trace";
+export * from "./stream-text";
 export * from "./utils/continuation-summary";
 export * from "./utils/local-command-message";
 export * from "./utils/replay-duplicate";

@@ -4,6 +4,7 @@ import {
   buildSessionTimelineFromLegacy,
   type AgentMessage,
   type AgentToolCall,
+  type CommandChunk,
   type SessionSummary,
   type SessionTimelineEntry,
 } from "@tiller/shared";
@@ -743,17 +744,22 @@ test("provider history refresh applies only incremental session updates after in
       },
     }),
   ];
+  let allUpdates = [...initialUpdates];
   let timeline: SessionTimelineEntry[] = [];
   let listSinceCalls = 0;
   const service = createTestProviderHistoryService(
     {
       listPage: () => ({
-        updates: initialUpdates,
+        updates: allUpdates,
         hasMore: false,
       }),
       listSinceSequence: (_sessionId, afterSequence) => {
         listSinceCalls += 1;
-        return afterSequence < 2 ? incrementalUpdates : [];
+        if (afterSequence < 2) {
+          allUpdates = [...initialUpdates, ...incrementalUpdates];
+          return incrementalUpdates;
+        }
+        return [];
       },
     },
     {
@@ -786,6 +792,265 @@ test("provider history refresh applies only incremental session updates after in
     timeline.map((entry) => entry.kind),
     ["assistant_message", "tool_call"],
   );
+});
+
+test("provider history refresh rebuilds duplicated persisted messages and thinking state from authoritative updates", async () => {
+  const sessionId = "session-rebuild-duplicated-state";
+  const updates = [
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 1,
+      source: "acp_live",
+      event: {
+        type: "message",
+        message: {
+          id: "assistant-final",
+          role: "assistant",
+          text: "Line 2\nLine 3",
+          timestamp: "2026-07-08T11:10:10.100Z",
+          sequence: 1,
+          streaming: true,
+        },
+      },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 2,
+      source: "acp_live",
+      event: {
+        type: "message",
+        message: {
+          id: "assistant-final",
+          role: "assistant",
+          text: "Line 4",
+          timestamp: "2026-07-08T11:10:10.200Z",
+          sequence: 2,
+          streaming: true,
+        },
+      },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 3,
+      source: "acp_live",
+      event: {
+        type: "message",
+        message: {
+          id: "assistant-final",
+          role: "assistant",
+          text: "Line 1\nLine 2\nLine 3\nLine 4",
+          timestamp: "2026-07-08T11:10:10.300Z",
+          sequence: 3,
+          streaming: false,
+        },
+      },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 4,
+      source: "acp_live",
+      event: {
+        type: "tool-call",
+        toolCall: {
+          id: "thinking-1",
+          commandId: "thinking-1",
+          kind: "think",
+          title: "Thinking",
+          status: "running",
+          output: "Line 1\nLine 2\nLine 3",
+          timestamp: "2026-07-08T11:10:10.400Z",
+          updatedAt: "2026-07-08T11:10:10.400Z",
+          sequence: 4,
+        },
+      },
+    }),
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 5,
+      source: "acp_live",
+      event: {
+        type: "tool-call",
+        toolCall: {
+          id: "thinking-1",
+          commandId: "thinking-1",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "Line 2\nLine 3\nLine 4",
+          timestamp: "2026-07-08T11:10:10.500Z",
+          updatedAt: "2026-07-08T11:10:10.500Z",
+          sequence: 5,
+        },
+      },
+    }),
+  ];
+  const expected = reduceSessionUpdateRecords(updates);
+  let messages: AgentMessage[] = [
+    {
+      id: "assistant-final",
+      role: "assistant" as const,
+      text: "Line 2\nLine 3Line 4Line 1\nLine 2\nLine 3\nLine 4",
+      timestamp: "2026-07-08T11:10:10.100Z",
+      sequence: 1,
+      streaming: false,
+    },
+  ];
+  let toolCalls: AgentToolCall[] = [
+    {
+      id: "thinking-1",
+      commandId: "thinking-1",
+      kind: "think" as const,
+      title: "Thinking",
+      status: "completed" as const,
+      output: "Line 1\nLine 2\nLine 3Line 2\nLine 3\nLine 4",
+      timestamp: "2026-07-08T11:10:10.400Z",
+      updatedAt: "2026-07-08T11:10:10.500Z",
+      sequence: 4,
+    },
+  ];
+  let timeline = JSON.parse(JSON.stringify(expected.entries)) as typeof expected.entries;
+  const assistantEntry = timeline.find((entry) => entry.id === "assistant-final");
+  if (assistantEntry?.kind === "assistant_message") {
+    assistantEntry.chunks[0]!.text = "Line 2\nLine 3Line 4Line 1\nLine 2\nLine 3\nLine 4";
+  }
+  const thinkingEntry = timeline.find((entry) => entry.id === "thinking-1");
+  if (thinkingEntry?.kind === "assistant_message") {
+    thinkingEntry.chunks[0]!.text = "Line 1\nLine 2\nLine 3Line 2\nLine 3\nLine 4";
+  }
+
+  const service = createTestProviderHistoryService(
+    {
+      listPage: () => ({
+        updates,
+        hasMore: false,
+      }),
+    },
+    {
+      sessionStore: { list: () => [summary(sessionId)] },
+      sessionMessageStore: {
+        list: () => messages,
+        replace: (_sessionId, nextMessages) => {
+          messages = nextMessages;
+        },
+        append: () => {},
+      },
+      sessionArtifactStore: {
+        get: () => ({ toolCalls, outputs: [], diffs: [] }),
+        replaceOutputs: () => {},
+        replaceToolCalls: (_sessionId, nextToolCalls) => {
+          toolCalls = nextToolCalls;
+        },
+      },
+      sessionTimelineStore: {
+        list: () => timeline,
+        replace: (_sessionId, entries) => {
+          timeline = entries;
+          return entries;
+        },
+      },
+    },
+  );
+
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+
+  assert.deepEqual(messages, expected.messages);
+  assert.equal(toolCalls[0]?.id, expected.toolCalls[0]?.id);
+  assert.equal(toolCalls[0]?.kind, expected.toolCalls[0]?.kind);
+  assert.equal(toolCalls[0]?.title, expected.toolCalls[0]?.title);
+  assert.equal(toolCalls[0]?.status, expected.toolCalls[0]?.status);
+  assert.equal(toolCalls[0]?.output, expected.toolCalls[0]?.output);
+  assert.deepEqual(timeline, expected.entries);
+});
+
+test("provider history refresh repairs repeated timeline snapshots even when no session updates exist", async () => {
+  const sessionId = "session-repair-timeline-only";
+  let messages: AgentMessage[] = [];
+  let toolCalls: AgentToolCall[] = [];
+  let outputs: CommandChunk[] = [];
+  let timeline: SessionTimelineEntry[] = [{
+    id: "assistant-1",
+    kind: "assistant_message",
+    timestamp: "2026-07-08T11:10:08.908Z",
+    updatedAt: "2026-07-08T11:10:08.908Z",
+    sequence: 10,
+    streaming: false,
+    chunks: [
+      {
+        id: "assistant-1:thinking",
+        kind: "thinking",
+        text: "Think A\nThink BThink A\nThink B",
+        title: "Thinking",
+        status: "completed",
+        timestamp: "2026-07-08T11:10:07.908Z",
+        updatedAt: "2026-07-08T11:10:08.908Z",
+        sequence: 9,
+      },
+      {
+        id: "assistant-1:content",
+        kind: "content",
+        text: "Line 1\nLine 2Line 1\nLine 2",
+        timestamp: "2026-07-08T11:10:08.908Z",
+        sequence: 10,
+        streaming: false,
+      },
+    ],
+  }];
+
+  const service = createTestProviderHistoryService(
+    {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+    },
+    {
+      sessionStore: { list: () => [summary(sessionId)] },
+      sessionMessageStore: {
+        list: () => messages,
+        replace: (_sessionId, nextMessages) => {
+          messages = nextMessages;
+        },
+        append: () => {},
+      },
+      sessionArtifactStore: {
+        get: () => ({ toolCalls, outputs, diffs: [] }),
+        replaceOutputs: (_sessionId, nextOutputs) => {
+          outputs = nextOutputs;
+        },
+        replaceToolCalls: (_sessionId, nextToolCalls) => {
+          toolCalls = nextToolCalls;
+        },
+      },
+      sessionTimelineStore: {
+        list: () => timeline,
+        replace: (_sessionId, entries) => {
+          timeline = entries;
+          return entries;
+        },
+      },
+    },
+  );
+
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+
+  const repairedEntry = timeline[0];
+  assert.equal(repairedEntry?.kind, "assistant_message");
+  if (repairedEntry?.kind === "assistant_message") {
+    assert.equal(repairedEntry.chunks[0]?.text, "Think A\nThink B");
+    assert.equal(repairedEntry.chunks[1]?.text, "Line 1\nLine 2");
+  }
+  assert.equal(messages[0]?.text, "Line 1\nLine 2");
+  assert.equal(toolCalls[0]?.output, "Think A\nThink B");
 });
 
 test("provider history refresh suppresses repeated identical tool-call normalization logs", async () => {

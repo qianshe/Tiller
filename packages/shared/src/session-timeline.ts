@@ -614,7 +614,7 @@ function mergeContentChunk(
   return {
     ...incoming,
     id: current.id,
-    text: mergeOptionalText(current.text, incoming.text) ?? "",
+    text: mergeTimelineContentText(current, incoming) ?? "",
     timestamp: shouldPreferIncomingTextTimestamp(
       current.text,
       incoming.text,
@@ -634,7 +634,7 @@ function mergeThinkingChunk(
   return {
     ...incoming,
     id: current.id,
-    text: mergeOptionalText(current.text, incoming.text) ?? "",
+    text: mergeThinkingSnapshotText(current.text, incoming.text) ?? "",
     title: /^thinking$/iu.test(current.title.trim()) ? incoming.title : current.title,
     timestamp: current.timestamp,
     sequence: current.sequence ?? incoming.sequence,
@@ -656,7 +656,7 @@ function mergeToolCallEntry(
       title: resolveMergedToolCallTitle(current.toolCall, incoming.toolCall),
       status: resolveMergedToolCallStatus(current.toolCall, incoming.toolCall),
       input: incoming.toolCall.input ?? current.toolCall.input,
-      output: mergeOptionalText(current.toolCall.output, incoming.toolCall.output),
+      output: resolveMergedToolCallOutput(current.toolCall, incoming.toolCall),
       timestamp: shouldPreferIncomingToolTimestamp(current.toolCall, incoming.toolCall)
         ? incoming.toolCall.timestamp
         : current.toolCall.timestamp,
@@ -930,4 +930,60 @@ function mergeOptionalText(current: string | undefined, incoming: string | undef
     return incoming;
   }
   return `${current}${incoming}`;
+}
+
+function mergeTimelineContentText(
+  current: SessionTimelineContentChunk,
+  incoming: SessionTimelineContentChunk,
+) {
+  if (current.streaming === true && incoming.streaming !== true && incoming.text) {
+    return incoming.text;
+  }
+  return mergeOptionalText(current.text, incoming.text);
+}
+
+function resolveMergedToolCallOutput(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  if (current.kind !== "think" && incoming.kind !== "think") {
+    return mergeOptionalText(current.output, incoming.output);
+  }
+  return mergeThinkingSnapshotText(current.output, incoming.output);
+}
+
+function mergeThinkingSnapshotText(
+  current: string | undefined,
+  incoming: string | undefined,
+) {
+  if (!current) {
+    return incoming;
+  }
+  if (!incoming || current.endsWith(incoming)) {
+    return current;
+  }
+  if (incoming.startsWith(current) || current.startsWith(incoming)) {
+    return incoming.length >= current.length ? incoming : current;
+  }
+  const overlapped = mergeTextByLineOverlap(current, incoming);
+  if (overlapped) {
+    return overlapped;
+  }
+  return incoming.length >= current.length ? incoming : current;
+}
+
+function mergeTextByLineOverlap(currentText: string, incomingText: string) {
+  const currentLines = currentText.split(/\r?\n/u);
+  const incomingLines = incomingText.split(/\r?\n/u);
+  const overlapLineCount = Math.min(currentLines.length, incomingLines.length);
+  for (let size = overlapLineCount; size >= 1; size -= 1) {
+    const currentSlice = currentLines.slice(-size).join("\n");
+    const incomingSlice = incomingLines.slice(0, size).join("\n");
+    if (currentSlice !== incomingSlice) {
+      continue;
+    }
+    const suffix = incomingLines.slice(size).join("\n");
+    return suffix ? `${currentText}\n${suffix}` : currentText;
+  }
+  return null;
 }

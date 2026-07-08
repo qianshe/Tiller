@@ -4,6 +4,7 @@ import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "./typ
 import { isTranscriptEventEntry } from "./session-transcript";
 import type { SessionTimelineBatch, SessionTimelineEntry } from "./session-timeline";
 import {
+  appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
   buildSessionTimelineFromLegacy,
   resolveTimelineRepresentedUserMessageIds,
@@ -23,6 +24,77 @@ test("reference-only prompt images satisfy the shared prompt image contract", ()
   } satisfies AgentPromptImageContent;
 
   assert.equal(image.uri, "/api/sessions/session-1/attachments/att-1");
+});
+
+test("appendMessageToSessionTimeline keeps the final full assistant message instead of duplicating prior streaming fragments", () => {
+  const entries = appendMessageToSessionTimeline([], {
+    id: "assistant-1",
+    role: "assistant",
+    text: "Line 2\nLine 3",
+    timestamp: at(1),
+    sequence: 1,
+    streaming: true,
+  });
+
+  appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "Line 4",
+    timestamp: at(2),
+    sequence: 2,
+    streaming: true,
+  });
+
+  appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "Line 1\nLine 2\nLine 3\nLine 4",
+    timestamp: at(3),
+    sequence: 3,
+    streaming: false,
+  });
+
+  assert.equal(entries[0]?.kind, "assistant_message");
+  assert.equal(
+    entries[0]?.kind === "assistant_message"
+      ? entries[0].chunks[0]?.text
+      : undefined,
+    "Line 1\nLine 2\nLine 3\nLine 4",
+  );
+});
+
+test("appendToolCallToSessionTimeline deduplicates overlapping thinking snapshots", () => {
+  const entries = appendToolCallToSessionTimeline([], {
+    id: "thinking-1",
+    commandId: "thinking-1",
+    kind: "think",
+    title: "Thinking",
+    status: "running",
+    output: "Line 1\nLine 2\nLine 3",
+    timestamp: at(1),
+    updatedAt: at(1),
+    sequence: 1,
+  });
+
+  appendToolCallToSessionTimeline(entries, {
+    id: "thinking-1",
+    commandId: "thinking-1",
+    kind: "think",
+    title: "Thinking",
+    status: "completed",
+    output: "Line 2\nLine 3\nLine 4",
+    timestamp: at(2),
+    updatedAt: at(2),
+    sequence: 2,
+  });
+
+  assert.equal(entries[0]?.kind, "assistant_message");
+  assert.equal(
+    entries[0]?.kind === "assistant_message"
+      ? entries[0].chunks[0]?.text
+      : undefined,
+    "Line 1\nLine 2\nLine 3\nLine 4",
+  );
 });
 
 function at(seconds: number) {

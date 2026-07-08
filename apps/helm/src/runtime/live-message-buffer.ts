@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@tiller/shared";
+import { mergeStreamingText, type AgentMessage } from "@tiller/shared";
 
 export type LiveMessageBuffer = ReturnType<typeof createLiveMessageBuffer>;
 
@@ -19,7 +19,11 @@ export function createLiveMessageBuffer() {
     }
 
     const mergedText = mergeLiveMessageText(current.fullMessage.text, message.text);
-    const pendingText = resolvePendingDelta(current.fullMessage.text, message.text);
+    const pendingText = resolvePendingDelta(
+      current.fullMessage.text,
+      mergedText,
+      message.text,
+    );
     const next = {
       ...message,
       text: mergedText,
@@ -28,7 +32,9 @@ export function createLiveMessageBuffer() {
     };
     messages.set(sessionId, {
       fullMessage: next,
-      pendingText: current.pendingText + pendingText,
+      pendingText: mergedText.startsWith(current.fullMessage.text)
+        ? current.pendingText + pendingText
+        : pendingText,
     });
     return next;
   }
@@ -64,23 +70,24 @@ export function createLiveMessageBuffer() {
   }
 
   function mergeLiveMessageText(currentText: string, incomingText: string) {
-    if (currentText === incomingText || currentText.endsWith(incomingText)) {
-      return currentText;
-    }
-    if (incomingText.startsWith(currentText)) {
-      return incomingText;
-    }
-    return `${currentText}${incomingText}`;
+    return mergeStreamingText(currentText, incomingText) ?? currentText;
   }
 
-  function resolvePendingDelta(currentText: string, incomingText: string) {
-    if (currentText === incomingText || currentText.endsWith(incomingText)) {
+  function resolvePendingDelta(
+    currentText: string,
+    mergedText: string,
+    incomingText: string,
+  ) {
+    if (mergedText === currentText) {
       return "";
+    }
+    if (mergedText.startsWith(currentText)) {
+      return mergedText.slice(currentText.length);
     }
     if (incomingText.startsWith(currentText)) {
       return incomingText.slice(currentText.length);
     }
-    return incomingText;
+    return mergedText;
   }
 
   return { append, peek, flushPending, pendingLength, finalize };

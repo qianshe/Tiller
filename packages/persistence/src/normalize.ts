@@ -1,5 +1,7 @@
 import {
   compactBinaryToolCallOutput,
+  collapseRepeatedStreamingText,
+  mergeStreamingText,
   type AgentMessage,
   type AgentToolCall,
   type AgentToolCallKind,
@@ -54,19 +56,7 @@ export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): 
 }
 
 export function mergeToolCallOutput(currentOutput: string | undefined, incomingOutput: string | undefined) {
-  if (!incomingOutput) {
-    return currentOutput;
-  }
-  if (!currentOutput || incomingOutput.startsWith(currentOutput)) {
-    return incomingOutput;
-  }
-  if (currentOutput.startsWith(incomingOutput)) {
-    return currentOutput;
-  }
-  if (currentOutput.endsWith(incomingOutput)) {
-    return currentOutput;
-  }
-  return `${currentOutput}${incomingOutput}`;
+  return mergeStreamingText(currentOutput, incomingOutput);
 }
 
 export function sortCommandChunks(items: CommandChunk[]) {
@@ -276,13 +266,8 @@ function isRuntimeGeneratedMessageId(id: string) {
 }
 
 function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): AgentMessage {
-  const isDuplicateText = current.text === incoming.text || current.text.endsWith(incoming.text);
-  const isCumulativeSnapshot = incoming.text.startsWith(current.text);
-  const nextText = isDuplicateText
-    ? current.text
-    : isCumulativeSnapshot
-      ? incoming.text
-      : `${current.text}${incoming.text}`;
+  const nextText = mergeStreamingText(current.text, incoming.text) ?? current.text;
+  const isDuplicateText = nextText === current.text;
   const sequence = current.sequence ?? incoming.sequence;
   const merged: AgentMessage = {
     ...current,
@@ -303,7 +288,7 @@ function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): 
 }
 
 function collapseRepeatedAssistantText(text: string) {
-  const repeatedUnit = collapseExactRepeatedText(text);
+  const repeatedUnit = collapseRepeatedStreamingText(text);
   if (repeatedUnit !== text) {
     return repeatedUnit;
   }
@@ -322,28 +307,4 @@ function collapseRepeatedAssistantText(text: string) {
   const cutIndex =
     bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
   return text.slice(0, cutIndex).trimEnd();
-}
-
-function collapseExactRepeatedText(text: string) {
-  const minUnitLength = 40;
-  const maxUnitLength = Math.floor(text.length / 2);
-  for (let unitLength = minUnitLength; unitLength <= maxUnitLength; unitLength += 1) {
-    if (text.length % unitLength !== 0) {
-      continue;
-    }
-
-    const unit = text.slice(0, unitLength);
-    let repeatsExactly = true;
-    for (let index = unitLength; index < text.length; index += unitLength) {
-      if (text.slice(index, index + unitLength) !== unit) {
-        repeatsExactly = false;
-        break;
-      }
-    }
-
-    if (repeatsExactly) {
-      return unit;
-    }
-  }
-  return text;
 }

@@ -479,6 +479,47 @@ test("sqlite artifact store replaces cumulative thinking output instead of appen
   }
 });
 
+test("sqlite artifact store merges overlapping thinking snapshots without duplicating lines", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-thinking-overlap-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.appendToolCall(
+        "session-1",
+        createToolCall("session-1-msg-s1:thinking", "2026-05-23T10:00:00.000Z", {
+          commandId: "session-1-msg-s1:thinking",
+          kind: "think",
+          title: "Thinking",
+          output: "Line 1\nLine 2\nLine 3",
+          status: "running",
+          updatedAt: "2026-05-23T10:00:01.000Z",
+        }),
+      );
+      store.appendToolCall(
+        "session-1",
+        createToolCall("session-1-msg-s1:thinking", "2026-05-23T10:00:00.000Z", {
+          commandId: "session-1-msg-s1:thinking",
+          kind: "think",
+          title: "Thinking",
+          output: "Line 2\nLine 3\nLine 4",
+          status: "completed",
+          updatedAt: "2026-05-23T10:00:02.000Z",
+        }),
+      );
+
+      assert.equal(
+        store.get("session-1").toolCalls[0]?.output,
+        "Line 1\nLine 2\nLine 3\nLine 4",
+      );
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("sqlite artifact store paginates outputs/tool calls and replaces diffs/tool calls", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-"));
   try {

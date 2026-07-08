@@ -9,12 +9,16 @@ import type {
   SessionSummary,
   WorktreeSummary,
 } from "@tiller/shared";
-import { buildSessionTimelineFromLegacy } from "@tiller/shared";
+import {
+  buildSessionTimelineFromLegacy,
+  collapseRepeatedStreamingText,
+} from "@tiller/shared";
 import { extractAdapterPlanFromToolCall } from "@tiller/acp-runtime";
 import type { SessionRecord } from "../session/services";
 import type { SessionAttachmentStore, StoredSessionRuntimeDescriptor } from "../../sessions/facade";
 import type { TillerLogger } from "../../logging/logger";
 import type { ProviderHistorySnapshotContent } from "./source";
+import { projectLegacySessionHistoryFromTimeline } from "../session-timeline/legacy-projection.js";
 import { reduceSessionUpdateRecords } from "../session-updates/records.js";
 import {
   applySessionUpdateRecordToState,
@@ -157,6 +161,8 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       materializeLegacyCanonicalTimeline(sessionId);
     }
     readSessionPlan(sessionId);
+    repairPersistedStateFromSessionUpdates(sessionId);
+    repairPersistedTimelineSnapshots(sessionId);
     repairPersistedToolCallHistory(sessionId);
   }
 
@@ -230,6 +236,106 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       before = page.nextCursor;
     }
     return records.sort((left, right) => left.sequence - right.sequence);
+  }
+
+  function repairPersistedStateFromSessionUpdates(sessionId: string) {
+    if (!options.sessionUpdateStore?.listPage) {
+      return;
+    }
+    const updates = readAllSessionUpdateRecords(sessionId);
+    if (!updates.length) {
+      return;
+    }
+
+    const rebuiltState = reduceSessionUpdateRecords(updates);
+    let changed = false;
+
+    const currentMessages = options.sessionMessageStore.list(sessionId);
+    if (!areSerializedValuesEqual(currentMessages, rebuiltState.messages)) {
+      options.sessionMessageStore.replace(sessionId, rebuiltState.messages);
+      changed = true;
+    }
+
+    const currentArtifacts = options.sessionArtifactStore.get(sessionId);
+    if (!areSerializedValuesEqual(currentArtifacts.toolCalls, rebuiltState.toolCalls)) {
+      options.sessionArtifactStore.replaceToolCalls(sessionId, rebuiltState.toolCalls);
+      changed = true;
+    }
+    if (
+      options.sessionArtifactStore.replaceOutputs &&
+      !areSerializedValuesEqual(currentArtifacts.outputs, rebuiltState.outputs)
+    ) {
+      options.sessionArtifactStore.replaceOutputs(sessionId, rebuiltState.outputs);
+      changed = true;
+    }
+
+    if (
+      options.sessionTimelineStore?.list &&
+      options.sessionTimelineStore.replace
+    ) {
+      const currentTimeline = options.sessionTimelineStore.list(sessionId) ?? [];
+      if (!areSerializedValuesEqual(currentTimeline, rebuiltState.entries)) {
+        options.sessionTimelineStore.replace(sessionId, rebuiltState.entries);
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      logProviderHistoryInfo(options, "provider.history.state.rebuilt_from_updates", {
+        sessionId,
+        messages: rebuiltState.messages.length,
+        toolCalls: rebuiltState.toolCalls.length,
+        timelineEntries: rebuiltState.entries.length,
+      });
+    }
+  }
+
+  function repairPersistedTimelineSnapshots(sessionId: string) {
+    if (!options.sessionTimelineStore?.list || !options.sessionTimelineStore.replace) {
+      return;
+    }
+    if (options.sessionUpdateStore?.listPage?.(sessionId, { limit: 1 }).updates.length) {
+      return;
+    }
+    const currentTimeline = options.sessionTimelineStore.list(sessionId) ?? [];
+    if (!currentTimeline.length) {
+      return;
+    }
+
+    let changed = false;
+    const repairedTimeline = currentTimeline.map((entry) => {
+      const repairedEntry = repairTimelineSnapshotEntry(entry);
+      changed ||= repairedEntry !== entry;
+      return repairedEntry;
+    });
+
+    if (!changed) {
+      return;
+    }
+
+    options.sessionTimelineStore.replace(sessionId, repairedTimeline);
+
+    const projected = projectLegacySessionHistoryFromTimeline(repairedTimeline);
+    const currentMessages = options.sessionMessageStore.list(sessionId);
+    if (!areSerializedValuesEqual(currentMessages, projected.messages)) {
+      options.sessionMessageStore.replace(sessionId, projected.messages);
+    }
+
+    const currentArtifacts = options.sessionArtifactStore.get(sessionId);
+    if (!areSerializedValuesEqual(currentArtifacts.toolCalls, projected.toolCalls)) {
+      options.sessionArtifactStore.replaceToolCalls(sessionId, projected.toolCalls);
+    }
+    if (
+      options.sessionArtifactStore.replaceOutputs &&
+      !areSerializedValuesEqual(currentArtifacts.outputs, projected.outputs)
+    ) {
+      options.sessionArtifactStore.replaceOutputs(sessionId, projected.outputs);
+    }
+
+    logProviderHistoryInfo(options, "provider.history.timeline.snapshot_repaired", {
+      sessionId,
+      entries: repairedTimeline.length,
+    });
   }
 
   function applyIncrementalCanonicalTimelineFromSessionUpdates(
@@ -475,6 +581,49 @@ function summarizeTimelineShape(entries: SessionTimelineEntry[]) {
       compactionEntries: 0,
     },
   );
+}
+
+function areSerializedValuesEqual(left: unknown, right: unknown) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function repairTimelineSnapshotEntry(entry: SessionTimelineEntry): SessionTimelineEntry {
+  if (entry.kind === "assistant_message") {
+    let changed = false;
+    const chunks = entry.chunks.map((chunk) => {
+      if (chunk.kind !== "content" && chunk.kind !== "thinking") {
+        return chunk;
+      }
+      const repairedText = collapseRepeatedStreamingText(chunk.text);
+      if (repairedText === chunk.text) {
+        return chunk;
+      }
+      changed = true;
+      return {
+        ...chunk,
+        text: repairedText,
+      };
+    });
+    return changed ? { ...entry, chunks } : entry;
+  }
+
+  if (entry.kind === "tool_call" && entry.toolCall.kind === "think") {
+    const repairedOutput = entry.toolCall.output
+      ? collapseRepeatedStreamingText(entry.toolCall.output)
+      : entry.toolCall.output;
+    if (repairedOutput === entry.toolCall.output) {
+      return entry;
+    }
+    return {
+      ...entry,
+      toolCall: {
+        ...entry.toolCall,
+        output: repairedOutput,
+      },
+    };
+  }
+
+  return entry;
 }
 
 function readSessionPlanFromUpdateRecord(update: SessionUpdateRecord): AgentPlan | undefined {

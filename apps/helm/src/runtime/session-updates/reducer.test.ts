@@ -86,6 +86,52 @@ test("session update reducer keeps colliding user and assistant message ids dist
   ]);
 });
 
+test("session update reducer replaces accumulated streaming assistant fragments with the final full assistant message", () => {
+  const finalState = [
+    {
+      type: "message" as const,
+      message: {
+        id: "assistant-final",
+        role: "assistant" as const,
+        text: "Line 2\nLine 3",
+        timestamp: at(1),
+        sequence: 1,
+        streaming: true,
+      },
+    },
+    {
+      type: "message" as const,
+      message: {
+        id: "assistant-final",
+        role: "assistant" as const,
+        text: "Line 4",
+        timestamp: at(2),
+        sequence: 2,
+        streaming: true,
+      },
+    },
+    {
+      type: "message" as const,
+      message: {
+        id: "assistant-final",
+        role: "assistant" as const,
+        text: "Line 1\nLine 2\nLine 3\nLine 4",
+        timestamp: at(3),
+        sequence: 3,
+        streaming: false,
+      },
+    },
+  ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
+
+  assert.equal(finalState.messages[0]?.text, "Line 1\nLine 2\nLine 3\nLine 4");
+  assert.equal(
+    finalState.entries[0]?.kind === "assistant_message"
+      ? finalState.entries[0].chunks[0]?.text
+      : undefined,
+    "Line 1\nLine 2\nLine 3\nLine 4",
+  );
+});
+
 test("session update reducer keeps stronger tool classification when sparse patches arrive later", () => {
   const finalState = [
     {
@@ -124,6 +170,46 @@ test("session update reducer keeps stronger tool classification when sparse patc
   assert.equal(finalState.toolCalls[0]?.title, "Tool: mcp_router/find_symbol");
   assert.equal(finalState.toolCalls[0]?.status, "completed");
   assert.equal(finalState.toolCalls[0]?.output, "ok");
+});
+
+test("session update reducer deduplicates overlapping thinking tool snapshots", () => {
+  const finalState = [
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "thinking-1",
+        kind: "think" as const,
+        title: "Thinking",
+        status: "running" as const,
+        output: "Line 1\nLine 2\nLine 3",
+        timestamp: at(1),
+        updatedAt: at(1),
+        sequence: 1,
+      },
+    },
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "thinking-1",
+        kind: "think" as const,
+        title: "Thinking",
+        status: "completed" as const,
+        output: "Line 2\nLine 3\nLine 4",
+        timestamp: at(2),
+        updatedAt: at(2),
+        sequence: 2,
+      },
+    },
+  ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
+
+  assert.equal(finalState.toolCalls[0]?.output, "Line 1\nLine 2\nLine 3\nLine 4");
+  assert.equal(finalState.entries[0]?.kind, "assistant_message");
+  assert.equal(
+    finalState.entries[0]?.kind === "assistant_message"
+      ? finalState.entries[0].chunks[0]?.text
+      : undefined,
+    "Line 1\nLine 2\nLine 3\nLine 4",
+  );
 });
 
 test("session update reducer replaces repeated tool input snapshots instead of concatenating JSON strings", () => {
@@ -271,3 +357,4 @@ test("session update reducer rebuilds one merged compaction row from started lif
     "expandable",
   );
 });
+
