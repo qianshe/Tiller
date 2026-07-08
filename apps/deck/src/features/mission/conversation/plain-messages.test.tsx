@@ -2116,6 +2116,9 @@ test("plain messages auto-expands running thinking and collapses completed think
   assert.match(completedHtml, /aria-label="展开 Thinking"/);
   assert.match(runningHtml, /class="[^"]*rotate-180/);
   assert.doesNotMatch(completedHtml, /class="[^"]*rotate-180/);
+  assert.match(runningHtml, /plain-thinking-content[^"]*pt-1[^"]*text-\[12\.5px\]/);
+  assert.doesNotMatch(runningHtml, /plain-thinking-content[^"]*h-64/);
+  assert.doesNotMatch(completedHtml, /plain-thinking-content/);
 });
 
 test("plain messages collapses still-running thinking once newer content follows", () => {
@@ -4292,3 +4295,4 @@ test("user messages render as plain text and keep the collapse affordance", () =
   assert.doesNotMatch(html, />你<\/span>/);
   assert.doesNotMatch(html, /plain-assistant-segment-dot/);
 });
+

@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type UIEvent } from "react";
 import { createPortal } from "react-dom";
 import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "@tiller/shared";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
@@ -20,6 +20,8 @@ const DEFAULT_ATTACHMENT_PORT = "47631";
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
 const THINKING_SUMMARY_PREVIEW_MAX_CHARS = 72;
+const THINKING_SCROLL_LINE_THRESHOLD = 12;
+const THINKING_SCROLL_CHAR_THRESHOLD = 640;
 const ASSISTANT_MESSAGE_FRAME_CLASS = "mr-auto w-[calc(100%-0.625rem)] max-w-[calc(100%-0.625rem)]";
 const ASSISTANT_MESSAGE_RAIL_CLASS = "grid-cols-[0.375rem_minmax(0,1fr)] gap-x-1";
 const USER_MESSAGE_RAIL_CLASS = "w-fit max-w-[min(56rem,76%)]";
@@ -515,6 +517,12 @@ export function PlainThinkingItem({
   const isRunning = item.status === "pending" || item.status === "running";
   const text = item.output?.trim() || item.input?.trim() || "暂无 Thinking 内容";
   const preview = resolveThinkingSummaryPreview(text);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const shouldFollowStreamRef = useRef(true);
+  const contentClassName = resolveThinkingContentClassName({
+    isRunning,
+    text,
+  });
   // Thinking 缺乏可靠的完成事件（status 可能长期停留在 running），因此一旦其后出现新内容即视为已结束并折叠。
   const shouldAutoOpen = isRunning && !hasNewerContent;
   const [open, setOpen] = useState(shouldAutoOpen);
@@ -522,6 +530,34 @@ export function PlainThinkingItem({
   useEffect(() => {
     setOpen(shouldAutoOpen);
   }, [shouldAutoOpen]);
+
+  useEffect(() => {
+    if (!open) {
+      shouldFollowStreamRef.current = true;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !isRunning || !shouldFollowStreamRef.current) {
+      return;
+    }
+    const content = contentRef.current;
+    if (!content) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      content.scrollTop = content.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isRunning, open, text]);
+
+  function handleThinkingScroll(event: UIEvent<HTMLDivElement>) {
+    shouldFollowStreamRef.current = isThinkingScrollNearBottom({
+      scrollTop: event.currentTarget.scrollTop,
+      clientHeight: event.currentTarget.clientHeight,
+      scrollHeight: event.currentTarget.scrollHeight,
+    });
+  }
 
   return (
     <div className={`plain-thinking-row ${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
@@ -556,7 +592,7 @@ export function PlainThinkingItem({
           />
         </summary>
         {open ? (
-          <div className="plain-thinking-content pt-1 text-[12.5px] leading-[1.5] max-h-64 overflow-y-auto pr-1 text-muted-foreground [overflow-wrap:anywhere] [content-visibility:auto] [contain:content]">
+          <div ref={contentRef} className={contentClassName} onScroll={handleThinkingScroll}>
             <div className="plain-thinking-text whitespace-pre-wrap [overflow-wrap:anywhere]">
               {text}
             </div>
@@ -565,6 +601,22 @@ export function PlainThinkingItem({
       </details>
     </div>
   );
+}
+
+export function resolveThinkingContentClassName(
+  input: { isRunning: boolean; text: string },
+) {
+  const shouldLimitHeight = shouldLimitThinkingHeight(input.text);
+  return cn(
+    "plain-thinking-content pt-1 pr-1 text-[12.5px] leading-[1.5] overflow-y-auto overscroll-contain text-muted-foreground [overflow-wrap:anywhere] [scrollbar-gutter:stable] [overflow-anchor:none]",
+    shouldLimitHeight ? "max-h-64" : undefined,
+  );
+}
+
+function shouldLimitThinkingHeight(text: string) {
+  const lineCount = text.split(/\r?\n/u).length;
+  return lineCount > THINKING_SCROLL_LINE_THRESHOLD ||
+    text.length > THINKING_SCROLL_CHAR_THRESHOLD;
 }
 
 function resolveThinkingSummaryPreview(text: string) {
@@ -578,6 +630,13 @@ function resolveThinkingSummaryPreview(text: string) {
   return firstMeaningfulLine.length <= THINKING_SUMMARY_PREVIEW_MAX_CHARS
     ? firstMeaningfulLine
     : `${firstMeaningfulLine.slice(0, THINKING_SUMMARY_PREVIEW_MAX_CHARS - 1)}…`;
+}
+
+export function isThinkingScrollNearBottom(
+  metrics: { scrollTop: number; clientHeight: number; scrollHeight: number },
+  threshold = 24,
+) {
+  return metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop <= threshold;
 }
 
 type PlainToolGroupItemProps = {

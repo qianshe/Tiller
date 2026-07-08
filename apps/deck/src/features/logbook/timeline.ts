@@ -215,7 +215,34 @@ function mergeToolCallHistoryOutput(
   if (current.status === "completed" && incoming.status === "completed" && incoming.output) {
     return incoming.output;
   }
+  if (current.kind === "think" || incoming.kind === "think") {
+    return mergeThinkingToolCallOutput(current.output, incoming.output);
+  }
   return mergeToolCallOutput(current.output, incoming.output);
+}
+
+function mergeThinkingToolCallOutput(
+  currentOutput: string | undefined,
+  incomingOutput: string | undefined,
+) {
+  if (!incomingOutput) {
+    return currentOutput;
+  }
+  if (!currentOutput || incomingOutput.startsWith(currentOutput)) {
+    return incomingOutput;
+  }
+  if (currentOutput.startsWith(incomingOutput) || currentOutput.endsWith(incomingOutput)) {
+    return currentOutput;
+  }
+
+  const overlapped = mergeTextByLineOverlap(currentOutput, incomingOutput);
+  if (overlapped) {
+    return overlapped;
+  }
+
+  return incomingOutput.length >= currentOutput.length
+    ? incomingOutput
+    : currentOutput;
 }
 
 function mergeToolCallOutput(
@@ -232,6 +259,22 @@ function mergeToolCallOutput(
     return currentOutput;
   }
   return `${currentOutput}${incomingOutput}`;
+}
+
+function mergeTextByLineOverlap(currentText: string, incomingText: string) {
+  const currentLines = currentText.split(/\r?\n/u);
+  const incomingLines = incomingText.split(/\r?\n/u);
+  const overlapLineCount = Math.min(currentLines.length, incomingLines.length);
+  for (let size = overlapLineCount; size >= 1; size -= 1) {
+    const currentSlice = currentLines.slice(-size).join("\n");
+    const incomingSlice = incomingLines.slice(0, size).join("\n");
+    if (currentSlice !== incomingSlice) {
+      continue;
+    }
+    const suffix = incomingLines.slice(size).join("\n");
+    return suffix ? `${currentText}\n${suffix}` : currentText;
+  }
+  return null;
 }
 
 function isHigherConfidenceToolKind(
