@@ -11,6 +11,7 @@ import type {
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
+  compactBinaryToolCallOutput,
   sortSessionTimelineEntries,
 } from "@tiller/shared";
 import {
@@ -110,15 +111,16 @@ export function createSessionUpdateRecord(input: {
   event: SessionRuntimeEvent;
   receivedAt?: string;
 }): SessionUpdateRecord {
+  const event = normalizeSessionUpdateEvent(input.event);
   return {
     sessionId: input.sessionId,
     runtimeSessionId: input.runtimeSessionId,
     providerId: input.providerId,
     sequence: input.sequence,
     source: input.source,
-    updateType: input.event.type,
+    updateType: event.type,
     receivedAt: input.receivedAt ?? new Date().toISOString(),
-    payloadJson: JSON.stringify(input.event),
+    payloadJson: JSON.stringify(event),
   };
 }
 
@@ -381,8 +383,20 @@ function exceedsTimestampSkew(left: string, right: string) {
 function parseSessionRuntimeEvent(payloadJson: string): SessionRuntimeEvent | null {
   try {
     const parsed = JSON.parse(payloadJson) as Partial<SessionRuntimeEvent>;
-    return typeof parsed?.type === "string" ? parsed as SessionRuntimeEvent : null;
+    return typeof parsed?.type === "string"
+      ? normalizeSessionUpdateEvent(parsed as SessionRuntimeEvent)
+      : null;
   } catch {
     return null;
   }
+}
+
+function normalizeSessionUpdateEvent(event: SessionRuntimeEvent): SessionRuntimeEvent {
+  if (event.type !== "tool-call") {
+    return event;
+  }
+  return {
+    ...event,
+    toolCall: compactBinaryToolCallOutput(event.toolCall),
+  };
 }

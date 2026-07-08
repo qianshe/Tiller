@@ -182,6 +182,20 @@ test("markdown can defer Mermaid diagrams to a plain code block", () => {
   assert.match(html, /language-mermaid/);
 });
 
+test("markdown can render streaming code blocks in a wrapped stable mode", () => {
+  const html = renderToStaticMarkup(
+    <MarkdownMessage
+      text={["```text", "A[stream] --> B[jitter]", "```"].join("\n")}
+      plainCodeBlocks
+    />,
+  );
+
+  assert.match(html, /markdown-code-block/);
+  assert.match(html, /whitespace-pre-wrap/);
+  assert.match(html, /break-words/);
+  assert.doesNotMatch(html, /overflow-x-auto/);
+});
+
 test("markdown code highlighting reuses cached results for identical code", async () => {
   clearMarkdownHighlightCache();
 

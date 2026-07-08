@@ -56,6 +56,9 @@ export function createRestoreReplayBuffer(
   let plan: AgentPlan | undefined;
   let replayTimelineSequence = 0;
   const updates: ReturnType<typeof createSessionUpdateRecord>[] = [];
+  const assistantSegmentIndexById = new Map<string, number>();
+  let lastReplayEventType: SessionRuntimeEvent["type"] | null = null;
+  let lastAssistantBaseId: string | null = null;
 
   function snapshot() {
     return {
@@ -72,7 +75,7 @@ export function createRestoreReplayBuffer(
       switch (event.type) {
         case "message": {
           const message = withReplayTimelineSequence(
-            event.message,
+            resolveReplayMessage(event.message),
             undefined,
           );
           upsertReplayMessage(messages, message);
@@ -95,6 +98,8 @@ export function createRestoreReplayBuffer(
             },
             toolCall.sequence,
           );
+          lastReplayEventType = "tool-call";
+          lastAssistantBaseId = null;
           return true;
         }
         case "command-output":
@@ -113,16 +118,24 @@ export function createRestoreReplayBuffer(
             upsertToolCall(toolCalls, toolCall!);
           }
           recordReplayUpdate({ ...event, chunk, toolCall }, chunk.sequence);
+          lastReplayEventType = "command-output";
+          lastAssistantBaseId = null;
           return true;
         case "diff-update":
           diffs = event.files;
           recordReplayUpdate(event);
+          lastReplayEventType = "diff-update";
+          lastAssistantBaseId = null;
           return true;
         case "plan-update":
           plan = event.plan;
           recordReplayUpdate(event);
+          lastReplayEventType = "plan-update";
+          lastAssistantBaseId = null;
           return true;
         default:
+          lastReplayEventType = event.type;
+          lastAssistantBaseId = null;
           return false;
       }
     },
@@ -204,6 +217,41 @@ export function createRestoreReplayBuffer(
   function nextReplaySequence() {
     replayTimelineSequence += 1;
     return replayTimelineSequence;
+  }
+
+  function resolveReplayMessage(message: AgentMessage) {
+    if (message.role !== "assistant") {
+      lastReplayEventType = "message";
+      lastAssistantBaseId = null;
+      return message;
+    }
+
+    const baseId = message.id.replace(/#p\d+$/u, "");
+    const currentSegmentIndex = assistantSegmentIndexById.get(baseId) ?? 0;
+    const continuesCurrentSegment =
+      lastReplayEventType === "message" &&
+      lastAssistantBaseId === baseId;
+
+    if (!assistantSegmentIndexById.has(baseId)) {
+      assistantSegmentIndexById.set(baseId, 0);
+      lastReplayEventType = "message";
+      lastAssistantBaseId = baseId;
+      return message;
+    }
+
+    if (continuesCurrentSegment) {
+      lastReplayEventType = "message";
+      lastAssistantBaseId = baseId;
+      return currentSegmentIndex === 0
+        ? message
+        : { ...message, id: `${baseId}#p${currentSegmentIndex}` };
+    }
+
+    const nextSegmentIndex = currentSegmentIndex + 1;
+    assistantSegmentIndexById.set(baseId, nextSegmentIndex);
+    lastReplayEventType = "message";
+    lastAssistantBaseId = baseId;
+    return { ...message, id: `${baseId}#p${nextSegmentIndex}` };
   }
 }
 

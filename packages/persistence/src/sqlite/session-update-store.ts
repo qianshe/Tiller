@@ -30,6 +30,9 @@ export function createSqliteSessionUpdateStore(dbPath: string) {
     listPage(sessionId: string, options: { limit?: number; before?: string } = {}): SessionUpdateRecordPage {
       return listSessionUpdatePage(db, sessionId, options);
     },
+    listSinceSequence(sessionId: string, afterSequence: number, limit = MAX_SESSION_UPDATE_PAGE_LIMIT) {
+      return listSessionUpdatesSinceSequence(db, sessionId, afterSequence, limit);
+    },
     remove(sessionId: string) {
       db.prepare("DELETE FROM session_updates WHERE session_id = ?").run(sessionId);
     },
@@ -134,6 +137,27 @@ function rowToSessionUpdate(row: SessionUpdateRow): SessionUpdateRecord {
     receivedAt: row.received_at,
     payloadJson: row.payload_json,
   };
+}
+
+function listSessionUpdatesSinceSequence(
+  db: DatabaseSync,
+  sessionId: string,
+  afterSequence: number,
+  limit: number,
+) {
+  const normalizedLimit = normalizePageLimit(
+    limit,
+    DEFAULT_SESSION_UPDATE_PAGE_LIMIT,
+    MAX_SESSION_UPDATE_PAGE_LIMIT,
+  );
+  const rows = db.prepare(`
+      SELECT session_id, sequence, runtime_session_id, provider_id, source, update_type, received_at, payload_json
+      FROM session_updates
+      WHERE session_id = ? AND sequence > ?
+      ORDER BY sequence ASC
+      LIMIT ?
+    `).all(sessionId, afterSequence, normalizedLimit) as SessionUpdateRow[];
+  return rows.map(rowToSessionUpdate);
 }
 
 function encodeCursor(row: SessionUpdateRow | undefined) {

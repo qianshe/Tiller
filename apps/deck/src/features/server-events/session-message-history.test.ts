@@ -224,3 +224,31 @@ test("replaceInitialMessageHistory drops later replay duplicate assistant messag
     ["session-1-msg-000001"],
   );
 });
+
+test("replaceInitialMessageHistory matches equivalent assistant text after normalization", () => {
+  const current = [
+    message({
+      id: "local-assistant-1",
+      role: "assistant",
+      text: "我来看看项目结构和相关代码。",
+      timestamp: "2026-06-28T12:42:44.452Z",
+      sequence: 40,
+    }),
+  ];
+  const loaded = [
+    message({
+      id: "provider-assistant-1",
+      role: "assistant",
+      text: "我来看看项目结构和相关代码。  ",
+      timestamp: "2026-06-28T12:42:45.000Z",
+      sequence: 40,
+    }),
+  ];
+
+  const merged = replaceInitialMessageHistory(current, loaded);
+
+  assert.deepEqual(
+    merged.map((item) => item.id),
+    ["provider-assistant-1"],
+  );
+});

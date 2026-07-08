@@ -1627,6 +1627,62 @@ test("plain messages do not append persisted runtime assistant history to the op
   assert.ok(laterHistoryAssistantIndex > restoredAssistantIndex);
 });
 
+test("plain messages drop optimistic assistant content once canonical timeline content matches it", () => {
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "assistant-live-final",
+        role: "assistant",
+        text: "最终回答",
+        timestamp: "2026-05-17T10:10:01.000Z",
+        streaming: true,
+      },
+    ],
+    timelineItems: [
+      {
+        id: "history-user",
+        kind: "user_message",
+        message: {
+          id: "history-user",
+          role: "user",
+          text: "历史问题",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          sequence: 1,
+        },
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        sequence: 1,
+      },
+      {
+        id: "history-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "history-assistant:content",
+            kind: "content",
+            text: "最终回答",
+            timestamp: "2026-05-17T10:10:02.000Z",
+            sequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:10:02.000Z",
+        updatedAt: "2026-05-17T10:10:02.000Z",
+        sequence: 2,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "message" && item.message.id === "assistant-live-final",
+    ),
+    false,
+  );
+});
+
 test("plain messages append live prompts after restored timeline history", () => {
   const html = renderPlainMessages({
     timelineItems: [
@@ -2254,7 +2310,7 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
   assert.match(html, /第三段 Thinking/);
 });
 
-test("plain messages groups adjacent generic thinking tool calls when ids differ", () => {
+test("plain messages keeps distinct generic thinking snapshots split when ids differ", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -2275,6 +2331,44 @@ test("plain messages groups adjacent generic thinking tool calls when ids differ
           title: "Thinking",
           status: "completed",
           output: "第二轮 Thinking",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+        },
+      ],
+      emptyText: "等待回复",
+      expandedMessageIds: new Set<string>(),
+      historyState: { hasMore: false, loading: false },
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 2);
+  assert.match(html, /第一轮 Thinking/);
+  assert.match(html, /第二轮 Thinking/);
+});
+
+test("plain messages coalesces adjacent generic thinking snapshots when later text extends earlier text", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      thinkingToolCalls: [
+        {
+          id: "message-a:thinking",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "第一轮 Thinking",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+        },
+        {
+          id: "message-b:thinking",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "第一轮 Thinking\n第二轮 Thinking",
           timestamp: "2026-05-17T10:00:02.000Z",
           updatedAt: "2026-05-17T10:00:02.000Z",
         },
@@ -4066,7 +4160,7 @@ test("streaming assistant messages render completed markdown blocks before the a
   assert.match(html, /slash 命令的数据流如下：/);
 });
 
-test("streaming assistant Mermaid blocks stay as code until the message finishes", () => {
+test("streaming assistant Mermaid blocks stay in the plain streaming tail until the message finishes", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -4096,10 +4190,69 @@ test("streaming assistant Mermaid blocks stay as code until the message finishes
   );
 
   assert.match(html, /markdown-message/);
-  assert.match(html, /markdown-code-block/);
-  assert.match(html, /language-mermaid/);
-  assert.doesNotMatch(html, /markdown-mermaid-block/);
+  assert.doesNotMatch(html, /markdown-code-block/);
   assert.match(html, /plain-message-streaming-tail/);
+  assert.match(html, /```mermaid/);
+  assert.doesNotMatch(html, /markdown-mermaid-block/);
+});
+
+test("completed assistant Mermaid blocks render the diagram shell after streaming finishes", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-complete-mermaid",
+          role: "assistant",
+          text: [
+            "先给出已经稳定的结论：",
+            "",
+            "```mermaid",
+            "flowchart TD",
+            "  A[stream] --> B[stable]",
+            "```",
+          ].join("\n"),
+          timestamp: "2026-07-06T00:00:00.000Z",
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-mermaid-block/);
+  assert.doesNotMatch(html, /plain-message-streaming-tail/);
+});
+
+test("thinking content renders as plain text without Markdown or Mermaid transforms", () => {
+  const html = renderPlainMessages({
+    thinkingToolCalls: [
+      {
+        id: "thinking-mermaid",
+        kind: "think",
+        title: "Thinking",
+        status: "completed",
+        output: [
+          "# 不应变成标题",
+          "",
+          "```mermaid",
+          "flowchart TD",
+          "  A --> B",
+          "```",
+        ].join("\n"),
+        timestamp: "2026-07-08T00:00:00.000Z",
+        updatedAt: "2026-07-08T00:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /# 不应变成标题/);
+  assert.match(html, /```mermaid/);
+  assert.doesNotMatch(html, /markdown-heading/);
+  assert.doesNotMatch(html, /markdown-mermaid-block/);
+  assert.doesNotMatch(html, /markdown-message/);
 });
 
 test("user messages render as plain text and keep the collapse affordance", () => {

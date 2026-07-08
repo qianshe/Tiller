@@ -114,6 +114,7 @@ const {
   sessionMessageStore,
   sessionArtifactStore,
   sessionAttachmentStore,
+  sessionOutputBodyStore,
   sessionRuntimeStore,
   sessionPlanStore,
   sessionTimelineStore,
@@ -167,6 +168,7 @@ const runtimeComposition = createHelmRuntimeComposition({
   sessionMessageStore,
   sessionArtifactStore,
   sessionAttachmentStore,
+  sessionOutputBodyStore,
   sessionRuntimeStore,
   sessionPlanStore,
   sessionTimelineStore,
@@ -217,6 +219,7 @@ const handlerSessionContextFactory = createHandlerSessionContextFactory({
   sessionMessageStore,
   sessionArtifactStore,
   sessionAttachmentStore,
+  sessionOutputBodyStore,
   sessionRuntimeStore,
   sessionPlanStore,
   sessionTimelineStore,
@@ -288,6 +291,7 @@ function showPairingCode() {
 const handleHttpRequest = createStaticDeckHandler({
   deckStaticDir: DECK_STATIC_DIR,
   sessionAttachmentStore,
+  sessionOutputBodyStore,
   logError,
 });
 

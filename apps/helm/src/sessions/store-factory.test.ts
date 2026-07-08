@@ -27,6 +27,7 @@ function createOptions(tempDir: string, logs: string[] = []) {
   return {
     sqlitePath: join(tempDir, "sessions.sqlite"),
     attachmentRootPath: join(tempDir, "session-attachments"),
+    outputBodyRootPath: join(tempDir, "session-output-bodies"),
     timelineBlockRootPath: join(tempDir, "timeline-blocks"),
     jsonPaths: {
       sessionHistoryPath: join(tempDir, "sessions.json"),

@@ -17,6 +17,32 @@ test("splitStreamingMarkdown waits for fenced code block closure", () => {
   });
 });
 
+test("splitStreamingMarkdown keeps Mermaid fences in the streaming tail until the message finishes", () => {
+  assert.deepEqual(
+    splitStreamingMarkdown([
+      "已稳定的段落。",
+      "",
+      "```mermaid",
+      "flowchart TD",
+      "  A --> B",
+      "```",
+      "",
+      "后续说明仍在继续输出。",
+    ].join("\n")),
+    {
+      markdown: "已稳定的段落。",
+      tail: [
+        "```mermaid",
+        "flowchart TD",
+        "  A --> B",
+        "```",
+        "",
+        "后续说明仍在继续输出。",
+      ].join("\n"),
+    },
+  );
+});
+
 test("splitStreamingMarkdown returns null when no stable markdown exists", () => {
   assert.equal(splitStreamingMarkdown("streaming tail only"), null);
   assert.equal(splitStreamingMarkdown("\n\nstreaming tail"), null);

@@ -2,6 +2,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
+  compactBinaryToolCallOutput,
   formatAgentToolCallMcpTitle,
   resolveAgentToolCallMcp,
   type AgentToolCall,
@@ -110,7 +111,7 @@ export function extractCodexToolCallsFromTranscriptText(raw: string): AgentToolC
     }
     pendingToolCalls.delete(output.id);
     sequence += 1;
-    toolCalls.push({
+    toolCalls.push(compactBinaryToolCallOutput({
       id: pending.id,
       kind: pending.kind,
       title: pending.title,
@@ -121,12 +122,12 @@ export function extractCodexToolCallsFromTranscriptText(raw: string): AgentToolC
       timestamp: pending.timestamp,
       updatedAt: output.updatedAt,
       sequence,
-    });
+    }));
   }
 
   for (const pending of pendingToolCalls.values()) {
     sequence += 1;
-    toolCalls.push({
+    toolCalls.push(compactBinaryToolCallOutput({
       id: pending.id,
       kind: pending.kind,
       title: pending.title,
@@ -136,7 +137,7 @@ export function extractCodexToolCallsFromTranscriptText(raw: string): AgentToolC
       timestamp: pending.timestamp,
       updatedAt: pending.timestamp,
       sequence,
-    });
+    }));
   }
 
   return toolCalls;

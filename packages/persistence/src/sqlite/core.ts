@@ -130,6 +130,18 @@ export function openSessionDatabase(dbPath: string) {
       payload_json TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS session_output_bodies(
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      output_id TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      storage_key TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS session_diffs(
       session_id TEXT NOT NULL,
       path TEXT NOT NULL,
@@ -163,6 +175,8 @@ export function openSessionDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_session_timeline_block_entries_block ON session_timeline_block_entries(block_id);
     CREATE INDEX IF NOT EXISTS idx_session_attachments_session_message ON session_attachments(session_id, message_id);
     CREATE INDEX IF NOT EXISTS idx_session_attachments_sha256 ON session_attachments(sha256);
+    CREATE INDEX IF NOT EXISTS idx_session_output_bodies_session ON session_output_bodies(session_id, output_id);
+    CREATE INDEX IF NOT EXISTS idx_session_output_bodies_sha256 ON session_output_bodies(sha256);
     CREATE INDEX IF NOT EXISTS idx_session_diffs_session ON session_diffs(session_id);
     CREATE INDEX IF NOT EXISTS idx_session_plans_updated_at ON session_plans(updated_at);
   `);

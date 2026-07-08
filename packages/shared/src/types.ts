@@ -385,6 +385,14 @@ export type ApprovalPolicy = {
   rules: ApprovalPolicyRule[];
 };
 
+export type CommandChunkContentRef = {
+  id: string;
+  uri: string;
+  mimeType: "text/plain; charset=utf-8";
+  byteSize: number;
+  sha256: string;
+};
+
 export type CommandChunk = {
   id: string;
   commandId: string;
@@ -392,6 +400,9 @@ export type CommandChunk = {
   stream: "stdout" | "stderr";
   timestamp: string;
   sequence?: number;
+  truncated?: boolean;
+  byteSize?: number;
+  contentRef?: CommandChunkContentRef;
 };
 
 export type AgentToolCallStatus = "pending" | "running" | "completed" | "failed" | "cancelled" | "waiting_for_permission";

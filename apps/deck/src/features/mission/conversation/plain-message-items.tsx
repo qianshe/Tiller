@@ -19,6 +19,7 @@ const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
+const THINKING_SUMMARY_PREVIEW_MAX_CHARS = 72;
 const ASSISTANT_MESSAGE_FRAME_CLASS = "mr-auto w-[calc(100%-0.625rem)] max-w-[calc(100%-0.625rem)]";
 const ASSISTANT_MESSAGE_RAIL_CLASS = "grid-cols-[0.375rem_minmax(0,1fr)] gap-x-1";
 const USER_MESSAGE_RAIL_CLASS = "w-fit max-w-[min(56rem,76%)]";
@@ -513,6 +514,7 @@ export function PlainThinkingItem({
 }) {
   const isRunning = item.status === "pending" || item.status === "running";
   const text = item.output?.trim() || item.input?.trim() || "暂无 Thinking 内容";
+  const preview = resolveThinkingSummaryPreview(text);
   // Thinking 缺乏可靠的完成事件（status 可能长期停留在 running），因此一旦其后出现新内容即视为已结束并折叠。
   const shouldAutoOpen = isRunning && !hasNewerContent;
   const [open, setOpen] = useState(shouldAutoOpen);
@@ -539,6 +541,11 @@ export function PlainThinkingItem({
           <span className="inline-flex min-w-0 h-4 items-center truncate font-medium">
             Thinking
           </span>
+          {preview ? (
+            <span className="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground/70">
+              {preview}
+            </span>
+          ) : null}
           <Icon
             name="chevronDown"
             size={12}
@@ -548,12 +555,29 @@ export function PlainThinkingItem({
             )}
           />
         </summary>
-        <div className="plain-thinking-content pt-1 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
-          <MarkdownMessage text={text} />
-        </div>
+        {open ? (
+          <div className="plain-thinking-content pt-1 text-[12.5px] leading-[1.5] max-h-64 overflow-y-auto pr-1 text-muted-foreground [overflow-wrap:anywhere] [content-visibility:auto] [contain:content]">
+            <div className="plain-thinking-text whitespace-pre-wrap [overflow-wrap:anywhere]">
+              {text}
+            </div>
+          </div>
+        ) : null}
       </details>
     </div>
   );
+}
+
+function resolveThinkingSummaryPreview(text: string) {
+  const firstMeaningfulLine = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstMeaningfulLine) {
+    return "";
+  }
+  return firstMeaningfulLine.length <= THINKING_SUMMARY_PREVIEW_MAX_CHARS
+    ? firstMeaningfulLine
+    : `${firstMeaningfulLine.slice(0, THINKING_SUMMARY_PREVIEW_MAX_CHARS - 1)}…`;
 }
 
 type PlainToolGroupItemProps = {
@@ -946,7 +970,11 @@ function renderPlainMessageContent(
           className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden"
           data-mission-swipe-lock="true"
         >
-          <MarkdownMessage text={segmented.markdown} renderMermaid={false} />
+          <MarkdownMessage
+            text={segmented.markdown}
+            renderMermaid={false}
+            plainCodeBlocks
+          />
         </div>
         {segmented.tail ? <PlainStreamingText text={segmented.tail} tail /> : null}
       </>

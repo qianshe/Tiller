@@ -1,6 +1,6 @@
 import { isAdapterPlanToolCall, mapSessionUpdateNotification } from "@tiller/acp-runtime";
 import { isFallbackToolCallTitle } from "@tiller/persistence";
-import type { AgentToolCall, SessionSummary, SessionTimelineEntry, SessionUpdateRecord } from "@tiller/shared";
+import { compactBinaryToolCallOutput, type AgentToolCall, type SessionSummary, type SessionTimelineEntry, type SessionUpdateRecord } from "@tiller/shared";
 import { hasToolCallChanged } from "../tool-call-repair/change-detection";
 import { isStaleOpenCodeRunningWriteToolCall } from "../tool-call-repair/stale-open-code-write";
 import { dedupeCodexWebFetchToolCalls } from "../tool-call-repair/codex-web-fetch-dedupe";
@@ -147,12 +147,12 @@ function repairToolCall(
   context: ToolCallRepairContext,
   toolCall: AgentToolCall,
 ) {
-  return repairCompletedThinkingToolCall(
+  return compactBinaryToolCallOutput(repairCompletedThinkingToolCall(
     context.summary,
     repairLegacySubagentToolCall(
       repairProviderToolCall(context.sessionId, context.providerId, toolCall),
     ),
-  );
+  ));
 }
 
 function repairProviderToolCall(

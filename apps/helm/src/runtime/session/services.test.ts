@@ -15,6 +15,7 @@ test("createSessionServices exposes the runtime service graph without starting p
     sessionMessageStore: {} as never,
     sessionArtifactStore: {} as never,
     sessionAttachmentStore: {} as never,
+    sessionOutputBodyStore: {} as never,
     sessionRuntimeStore: {} as never,
     sessionPlanStore: {} as never,
     sessionTimelineStore: {} as never,

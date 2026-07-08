@@ -17,6 +17,10 @@ import type { TillerLogger } from "../../logging/logger";
 import type { ProviderHistorySnapshotContent } from "./source";
 import { reduceSessionUpdateRecords } from "../session-updates/records.js";
 import {
+  applySessionUpdateRecordToState,
+  createEmptySessionUpdateReducerState,
+} from "../session-updates/reducer.js";
+import {
   repairSessionToolCalls,
   repairSessionUpdateToolCalls,
   repairTimelineToolCalls,
@@ -58,6 +62,11 @@ type SessionTimelineStore = {
 type SessionUpdateStore = {
   replaceSession(sessionId: string, updates: SessionUpdateRecord[]): void;
   remove?(sessionId: string): void;
+  listSinceSequence?(
+    sessionId: string,
+    afterSequence: number,
+    limit?: number,
+  ): SessionUpdateRecord[];
   listPage?(
     sessionId: string,
     options: { limit?: number; before?: string },
@@ -83,6 +92,8 @@ type ProviderHistoryServiceOptions = {
 
 export function createProviderHistoryService(options: ProviderHistoryServiceOptions) {
   const providerHistoryPlans = new Map<string, AgentPlan>();
+  const latestAppliedUpdateSequenceBySession = new Map<string, number>();
+  const normalizationLogSignatures = new Map<string, string>();
 
   function hasHistoryContent(history: ProviderHistorySnapshotContent) {
     return Boolean(
@@ -179,10 +190,15 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       return "missing";
     }
     const existingTimeline = options.sessionTimelineStore.list(sessionId) ?? [];
+    const incrementalState = applyIncrementalCanonicalTimelineFromSessionUpdates(sessionId, existingTimeline);
+    if (incrementalState !== "missing") {
+      return incrementalState;
+    }
     const updates = readAllSessionUpdateRecords(sessionId);
     if (!updates.length) {
       return existingTimeline.length ? "ready" : "empty";
     }
+    latestAppliedUpdateSequenceBySession.set(sessionId, updates.at(-1)?.sequence ?? 0);
     const repairedTimeline = reduceSessionUpdateRecords(updates).entries;
     if (!repairedTimeline.length) {
       return existingTimeline.length ? "ready" : "empty";
@@ -214,6 +230,68 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       before = page.nextCursor;
     }
     return records.sort((left, right) => left.sequence - right.sequence);
+  }
+
+  function applyIncrementalCanonicalTimelineFromSessionUpdates(
+    sessionId: string,
+    existingTimeline: SessionTimelineEntry[],
+  ): "ready" | "missing" {
+    if (
+      !existingTimeline.length ||
+      !options.sessionUpdateStore?.listSinceSequence ||
+      !options.sessionMessageStore.replace ||
+      !options.sessionArtifactStore.replaceToolCalls ||
+      !options.sessionArtifactStore.replaceOutputs
+    ) {
+      return "missing";
+    }
+    const lastAppliedSequence = latestAppliedUpdateSequenceBySession.get(sessionId);
+    if (!lastAppliedSequence) {
+      return "missing";
+    }
+    const updates = readSessionUpdateRecordsSince(sessionId, lastAppliedSequence);
+    if (!updates.length) {
+      return "ready";
+    }
+
+    const artifacts = options.sessionArtifactStore.get(sessionId);
+    const state = updates.reduce(applySessionUpdateRecordToState, {
+      ...createEmptySessionUpdateReducerState(),
+      entries: existingTimeline,
+      messages: options.sessionMessageStore.list(sessionId),
+      toolCalls: artifacts.toolCalls,
+      outputs: artifacts.outputs,
+      diffs: artifacts.diffs,
+      ...(options.sessionPlanStore.get(sessionId) ? { plan: options.sessionPlanStore.get(sessionId) } : {}),
+    });
+
+    options.sessionMessageStore.replace(sessionId, state.messages);
+    options.sessionArtifactStore.replaceOutputs(sessionId, state.outputs);
+    options.sessionArtifactStore.replaceToolCalls(sessionId, state.toolCalls);
+    options.sessionTimelineStore?.replace?.(sessionId, state.entries);
+    if (state.plan) {
+      recordProviderHistoryPlan(sessionId, state.plan);
+    }
+    latestAppliedUpdateSequenceBySession.set(sessionId, updates.at(-1)?.sequence ?? lastAppliedSequence);
+    return "ready";
+  }
+
+  function readSessionUpdateRecordsSince(sessionId: string, afterSequence: number) {
+    const updates: SessionUpdateRecord[] = [];
+    let cursor = afterSequence;
+    while (true) {
+      const page = options.sessionUpdateStore?.listSinceSequence?.(sessionId, cursor, 200) ?? [];
+      if (!page.length) {
+        break;
+      }
+      updates.push(...page);
+      const lastSequence = page.at(-1)?.sequence;
+      if (!lastSequence || page.length < 200) {
+        break;
+      }
+      cursor = lastSequence;
+    }
+    return updates;
   }
 
   function materializeLegacySessionPlan(sessionId: string) {
@@ -257,6 +335,8 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
 
   function resetRefresh(sessionId: string) {
     providerHistoryPlans.delete(sessionId);
+    latestAppliedUpdateSequenceBySession.delete(sessionId);
+    clearNormalizationLogSignatures(sessionId);
   }
 
   function repairPersistedToolCallHistory(sessionId: string) {
@@ -273,7 +353,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     );
     if (repairedArtifacts.changedCount > 0) {
       options.sessionArtifactStore.replaceToolCalls(sessionId, repairedArtifacts.toolCalls);
-      logProviderHistoryInfo(options, "provider.history.tool_calls.normalized", {
+      logDistinctNormalizationInfo("provider.history.tool_calls.normalized", {
         sessionId,
         count: repairedArtifacts.changedCount,
       });
@@ -292,7 +372,7 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
     );
     if (repairedTimeline.changedCount > 0) {
       options.sessionTimelineStore.replace(sessionId, repairedTimeline.timeline);
-      logProviderHistoryInfo(options, "provider.history.timeline.tool_calls.normalized", {
+      logDistinctNormalizationInfo("provider.history.timeline.tool_calls.normalized", {
         sessionId,
         count: repairedTimeline.changedCount,
       });
@@ -310,10 +390,39 @@ export function createProviderHistoryService(options: ProviderHistoryServiceOpti
       return;
     }
     options.sessionUpdateStore.replaceSession(sessionId, repairedUpdates.updates);
-    logProviderHistoryInfo(options, "provider.history.session_updates.tool_calls.normalized", {
+    logDistinctNormalizationInfo("provider.history.session_updates.tool_calls.normalized", {
       sessionId,
       count: repairedUpdates.changedCount,
     });
+  }
+
+  function clearNormalizationLogSignatures(sessionId: string) {
+    for (const key of normalizationLogSignatures.keys()) {
+      if (key.endsWith(`:${sessionId}`)) {
+        normalizationLogSignatures.delete(key);
+      }
+    }
+  }
+
+  function logDistinctNormalizationInfo(
+    event: string,
+    fields: Record<string, unknown>,
+  ) {
+    const sessionId = typeof fields.sessionId === "string" ? fields.sessionId : "";
+    const cacheKey = `${event}:${sessionId}`;
+    const signature = formatDistinctNormalizationSignature(fields);
+    if (normalizationLogSignatures.get(cacheKey) === signature) {
+      return;
+    }
+    normalizationLogSignatures.set(cacheKey, signature);
+    logProviderHistoryInfo(options, event, fields);
+  }
+
+  function formatDistinctNormalizationSignature(fields: Record<string, unknown>) {
+    return Object.keys(fields)
+      .sort()
+      .map((key) => `${key}=${String(fields[key])}`)
+      .join(" ");
   }
 
   return {

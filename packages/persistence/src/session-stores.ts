@@ -13,6 +13,7 @@ import type {
 import type { SessionArtifactPage, SessionArtifactPageOptions } from "./artifact-store";
 import type { SessionAttachmentStore } from "./attachment-store";
 import type { SessionMessagePage, SessionMessagePageOptions } from "./message-store";
+import type { SessionOutputBodyStore } from "./output-body-store";
 import type { StoredSessionRuntimeDescriptor } from "./runtime-store";
 import type { SessionTimelinePage, SessionTimelinePageOptions } from "./timeline-store";
 
@@ -74,6 +75,7 @@ export type SessionUpdateStore = {
   append: (update: SessionUpdateRecord) => void;
   replaceSession: (sessionId: string, updates: SessionUpdateRecord[]) => void;
   listPage: (sessionId: string, options?: { limit?: number; before?: string }) => SessionUpdateRecordPage;
+  listSinceSequence?: (sessionId: string, afterSequence: number, limit?: number) => SessionUpdateRecord[];
   remove: (sessionId: string) => void;
 };
 
@@ -82,6 +84,7 @@ export type SessionStores = {
   sessionMessageStore: SessionMessageStore;
   sessionArtifactStore: SessionArtifactStore;
   sessionAttachmentStore: SessionAttachmentStore;
+  sessionOutputBodyStore: SessionOutputBodyStore;
   sessionRuntimeStore: SessionRuntimeStore;
   sessionPlanStore: SessionPlanStore;
   sessionTimelineStore: SessionTimelineStore;

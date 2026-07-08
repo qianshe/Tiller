@@ -5,6 +5,7 @@ import type {
   SessionTimelineEntry,
 } from "@tiller/shared";
 import {
+  normalizeComparableReplayText,
   isTranscriptEventEntry,
   looksLikeCompactionLifecycleMessage,
   looksLikeContinuationSummary,
@@ -820,6 +821,24 @@ function resolveOptimisticTimelineSupplementMessages(
       return [];
     }),
   );
+  const canonicalAssistantMessages = timelineItems.flatMap((entry) => {
+    if (entry.kind !== "assistant_message") {
+      return [];
+    }
+    return entry.chunks.flatMap((chunk) => {
+      if (chunk.kind !== "content" || !chunk.text.trim()) {
+        return [];
+      }
+      return [{
+        id: chunk.id,
+        role: "assistant" as const,
+        text: chunk.text,
+        timestamp: chunk.timestamp,
+        sequence: chunk.sequence,
+        streaming: chunk.streaming,
+      }];
+    });
+  });
 
   return displayMessages.filter((message) => {
     if (canonicalMessageIds.has(message.id)) {
@@ -828,7 +847,37 @@ function resolveOptimisticTimelineSupplementMessages(
     if (message.role === "user") {
       return true;
     }
-    return message.role === "assistant" && message.streaming === true;
+    return message.role === "assistant" &&
+      message.streaming === true &&
+      !isRepresentedOptimisticAssistantMessage(message, canonicalAssistantMessages);
+  });
+}
+
+function isRepresentedOptimisticAssistantMessage(
+  message: AgentMessage,
+  canonicalAssistantMessages: AgentMessage[],
+) {
+  const normalizedMessageText = normalizeComparableReplayText(message.text);
+  if (!normalizedMessageText) {
+    return false;
+  }
+  const optimisticTime = Date.parse(message.timestamp);
+  return canonicalAssistantMessages.some((canonicalMessage) => {
+    const normalizedCanonicalText = normalizeComparableReplayText(canonicalMessage.text);
+    if (
+      !normalizedCanonicalText ||
+      (
+        !normalizedCanonicalText.includes(normalizedMessageText) &&
+        !normalizedMessageText.includes(normalizedCanonicalText)
+      )
+    ) {
+      return false;
+    }
+    const canonicalTime = Date.parse(canonicalMessage.timestamp);
+    if (!Number.isFinite(optimisticTime) || !Number.isFinite(canonicalTime)) {
+      return true;
+    }
+    return canonicalTime >= optimisticTime - 15_000;
   });
 }
 
@@ -1171,11 +1220,31 @@ function shouldMergeAdjacentThinkingItems(
   if (!isGenericThinkingToolCall(current) || !isGenericThinkingToolCall(incoming)) {
     return false;
   }
-  return true;
+  return areGenericThinkingSnapshotsCompatible(current, incoming);
 }
 
 function isGenericThinkingToolCall(toolCall: AgentToolCall) {
   return /^thinking$/iu.test(toolCall.title.trim());
+}
+
+function areGenericThinkingSnapshotsCompatible(
+  current: AgentToolCall,
+  incoming: AgentToolCall,
+) {
+  const currentText = resolveThinkingToolCallText(current);
+  const incomingText = resolveThinkingToolCallText(incoming);
+  if (!currentText || !incomingText) {
+    return true;
+  }
+  return currentText === incomingText ||
+    currentText.startsWith(incomingText) ||
+    currentText.endsWith(incomingText) ||
+    incomingText.startsWith(currentText) ||
+    incomingText.endsWith(currentText);
+}
+
+function resolveThinkingToolCallText(toolCall: AgentToolCall) {
+  return (toolCall.output ?? toolCall.input ?? "").trim();
 }
 
 function mergeAdjacentMessageItems(

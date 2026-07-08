@@ -1,4 +1,10 @@
-import type { AgentMessage, AgentToolCall, AgentToolCallKind, CommandChunk } from "@tiller/shared";
+import {
+  compactBinaryToolCallOutput,
+  type AgentMessage,
+  type AgentToolCall,
+  type AgentToolCallKind,
+  type CommandChunk,
+} from "@tiller/shared";
 import {
   findEquivalentReplayDuplicateMessageIndex,
   formatAgentToolCallMcpTitle,
@@ -33,7 +39,7 @@ export function normalizeSessionMessages(messages: AgentMessage[]) {
 }
 
 export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): AgentToolCall {
-  return {
+  return compactBinaryToolCallOutput({
     ...current,
     ...incoming,
     kind: resolveMergedToolCallKind(current, incoming),
@@ -44,7 +50,7 @@ export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): 
     timestamp: current.timestamp,
     sequence: current.sequence ?? incoming.sequence,
     updatedAt: incoming.updatedAt,
-  };
+  });
 }
 
 export function mergeToolCallOutput(currentOutput: string | undefined, incomingOutput: string | undefined) {
@@ -161,15 +167,15 @@ export function normalizePersistedAgentToolCall(
     rawTitle: toolCall.mcp?.rawTitle,
   });
   if (!mcp || (normalizedKind !== "mcp" && !isHigherConfidenceToolKind("mcp", normalizedKind))) {
-    return { ...toolCall, kind: normalizedKind };
+    return compactBinaryToolCallOutput({ ...toolCall, kind: normalizedKind });
   }
 
-  return {
+  return compactBinaryToolCallOutput({
     ...toolCall,
     kind: "mcp",
     title: resolveQualifiedMcpToolCallTitle(mcp),
     mcp,
-  };
+  });
 }
 
 export function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {

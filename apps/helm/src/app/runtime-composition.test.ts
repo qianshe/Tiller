@@ -55,6 +55,25 @@ function createSessionAttachmentStore(): SessionServicesOptions["sessionAttachme
   };
 }
 
+function createSessionOutputBodyStore(): SessionServicesOptions["sessionOutputBodyStore"] {
+  return {
+    putText: () => ({
+      id: "chunk-1",
+      sessionId: "session-1",
+      outputId: "chunk-1",
+      mimeType: "text/plain; charset=utf-8",
+      sha256: "sha256",
+      byteSize: 0,
+      storageKey: "storage-key",
+      uri: "/api/sessions/session-1/outputs/chunk-1",
+      createdAt: new Date(0).toISOString(),
+    }),
+    get: () => undefined,
+    readText: () => undefined,
+    removeSession: () => undefined,
+  };
+}
+
 function createSessionRuntimeStore(): SessionServicesOptions["sessionRuntimeStore"] {
   return {
     list: () => [],
@@ -97,6 +116,7 @@ test("createHelmRuntimeComposition owns runtime maps queue and services", () => 
     sessionMessageStore: createSessionMessageStore(),
     sessionArtifactStore: createSessionArtifactStore(),
     sessionAttachmentStore: createSessionAttachmentStore(),
+    sessionOutputBodyStore: createSessionOutputBodyStore(),
     sessionRuntimeStore: createSessionRuntimeStore(),
     sessionPlanStore: createSessionPlanStore(),
     sessionTimelineStore: createSessionTimelineStore(),

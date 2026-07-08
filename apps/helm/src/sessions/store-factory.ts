@@ -2,6 +2,7 @@ import {
   createSqliteSessionArtifactStore,
   createSqliteSessionAttachmentStore,
   createSqliteSessionMessageStore,
+  createSqliteSessionOutputBodyStore,
   createSqliteSessionPlanStore,
   createSqliteSessionRuntimeStore,
   createSqliteSessionStore,
@@ -12,6 +13,7 @@ import {
   type SessionArtifactStore,
   type SessionAttachmentStore,
   type SessionMessageStore,
+  type SessionOutputBodyStore,
   type SessionPlanStore,
   type SessionRuntimeStore,
   type SessionSummaryStore,
@@ -26,6 +28,7 @@ export type {
   SessionArtifactStore,
   SessionAttachmentStore,
   SessionMessageStore,
+  SessionOutputBodyStore,
   SessionPlanStore,
   SessionRuntimeStore,
   SessionSummaryStore,
@@ -39,6 +42,7 @@ type StoreFactoryLogger = (message: string) => void;
 export type HelmSessionStoreFactoryOptions = {
   sqlitePath: string;
   attachmentRootPath: string;
+  outputBodyRootPath: string;
   timelineBlockRootPath?: string;
   timelineBlockMode?: string;
   /**
@@ -67,6 +71,10 @@ export function createHelmSessionStores(
     sessionAttachmentStore: createSqliteSessionAttachmentStore({
       dbPath: options.sqlitePath,
       rootPath: options.attachmentRootPath,
+    }),
+    sessionOutputBodyStore: createSqliteSessionOutputBodyStore({
+      dbPath: options.sqlitePath,
+      rootPath: options.outputBodyRootPath,
     }),
     sessionRuntimeStore: createSqliteSessionRuntimeStore(options.sqlitePath),
     sessionPlanStore: createSqliteSessionPlanStore(options.sqlitePath),

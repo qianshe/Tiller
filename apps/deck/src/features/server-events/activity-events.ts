@@ -1,6 +1,6 @@
 import type { MutableRefObject } from "react";
 import type { AgentPlan, AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
-import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
+import { dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
 import { stripRedundantAttachmentData } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
@@ -72,10 +72,6 @@ export function applyActivityUpdate(
             : appended,
         };
       });
-      {
-        const toolCall = commandChunkToToolCall(chunk);
-        mergeSessionToolCalls(sessionId, [toolCall]);
-      }
       return true;
     }
     case "tool_call": {

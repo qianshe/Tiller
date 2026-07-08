@@ -700,6 +700,146 @@ test("provider history refresh normalizes canonical timeline rebuilt from sessio
   assert.equal(timeline[0]?.toolCall.title, "Tool: sanshu/zhi");
 });
 
+test("provider history refresh applies only incremental session updates after initial repair", async () => {
+  const sessionId = "session-incremental-refresh";
+  const initialUpdates = [
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 1,
+      source: "acp_live",
+      event: {
+        type: "message",
+        message: {
+          id: "assistant-1",
+          role: "assistant",
+          text: "第一段",
+          timestamp: "2026-07-04T22:49:54.000Z",
+          sequence: 1,
+        },
+      },
+    }),
+  ];
+  const incrementalUpdates = [
+    createSessionUpdateRecord({
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 2,
+      source: "acp_live",
+      event: {
+        type: "tool-call",
+        toolCall: {
+          id: "tool-1",
+          kind: "shell",
+          title: "Shell",
+          status: "completed",
+          output: "ok",
+          timestamp: "2026-07-04T22:49:55.000Z",
+          updatedAt: "2026-07-04T22:49:56.000Z",
+          sequence: 2,
+        },
+      },
+    }),
+  ];
+  let timeline: SessionTimelineEntry[] = [];
+  let listSinceCalls = 0;
+  const service = createTestProviderHistoryService(
+    {
+      listPage: () => ({
+        updates: initialUpdates,
+        hasMore: false,
+      }),
+      listSinceSequence: (_sessionId, afterSequence) => {
+        listSinceCalls += 1;
+        return afterSequence < 2 ? incrementalUpdates : [];
+      },
+    },
+    {
+      sessionStore: { list: () => [summary(sessionId)] },
+      sessionMessageStore: {
+        list: () => [],
+        replace: () => [],
+        append: () => {},
+      },
+      sessionArtifactStore: {
+        get: () => ({ toolCalls: [], outputs: [], diffs: [] }),
+        replaceOutputs: () => ({ outputs: [], diffs: [], toolCalls: [] }),
+        replaceToolCalls: () => ({ outputs: [], diffs: [], toolCalls: [] }),
+      },
+      sessionTimelineStore: {
+        list: () => timeline,
+        replace: (_sessionId, entries) => {
+          timeline = entries;
+          return entries;
+        },
+      },
+    },
+  );
+
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+
+  assert.equal(listSinceCalls, 1);
+  assert.deepEqual(
+    timeline.map((entry) => entry.kind),
+    ["assistant_message", "tool_call"],
+  );
+});
+
+test("provider history refresh suppresses repeated identical tool-call normalization logs", async () => {
+  const sessionId = "session-normalization-log-dedupe";
+  const logs: string[] = [];
+  const unrepairedTimeline: SessionTimelineEntry[] = [
+    {
+      id: "call-1",
+      kind: "tool_call",
+      timestamp: "2026-07-06T00:00:01.000Z",
+      updatedAt: "2026-07-06T00:00:02.000Z",
+      sequence: 1,
+      toolCall: {
+        id: "call-1",
+        kind: "tool",
+        title: "Tool call call-1",
+        status: "completed",
+        input: JSON.stringify({
+          server: "sanshu",
+          tool: "zhi",
+          arguments: { message: "review" },
+        }),
+        timestamp: "2026-07-06T00:00:01.000Z",
+        updatedAt: "2026-07-06T00:00:02.000Z",
+        sequence: 1,
+      },
+    },
+  ];
+  const service = createTestProviderHistoryService(
+    {},
+    {
+      sessionStore: { list: () => [summary(sessionId)] },
+      logInfo: (message: string) => {
+        logs.push(message);
+      },
+      sessionTimelineStore: {
+        list: () => unrepairedTimeline,
+        replace: (_sessionId, entries) => entries,
+      },
+    },
+  );
+
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+  await service.refreshAuthoritativeSessionHistory(sessionId);
+
+  assert.equal(
+    logs.filter((message) =>
+      message.includes("provider.history.timeline.tool_calls.normalized") &&
+      message.includes(sessionId)
+    ).length,
+    1,
+  );
+});
+
 test("provider history refresh repairs incomplete canonical timeline from persisted session updates", async () => {
   const sessionId = "session-repair-canonical-from-updates";
   const updates = [
@@ -902,6 +1042,11 @@ function createTestProviderHistoryService(
       sessionId: string,
       options: { limit?: number; before?: string },
     ) => { updates: SessionUpdateRecord[]; nextCursor?: string; hasMore?: boolean };
+    listSinceSequence?: (
+      sessionId: string,
+      afterSequence: number,
+      limit?: number,
+    ) => SessionUpdateRecord[];
     remove?: (sessionId: string) => void;
   } = {},
   overrides: Partial<Parameters<typeof createProviderHistoryService>[0]> = {},

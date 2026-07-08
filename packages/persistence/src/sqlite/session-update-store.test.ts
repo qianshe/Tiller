@@ -75,3 +75,30 @@ test("sqlite session update store replaces and removes one session", () => {
     rmSync(tempDir, { force: true, recursive: true });
   }
 });
+
+test("sqlite session update store reads incremental updates after a sequence", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-session-update-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionUpdateStore(dbPath);
+
+  try {
+    store.replaceSession("session-1", [
+      update(1, "message"),
+      update(2, "tool-call"),
+      update(3, "message"),
+      update(4, "plan-update"),
+    ]);
+
+    assert.deepEqual(
+      store.listSinceSequence?.("session-1", 2).map((item) => item.sequence),
+      [3, 4],
+    );
+    assert.deepEqual(
+      store.listSinceSequence?.("session-1", 3, 1).map((item) => item.sequence),
+      [4],
+    );
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});

@@ -57,3 +57,24 @@ test("live message buffer ignores duplicate assistant snapshots", () => {
 
   assert.equal(buffer.peek("s1")?.text, "hello");
 });
+
+test("live message buffer exposes only the unflushed assistant delta", () => {
+  const buffer = createLiveMessageBuffer();
+  buffer.append("s1", {
+    id: "m1",
+    role: "assistant",
+    text: "hello",
+    timestamp: "2026-05-12T00:00:00.000Z",
+  });
+  buffer.flushPending("s1");
+  buffer.append("s1", {
+    id: "m1",
+    role: "assistant",
+    text: "hello world",
+    timestamp: "2026-05-12T00:00:01.000Z",
+  });
+
+  assert.equal(buffer.flushPending("s1")?.text, " world");
+  assert.equal(buffer.flushPending("s1"), null);
+  assert.equal(buffer.finalize("s1")?.text, "hello world");
+});

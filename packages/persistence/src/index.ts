@@ -4,6 +4,7 @@ export * from "./artifact-store";
 export * from "./legacy-json-loader";
 export * from "./message-store";
 export * from "./normalize";
+export * from "./output-body-store";
 export * from "./pagination";
 export * from "./runtime-store";
 export * from "./session-stores";
@@ -23,6 +24,7 @@ export {
   type JsonToSqliteMigrationOptions,
 } from "./sqlite/store";
 export { createSqliteSessionAttachmentStore } from "./sqlite/attachment-store";
+export { createSqliteSessionOutputBodyStore } from "./sqlite/output-body-store";
 export { createSqliteSessionTimelineStore } from "./sqlite/timeline-store";
 export { createSqliteSessionUpdateStore } from "./sqlite/session-update-store";
 export { createSqliteTimelineBlockStore } from "./sqlite/timeline-block-store";

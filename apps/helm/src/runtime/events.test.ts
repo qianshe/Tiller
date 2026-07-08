@@ -42,6 +42,33 @@ type CapturedLog = {
   fields?: Record<string, unknown>;
 };
 
+type ManualTimerHarness = ReturnType<typeof createManualTimerHarness>;
+
+function createManualTimerHarness() {
+  let nextHandle = 1;
+  const callbacks = new Map<number, () => void>();
+  return {
+    setTimeoutFn(callback: () => void) {
+      const handle = nextHandle += 1;
+      callbacks.set(handle, callback);
+      return handle as unknown as ReturnType<typeof setTimeout>;
+    },
+    clearTimeoutFn(handle: ReturnType<typeof setTimeout>) {
+      callbacks.delete(handle as unknown as number);
+    },
+    flushAll() {
+      const pending = [...callbacks.values()];
+      callbacks.clear();
+      for (const callback of pending) {
+        callback();
+      }
+    },
+    size() {
+      return callbacks.size;
+    },
+  };
+}
+
 function createCapturedLogger(capture: TestContextCapture, legacyLogs: string[]): TillerLogger {
   capture.structuredLogs ??= [];
   const write = (
@@ -88,7 +115,19 @@ function createTestContext(
   capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] },
   sessionId = "session-1",
   summaryPatch: Partial<SessionSummary> = {},
-  options: { useCanonicalPipeline?: boolean } = {},
+  options: {
+    useCanonicalPipeline?: boolean;
+    runtimeEventThrottleConfig?: {
+      assistantWindowMs?: number;
+      assistantMaxChars?: number;
+      commandOutputWindowMs?: number;
+      commandOutputMaxChars?: number;
+      toolCallWindowMs?: number;
+      toolCallMaxChars?: number;
+      setTimeoutFn?: ManualTimerHarness["setTimeoutFn"];
+      clearTimeoutFn?: ManualTimerHarness["clearTimeoutFn"];
+    };
+  } = {},
 ): HelmHandlerContext {
   const summary: SessionSummary = {
     id: sessionId,
@@ -210,11 +249,36 @@ function createTestContext(
       appendOutput: () => undefined,
       appendToolCall: () => undefined,
     },
+    sessionOutputBodyStore: {
+      putText: () => ({
+        id: "chunk-1",
+        sessionId,
+        outputId: "chunk-1",
+        mimeType: "text/plain; charset=utf-8" as const,
+        sha256: "sha256",
+        byteSize: 0,
+        storageKey: "storage-key",
+        uri: `/api/sessions/${sessionId}/outputs/chunk-1`,
+        createdAt: new Date(0).toISOString(),
+      }),
+      get: () => undefined,
+      readText: () => undefined,
+      removeSession: () => undefined,
+    },
     sessionTimelineStore,
     sessionUpdateStore: {
       append: (update: SessionUpdateRecord) => {
         capture.sessionUpdates = [...(capture.sessionUpdates ?? []), update];
       },
+    },
+    runtimeEventThrottleConfig: {
+      assistantWindowMs: 0,
+      assistantMaxChars: 256,
+      commandOutputWindowMs: 0,
+      commandOutputMaxChars: 256,
+      toolCallWindowMs: 0,
+      toolCallMaxChars: 512,
+      ...options.runtimeEventThrottleConfig,
     },
     publishDiffUpdate: async () => undefined,
     hydrateSessionSummary: (item: SessionSummary) => item,
@@ -604,6 +668,143 @@ test("runtime tool calls publish canonical timeline batches without compatibilit
   assert.equal(legacyToolCallUpdate, undefined);
 });
 
+test("runtime only persists non-think tool-call boundary snapshots", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-tool-boundary", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-tool-boundary",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-1",
+        kind: "shell",
+        title: "pnpm test",
+        status: "running",
+        commandId: "cmd-1",
+        timestamp: "2026-06-30T00:00:01.000Z",
+        updatedAt: "2026-06-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-tool-boundary",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-1",
+        kind: "shell",
+        title: "pnpm test",
+        status: "completed",
+        commandId: "cmd-1",
+        timestamp: "2026-06-30T00:00:01.000Z",
+        updatedAt: "2026-06-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.sessionUpdates?.map((record) => [record.updateType, record.sequence]),
+    [["tool-call", 2]],
+  );
+});
+
+test("runtime running tool-call updates coalesce into the boundary snapshot inside the live window", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+  };
+  const timers = createManualTimerHarness();
+  const context = createTestContext(logs, capture, "session-tool-window", {}, {
+    runtimeEventThrottleConfig: {
+      toolCallWindowMs: 64,
+      toolCallMaxChars: 512,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+    },
+  });
+
+  handleRuntimeEvent(
+    "session-tool-window",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-window-1",
+        kind: "shell",
+        title: "rg test",
+        status: "running",
+        output: "A",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-tool-window",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-window-1",
+        kind: "shell",
+        title: "rg test",
+        status: "running",
+        output: "AB",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(timers.size(), 1);
+  assert.equal(capture.sessionUpdates?.length ?? 0, 0);
+  assert.equal(
+    capture.detailBroadcasts.filter((item: any) => item.params?.update?.kind === "tool_call").length,
+    0,
+  );
+
+  handleRuntimeEvent(
+    "session-tool-window",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-window-1",
+        kind: "shell",
+        title: "rg test",
+        status: "completed",
+        output: "ABC",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:03.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const toolCallUpdates = capture.detailBroadcasts.filter(
+    (item: any) => item.params?.update?.kind === "tool_call",
+  ) as any[];
+  assert.equal(toolCallUpdates.length, 1);
+  assert.equal(toolCallUpdates[0]?.params?.update?.toolCall?.status, "completed");
+  assert.equal(toolCallUpdates[0]?.params?.update?.toolCall?.output, "ABC");
+  assert.equal(capture.sessionUpdates?.length, 1);
+  assert.equal(JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}").toolCall.status, "completed");
+});
+
 test("runtime canonical tool-call persistence keeps stronger artifact classifications", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
@@ -664,6 +865,77 @@ test("runtime canonical tool-call persistence keeps stronger artifact classifica
   assert.equal(persistedUpdatePayload.type, "tool-call");
   assert.equal(persistedUpdatePayload.toolCall?.kind, "mcp");
   assert.equal(persistedUpdatePayload.toolCall?.title, "Tool: sanshu/zhi");
+});
+
+test("runtime canonical tool-call persistence compacts inline image outputs before storage", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const appendedToolCalls: AgentToolCall[] = [];
+  const context = createTestContext(logs, capture, "session-canonical-image-tool", {}, {
+    useCanonicalPipeline: true,
+  });
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    appendedToolCalls.push(toolCall);
+    return {
+      outputs: [],
+      diffs: [],
+      toolCalls: [toolCall],
+    };
+  };
+
+  handleRuntimeEvent(
+    "session-canonical-image-tool",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-view-image",
+        kind: "read",
+        title: "D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
+        status: "completed",
+        input: JSON.stringify({
+          path: "D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
+          detail: "high",
+        }),
+        output: JSON.stringify([
+          {
+            type: "input_image",
+            image_url: `data:image/png;base64,${"A".repeat(2048)}`,
+            detail: "high",
+          },
+        ]),
+        timestamp: "2026-07-08T06:00:00.000Z",
+        updatedAt: "2026-07-08T06:00:00.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const expectedOutput = [
+    "[image content omitted from history]",
+    "path: D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
+    "mimeType: image/png",
+    "detail: high",
+  ].join("\n");
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  ) as any;
+  const toolCallEntry = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call",
+  );
+  const persistedUpdatePayload = JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}") as {
+    type?: string;
+    toolCall?: AgentToolCall;
+  };
+
+  assert.equal(appendedToolCalls[0]?.output, expectedOutput);
+  assert.equal(toolCallEntry?.toolCall.output, expectedOutput);
+  assert.equal(persistedUpdatePayload.toolCall?.output, expectedOutput);
 });
 
 test("runtime plan updates publish live_state snapshots when the pipeline is available", () => {
@@ -1134,6 +1406,67 @@ test("runtime session.message persists and broadcasts streaming chunks without s
   );
   assert.equal(capture.broadcasts.length, 1);
   assert.equal(capture.detailBroadcasts.length, 3);
+});
+
+test("runtime assistant streaming deltas coalesce inside the live window before timer flush", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+  };
+  const timers = createManualTimerHarness();
+  const context = createTestContext(logs, capture, "session-assistant-window", {}, {
+    runtimeEventThrottleConfig: {
+      assistantWindowMs: 32,
+      assistantMaxChars: 256,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+    },
+  });
+
+  handleRuntimeEvent(
+    "session-assistant-window",
+    {
+      type: "message",
+      message: {
+        id: "message-1",
+        role: "assistant",
+        text: "你",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-assistant-window",
+    {
+      type: "message",
+      message: {
+        id: "message-1",
+        role: "assistant",
+        text: "好",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(timers.size(), 1);
+  assert.equal(capture.sessionUpdates?.length ?? 0, 0);
+  assert.equal(
+    capture.detailBroadcasts.filter((item: any) => item.params?.update?.kind === "agent_message").length,
+    0,
+  );
+
+  timers.flushAll();
+
+  const streamingUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.params?.update?.kind === "agent_message" && item.params?.update?.streaming === true
+  ) as any;
+  assert.equal(streamingUpdate?.params?.update?.message?.text, "你好");
+  assert.equal(capture.sessionUpdates?.length, 1);
 });
 
 test("runtime streaming chunks defer summary persistence until flush", () => {
@@ -2628,6 +2961,127 @@ test("runtime command-output logs summary metadata without stream text", () => {
   assert.equal(appendedOutputs.length, 2);
   assert.equal(capture.broadcasts.length, 1);
   assert.equal(capture.detailBroadcasts.length, 2);
+});
+
+test("runtime command-output merges consecutive same-stream chunks inside the live window", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+  };
+  const appendedOutputs: CommandChunk[] = [];
+  const timers = createManualTimerHarness();
+  const context = createTestContext(logs, capture, "session-command-window", {}, {
+    runtimeEventThrottleConfig: {
+      commandOutputWindowMs: 32,
+      commandOutputMaxChars: 256,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+    },
+  });
+  context.sessionArtifactStore.appendOutput = (_sessionId: string, chunk: CommandChunk) => {
+    appendedOutputs.push(chunk);
+  };
+
+  handleRuntimeEvent(
+    "session-command-window",
+    {
+      type: "command-output",
+      chunk: {
+        id: "chunk-1",
+        commandId: "cmd-1",
+        stream: "stdout",
+        text: "hello ",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-command-window",
+    {
+      type: "command-output",
+      chunk: {
+        id: "chunk-2",
+        commandId: "cmd-1",
+        stream: "stdout",
+        text: "world",
+        timestamp: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(timers.size(), 1);
+  assert.equal(appendedOutputs.length, 0);
+  assert.equal(capture.sessionUpdates?.length ?? 0, 0);
+
+  timers.flushAll();
+
+  assert.equal(appendedOutputs.length, 1);
+  assert.equal(appendedOutputs[0]?.text, "hello world");
+  assert.equal(capture.sessionUpdates?.length, 1);
+  const commandOutputUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.params?.update?.kind === "command_output"
+  ) as any;
+  assert.equal(commandOutputUpdate?.params?.update?.chunk?.text, "hello world");
+});
+
+test("runtime command-output spills oversized bodies to the output store and broadcasts a preview chunk", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [], sessionUpdates: [] };
+  const storedBodies: Array<{ sessionId: string; outputId: string; text: string }> = [];
+  const appendedOutputs: CommandChunk[] = [];
+  const context = createTestContext(logs, capture, "session-command-output-spill");
+  context.sessionOutputBodyStore.putText = ({ sessionId, outputId, text }: { sessionId: string; outputId: string; text: string }) => {
+    storedBodies.push({ sessionId, outputId, text });
+    return {
+      id: outputId,
+      sessionId,
+      outputId,
+      mimeType: "text/plain; charset=utf-8",
+      sha256: "sha256-output",
+      byteSize: Buffer.byteLength(text, "utf8"),
+      storageKey: "storage-key",
+      uri: `/api/sessions/${sessionId}/outputs/${outputId}`,
+      createdAt: "2026-04-30T00:00:00.000Z",
+    };
+  };
+  context.sessionArtifactStore.appendOutput = (_sessionId: string, chunk: CommandChunk) => {
+    appendedOutputs.push(chunk);
+  };
+
+  const largeText = "A".repeat(5000);
+  handleRuntimeEvent(
+    "session-command-output-spill",
+    {
+      type: "command-output",
+      chunk: {
+        id: "chunk-big",
+        commandId: "cmd-big",
+        stream: "stdout",
+        text: largeText,
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(storedBodies, [{
+    sessionId: "session-command-output-spill",
+    outputId: "chunk-big",
+    text: largeText,
+  }]);
+  assert.equal(appendedOutputs[0]?.truncated, true);
+  assert.equal(appendedOutputs[0]?.text.length, 1024);
+  assert.equal(appendedOutputs[0]?.contentRef?.uri, "/api/sessions/session-command-output-spill/outputs/chunk-big");
+  const compatibilityUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "command_output",
+  ) as any;
+  assert.equal(compatibilityUpdate?.params?.update?.chunk?.truncated, true);
+  assert.equal(compatibilityUpdate?.params?.update?.chunk?.contentRef?.id, "chunk-big");
 });
 
 test("runtime available-commands events persist commands on the session summary", () => {

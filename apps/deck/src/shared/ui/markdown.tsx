@@ -52,7 +52,13 @@ const MAX_HIGHLIGHT_CACHE_SIZE = 256;
 const markdownHighlightCache = new Map<string, MarkdownHighlight>();
 let mermaidRenderSequence = 0;
 
-function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: boolean } = {}): Components {
+function createMarkdownComponents({
+  renderMermaid = true,
+  plainCodeBlocks = false,
+}: {
+  renderMermaid?: boolean;
+  plainCodeBlocks?: boolean;
+} = {}): Components {
   return {
   a({ children, href, ...props }) {
     const external = Boolean(href && /^(https?:)?\/\//i.test(href));
@@ -253,7 +259,7 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
     }
 
     return (
-      <MarkdownCodeBlock code={code} language={language}>
+      <MarkdownCodeBlock code={code} language={language} plain={plainCodeBlocks}>
         {children}
       </MarkdownCodeBlock>
     );
@@ -263,23 +269,34 @@ function createMarkdownComponents({ renderMermaid = true }: { renderMermaid?: bo
 
 const markdownComponents = createMarkdownComponents();
 const markdownComponentsWithoutMermaid = createMarkdownComponents({ renderMermaid: false });
+const markdownComponentsPlainCodeBlocks = createMarkdownComponents({ plainCodeBlocks: true });
+const markdownComponentsWithoutMermaidPlainCodeBlocks = createMarkdownComponents({
+  renderMermaid: false,
+  plainCodeBlocks: true,
+});
 
 export const MarkdownMessage = memo(function MarkdownMessage({
   text,
   renderMermaid = true,
+  plainCodeBlocks = false,
   repairMalformedTables = false,
 }: {
   text: string;
   renderMermaid?: boolean;
+  plainCodeBlocks?: boolean;
   repairMalformedTables?: boolean;
 }) {
   const normalizedText = useMemo(
     () => normalizeMarkdownMessageText(text, { repairMalformedTables }),
     [text, repairMalformedTables],
   );
-  const components = renderMermaid
-    ? markdownComponents
-    : markdownComponentsWithoutMermaid;
+  const components = plainCodeBlocks
+    ? renderMermaid
+      ? markdownComponentsPlainCodeBlocks
+      : markdownComponentsWithoutMermaidPlainCodeBlocks
+    : renderMermaid
+      ? markdownComponents
+      : markdownComponentsWithoutMermaid;
 
   return (
     <div className="markdown-message space-y-4 text-[12px] leading-[1.5] text-foreground">
@@ -485,20 +502,28 @@ function MarkdownCodeBlock({
   children,
   code,
   language,
+  plain = false,
 }: {
   children: ReactNode;
   code: string;
   language?: string;
+  plain?: boolean;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
   const [highlightedCode, setHighlightedCode] = useState<MarkdownHighlight | null>(
-    () => readCachedMarkdownCodeHighlight(code, language),
+    () => (plain ? null : readCachedMarkdownCodeHighlight(code, language)),
   );
 
   useEffect(() => {
     let mounted = true;
+    if (plain) {
+      setHighlightedCode(null);
+      return () => {
+        mounted = false;
+      };
+    }
     const cached = readCachedMarkdownCodeHighlight(code, language);
 
     if (!code.trim()) {
@@ -532,7 +557,11 @@ function MarkdownCodeBlock({
     return () => {
       mounted = false;
     };
-  }, [code, language]);
+  }, [code, language, plain]);
+
+  const codeBodyClassName = plain
+    ? "overflow-x-hidden whitespace-pre-wrap break-words p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)] [overflow-wrap:anywhere]"
+    : "overflow-x-auto p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)]";
 
   async function copyCode() {
     try {
@@ -564,14 +593,14 @@ function MarkdownCodeBlock({
         </button>
       </div>
       {highlightedCode ? (
-        <pre className="overflow-x-auto p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)]">
+        <pre className={codeBodyClassName}>
           <code
             className={`hljs !bg-transparent language-${highlightedCode.language ?? language ?? "text"}`}
             dangerouslySetInnerHTML={{ __html: highlightedCode.html }}
           />
         </pre>
       ) : (
-        <pre className="overflow-x-auto p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)]">{children}</pre>
+        <pre className={codeBodyClassName}>{children}</pre>
       )}
     </div>
   );

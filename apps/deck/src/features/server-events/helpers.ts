@@ -86,9 +86,12 @@ export function mergeCommandHistory(
 ) {
   const merged = [...current];
   for (const chunk of incoming) {
-    if (!merged.some((item) => item.id === chunk.id)) {
+    const existingIndex = merged.findIndex((item) => item.id === chunk.id);
+    if (existingIndex === -1) {
       merged.push(chunk);
+      continue;
     }
+    merged[existingIndex] = { ...merged[existingIndex], ...chunk };
   }
 
   return merged.sort(

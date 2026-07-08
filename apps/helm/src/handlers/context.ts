@@ -24,7 +24,11 @@ import type {
   TrustedDeviceSummary,
   WorktreeSummary,
 } from "@tiller/shared";
-import type { SessionPlanStore, StoredSessionRuntimeDescriptor } from "../sessions/facade";
+import type {
+  SessionOutputBodyStore,
+  SessionPlanStore,
+  StoredSessionRuntimeDescriptor,
+} from "../sessions/facade";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 import type { SessionPromptQueueManager } from "../runtime/session/prompt-queue";
 import type { SessionTimelineDispatcher } from "../runtime/session-timeline/dispatcher";
@@ -63,6 +67,17 @@ export type RuntimeDraftRecord = {
   >["state"];
   configOptions: SessionConfigOption[];
   availableCommands: AvailableCommand[];
+};
+
+export type RuntimeEventThrottleConfig = {
+  assistantWindowMs?: number;
+  assistantMaxChars?: number;
+  commandOutputWindowMs?: number;
+  commandOutputMaxChars?: number;
+  toolCallWindowMs?: number;
+  toolCallMaxChars?: number;
+  setTimeoutFn?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutFn?: (timer: ReturnType<typeof setTimeout>) => void;
 };
 
 export type HelmHandlerContext = {
@@ -110,6 +125,7 @@ export type HelmHandlerContext = {
   sessionMessageStore: any;
   sessionArtifactStore: any;
   sessionAttachmentStore: any;
+  sessionOutputBodyStore: SessionOutputBodyStore;
   sessionRuntimeStore: any;
   sessionPlanStore: SessionPlanStore;
   sessionTimelineStore: any;
@@ -119,6 +135,7 @@ export type HelmHandlerContext = {
   sessionLiveStateStore?: SessionLiveStateStore;
   sessionUpdateStore: any;
   liveMessageBuffer: LiveMessageBuffer;
+  runtimeEventThrottleConfig?: RuntimeEventThrottleConfig;
   promptQueue: SessionPromptQueueManager;
   drainPromptQueue: (sessionId: string) => Promise<void>;
 

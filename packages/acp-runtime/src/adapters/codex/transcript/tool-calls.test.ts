@@ -197,6 +197,61 @@ test("extractCodexToolCallsFromTranscriptText restores Codex tool kinds and titl
   assert.equal(toolCalls.some((toolCall) => toolCall.id === "call-plan"), false);
 });
 
+test("extractCodexToolCallsFromTranscriptText compacts view_image outputs into lightweight summaries", () => {
+  const transcript = [
+    JSON.stringify({
+      timestamp: "2026-07-07T14:26:03.404Z",
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "view_image",
+        arguments: JSON.stringify({
+          path: "D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
+          detail: "high",
+        }),
+        call_id: "call-view-image",
+      },
+    }),
+    JSON.stringify({
+      timestamp: "2026-07-07T14:26:03.522Z",
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call-view-image",
+        output: [{
+          type: "input_image",
+          image_url: `data:image/png;base64,${"A".repeat(2048)}`,
+          detail: "high",
+        }],
+      },
+    }),
+  ].join("\n");
+
+  const toolCalls = extractCodexToolCallsFromTranscriptText(transcript);
+
+  assert.deepEqual(toolCalls, [
+    {
+      id: "call-view-image",
+      kind: "read",
+      title: "D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
+      status: "completed",
+      input: JSON.stringify({
+        path: "D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
+        detail: "high",
+      }),
+      output: [
+        "[image content omitted from history]",
+        "path: D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
+        "mimeType: image/png",
+        "detail: high",
+      ].join("\n"),
+      timestamp: "2026-07-07T14:26:03.404Z",
+      updatedAt: "2026-07-07T14:26:03.522Z",
+      sequence: 1,
+    },
+  ]);
+});
+
 test("readCodexTranscriptToolCallsFromDisk reads matching rollout files", () => {
   const codexDir = mkdtempSync(join(tmpdir(), "tiller-codex-transcript-"));
   const sessionDir = join(codexDir, "sessions", "2026", "07", "07");

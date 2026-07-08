@@ -13,7 +13,7 @@ import type {
 } from "@tiller/shared";
 import { sortSessionTimelineEntries } from "@tiller/shared";
 import { toast } from "../toast";
-import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeMessageHistory } from "../logbook";
+import { dropActiveThinkingToolCalls, mergeMessageHistory } from "../logbook";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
 import {
@@ -320,7 +320,6 @@ export function applySessionResult(
       return true;
     }
     case "session/get_artifacts": {
-      const outputToolCalls = payload.outputs.map(commandChunkToToolCall);
       store.setOutputs((current) => ({
         ...current,
         [payload.sessionId]: mergeCommandHistory(
@@ -329,10 +328,7 @@ export function applySessionResult(
         ),
       }));
       pruneActiveThinkingToolCalls(payload.sessionId, toolCallsRef, store);
-      mergeSessionToolCalls(payload.sessionId, [
-        ...outputToolCalls,
-        ...(payload.toolCalls ?? []),
-      ]);
+      mergeSessionToolCalls(payload.sessionId, payload.toolCalls ?? []);
       store.setDiffs((current) => ({
         ...current,
         [payload.sessionId]: payload.diffs,

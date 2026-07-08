@@ -3,7 +3,10 @@ import type {
   AgentPromptContent,
   AgentPromptImageContent,
 } from "@tiller/shared";
-import { findEquivalentReplayDuplicateMessageIndex } from "@tiller/shared";
+import {
+  findEquivalentReplayDuplicateMessageIndex,
+  normalizeComparableReplayText,
+} from "@tiller/shared";
 import { mergeMessageHistory, sortAgentMessagesByTimeline } from "../logbook";
 
 export function pendingInitialPromptMessageId(sessionId: string) {
@@ -240,12 +243,20 @@ function findRepresentedLocalAssistantIndex(
     return idMatchIndex;
   }
 
-  const loadedText = loadedAssistantMessage.text.trim();
+  const loadedText = normalizeComparableReplayText(loadedAssistantMessage.text);
   const loadedTime = Date.parse(loadedAssistantMessage.timestamp);
   let nearestIndex = -1;
   let nearestDelta = Number.POSITIVE_INFINITY;
   for (const [index, message] of candidates.entries()) {
-    if (message.text.trim() !== loadedText) {
+    const normalizedCandidateText = normalizeComparableReplayText(message.text);
+    if (
+      !normalizedCandidateText ||
+      (
+        normalizedCandidateText !== loadedText &&
+        !normalizedCandidateText.includes(loadedText) &&
+        !loadedText.includes(normalizedCandidateText)
+      )
+    ) {
       continue;
     }
     if (

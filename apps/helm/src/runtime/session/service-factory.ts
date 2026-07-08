@@ -86,6 +86,7 @@ export type SessionServicesOptions = {
   sessionMessageStore: HelmSessionStores["sessionMessageStore"];
   sessionArtifactStore: HelmSessionStores["sessionArtifactStore"];
   sessionAttachmentStore: HelmSessionStores["sessionAttachmentStore"];
+  sessionOutputBodyStore: HelmSessionStores["sessionOutputBodyStore"];
   sessionRuntimeStore: HelmSessionStores["sessionRuntimeStore"];
   sessionPlanStore: HelmSessionStores["sessionPlanStore"];
   sessionTimelineStore: HelmSessionStores["sessionTimelineStore"];
@@ -165,8 +166,10 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionStore: options.sessionStore,
     sessionMessageStore: options.sessionMessageStore,
     sessionArtifactStore: options.sessionArtifactStore,
+    sessionOutputBodyStore: options.sessionOutputBodyStore,
     sessionAttachmentStore: options.sessionAttachmentStore,
     sessionRuntimeStore: options.sessionRuntimeStore,
+    sessionPlanStore: options.sessionPlanStore,
     sessionTimelineStore: options.sessionTimelineStore,
     sessionUpdateStore: options.sessionUpdateStore,
   });

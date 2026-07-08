@@ -1,5 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { SessionAttachmentStore } from "../sessions/facade";
+import type { SessionAttachmentStore, SessionOutputBodyStore } from "../sessions/facade";
 import {
   loadStaticAsset as loadStaticAssetFromDisk,
   type StaticAssetResponse,
@@ -13,6 +13,7 @@ export type StaticDeckAssetLoader = (
 export type StaticDeckHandlerOptions = {
   deckStaticDir: string;
   sessionAttachmentStore?: SessionAttachmentStore;
+  sessionOutputBodyStore?: SessionOutputBodyStore;
   loadStaticAsset?: StaticDeckAssetLoader;
   logError: (message: string) => void;
 };
@@ -25,6 +26,9 @@ export function createStaticDeckHandler(options: StaticDeckHandlerOptions) {
     response: ServerResponse,
   ) {
     if (serveSessionAttachment(request, response, options.sessionAttachmentStore)) {
+      return;
+    }
+    if (serveSessionOutputBody(request, response, options.sessionOutputBodyStore)) {
       return;
     }
 
@@ -53,6 +57,41 @@ export function createStaticDeckHandler(options: StaticDeckHandlerOptions) {
       response.end("Failed to serve Tiller Deck asset.");
     }
   };
+}
+
+function serveSessionOutputBody(
+  request: IncomingMessage,
+  response: ServerResponse,
+  outputBodyStore: SessionOutputBodyStore | undefined,
+) {
+  if (!outputBodyStore) {
+    return false;
+  }
+  const outputRequest = parseSessionOutputRequest(request.url ?? "/");
+  if (!outputRequest) {
+    return false;
+  }
+
+  const outputBody = outputBodyStore.get(outputRequest.sessionId, outputRequest.outputId);
+  if (!outputBody) {
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Output body not found.");
+    return true;
+  }
+
+  const body = outputBodyStore.readText(outputRequest.sessionId, outputRequest.outputId);
+  if (typeof body !== "string") {
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Output body not found.");
+    return true;
+  }
+
+  response.writeHead(200, {
+    "cache-control": "private, max-age=31536000, immutable",
+    "content-type": outputBody.mimeType,
+  });
+  response.end(body);
+  return true;
 }
 
 function serveSessionAttachment(
@@ -101,5 +140,22 @@ function parseSessionAttachmentRequest(requestUrl: string) {
   return {
     sessionId: decodeURIComponent(parts[2] ?? ""),
     attachmentId: decodeURIComponent(parts[4] ?? ""),
+  };
+}
+
+function parseSessionOutputRequest(requestUrl: string) {
+  const url = new URL(requestUrl, "http://tiller.local");
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (
+    parts.length !== 5 ||
+    parts[0] !== "api" ||
+    parts[1] !== "sessions" ||
+    parts[3] !== "outputs"
+  ) {
+    return null;
+  }
+  return {
+    sessionId: decodeURIComponent(parts[2] ?? ""),
+    outputId: decodeURIComponent(parts[4] ?? ""),
   };
 }
