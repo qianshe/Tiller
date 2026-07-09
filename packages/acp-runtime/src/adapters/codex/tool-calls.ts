@@ -2,6 +2,7 @@ import type { AgentToolCall } from "@tiller/shared";
 import { extractCodexSkillNameFromText, formatCodexSkillTitle } from "./skill-tools";
 
 const CODEX_SUBAGENT_TOOL_TITLE = /^spawn_agents_/u;
+const CODEX_MULTI_AGENT_TOOL_TITLE = /^(?:spawn_agent|wait_agent|close_agent|send_input|resume_agent)$/u;
 
 export function normalizeCodexToolCall(
   toolCall: AgentToolCall,
@@ -24,11 +25,39 @@ export function normalizeCodexToolCall(
 }
 
 function looksLikeCodexSubagentToolCall(toolCall: AgentToolCall) {
-  if (!CODEX_SUBAGENT_TOOL_TITLE.test(toolCall.title.trim())) {
+  return looksLikeCodexSubagentPayload(toolCall.title, parseJsonRecord(toolCall.input));
+}
+
+export function looksLikeCodexSubagentPayload(
+  title: string,
+  input: Record<string, unknown> | null,
+) {
+  const normalizedTitle = title.trim();
+  if (
+    !CODEX_SUBAGENT_TOOL_TITLE.test(normalizedTitle) &&
+    !CODEX_MULTI_AGENT_TOOL_TITLE.test(normalizedTitle)
+  ) {
     return false;
   }
-  const input = parseJsonRecord(toolCall.input);
-  return Boolean(input && typeof input.path === "string" && input.path.trim());
+  if (!input) {
+    return false;
+  }
+  if (typeof input.path === "string" && input.path.trim()) {
+    return true;
+  }
+  if (
+    Array.isArray(input.targets) &&
+    input.targets.some((item) => typeof item === "string" && item.trim())
+  ) {
+    return true;
+  }
+  if (typeof input.target === "string" && input.target.trim()) {
+    return true;
+  }
+  if (typeof input.message === "string" && input.message.trim()) {
+    return true;
+  }
+  return input.fork_context === true || input.forkContext === true;
 }
 
 function parseJsonRecord(input: string | undefined) {

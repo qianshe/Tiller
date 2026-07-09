@@ -1123,9 +1123,6 @@ function compareSequencedPlainConversationItems(
       timestampDelta,
     );
     if (sequenceResetTimestampDelta !== null) {
-      if (sourceIndexDelta !== null) {
-        return sourceIndexDelta;
-      }
       return sequenceResetTimestampDelta;
     }
     return timelineDelta;

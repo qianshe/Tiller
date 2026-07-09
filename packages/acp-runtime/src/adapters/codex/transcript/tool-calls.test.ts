@@ -252,6 +252,65 @@ test("extractCodexToolCallsFromTranscriptText compacts view_image outputs into l
   ]);
 });
 
+test("extractCodexToolCallsFromTranscriptText classifies bare Codex multi-agent calls without namespace as subagents", () => {
+  const transcript = [
+    JSON.stringify({
+      timestamp: "2026-07-08T11:45:06.872Z",
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "spawn_agent",
+        arguments: JSON.stringify({
+          fork_context: true,
+          message: "只允许修改 docs/tooling/subagent-todolist-demo.md",
+        }),
+        call_id: "call-subagent-bare",
+      },
+    }),
+    JSON.stringify({
+      timestamp: "2026-07-08T11:45:17.132Z",
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call-subagent-bare",
+        output: "{\"agent_id\":\"agent-1\",\"nickname\":\"Maxwell\"}",
+      },
+    }),
+    JSON.stringify({
+      timestamp: "2026-07-08T11:45:25.514Z",
+      type: "response_item",
+      payload: {
+        type: "function_call",
+        name: "wait_agent",
+        arguments: JSON.stringify({
+          targets: ["019f418b-c549-7200-8ff1-8d2dd4ef002e"],
+          timeout_ms: 120000,
+        }),
+        call_id: "call-wait-bare",
+      },
+    }),
+    JSON.stringify({
+      timestamp: "2026-07-08T11:47:25.533Z",
+      type: "response_item",
+      payload: {
+        type: "function_call_output",
+        call_id: "call-wait-bare",
+        output: "{\"status\":{},\"timed_out\":true}",
+      },
+    }),
+  ].join("\n");
+
+  const toolCalls = extractCodexToolCallsFromTranscriptText(transcript);
+
+  assert.deepEqual(
+    toolCalls.map((toolCall) => [toolCall.id, toolCall.kind, toolCall.title]),
+    [
+      ["call-subagent-bare", "subagent", "spawn_agent"],
+      ["call-wait-bare", "subagent", "wait_agent"],
+    ],
+  );
+});
+
 test("readCodexTranscriptToolCallsFromDisk reads matching rollout files", () => {
   const codexDir = mkdtempSync(join(tmpdir(), "tiller-codex-transcript-"));
   const sessionDir = join(codexDir, "sessions", "2026", "07", "07");

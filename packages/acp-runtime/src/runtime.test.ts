@@ -244,6 +244,17 @@ test("Codex transcript tool-call repair stays behind the Codex adapter", () => {
   );
 });
 
+test("Codex live transcript supplements are disabled and transcript stays for history only", () => {
+  const adapter = resolveAcpAgentAdapter({
+    id: "codex",
+    name: "Codex",
+    command: "codex-acp",
+    transport: "stdio",
+    protocol: "acp",
+  }) as { supplementRuntimeEvents?: unknown };
+  assert.equal(adapter.supplementRuntimeEvents, undefined);
+});
+
 test("Codex transcript plan repair stays behind the Codex adapter", () => {
   assert.equal(
     typeof resolveAcpAgentAdapter({

@@ -43,7 +43,13 @@ export function applySessionUpdateRecordToState(
   record: SessionUpdateRecord,
 ): SessionUpdateReducerState {
   const event = parseSessionRuntimeEvent(record.payloadJson);
-  return event ? applySessionRuntimeEventToStateWithMeta(state, event, record) : state;
+  return event
+    ? applySessionRuntimeEventToStateWithMeta(
+      state,
+      backfillSessionUpdateEventMeta(event, record),
+      record,
+    )
+    : state;
 }
 
 export function applySessionRuntimeEventToState(
@@ -451,3 +457,58 @@ function normalizeSessionUpdateEvent(event: SessionRuntimeEvent): SessionRuntime
   };
 }
 
+function backfillSessionUpdateEventMeta(
+  event: SessionRuntimeEvent,
+  record: Pick<SessionUpdateRecord, "sequence" | "receivedAt">,
+): SessionRuntimeEvent {
+  switch (event.type) {
+    case "message":
+      return event.message.sequence === undefined
+        ? {
+          ...event,
+          message: {
+            ...event.message,
+            sequence: record.sequence,
+            timestamp: record.receivedAt,
+          },
+        }
+        : event;
+    case "tool-call":
+      return event.toolCall.sequence === undefined
+        ? {
+          ...event,
+          toolCall: {
+            ...event.toolCall,
+            sequence: record.sequence,
+            timestamp: record.receivedAt,
+            updatedAt: record.receivedAt,
+          },
+        }
+        : event;
+    case "command-output":
+      return {
+        ...event,
+        chunk: event.chunk.sequence === undefined
+          ? {
+            ...event.chunk,
+            sequence: record.sequence,
+            timestamp: record.receivedAt,
+          }
+          : event.chunk,
+        ...(event.toolCall && event.toolCall.sequence === undefined
+          ? {
+            toolCall: {
+              ...event.toolCall,
+              sequence: record.sequence,
+              timestamp: record.receivedAt,
+              updatedAt: record.receivedAt,
+            },
+          }
+          : event.toolCall
+            ? { toolCall: event.toolCall }
+            : {}),
+      };
+    default:
+      return event;
+  }
+}

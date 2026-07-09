@@ -331,6 +331,190 @@ test("applyTranscriptToolCallRepair upgrades generic replay tool calls from Code
   );
 });
 
+test("applyTranscriptToolCallRepair appends missing Codex subagent tool calls from transcript history", () => {
+  const sessionId = "session-codex-tool-repair-missing-subagent";
+  let toolCalls: AgentToolCall[] = [
+    toolCall("call-shell", "shell", "Get-Location", 2, "D:\\myProject\\tools\\Tiller"),
+  ];
+  let timeline: SessionTimelineEntry[] = [
+    {
+      id: "user:user-1",
+      kind: "user_message",
+      message: message("user-1", "测试子代理回放", 1),
+      timestamp: "2026-06-05T14:08:01.000Z",
+      updatedAt: "2026-06-05T14:08:01.000Z",
+      sequence: 1,
+    },
+    {
+      id: "tool:call-shell",
+      kind: "tool_call",
+      toolCall: toolCalls[0]!,
+      timestamp: toolCalls[0]!.timestamp,
+      updatedAt: toolCalls[0]!.updatedAt,
+      sequence: 2,
+    },
+  ];
+  const appendedUpdates: SessionUpdateRecord[] = [];
+
+  const repaired = applyTranscriptToolCallRepair({
+    sessionId,
+    summary: {
+      ...createSummary(sessionId),
+      agentId: "codex",
+      agentName: "Codex",
+    },
+    agent: {
+      id: "codex",
+      name: "Codex",
+      kind: "custom" as const,
+      command: "codex-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    transcriptToolCalls: [
+      {
+        id: "call-subagent",
+        kind: "subagent",
+        title: "spawn_agent",
+        status: "completed",
+        input: JSON.stringify({
+          fork_context: true,
+          message: "只允许修改 docs/tooling/subagent-todolist-demo.md",
+        }),
+        timestamp: "2026-07-08T11:45:18.703Z",
+        updatedAt: "2026-07-08T11:45:25.514Z",
+        sequence: 4,
+      },
+    ],
+    sessionMessageStore: {
+      list: () => [message("user-1", "测试子代理回放", 1)],
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls,
+      }),
+      replaceToolCalls: (_sessionId, nextToolCalls) => {
+        toolCalls = nextToolCalls;
+      },
+    },
+    sessionTimelineStore: {
+      list: () => timeline,
+      replace: (_sessionId, entries) => {
+        timeline = entries;
+        return entries;
+      },
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: (record) => {
+        appendedUpdates.push(record);
+      },
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.deepEqual(
+    toolCalls.map((toolCall) => [toolCall.id, toolCall.kind, toolCall.title]),
+    [
+      ["call-shell", "shell", "Get-Location"],
+      ["call-subagent", "subagent", "spawn_agent"],
+    ],
+  );
+  assert.deepEqual(
+    timeline
+      .filter((entry) => entry.kind === "tool_call")
+      .map((entry) => [
+        entry.toolCall.id,
+        entry.toolCall.kind,
+        entry.toolCall.title,
+      ]),
+    [
+      ["call-shell", "shell", "Get-Location"],
+      ["call-subagent", "subagent", "spawn_agent"],
+    ],
+  );
+  assert.equal(appendedUpdates.length, 1);
+  assert.equal(
+    JSON.parse(appendedUpdates[0]!.payloadJson).toolCall.id,
+    "call-subagent",
+  );
+});
+
+test("applyTranscriptToolCallRepair prefers transcript timestamps for skewed Codex subagent history without sequence", () => {
+  const sessionId = "session-codex-tool-repair-subagent-timestamp";
+  let toolCalls: AgentToolCall[] = [
+    {
+      id: "call-subagent-skew",
+      kind: "subagent",
+      title: "spawn_agent",
+      status: "completed",
+      timestamp: "2026-07-08T13:51:51.737Z",
+      updatedAt: "2026-07-08T13:51:51.737Z",
+    },
+  ];
+
+  const repaired = applyTranscriptToolCallRepair({
+    sessionId,
+    summary: {
+      ...createSummary(sessionId),
+      agentId: "codex",
+      agentName: "Codex",
+    },
+    agent: {
+      id: "codex",
+      name: "Codex",
+      kind: "custom" as const,
+      command: "codex-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    transcriptToolCalls: [
+      {
+        id: "call-subagent-skew",
+        kind: "subagent",
+        title: "spawn_agent",
+        status: "completed",
+        timestamp: "2026-07-08T11:27:43.373Z",
+        updatedAt: "2026-07-08T11:27:53.590Z",
+        sequence: 25,
+      },
+    ],
+    sessionMessageStore: {
+      list: () => [],
+    },
+    sessionArtifactStore: {
+      get: () => ({
+        outputs: [],
+        diffs: [],
+        toolCalls,
+      }),
+      replaceToolCalls: (_sessionId, nextToolCalls) => {
+        toolCalls = nextToolCalls;
+      },
+    },
+    sessionTimelineStore: {
+      list: () => [],
+      replace: (_sessionId, entries) => entries,
+    },
+    sessionUpdateStore: {
+      listPage: () => ({
+        updates: [],
+        hasMore: false,
+      }),
+      append: () => undefined,
+    },
+  });
+
+  assert.equal(repaired, true);
+  assert.equal(toolCalls[0]?.timestamp, "2026-07-08T11:27:43.373Z");
+  assert.equal(toolCalls[0]?.sequence, 25);
+});
+
 test("applyTranscriptToolCallRepair rewrites Codex web search transcript history to fetch", () => {
   const sessionId = "session-codex-web-tool-repair";
   let toolCalls: AgentToolCall[] = [

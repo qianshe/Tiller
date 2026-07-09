@@ -1371,6 +1371,39 @@ test("mapSessionUpdateNotification classifies Codex spawned agents in the Codex 
   assert.equal(mapped.event.toolCall.title, "spawn_agents_on_csv");
 });
 
+test("mapSessionUpdateNotification classifies Codex multi_agent_v1 spawn_agent calls as subagents", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-subagent-v1",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-codex-subagent-v1",
+            kind: "tool",
+            title: "spawn_agent",
+            status: "in_progress",
+            input: JSON.stringify({
+              fork_context: true,
+              message: "只修改 docs/tooling/subagent-todolist-demo.md",
+            }),
+          },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "spawn_agent");
+});
+
 test("mapSessionUpdateNotification keeps mode-only config updates out of plan projection", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
@@ -2086,6 +2119,371 @@ test("mapSessionUpdateNotification repairs OpenCode path-only tool call history"
   }
   assert.equal(mapped.event.toolCall.kind, "read");
   assert.equal(mapped.event.toolCall.title, "apps\\helm\\src\\runtime\\events.ts");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode generic file-display history to read", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-read-output",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-read-output",
+            kind: "tool",
+            title: "Tool call call_00_r…",
+            status: "completed",
+            output: JSON.stringify({
+              output: [
+                "<path>D:/myProject/tools/Tiller/package.json</path>",
+                "<type>file</type>",
+                "<content>",
+                "1: {",
+              ].join("\n"),
+            }),
+            timestamp: "2026-05-15T00:00:00.000Z",
+            updatedAt: "2026-05-15T00:00:01.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "read");
+  assert.equal(mapped.event.toolCall.title, "D:/myProject/tools/Tiller/package.json");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode generic search history from output text", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-search-output",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-search-output",
+            kind: "tool",
+            title: "Tool call call_00_s…",
+            status: "completed",
+            output: JSON.stringify({
+              output: [
+                "Morph Fast Context subagent performed search on repository:",
+                "- Grepped 'AgentToolCall' in `D:/myProject/tools/Tiller/packages/shared/src`",
+              ].join("\n"),
+            }),
+            timestamp: "2026-05-15T00:00:00.000Z",
+            updatedAt: "2026-05-15T00:00:01.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "search");
+  assert.equal(mapped.event.toolCall.title, "Search");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode generic structured search history", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-structured-search",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-structured-search",
+            kind: "tool",
+            title: "Tool call call_00_j…",
+            status: "completed",
+            output: JSON.stringify({
+              output: JSON.stringify({
+                "packages\\acp-runtime\\src\\events.test.ts": [
+                  "  >  10: mapSessionUpdateNotification()",
+                ],
+              }),
+            }),
+            timestamp: "2026-05-15T00:00:00.000Z",
+            updatedAt: "2026-05-15T00:00:01.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "search");
+  assert.equal(mapped.event.toolCall.title, "Search");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode replayed session info outputs into read tool calls", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-session-info",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-session-info",
+            kind: "tool",
+            title: "Tool call call_01_q…",
+            status: "completed",
+            output: JSON.stringify({
+              output: [
+                "Session ID: ses_0c3a34996ffegLt3qYkUNaAbe8",
+                "Messages: 82",
+                "Date Range: 2026-07-07T11:35:37.006Z to 2026-07-08T11:04:56.544Z",
+                "Agents Used: Sisyphus - Ultraworker",
+              ].join("\n"),
+            }),
+            timestamp: "2026-07-08T16:15:15.160Z",
+            updatedAt: "2026-07-08T16:15:15.160Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "read");
+  assert.equal(mapped.event.toolCall.title, "Session info");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode replayed session list outputs into read tool calls", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-session-list",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-session-list",
+            kind: "tool",
+            title: "Tool call call_03_5…",
+            status: "completed",
+            output: JSON.stringify({
+              output: [
+                "| Session ID | Messages | First | Last | Agents |",
+                "|------------|----------|-------|------|--------|",
+                "| ses_0c3a34996ffegLt3qYkUNaAbe8 | 81 | 2026-07-07 | 2026-07-08 | Sisyphus - Ultraworker |",
+              ].join("\n"),
+            }),
+            timestamp: "2026-07-08T16:15:15.150Z",
+            updatedAt: "2026-07-08T16:15:15.150Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "read");
+  assert.equal(mapped.event.toolCall.title, "Session list");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode replayed symbol listings into search tool calls", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-symbol-list",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-symbol-list",
+            kind: "tool",
+            title: "Tool call call_03_X…",
+            status: "completed",
+            output: JSON.stringify({
+              output: [
+                "ACP_IMAGE_INPUT_UNSUPPORTED_CODE (Constant) - line 496",
+                "AcpAgentProvider (Variable) - line 55",
+                "resolveSessionConfigSupport (Function) - line 244",
+              ].join("\n"),
+            }),
+            timestamp: "2026-07-08T16:15:15.141Z",
+            updatedAt: "2026-07-08T16:15:15.141Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "search");
+  assert.equal(mapped.event.toolCall.title, "Symbols");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode replayed diagnostics summaries into read tool calls", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-diagnostics",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-diagnostics",
+            kind: "tool",
+            title: "Tool call call_02_C…",
+            status: "completed",
+            output: JSON.stringify({
+              output: "No diagnostics found",
+            }),
+            timestamp: "2026-07-08T16:15:15.137Z",
+            updatedAt: "2026-07-08T16:15:15.137Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "read");
+  assert.equal(mapped.event.toolCall.title, "Diagnostics");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode generic skill history from output text", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-skill-output",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-skill-output",
+            kind: "tool",
+            title: "Tool call call_00_k…",
+            status: "completed",
+            output: "## Skill: debugging-strategies\n\nBase directory: C:/Users/qjq/.claude/skills/debugging-strategies",
+            timestamp: "2026-05-15T00:00:00.000Z",
+            updatedAt: "2026-05-15T00:00:01.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "skill");
+  assert.equal(mapped.event.toolCall.title, "Skill: debugging-strategies");
+});
+
+test("mapSessionUpdateNotification repairs OpenCode generic shell history from command titles", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-shell-title",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-shell-title",
+            kind: "tool",
+            title: "Get-ChildItem -Recurse -Filter \"*session*\" -Name | Select-Object -First 10",
+            status: "completed",
+            output: "session-live-state.ts\r\nsession-timeline.ts",
+            timestamp: "2026-05-15T00:00:00.000Z",
+            updatedAt: "2026-05-15T00:00:01.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "shell");
+  assert.equal(
+    mapped.event.toolCall.title,
+    "Get-ChildItem -Recurse -Filter \"*session*\" -Name | Select-Object -First 10",
+  );
+});
+
+test("mapSessionUpdateNotification repairs OpenCode generic fetch history from URL titles", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-history-fetch-title",
+        update: {
+          type: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-history-fetch-title",
+            kind: "tool",
+            title: "https://agentclientprotocol.com/protocol/v1/tool-calls (text/markdown; charset=utf-8)",
+            status: "completed",
+            output: "# Tool Calls",
+            timestamp: "2026-05-15T00:00:00.000Z",
+            updatedAt: "2026-05-15T00:00:01.000Z",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "fetch");
+  assert.equal(
+    mapped.event.toolCall.title,
+    "https://agentclientprotocol.com/protocol/v1/tool-calls (text/markdown; charset=utf-8)",
+  );
 });
 
 test("mapSessionUpdateNotification suppresses OpenCode count-only todo tools", () => {

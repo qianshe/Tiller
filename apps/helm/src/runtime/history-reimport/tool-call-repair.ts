@@ -1,6 +1,8 @@
 import { isAdapterPlanToolCall, readAdapterTranscriptToolCalls } from "@tiller/acp-runtime";
 import {
+  appendToolCallToSessionTimeline,
   buildSessionTimelineFromLegacy,
+  sortSessionTimelineEntries,
   type AcpAgentProvider,
   type AgentMessage,
   type AgentToolCall,
@@ -132,22 +134,29 @@ function mergeTranscriptToolCalls(
   replayToolCalls: AgentToolCall[],
   transcriptToolCalls: AgentToolCall[],
 ) {
+  const normalizedTranscriptToolCalls = transcriptToolCalls.map((toolCall) =>
+    normalizePersistedAgentToolCall(toolCall) ?? toolCall
+  );
   const transcriptById = new Map(
-    transcriptToolCalls
-      .map((toolCall) => normalizePersistedAgentToolCall(toolCall) ?? toolCall)
-      .map((toolCall) => [toolCall.id, toolCall] as const),
+    normalizedTranscriptToolCalls.map((toolCall) => [toolCall.id, toolCall] as const),
   );
   const changedToolCalls: AgentToolCall[] = [];
+  const replayIds = new Set(replayToolCalls.map((toolCall) => toolCall.id));
   const repairedToolCalls = replayToolCalls.map((toolCall) => {
     const transcriptToolCall = transcriptById.get(toolCall.id);
     if (!transcriptToolCall) {
       return toolCall;
     }
+    const shouldUseTranscriptTimestamp =
+      toolCall.sequence === undefined &&
+      exceedsToolTimestampSkew(toolCall.timestamp, transcriptToolCall.timestamp);
     const repaired = {
       ...toolCall,
       ...transcriptToolCall,
       id: toolCall.id,
-      timestamp: toolCall.timestamp,
+      timestamp: shouldUseTranscriptTimestamp
+        ? transcriptToolCall.timestamp
+        : toolCall.timestamp,
       sequence: toolCall.sequence ?? transcriptToolCall.sequence,
       output: transcriptToolCall.output ?? toolCall.output,
       input: transcriptToolCall.input ?? toolCall.input,
@@ -158,7 +167,19 @@ function mergeTranscriptToolCalls(
     changedToolCalls.push(repaired);
     return repaired;
   });
+  for (const [id, transcriptToolCall] of transcriptById) {
+    if (replayIds.has(id)) {
+      continue;
+    }
+    repairedToolCalls.push(transcriptToolCall);
+    changedToolCalls.push(transcriptToolCall);
+  }
   return { repairedToolCalls, changedToolCalls };
+}
+
+function exceedsToolTimestampSkew(left: string, right: string) {
+  const delta = Math.abs(Date.parse(left) - Date.parse(right));
+  return Number.isFinite(delta) && delta > 60_000;
 }
 
 function appendTranscriptRepairToolCallUpdates(input: {
@@ -172,6 +193,9 @@ function appendTranscriptRepairToolCallUpdates(input: {
   let sequence = latest?.sequence ?? 0;
   for (const toolCall of input.toolCalls) {
     sequence += 1;
+    const persistedToolCall = toolCall.sequence === undefined
+      ? { ...toolCall, sequence }
+      : toolCall;
     input.sessionUpdateStore.append({
       sessionId: input.sessionId,
       runtimeSessionId: input.summary.runtimeSessionId ?? input.sessionId,
@@ -180,7 +204,7 @@ function appendTranscriptRepairToolCallUpdates(input: {
       source: "agent_transcript_repair",
       updateType: "tool-call",
       receivedAt: new Date().toISOString(),
-      payloadJson: JSON.stringify({ type: "tool-call", toolCall }),
+      payloadJson: JSON.stringify({ type: "tool-call", toolCall: persistedToolCall }),
     });
   }
 }
@@ -189,26 +213,11 @@ function repairTimelineToolCalls(
   timeline: SessionTimelineEntry[],
   repairedToolCalls: AgentToolCall[],
 ) {
-  const repairedById = new Map(
-    repairedToolCalls.map((toolCall) => [toolCall.id, toolCall] as const),
-  );
-  const repairedTimeline: SessionTimelineEntry[] = [];
-  for (const entry of timeline) {
-    if (entry.kind !== "tool_call") {
-      repairedTimeline.push(entry);
-      continue;
-    }
-    const repairedToolCall = repairedById.get(entry.toolCall.id);
-    if (!repairedToolCall) {
-      continue;
-    }
-    repairedTimeline.push({
-      ...entry,
-      toolCall: repairedToolCall,
-      updatedAt: repairedToolCall.updatedAt,
-    } satisfies SessionTimelineEntry);
+  const repairedTimeline = timeline.filter((entry) => entry.kind !== "tool_call");
+  for (const toolCall of repairedToolCalls) {
+    appendToolCallToSessionTimeline(repairedTimeline, toolCall);
   }
-  return repairedTimeline;
+  return sortSessionTimelineEntries(repairedTimeline);
 }
 
 function shouldRetainTranscriptRepairedToolCall(

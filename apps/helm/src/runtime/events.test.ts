@@ -668,7 +668,7 @@ test("runtime tool calls publish canonical timeline batches without compatibilit
   assert.equal(legacyToolCallUpdate, undefined);
 });
 
-test("runtime only persists non-think tool-call boundary snapshots", () => {
+test("runtime persists emitted tool-call boundary snapshots, including running updates", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -716,7 +716,10 @@ test("runtime only persists non-think tool-call boundary snapshots", () => {
 
   assert.deepEqual(
     capture.sessionUpdates?.map((record) => [record.updateType, record.sequence]),
-    [["tool-call", 2]],
+    [
+      ["tool-call", 1],
+      ["tool-call", 2],
+    ],
   );
 });
 
@@ -803,6 +806,63 @@ test("runtime running tool-call updates coalesce into the boundary snapshot insi
   assert.equal(toolCallUpdates[0]?.params?.update?.toolCall?.output, "ABC");
   assert.equal(capture.sessionUpdates?.length, 1);
   assert.equal(JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}").toolCall.status, "completed");
+});
+
+test("runtime subagent tool-call updates bypass the live window and publish immediately", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const timers = createManualTimerHarness();
+  const context = createTestContext(logs, capture, "session-subagent-window", {}, {
+    useCanonicalPipeline: true,
+    runtimeEventThrottleConfig: {
+      toolCallWindowMs: 64,
+      toolCallMaxChars: 512,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+    },
+  });
+
+  handleRuntimeEvent(
+    "session-subagent-window",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-subagent-1",
+        kind: "subagent",
+        title: "spawn_agent",
+        status: "running",
+        input: JSON.stringify({ fork_context: true, message: "只改 docs" }),
+        timestamp: "2026-07-08T12:39:49.467Z",
+        updatedAt: "2026-07-08T12:39:49.467Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(timers.size(), 0);
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  ) as any;
+  assert.ok(timelineBatchUpdate);
+  const appendedToolCall = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call",
+  )?.toolCall;
+  assert.equal(appendedToolCall?.kind, "subagent");
+  assert.equal(appendedToolCall?.title, "spawn_agent");
+  assert.equal(capture.sessionUpdates?.length, 1);
+  const persistedUpdatePayload = JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}") as {
+    type?: string;
+    toolCall?: AgentToolCall;
+  };
+  assert.equal(persistedUpdatePayload.type, "tool-call");
+  assert.equal(persistedUpdatePayload.toolCall?.kind, "subagent");
+  assert.equal(persistedUpdatePayload.toolCall?.status, "running");
 });
 
 test("runtime canonical tool-call persistence keeps stronger artifact classifications", () => {
@@ -1968,6 +2028,84 @@ test("runtime assistant chunks stay split when tool activity occurs between text
   assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
   assert.equal(appendedToolCalls.length, 1);
+});
+
+test("runtime assistant chunks stay in one canonical segment when subagent activity occurs between cumulative text updates", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-subagent-message", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-subagent-message",
+    {
+      type: "message",
+      message: {
+        id: "session-subagent-message-msg-a",
+        role: "assistant",
+        text: "我",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-subagent-message",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-subagent",
+        kind: "subagent",
+        title: "spawn_agent",
+        status: "running",
+        input: JSON.stringify({ message: "只回一句 simple subagent ok" }),
+        timestamp: "2026-04-30T00:00:02.000Z",
+        updatedAt: "2026-04-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-subagent-message",
+    {
+      type: "message",
+      message: {
+        id: "session-subagent-message-msg-b",
+        role: "assistant",
+        text: "我会重新做一次最小 subagent 调用测试。",
+        timestamp: "2026-04-30T00:00:03.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-subagent-message",
+    {
+      type: "status",
+      status: "idle",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const assistantEntries = capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
+  const subagentEntries = capture.timelineEntries?.filter((entry) => entry.kind === "tool_call") ?? [];
+  assert.equal(assistantEntries.length, 1);
+  assert.equal(subagentEntries.length, 1);
+  assert.equal(assistantEntries[0]?.kind, "assistant_message");
+  if (assistantEntries[0]?.kind !== "assistant_message") {
+    throw new Error("Expected assistant_message");
+  }
+  assert.equal(assistantEntries[0].chunks.length, 1);
+  assert.equal(
+    assistantEntries[0].chunks[0]?.text,
+    "我会重新做一次最小 subagent 调用测试。",
+  );
 });
 
 test("runtime-generated delta chunks with fresh source ids stay in one stream segment", () => {

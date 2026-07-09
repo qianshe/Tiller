@@ -9,6 +9,7 @@ import {
 } from "@tiller/shared";
 import { isCodexPlanToolName } from "../plan-events";
 import { extractCodexSkillNameFromText, formatCodexSkillTitle } from "../skill-tools";
+import { looksLikeCodexSubagentPayload } from "../tool-calls";
 
 export type CodexTranscriptToolCallOptions = {
   runtimeSessionId: string;
@@ -329,6 +330,13 @@ function resolveCodexToolMeta(input: {
   }
 
   if (input.namespace === "multi_agent_v1") {
+    return {
+      kind: "subagent" as const,
+      title: input.name,
+    };
+  }
+
+  if (looksLikeCodexSubagentPayload(input.name, input.parsedInput)) {
     return {
       kind: "subagent" as const,
       title: input.name,

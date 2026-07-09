@@ -70,6 +70,85 @@ test("session update reducer updates a tool entry without moving it after later 
   assert.equal(toolEntry?.kind === "tool_call" ? toolEntry.toolCall.output : undefined, "ok");
 });
 
+test("session update reducer backfills missing tool-call sequences from update records", () => {
+  const records: SessionUpdateRecord[] = [
+    {
+      sessionId: "session-sequence-backfill",
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 1,
+      source: "acp_load_replay",
+      updateType: "message",
+      receivedAt: at(1),
+      payloadJson: JSON.stringify({
+        type: "message",
+        message: {
+          id: "assistant-before",
+          role: "assistant",
+          text: "先开始。",
+          timestamp: at(1),
+        },
+      }),
+    },
+    {
+      sessionId: "session-sequence-backfill",
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 2,
+      source: "agent_transcript_repair",
+      updateType: "tool-call",
+      receivedAt: at(2),
+      payloadJson: JSON.stringify({
+        type: "tool-call",
+        toolCall: {
+          id: "call-subagent-sequence-backfill",
+          kind: "subagent",
+          title: "spawn_agent",
+          status: "completed",
+          timestamp: "2026-07-08T13:51:51.737Z",
+          updatedAt: "2026-07-08T11:27:53.590Z",
+        },
+      }),
+    },
+    {
+      sessionId: "session-sequence-backfill",
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 3,
+      source: "acp_load_replay",
+      updateType: "message",
+      receivedAt: at(3),
+      payloadJson: JSON.stringify({
+        type: "message",
+        message: {
+          id: "assistant-after",
+          role: "assistant",
+          text: "再继续。",
+          timestamp: at(3),
+        },
+      }),
+    },
+  ];
+
+  const finalState = records.reduce(
+    applySessionUpdateRecordToState,
+    createEmptySessionUpdateReducerState(),
+  );
+
+  assert.deepEqual(finalState.entries.map((entry) => entry.id), [
+    "assistant-before",
+    "tool:call-subagent-sequence-backfill",
+    "assistant-after",
+  ]);
+  assert.equal(finalState.toolCalls[0]?.sequence, 2);
+  assert.equal(
+    finalState.entries[1]?.kind === "tool_call"
+      ? finalState.entries[1].toolCall.sequence
+      : undefined,
+    2,
+  );
+});
+
 test("session update reducer keeps colliding user and assistant message ids distinct", () => {
   const finalState = [
     { type: "message" as const, message: user("msg-1", "prompt", 1) },
@@ -357,4 +436,3 @@ test("session update reducer rebuilds one merged compaction row from started lif
     "expandable",
   );
 });
-

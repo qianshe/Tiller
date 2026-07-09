@@ -3863,6 +3863,61 @@ test("plain message timeline interleaves assistant chunks with tool entries", ()
   assert.ok(html.indexOf("工具调用 · 2 项") < html.indexOf("工具后继续输出。"));
 });
 
+test("plain message timeline prefers timestamps over source order when Codex subagent sequences are skewed", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "tool:spawn-later",
+      kind: "tool_call",
+      toolCall: {
+        id: "spawn-later",
+        kind: "subagent",
+        title: "spawn_agent",
+        status: "completed",
+        output: "later spawn",
+        timestamp: "2026-07-08T11:45:06.872Z",
+        updatedAt: "2026-07-08T11:45:17.132Z",
+        sequence: 27,
+      },
+      timestamp: "2026-07-08T11:45:06.872Z",
+      updatedAt: "2026-07-08T11:45:17.132Z",
+      sequence: 27,
+    },
+    {
+      id: "tool:wait-earlier",
+      kind: "tool_call",
+      toolCall: {
+        id: "wait-earlier",
+        kind: "subagent",
+        title: "wait_agent",
+        status: "completed",
+        output: "earlier wait",
+        timestamp: "2026-07-08T11:28:13.789Z",
+        updatedAt: "2026-07-08T11:28:13.789Z",
+        sequence: 51,
+      },
+      timestamp: "2026-07-08T11:28:13.789Z",
+      updatedAt: "2026-07-08T11:28:13.789Z",
+      sequence: 51,
+    },
+  ];
+
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      timelineItems,
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.ok(html.indexOf("earlier wait") < html.indexOf("later spawn"));
+});
+
 test("plain message timeline filters OpenCode prompt wrapper echoes", () => {
   const messages: AgentMessage[] = [
     {
@@ -4295,4 +4350,3 @@ test("user messages render as plain text and keep the collapse affordance", () =
   assert.doesNotMatch(html, />你<\/span>/);
   assert.doesNotMatch(html, /plain-assistant-segment-dot/);
 });
-

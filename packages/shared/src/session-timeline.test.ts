@@ -466,6 +466,53 @@ test("sortSessionTimelineEntries keeps earlier compacted history anchored when l
   );
 });
 
+test("sortSessionTimelineEntries keeps a cumulative assistant reply intact across subagent boundaries", () => {
+  const entries: SessionTimelineEntry[] = [];
+  appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "我",
+    timestamp: "2026-06-10T10:19:40.000Z",
+    sequence: 1,
+    streaming: true,
+  });
+  appendToolCallToSessionTimeline(entries, {
+    id: "call-subagent",
+    kind: "subagent",
+    title: "spawn_agent",
+    status: "running",
+    input: JSON.stringify({ message: "只回一句 simple subagent ok" }),
+    timestamp: "2026-06-10T10:19:41.000Z",
+    updatedAt: "2026-06-10T10:19:41.000Z",
+    sequence: 2,
+  });
+  const timeline = sortSessionTimelineEntries(appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "我会重新做一次最小 subagent 调用测试。",
+    timestamp: "2026-06-10T10:19:42.000Z",
+    sequence: 3,
+    streaming: false,
+  }));
+
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "assistant-1"],
+      ["tool_call", "tool:call-subagent"],
+    ],
+  );
+  assert.equal(timeline[0]?.kind, "assistant_message");
+  if (timeline[0]?.kind !== "assistant_message") {
+    throw new Error("Expected assistant_message");
+  }
+  assert.equal(timeline[0].chunks.length, 1);
+  assert.equal(
+    timeline[0].chunks[0]?.text,
+    "我会重新做一次最小 subagent 调用测试。",
+  );
+});
+
 test("sortSessionTimelineEntries keeps compacted transcript boundaries ahead of the first post-compaction assistant", () => {
   const timeline = sortSessionTimelineEntries([
     {

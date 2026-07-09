@@ -141,6 +141,67 @@ test("repairSessionToolCalls upgrades OpenCode persisted task outputs to subagen
   assert.match(repaired.toolCalls[0]?.input ?? "", /"agent":"Sisyphus-Junior"/);
 });
 
+test("repairSessionToolCalls upgrades OpenCode generic search outputs from persisted history", () => {
+  const sessionId = "session-opencode-search-history";
+  const toolCalls: AgentToolCall[] = [
+    {
+      id: "call-opencode-search-history",
+      kind: "tool",
+      title: "Tool call call_00_s…",
+      status: "completed",
+      output: JSON.stringify({
+        output: [
+          "Morph Fast Context subagent performed search on repository:",
+          "- Grepped 'AgentToolCall' in `D:/myProject/tools/Tiller/packages/shared/src`",
+        ].join("\n"),
+      }),
+      timestamp: "2026-07-08T04:20:52.593Z",
+      updatedAt: "2026-07-08T04:20:52.593Z",
+    },
+  ];
+
+  const repaired = repairSessionToolCalls(
+    {
+      sessionId,
+      providerId: "opencode",
+      summary: summary(sessionId, "opencode", "OpenCode"),
+    },
+    toolCalls,
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  assert.equal(repaired.toolCalls[0]?.kind, "search");
+  assert.equal(repaired.toolCalls[0]?.title, "Search");
+});
+
+test("repairSessionToolCalls upgrades OpenCode generic skill outputs from persisted history", () => {
+  const sessionId = "session-opencode-skill-history";
+  const toolCalls: AgentToolCall[] = [
+    {
+      id: "call-opencode-skill-history",
+      kind: "tool",
+      title: "Tool call call_00_k…",
+      status: "completed",
+      output: "## Skill: debugging-strategies\n\nBase directory: C:/Users/qjq/.claude/skills/debugging-strategies",
+      timestamp: "2026-07-08T04:20:52.593Z",
+      updatedAt: "2026-07-08T04:20:52.593Z",
+    },
+  ];
+
+  const repaired = repairSessionToolCalls(
+    {
+      sessionId,
+      providerId: "opencode",
+      summary: summary(sessionId, "opencode", "OpenCode"),
+    },
+    toolCalls,
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  assert.equal(repaired.toolCalls[0]?.kind, "skill");
+  assert.equal(repaired.toolCalls[0]?.title, "Skill: debugging-strategies");
+});
+
 test("repairSessionToolCalls prunes stale OpenCode running writes when target file is missing", () => {
   const sessionId = "session-opencode-stale-write-history";
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-opencode-stale-write-"));
@@ -264,6 +325,38 @@ test("repairSessionToolCalls rewrites Codex web search history from search to fe
     repaired.toolCalls[0]?.title,
     "Searching for: OpenAI developer docs Responses API official",
   );
+});
+
+test("repairSessionToolCalls upgrades Codex multi_agent wait history from tool to subagent", () => {
+  const sessionId = "session-codex-subagent-history";
+  const toolCalls: AgentToolCall[] = [
+    {
+      id: "call-codex-subagent-history",
+      kind: "tool",
+      title: "wait_agent",
+      status: "completed",
+      input: JSON.stringify({
+        targets: ["019f418b-c549-7200-8ff1-8d2dd4ef002e"],
+        timeout_ms: 120000,
+      }),
+      output: JSON.stringify({ status: {}, timed_out: true }),
+      timestamp: "2026-07-08T11:45:25.514Z",
+      updatedAt: "2026-07-08T11:47:25.533Z",
+    },
+  ];
+
+  const repaired = repairSessionToolCalls(
+    {
+      sessionId,
+      providerId: "codex",
+      summary: summary(sessionId, "codex", "Codex"),
+    },
+    toolCalls,
+  );
+
+  assert.equal(repaired.changedCount, 1);
+  assert.equal(repaired.toolCalls[0]?.kind, "subagent");
+  assert.equal(repaired.toolCalls[0]?.title, "wait_agent");
 });
 
 test("repairTimelineToolCalls rewrites Codex web_search timeline history to fetch", () => {

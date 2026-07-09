@@ -599,7 +599,9 @@ function emitRuntimeToolCallSnapshot(
   toolCall: AgentToolCall,
   context: HelmHandlerContext,
 ) {
-  bumpAssistantStreamSegment(sessionId);
+  if (toolCall.kind !== "subagent") {
+    bumpAssistantStreamSegment(sessionId);
+  }
   if (hasCanonicalTimelinePipeline(context)) {
     const orderedToolCall = {
       ...toolCall,
@@ -741,11 +743,7 @@ function shouldPersistToolCallSnapshot(
   if (summary?.status === "error") {
     return true;
   }
-  return toolCall.kind === "think" ||
-    toolCall.status === "waiting_for_permission" ||
-    toolCall.status === "completed" ||
-    toolCall.status === "failed" ||
-    toolCall.status === "cancelled";
+  return true;
 }
 
 
@@ -1087,7 +1085,10 @@ function handleNormalizedRuntimeEvent(
       }
       flushLiveAssistantMessage(sessionId, context);
       const compactedToolCall = compactBinaryToolCallOutput(event.toolCall);
-      if (compactedToolCall.status === "running") {
+      if (
+        compactedToolCall.status === "running" &&
+        compactedToolCall.kind !== "subagent"
+      ) {
         bufferRunningToolCall(sessionId, compactedToolCall, context);
         return;
       }

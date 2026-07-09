@@ -427,11 +427,10 @@ function hasTimelineBoundaryBetween(
   const start = Math.min(leftSequence, rightSequence);
   const end = Math.max(leftSequence, rightSequence);
   return entries.some((entry) => {
-    if (isTranscriptEventEntry(entry)) {
+    if (!isAssistantTimelineBoundaryEntry(entry)) {
       return false;
     }
-    return entry.kind !== "assistant_message" &&
-      typeof entry.sequence === "number" &&
+    return typeof entry.sequence === "number" &&
       entry.sequence > start &&
       entry.sequence < end;
   });
@@ -483,9 +482,20 @@ function hasTimelineEntryBoundaryBetweenChunks(
   rightChunk: SessionAssistantTimelineChunk,
 ) {
   return entries.some((entry) =>
-    entry.kind !== "assistant_message" &&
+    isAssistantTimelineBoundaryEntry(entry) &&
     isTimelineItemBetween(entry, leftChunk, rightChunk)
   );
+}
+
+function isAssistantTimelineBoundaryEntry(
+  entry: SessionTimelineEntry,
+): entry is Extract<
+  SessionTimelineEntry,
+  { kind: "user_message" | "system_message" | "tool_call" }
+> {
+  return entry.kind === "user_message" ||
+    entry.kind === "system_message" ||
+    (entry.kind === "tool_call" && entry.toolCall.kind !== "subagent");
 }
 
 function isTimelineItemBetween(
