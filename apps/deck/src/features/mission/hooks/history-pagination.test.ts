@@ -56,3 +56,57 @@ test("loadOlderMessages requests timeline pages with the canonical history curso
     (globalThis as any).WebSocket = originalWebSocket;
   }
 });
+
+test("loadOlderActivities requests timeline pages with the activity history cursor", () => {
+  const originalWebSocket = (globalThis as any).WebSocket;
+  (globalThis as any).WebSocket = { OPEN: 1 };
+
+  try {
+    const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+    let activityHistoryState = {
+      "session-1": {
+        nextCursor: "timeline-cursor-2",
+        hasMore: true,
+        loading: false,
+      },
+    };
+
+    const pagination = useHistoryPagination({
+      activityHistoryState,
+      dispatch: async (_client: unknown, method: string, params: unknown) => {
+        dispatched.push({ method, params: params as Record<string, unknown> });
+      },
+      messageHistoryState: {},
+      sessionHistoryState: { hasMore: false, loading: false },
+      setActivityHistoryState: (updater: any) => {
+        activityHistoryState = updater(activityHistoryState);
+      },
+      setMessageHistoryState: () => undefined,
+      setSessionHistoryState: () => undefined,
+      rpcClientRef: {
+        current: { socket: { readyState: 1 } },
+      } as any,
+      stickChatToBottomRef: { current: true },
+      sessionPageLimit: 20,
+      messagePageLimit: 20,
+      activityPageLimit: 50,
+    });
+
+    pagination.loadOlderActivities("session-1");
+
+    assert.deepEqual(dispatched, [
+      {
+        method: "session/list_timeline",
+        params: {
+          sessionId: "session-1",
+          limit: 50,
+          before: "timeline-cursor-2",
+        },
+      },
+    ]);
+    assert.equal(activityHistoryState["session-1"].loading, true);
+    assert.equal(activityHistoryState["session-1"].nextCursor, "timeline-cursor-2");
+  } finally {
+    (globalThis as any).WebSocket = originalWebSocket;
+  }
+});

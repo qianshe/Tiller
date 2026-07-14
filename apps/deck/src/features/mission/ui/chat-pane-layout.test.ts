@@ -242,10 +242,11 @@ test("ACP model loading badge is not limited to OpenCode", () => {
   assert.doesNotMatch(composerSource, /selectedDraftAgent\?\.id === "opencode"/);
 });
 
-test("mission composer uses restore-aware model loading state", () => {
-  assert.match(worktreeModelSource, /composerModelLoading/);
-  assert.match(worktreeModelSource, /effectiveComposerSession && !composerSessionRestoreGate\.canChat/);
+test("mission composer keeps model loading separate from restore state", () => {
+  assert.match(worktreeModelSource, /const composerModelLoading = Boolean\(draftModelLoading\)/);
+  assert.match(worktreeModelSource, /const composerSessionRestoring =/);
   assert.match(worktreeSource, /draftModelLoading=\{composerModelLoading\}/);
+  assert.match(worktreeSource, /sessionRestoring=\{composerSessionRestoring\}/);
   assert.match(worktreeSource, /modelSettingsLocked=\{Boolean\(composerSession && !composerSessionRestoreGate\.canChat\)\}/);
 });
 
@@ -717,9 +718,9 @@ test("mission tool call rows stay compact", () => {
   assert.match(plainMessagesSource, /plain-assistant-segment-dot size-1\.5 rounded-full ring-2/);
   assert.match(plainMessagesSource, /plain-thinking[^\n]+rounded-\[8px\][^\n]+bg-surface-sunken\/55/);
   assert.match(plainMessagesSource, /plain-tool-group[^\n]+rounded-\[8px\][^\n]+bg-surface-sunken\/55/);
-  assert.match(plainMessagesSource, /plain-tool-call text-muted-foreground/);
-  assert.match(plainMessagesSource, /<summary className=\"flex min-w-0 cursor-pointer list-none items-center gap-1\.5 py-0\.5 text-2xs leading-4/);
-  assert.match(plainMessagesSource, /<pre className=\"mt-0\.5 max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground\/85\"/);
+  assert.match(plainMessagesSource, /plain-tool-call col-span-5 grid grid-cols-subgrid text-muted-foreground/);
+  assert.match(plainMessagesSource, /<summary className=\"col-span-5 grid min-w-0 cursor-pointer list-none grid-cols-subgrid items-center/);
+  assert.match(plainMessagesSource, /<pre className=\"col-span-5 mt-0\.5 min-w-0 max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground\/85\"/);
   assert.match(plainMessagesSource, /resolveToolCallIconName/);
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+max-h-36/);
   assert.doesNotMatch(plainMessagesSource, />混合</);

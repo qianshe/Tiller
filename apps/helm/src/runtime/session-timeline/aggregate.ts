@@ -54,6 +54,7 @@ export function applySessionRuntimeEvent(
 export function buildSessionTimelineBatch(
   before: SessionTimelineAggregate,
   after: SessionTimelineAggregate,
+  changedEntries: SessionTimelineEntry[] = after.entries,
 ): SessionTimelineBatch | null {
   if (after.entries.length === 0 && before.entries.length === 0) {
     return null;
@@ -65,8 +66,37 @@ export function buildSessionTimelineBatch(
     replace: false,
     deliverySequence: after.deliverySequence,
     lastSequence: after.lastSequence,
-    entries: after.entries,
+    entries: changedEntries,
   };
+}
+
+export function retainActiveSessionTimelineEntries(
+  aggregate: SessionTimelineAggregate,
+): SessionTimelineAggregate {
+  let latestUnresolvedCompactionIndex = -1;
+  for (let index = aggregate.entries.length - 1; index >= 0; index -= 1) {
+    const entry = aggregate.entries[index];
+    if (
+      entry?.kind === "context_compaction" &&
+      (entry.phase === "started" || !entry.summaryText)
+    ) {
+      latestUnresolvedCompactionIndex = index;
+      break;
+    }
+  }
+
+  const entries = aggregate.entries.filter((entry, index) => {
+    if (entry.kind === "assistant_message") {
+      return entry.streaming === true || entry.chunks.some((chunk) =>
+        chunk.kind === "thinking" && chunk.status === "running"
+      );
+    }
+    if (entry.kind === "tool_call") {
+      return entry.toolCall.status === "pending" || entry.toolCall.status === "running";
+    }
+    return entry.kind === "context_compaction" && index === latestUnresolvedCompactionIndex;
+  });
+  return entries.length === aggregate.entries.length ? aggregate : { ...aggregate, entries };
 }
 
 function applyMessageEvent(
@@ -107,31 +137,21 @@ function applyCommandOutputEvent(
   event: Extract<SessionRuntimeEvent, { type: "command-output" }>,
 ): SessionTimelineAggregate {
   const { chunk } = event;
+  const sequence = chunk.sequence ?? nextSequence(aggregate);
   const entries = [...aggregate.entries];
-  const matchIndex = entries.findIndex(
-    (e) => e.kind === "tool_call" && matchesCommandId(e, chunk.commandId),
-  );
-
-  if (matchIndex === -1) {
-    return aggregate;
-  }
-
-  const existing = entries[matchIndex];
-  if (existing?.kind === "tool_call") {
-    const currentOutput = existing.toolCall.output ?? "";
-    entries[matchIndex] = {
-      ...existing,
-      toolCall: {
-        ...existing.toolCall,
-        output: currentOutput ? `${currentOutput}${chunk.text}` : chunk.text,
-        stream: chunk.stream,
-      },
-      updatedAt: chunk.timestamp,
-    };
-  }
+  entries.push({
+    id: `output:${chunk.commandId}:${sequence ?? chunk.id}`,
+    kind: "command_output",
+    commandId: chunk.commandId,
+    output: { ...chunk, sequence },
+    timestamp: chunk.timestamp,
+    updatedAt: chunk.timestamp,
+    sequence,
+  });
 
   return {
     ...aggregate,
+    lastSequence: Math.max(aggregate.lastSequence, sequence),
     deliverySequence: aggregate.deliverySequence + 1,
     entries,
   };
@@ -162,10 +182,4 @@ function applyCompactionEvent(
 
 function nextSequence(aggregate: SessionTimelineAggregate) {
   return aggregate.lastSequence + 1;
-}
-
-function matchesCommandId(entry: SessionTimelineEntry, commandId: string) {
-  if (entry.kind !== "tool_call") return false;
-  return entry.toolCall.id === commandId ||
-    entry.toolCall.commandId === commandId;
 }

@@ -9,6 +9,7 @@ import type {
   AvailableCommand,
   CommandChunk,
   FileDiffSummary,
+  PermissionDecision,
   PermissionRequest,
   SessionCompactionPhase,
   SessionCompactionSource,
@@ -49,6 +50,11 @@ export type SessionRuntimeEvent =
       request: PermissionRequest;
     }
   | {
+      type: "permission-response";
+      requestId: string;
+      decision: PermissionDecision;
+    }
+  | {
       type: "tool-call";
       toolCall: AgentToolCall;
     }
@@ -79,10 +85,32 @@ export type SessionRuntimeEvent =
       commands: AvailableCommand[];
     }
   | {
+      type: "mode-update";
+      agentMode: string;
+    }
+  | {
+      type: "session-info";
+      title?: string | null;
+      updatedAt?: string | null;
+    }
+  | {
+      type: "usage-update";
+      usage: {
+        used: number;
+        size: number;
+        cost?: { amount: number; currency: string } | null;
+      };
+    }
+  | {
       type: "error";
       message: string;
       code?: string;
     };
+
+export type MappedSessionRuntimeEvents = {
+  sessionId: string;
+  events: readonly SessionRuntimeEvent[];
+};
 
 export type AcpSessionRestoreStrategy = "load" | "resume";
 

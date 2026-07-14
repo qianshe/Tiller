@@ -75,13 +75,8 @@ export function createSessionSummaryHydrationService(options: SessionSummaryHydr
     };
   }
 
-  function migrateStoredSessionSummary(summary: SessionSummary) {
-    return hydrateSessionSummary(summary);
-  }
-
   return {
     buildResumeInfo: buildResumeInfoFor,
     hydrateSessionSummary,
-    migrateStoredSessionSummary,
   };
 }

@@ -128,6 +128,9 @@ export function useDeckData(missionVisualFixture: any) {
   const storedDiffs = useDeckStore((state) => state.diffs);
   const diffs = (missionVisualFixture?.diffs ?? storedDiffs) as Record<string, FileDiffSummary[]>;
   const setDiffs = useDeckStore((state) => state.setDiffs);
+  const historicalDiffIncompleteBySession = useDeckStore(
+    (state) => state.historicalDiffIncompleteBySession,
+  );
 
   const sessionConfigOptions = useDeckStore((state) => state.sessionConfigOptions);
   const setSessionConfigOptions = useDeckStore((state) => state.setSessionConfigOptions);
@@ -234,6 +237,7 @@ export function useDeckData(missionVisualFixture: any) {
     setSessionTitles,
     diffs,
     setDiffs,
+    historicalDiffIncompleteBySession,
     sessionConfigOptions,
     setSessionConfigOptions,
     sessionAvailableCommands,

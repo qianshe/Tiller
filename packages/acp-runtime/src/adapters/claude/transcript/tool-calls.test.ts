@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { extractClaudeToolCallsFromTranscriptText } from "./tool-calls.js";
+import {
+  extractClaudeToolCallsFromTranscriptText,
+  readClaudeTranscriptToolUseFromDisk,
+} from "./tool-calls.js";
 
 test("extractClaudeToolCallsFromTranscriptText restores Claude transcript tool names and kinds", () => {
   const transcript = [
@@ -102,7 +108,11 @@ test("extractClaudeToolCallsFromTranscriptText restores Claude transcript tool n
     toolCalls.map((toolCall) => [toolCall.id, toolCall.kind, toolCall.title]),
     [
       ["tool-read", "read", "Read"],
-      ["tool-bash", "shell", "Bash"],
+      [
+        "tool-bash",
+        "shell",
+        "echo \"=== form.tsx mobile variants ===\"; grep -nE 'isMobile|py-1' apps/deck/src/features/mission/composer/form.tsx 2>/dev/null | head -30",
+      ],
       ["tool-mcp", "mcp", "Tool: search_context"],
     ],
   );
@@ -114,4 +124,78 @@ test("extractClaudeToolCallsFromTranscriptText restores Claude transcript tool n
     source: "provider-title",
     rawTitle: "mcpServers_search_context",
   });
+});
+
+test("extractClaudeToolCallsFromTranscriptText can expose pending transcript tools", () => {
+  const transcript = JSON.stringify({
+    timestamp: "2026-07-14T15:43:19.667Z",
+    message: {
+      content: [{
+        type: "tool_use",
+        id: "call-running-shell",
+        name: "Bash",
+        input: {
+          command: "node -e \"setTimeout(()=>console.log('LIVE'),20000)\"",
+        },
+      }],
+    },
+  });
+
+  assert.deepEqual(extractClaudeToolCallsFromTranscriptText(transcript), []);
+  assert.deepEqual(
+    extractClaudeToolCallsFromTranscriptText(transcript, { includePending: true }),
+    [{
+      id: "call-running-shell",
+      kind: "shell",
+      title: "node -e \"setTimeout(()=>console.log('LIVE'),20000)\"",
+      status: "running",
+      input: JSON.stringify({
+        command: "node -e \"setTimeout(()=>console.log('LIVE'),20000)\"",
+      }),
+      timestamp: "2026-07-14T15:43:19.667Z",
+      updatedAt: "2026-07-14T15:43:19.667Z",
+      sequence: 1,
+    }],
+  );
+});
+
+test("readClaudeTranscriptToolUseFromDisk finds a recent subagent shell command", () => {
+  const root = join(tmpdir(), `tiller-claude-tool-${Date.now()}`);
+  const cwd = "D:\\workspace\\project";
+  const runtimeSessionId = "runtime-session";
+  const projectDir = join(root, "projects", "D--workspace-project");
+  const subagentDir = join(projectDir, runtimeSessionId, "subagents");
+  mkdirSync(subagentDir, { recursive: true });
+  writeFileSync(join(projectDir, `${runtimeSessionId}.jsonl`), "", "utf8");
+  writeFileSync(
+    join(subagentDir, "agent-test.jsonl"),
+    [
+      JSON.stringify({
+        message: {
+          content: [{
+            type: "tool_use",
+            id: "call-shell",
+            name: "Bash",
+            input: { command: "node -e \"console.log('proof')\"" },
+          }],
+        },
+      }),
+      JSON.stringify({ padding: "x".repeat(160 * 1024) }),
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    assert.deepEqual(readClaudeTranscriptToolUseFromDisk({
+      claudeConfigDir: root,
+      cwd,
+      runtimeSessionId,
+      toolCallId: "call-shell",
+    }), {
+      name: "Bash",
+      input: { command: "node -e \"console.log('proof')\"" },
+    });
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

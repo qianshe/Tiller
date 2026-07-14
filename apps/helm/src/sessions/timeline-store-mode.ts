@@ -4,7 +4,13 @@ import {
   type SessionTimelineBlockMode,
   type SessionTimelineStore,
 } from "@tiller/persistence";
-import type { AgentMessage, AgentToolCall, SessionTimelineBatch, SessionTimelineEntry } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionTimelineBatch,
+  SessionTimelineEntry,
+  SessionUpdateRecord,
+} from "@tiller/shared";
 
 export type TimelineStoreModeOptions = {
   sqlitePath: string;
@@ -88,6 +94,18 @@ function createDualTimelineStore(options: DualTimelineStoreOptions): ClosableTim
     },
     applyBatch(sessionId: string, batch: SessionTimelineBatch) {
       const row = options.rowStore.applyBatch(sessionId, batch);
+      const block = options.blockStore.applyBatch(sessionId, batch);
+      return readStore === options.blockStore ? block : row;
+    },
+    commitBatch(
+      sessionId: string,
+      batch: SessionTimelineBatch,
+      updates: SessionUpdateRecord[],
+    ) {
+      if (!options.rowStore.commitBatch) {
+        throw new Error("SQLite timeline store does not support atomic update commits.");
+      }
+      const row = options.rowStore.commitBatch(sessionId, batch, updates);
       const block = options.blockStore.applyBatch(sessionId, batch);
       return readStore === options.blockStore ? block : row;
     },

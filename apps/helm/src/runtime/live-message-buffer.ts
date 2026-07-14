@@ -18,7 +18,11 @@ export function createLiveMessageBuffer() {
       return message;
     }
 
-    const mergedText = mergeLiveMessageText(current.fullMessage.text, message.text);
+    const mergedText = mergeLiveMessageText(
+      current.fullMessage.text,
+      message.text,
+      message.streamMode,
+    );
     const pendingText = resolvePendingDelta(
       current.fullMessage.text,
       mergedText,
@@ -69,8 +73,20 @@ export function createLiveMessageBuffer() {
     return message;
   }
 
-  function mergeLiveMessageText(currentText: string, incomingText: string) {
-    return mergeStreamingText(currentText, incomingText) ?? currentText;
+  function remove(sessionId: string): void {
+    messages.delete(sessionId);
+  }
+
+  function sessionIds(): string[] {
+    return [...messages.keys()];
+  }
+
+  function mergeLiveMessageText(
+    currentText: string,
+    incomingText: string,
+    streamMode: AgentMessage["streamMode"],
+  ) {
+    return mergeStreamingText(currentText, incomingText, streamMode ?? "auto") ?? currentText;
   }
 
   function resolvePendingDelta(
@@ -90,5 +106,5 @@ export function createLiveMessageBuffer() {
     return mergedText;
   }
 
-  return { append, peek, flushPending, pendingLength, finalize };
+  return { append, peek, flushPending, pendingLength, finalize, remove, sessionIds };
 }

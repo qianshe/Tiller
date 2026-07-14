@@ -301,11 +301,13 @@ export type SessionSummary = RuntimeSessionSummary;
 export type AgentMessage = {
   id: string;
   role: "assistant" | "system" | "user";
+  contentKind?: "content" | "thought";
   text: string;
   timestamp: string;
   sequence?: number;
   attachments?: AgentPromptImageContent[];
   streaming?: boolean;
+  streamMode?: "delta" | "snapshot";
 };
 
 export type AgentPromptTextContent = {
@@ -360,6 +362,7 @@ export type PermissionRequestOption = {
 
 export type PermissionRequest = {
   id: string;
+  toolCallId?: string;
   command: string;
   reason: string;
   cwd: string;
@@ -385,13 +388,15 @@ export type ApprovalPolicy = {
   rules: ApprovalPolicyRule[];
 };
 
-export type CommandChunkContentRef = {
+export type StoredTextContentRef = {
   id: string;
   uri: string;
   mimeType: "text/plain; charset=utf-8";
   byteSize: number;
   sha256: string;
 };
+
+export type CommandChunkContentRef = StoredTextContentRef;
 
 export type CommandChunk = {
   id: string;
@@ -411,6 +416,7 @@ export type AgentToolCallKind =
   | "mcp"
   | "skill"
   | "read"
+  | "diagnostics"
   | "write"
   | "search"
   | "shell"
@@ -471,21 +477,10 @@ export type FileDiffSummary = {
   deletions: number;
   /** Unified patch/hunk text when the ACP provider includes file-level diff content. */
   patch?: string;
-};
-
-export type SessionHistoryReimportResult = {
-  sessionId: string;
-  messages: AgentMessage[];
-  timeline?: SessionTimelineEntry[];
-  outputs: CommandChunk[];
-  diffs: FileDiffSummary[];
-  toolCalls: AgentToolCall[];
-  plan?: AgentPlan;
-  nextCursor?: string;
-  hasMore: boolean;
-  activityNextCursor?: string;
-  activityHasMore: boolean;
-  message: string;
+  /** True when `patch` is only a preview and the complete body is externalized. */
+  patchTruncated?: boolean;
+  /** Immutable local reference to a complete diff patch. */
+  patchRef?: StoredTextContentRef;
 };
 
 export function isWildcardHost(host: string) {

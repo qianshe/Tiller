@@ -1,17 +1,15 @@
 import type { SessionTimelineBatch, SessionTimelineEntry } from "@tiller/shared";
-import { sortSessionTimelineEntries } from "@tiller/shared";
 
 export function buildReplaceBatch(
   entries: SessionTimelineEntry[],
   deliverySequence: number,
 ): SessionTimelineBatch {
-  const sorted = sortSessionTimelineEntries(entries);
-  const lastSequence = resolveLastSequence(sorted);
+  const lastSequence = resolveLastSequence(entries);
   return {
     replace: true,
     deliverySequence,
     lastSequence,
-    entries: sorted,
+    entries,
   };
 }
 

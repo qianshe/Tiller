@@ -4,13 +4,82 @@ import type { AgentToolCall, SessionTimelineEntry, SessionUpdateRecord } from "@
 import { handleSessionRpcNotification, handleSessionRpcRequest } from "./rpc";
 import { createSessionPromptQueueManager } from "../../runtime/session/prompt-queue";
 import { createSessionUpdateRecord } from "../../runtime/session-updates/reducer";
+import { createSessionRuntimeEventState } from "../../runtime/session/event/runtime-state";
+import { createSessionTimelineDispatcher } from "../../runtime/session-timeline/dispatcher";
+import { createSessionTimelineFlushScheduler } from "../../runtime/session-timeline/flush-scheduler";
+import { createSessionLiveStateStore } from "../../runtime/session-timeline/live-state-store";
+import { createSessionTimelineWorkerRegistry } from "../../runtime/session-timeline/worker-registry";
+import { createLiveMessageBuffer } from "../../runtime/live-message-buffer";
 
 function createPromptQueueContextExtras() {
   const promptQueue = createSessionPromptQueueManager();
+  const timelineEntries = new Map<string, SessionTimelineEntry[]>();
+  const liveStates = new Map<string, import("@tiller/shared").CanonicalSessionState>();
+  const sessionUpdates = new Map<string, SessionUpdateRecord[]>();
+  const sessionStateStore = {
+    get: (sessionId: string) => liveStates.get(sessionId),
+    getAppliedSequence: (sessionId: string) => liveStates.get(sessionId)?.sequence ?? 0,
+    replace: (sessionId: string, state: import("@tiller/shared").CanonicalSessionState) => {
+      liveStates.set(sessionId, state);
+      return state;
+    },
+    commitUpdate: (
+      update: SessionUpdateRecord,
+      state: import("@tiller/shared").CanonicalSessionState,
+    ) => {
+      const updates = sessionUpdates.get(update.sessionId) ?? [];
+      sessionUpdates.set(update.sessionId, [...updates, update]);
+      liveStates.set(update.sessionId, state);
+      return state;
+    },
+    remove: (sessionId: string) => {
+      liveStates.delete(sessionId);
+      sessionUpdates.delete(sessionId);
+    },
+    close: async () => undefined,
+  };
+  const sessionTimelineWorkers = createSessionTimelineWorkerRegistry();
+  const sessionTimelineDispatcher = createSessionTimelineDispatcher({
+    store: {
+      commitBatch: (sessionId: string, batch: any) => {
+        const entries = timelineEntries.get(sessionId) ?? [];
+        const byId = new Map(entries.map((entry) => [entry.id, entry]));
+        for (const entry of batch.entries) {
+          byId.set(entry.id, entry);
+        }
+        const next = batch.replace ? batch.entries : [...byId.values()];
+        timelineEntries.set(sessionId, next);
+        return next;
+      },
+    } as any,
+    publish: () => undefined,
+  });
+  const sessionTimelineFlushScheduler = createSessionTimelineFlushScheduler({
+    workers: sessionTimelineWorkers,
+    dispatcher: sessionTimelineDispatcher,
+    windowMs: 0,
+  });
   return {
     promptQueue,
     drainPromptQueue: async () => undefined,
     broadcastSessionTopic: () => undefined,
+    sessionUpdateStore: {
+      append: (update: SessionUpdateRecord) => {
+        const updates = sessionUpdates.get(update.sessionId) ?? [];
+        sessionUpdates.set(update.sessionId, [...updates, update]);
+      },
+      getMaxSequence: (sessionId: string) => Math.max(
+        liveStates.get(sessionId)?.sequence ?? 0,
+        ...(sessionUpdates.get(sessionId) ?? []).map((update) => update.sequence),
+      ),
+      compactTail: () => 0,
+    },
+    sessionTimelineStore: { list: (sessionId: string) => timelineEntries.get(sessionId) ?? [] },
+    sessionTimelineWorkers,
+    sessionTimelineDispatcher,
+    sessionTimelineFlushScheduler,
+    sessionLiveStateStore: createSessionLiveStateStore(sessionStateStore),
+    sessionRuntimeEventState: createSessionRuntimeEventState(),
   };
 }
 
@@ -18,7 +87,57 @@ function flushPromises() {
   return new Promise<void>((resolve) => setImmediate(resolve));
 }
 
-test("session/get_artifacts reads stale running thinking repaired during refresh", async () => {
+test("legacy evidence remains lazy and outside the canonical timeline response body", async () => {
+  const sessionId = "legacy-evidence-session";
+  let evidencePageCalls = 0;
+  const availability = {
+    sessionId,
+    available: true,
+    counts: { message: 2, tool_call: 1, output: 3 },
+  };
+  const context = {
+    sessionTimelineStore: {
+      listPage: () => ({ entries: [], hasMore: false }),
+    },
+    sessionPlanStore: { get: () => undefined },
+    sessionLegacyEvidenceStore: {
+      describe: () => availability,
+      listPage: () => {
+        evidencePageCalls += 1;
+        return {
+          sessionId,
+          source: "message" as const,
+          items: [{
+            source: "message" as const,
+            sourcePosition: 1,
+            entity: { id: "legacy-message", text: "kept outside timeline" },
+          }],
+          issues: [],
+          hasMore: false,
+        };
+      },
+    },
+  } as any;
+
+  const timeline = await handleSessionRpcRequest(
+    "session/list_timeline",
+    { sessionId },
+    context,
+  ) as any;
+  assert.deepEqual(timeline.entries, []);
+  assert.deepEqual(timeline.legacyEvidence, availability);
+  assert.equal(evidencePageCalls, 0);
+
+  const page = await handleSessionRpcRequest(
+    "session/list_legacy_evidence",
+    { sessionId, source: "message", limit: 10 },
+    context,
+  ) as any;
+  assert.deepEqual(page.items.map((item: any) => item.entity.id), ["legacy-message"]);
+  assert.equal(evidencePageCalls, 1);
+});
+
+test("session/get_artifacts leaves stale running thinking untouched during ordinary reads", async () => {
   const sessionId = "session-thinking-history";
   let toolCalls: AgentToolCall[] = [
     {
@@ -68,9 +187,9 @@ test("session/get_artifacts reads stale running thinking repaired during refresh
     } as any,
   ) as any;
 
-  assert.equal(result.toolCalls[0]?.status, "completed");
+  assert.equal(result.toolCalls[0]?.status, "running");
   assert.equal(result.toolCalls[0]?.output, "persisted thinking");
-  assert.equal(result.toolCalls[0]?.updatedAt, "2026-05-17T10:00:10.000Z");
+  assert.equal(result.toolCalls[0]?.updatedAt, "2026-05-17T10:00:02.000Z");
 });
 
 test("session/get_artifacts no longer returns history plan payloads", async () => {
@@ -104,7 +223,40 @@ test("session/get_artifacts no longer returns history plan payloads", async () =
   assert.equal(result.plan, undefined);
 });
 
-test("session/get_artifacts reconstructs outputs and tool calls from canonical timeline when legacy activity rows are absent", async () => {
+test("legacy session artifacts never hydrate diffs from the current worktree", async () => {
+  const sessionId = "legacy-diff-snapshot";
+  const storedDiffs = [{
+    path: "src/legacy.ts",
+    status: "modified" as const,
+    additions: 2,
+    deletions: 1,
+  }];
+
+  const result = await handleSessionRpcRequest(
+    "session/get_artifacts",
+    { sessionId },
+    {
+      sessionArtifactStore: {
+        getPage: () => ({ outputs: [], diffs: storedDiffs, toolCalls: [], hasMore: false }),
+      },
+      sessionLegacyEvidenceStore: {
+        describe: () => ({
+          sessionId,
+          available: true,
+          counts: { message: 1, tool_call: 0, output: 0 },
+        }),
+      },
+      hydrateDiffsFromWorktreeGit: async () => {
+        throw new Error("legacy artifacts must not read current worktree Git state");
+      },
+    } as any,
+  ) as any;
+
+  assert.deepEqual(result.diffs, storedDiffs);
+  assert.equal(result.historicalDiffIncomplete, true);
+});
+
+test("session/get_artifacts does not project canonical timeline entries into legacy artifacts", async () => {
   const sessionId = "session-canonical-artifacts";
   const timeline = [
     {
@@ -163,22 +315,12 @@ test("session/get_artifacts reconstructs outputs and tool calls from canonical t
     } as any,
   ) as any;
 
-  assert.deepEqual(
-    result.toolCalls.map((toolCall: any) => toolCall.id),
-    ["cmd-1"],
-  );
-  assert.deepEqual(result.outputs, [{
-    id: "timeline-output:cmd-1",
-    commandId: "cmd-1",
-    text: "done",
-    stream: "stdout",
-    timestamp: "2026-06-21T10:00:02.000Z",
-    sequence: 2,
-  }]);
+  assert.deepEqual(result.toolCalls, []);
+  assert.deepEqual(result.outputs, []);
   assert.deepEqual(result.diffs, [{ path: "a.ts", status: "modified", additions: 1, deletions: 0 }]);
 });
 
-test("session/get_artifacts reads legacy subagent tool calls materialized during refresh", async () => {
+test("session/get_artifacts leaves legacy subagent tool calls untouched during ordinary reads", async () => {
   const sessionId = "session-subagent-history";
   let toolCalls: AgentToolCall[] = [
     {
@@ -215,11 +357,11 @@ test("session/get_artifacts reads legacy subagent tool calls materialized during
     } as any,
   ) as any;
 
-  assert.equal(result.toolCalls[0]?.kind, "subagent");
+  assert.equal(result.toolCalls[0]?.kind, "tool");
   assert.equal(result.toolCalls[0]?.title, "spawn_agents_on_csv");
 });
 
-test("session/list_timeline reads legacy mcp tool calls materialized during refresh", async () => {
+test("session/list_timeline leaves legacy mcp tool calls untouched during ordinary reads", async () => {
   const sessionId = "session-timeline-mcp-history";
   let timeline: SessionTimelineEntry[] = [
     {
@@ -284,11 +426,11 @@ test("session/list_timeline reads legacy mcp tool calls materialized during refr
     } as any,
   ) as any;
 
-  assert.equal(result.entries[0]?.toolCall?.kind, "mcp");
-  assert.equal(result.entries[0]?.toolCall?.title, "Tool: sanshu/zhi");
+  assert.equal(result.entries[0]?.toolCall?.kind, "tool");
+  assert.equal(result.entries[0]?.toolCall?.title, "Tool call call-1");
 });
 
-test("session/list_timeline reads canonical history materialized during refresh", async () => {
+test("session/list_timeline no longer materializes canonical history during ordinary reads", async () => {
   const sessionId = "session-with-legacy-timeline";
   let replacedTimeline: any[] = [];
 
@@ -357,18 +499,8 @@ test("session/list_timeline reads canonical history materialized during refresh"
     } as any,
   ) as any;
 
-  assert.deepEqual(
-    result.entries.map((entry: any) => entry.kind),
-    ["user_message", "assistant_message"],
-  );
-  assert.deepEqual(
-    result.entries[1]?.chunks.map((chunk: any) => chunk.kind),
-    ["thinking", "content"],
-  );
-  assert.deepEqual(
-    replacedTimeline.map((entry: any) => entry.kind),
-    ["user_message", "assistant_message"],
-  );
+  assert.deepEqual(result.entries, []);
+  assert.deepEqual(replacedTimeline, []);
 });
 
 test("session/list_timeline includes stored plan when live state has no plan", async () => {
@@ -1359,7 +1491,7 @@ test("session/list_timeline forwards the canonical before cursor without loading
   assert.deepEqual(timelinePageOptions, {
     limit: 20,
     before,
-    window: "message",
+    window: "turn",
   });
   assert.deepEqual(result.entries.map((entry: any) => entry.id), ["older-timeline"]);
   assert.equal(result.before, before);
@@ -1438,7 +1570,48 @@ test("session/list_timeline reads the first page from canonical timeline storage
   assert.equal(result.hasMore, false);
 });
 
-test("session/list_timeline requests message-window timeline pages from the store", async () => {
+test("session/list_timeline no longer refreshes provider history during ordinary reads", async () => {
+  const sessionId = "session-no-refresh-list-timeline";
+  let refreshed = false;
+
+  const result = await handleSessionRpcRequest(
+    "session/list_timeline",
+    { sessionId, limit: 2 },
+    {
+      refreshAuthoritativeSessionHistory: async () => {
+        refreshed = true;
+      },
+      sessionTimelineStore: {
+        listPage: () => ({
+          entries: [
+            {
+              id: "assistant-1",
+              kind: "assistant_message" as const,
+              chunks: [
+                {
+                  id: "assistant-1:content",
+                  kind: "content" as const,
+                  text: "answer",
+                  timestamp: "2026-05-24T10:00:03.000Z",
+                  sequence: 1,
+                },
+              ],
+              timestamp: "2026-05-24T10:00:03.000Z",
+              updatedAt: "2026-05-24T10:00:03.000Z",
+              sequence: 1,
+            },
+          ],
+          hasMore: false,
+        }),
+      },
+    } as any,
+  ) as any;
+
+  assert.equal(refreshed, false);
+  assert.deepEqual(result.entries.map((entry: any) => entry.id), ["assistant-1"]);
+});
+
+test("session/list_timeline requests turn-window timeline pages from the store", async () => {
   const sessionId = "session-dense-tools";
   const timeline = [
     {
@@ -1514,7 +1687,7 @@ test("session/list_timeline requests message-window timeline pages from the stor
   assert.deepEqual(timelinePageOptions, {
     limit: 2,
     before: undefined,
-    window: "message",
+    window: "turn",
   });
   assert.deepEqual(
     result.entries.map((entry: any) => entry.id),
@@ -1523,7 +1696,7 @@ test("session/list_timeline requests message-window timeline pages from the stor
   assert.equal(result.hasMore, false);
 });
 
-test("session/list_timeline keeps compaction rows when continuation summaries precede unsequenced resumed assistants", async () => {
+test("session/list_timeline does not materialize compaction rows from legacy messages during reads", async () => {
   const sessionId = "session-compaction-summary-unsequenced";
   let persistedTimeline = [
     {
@@ -1612,25 +1785,20 @@ test("session/list_timeline keeps compaction rows when continuation summaries pr
   assert.deepEqual(
     result.entries.map((entry: any) => [entry.kind, entry.id]),
     [
-      ["context_compaction", `compaction:${sessionId}:compaction-completed`],
       ["assistant_message", "assistant-after"],
     ],
   );
-  assert.equal(
-    result.entries.find((entry: any) => entry.kind === "context_compaction")?.summaryText,
-    "This session is being continued from a previous conversation that ran out of context.",
-  );
+  assert.equal(result.entries.find((entry: any) => entry.kind === "context_compaction"), undefined);
   assert.deepEqual(
     persistedTimeline.map((entry: any) => entry.id),
     [
       "older-assistant",
-      `compaction:${sessionId}:compaction-completed`,
       "assistant-after",
     ],
   );
 });
 
-test("session/list_timeline reanchors an existing compaction summary row instead of appending a duplicate at the end", async () => {
+test("session/list_timeline preserves canonical compaction order", async () => {
   const sessionId = "session-compaction-existing-summary";
   let persistedTimeline = [
     {
@@ -1746,9 +1914,9 @@ test("session/list_timeline reanchors an existing compaction summary row instead
   assert.deepEqual(
     result.entries.map((entry: any) => [entry.kind, entry.id]),
     [
-      ["context_compaction", `compaction:${sessionId}:runtime-summary`],
       ["user_message", "current-user"],
       ["assistant_message", "current-assistant"],
+      ["context_compaction", `compaction:${sessionId}:runtime-summary`],
     ],
   );
   const compactionEntries = result.entries.filter((entry: any) => entry.kind === "context_compaction");
@@ -1761,9 +1929,9 @@ test("session/list_timeline reanchors an existing compaction summary row instead
     persistedTimeline.map((entry: any) => entry.id),
     [
       "older-assistant",
-      `compaction:${sessionId}:runtime-summary`,
       "current-user",
       "current-assistant",
+      `compaction:${sessionId}:runtime-summary`,
     ],
   );
 });
@@ -1841,65 +2009,24 @@ test.skip("session/list_timeline caps dense timeline entry pages", async () => {
   assert.equal(result.hasMore, true);
 });
 
-test("session/reimport_history is no longer part of the public session RPC surface", async () => {
-  await assert.rejects(
-    () =>
-      handleSessionRpcRequest(
-        "session/reimport_history",
-        { sessionId: "s1", limit: 40 },
-        {} as any,
-      ),
-    /debug\/reimport_history/u,
+test("session/reimport_history is no longer handled", async () => {
+  const result = await handleSessionRpcRequest(
+    "session/reimport_history",
+    { sessionId: "s1", limit: 40 },
+    {} as any,
   );
+
+  assert.equal(result, undefined);
 });
 
-test("debug/reimport_history delegates to the history reimport service", async () => {
-  let delegated: unknown;
+test("debug/reimport_history is no longer handled", async () => {
   const result = await handleSessionRpcRequest(
     "debug/reimport_history",
     { sessionId: "s1", limit: 40 },
-    {
-      reimportSessionHistory: (sessionId: string, options: unknown) => {
-        delegated = { sessionId, options };
-        return {
-          sessionId,
-          messages: [
-            {
-              id: "m1",
-              role: "user" as const,
-              text: "hello",
-              timestamp: "2026-05-24T10:00:00.000Z",
-            },
-          ],
-          outputs: [],
-          diffs: [],
-          toolCalls: [],
-          hasMore: false,
-          activityHasMore: false,
-          message: "历史已从 ACP 重新导入。"
-        };
-      },
-    } as any,
+    {} as any,
   );
 
-  assert.deepEqual(delegated, { sessionId: "s1", options: { limit: 40 } });
-  assert.deepEqual(result, {
-    sessionId: "s1",
-    messages: [
-      {
-        id: "m1",
-        role: "user",
-        text: "hello",
-        timestamp: "2026-05-24T10:00:00.000Z",
-      },
-    ],
-    outputs: [],
-    diffs: [],
-    toolCalls: [],
-    hasMore: false,
-    activityHasMore: false,
-    message: "历史已从 ACP 重新导入。",
-  });
+  assert.equal(result, undefined);
 });
 
 test("session/new creates a runtime-backed session and broadcasts updates", async () => {
@@ -1907,6 +2034,7 @@ test("session/new creates a runtime-backed session and broadcasts updates", asyn
   const persisted: any[] = [];
   const runtimeDescriptors: any[] = [];
   const sessions = new Map<string, any>();
+  const canonical = createPromptQueueContextExtras();
   const result = await handleSessionRpcRequest(
     "session/new",
     { projectId: "project-1", cwd: "D:/repo", agentId: "codex", model: "gpt-5" },
@@ -1923,7 +2051,10 @@ test("session/new creates a runtime-backed session and broadcasts updates", asyn
       resolveProviderById: (id: string, agents: any[]) => agents.find((agent) => agent.id === id),
       resolveHelmById: (id: string, helms: any[]) => helms.find((helm) => helm.id === id),
       buildResumeInfo: () => ({ mode: "none", state: "history-only", reason: "new", checkedAt: "2026-05-28T00:00:00.000Z" }),
-      sessionStore: { upsert: (session: any) => persisted.push(session) },
+      sessionStore: {
+        get: (sessionId: string) => persisted.find((session) => session.id === sessionId),
+        upsert: (session: any) => persisted.push(session),
+      },
       persistRuntimeDescriptor: (...args: any[]) => runtimeDescriptors.push(args),
       broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
       createRuntime: async () => ({
@@ -1935,6 +2066,7 @@ test("session/new creates a runtime-backed session and broadcasts updates", asyn
       }),
       handleRuntimeEvent: () => undefined,
       hydrateSessionSummary: (session: any) => ({ ...session, imageInput: false }),
+      ...canonical,
       sessions,
       logInfo: () => undefined,
       logError: () => undefined,
@@ -1953,8 +2085,12 @@ test("session/new creates a runtime-backed session and broadcasts updates", asyn
 test("session RPC lists paged sessions", async () => {
   const sessions = [{ id: "s1", updatedAt: "2026-05-06T00:00:00.000Z" }];
   const result = await handleSessionRpcRequest("session/list", { limit: 20 }, {
-    sessionStore: { list: () => sessions },
-    migrateStoredSessionSummary: (item: unknown) => item,
+    sessionStore: {
+      list: () => sessions,
+      upsert: () => {
+        throw new Error("session/list must not write stored history");
+      },
+    },
     logInfo: () => undefined,
   } as any);
 
@@ -1983,7 +2119,7 @@ test("session/subscribe records a session topic subscription", async () => {
   assert.deepEqual(result, { ok: true, message: "Subscribed to session s1." });
 });
 
-test("session/subscribe replays the current prompt queue snapshot to the subscribing socket", async () => {
+test("session/subscribe does not replay the legacy prompt queue update", async () => {
   const promptQueue = createSessionPromptQueueManager();
   promptQueue.enqueue({
     sessionId: "s1",
@@ -2006,19 +2142,7 @@ test("session/subscribe replays the current prompt queue snapshot to the subscri
   } as any);
 
   assert.deepEqual(result, { ok: true, message: "Subscribed to session s1." });
-  assert.deepEqual(notifications, [
-    {
-      socket,
-      method: "session/update",
-      params: {
-        sessionId: "s1",
-        update: {
-          kind: "prompt_queue",
-          queue: promptQueue.snapshot("s1"),
-        },
-      },
-    },
-  ]);
+  assert.deepEqual(notifications, []);
 });
 
 test("session/unsubscribe records a session topic removal", async () => {
@@ -2037,9 +2161,30 @@ test("session/unsubscribe records a session topic removal", async () => {
 
 test("session RPC notification cancels active runtime and clears stale handle", async () => {
   let cancelled = false;
-  const sessions = new Map([["s1", { runtime: { cancel: () => { cancelled = true; } } }]]);
+  const summary = {
+    id: "s1",
+    agentId: "opencode",
+    cwd: "D:/workspace",
+    title: "Session 1",
+    status: "running",
+    createdAt: "2026-07-13T00:00:00.000Z",
+    updatedAt: "2026-07-13T00:00:00.000Z",
+  };
+  const sessions = new Map([["s1", {
+    runtime: { cancel: () => { cancelled = true; } },
+    summary,
+  }]]);
+  const canonicalContext = createPromptQueueContextExtras();
   const handled = await handleSessionRpcNotification("session/cancel", { sessionId: "s1" }, {
+    ...canonicalContext,
     sessions,
+    liveMessageBuffer: createLiveMessageBuffer(),
+    sessionStore: {
+      get: () => summary,
+    },
+    updateSessionSummary: (_sessionId: string, update: (current: typeof summary) => typeof summary) => {
+      update(summary);
+    },
   } as any);
 
   assert.equal(handled, true);
@@ -2116,6 +2261,8 @@ test("session/prompt broadcasts synchronous prompt failures to connected decks",
       return next;
     },
     broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
+    broadcastSessionTopic: (_targetSessionId: string, method: string, params: unknown) =>
+      broadcasts.push({ method, params }),
   };
 
   await assert.rejects(
@@ -2128,9 +2275,10 @@ test("session/prompt broadcasts synchronous prompt failures to connected decks",
     broadcasts.map((item) => [item.method, item.params?.sessionId, item.params?.update?.kind ?? item.params?.message]),
     [
       ["error/raised", sessionId, "/unknown command is not supported by ACP agent. Available commands: /review"],
-      ["session/update", sessionId, "status_change"],
+      ["session/update", sessionId, "live_state"],
     ],
   );
+  assert.equal((broadcasts[1]?.params?.update as any)?.snapshot?.status?.effectiveStatus, "error");
 });
 
 test("session/rename persists and broadcasts the next title", async () => {
@@ -2146,7 +2294,7 @@ test("session/rename persists and broadcasts the next title", async () => {
     { sessionId: "s1", title: "新标题" },
     {
       sessions: new Map(),
-      sessionStore: { list: () => [stored] },
+      sessionStore: { get: (sessionId: string) => sessionId === stored.id ? stored : undefined },
       updateSessionSummary: (_sessionId: string, mutate: (summary: typeof stored) => typeof stored) => {
         persisted = mutate(stored);
         return persisted;
@@ -2232,6 +2380,7 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
       list: () => storedSessions,
     },
     persistRuntimeDescriptor: () => undefined,
+    handleRuntimeEvent: () => undefined,
     sessions,
     ...createPromptQueueContextExtras(),
     logInfo: () => undefined,
@@ -2269,11 +2418,15 @@ test("session/update_queued_prompt edits a queued prompt and broadcasts queue", 
     clientMessageId: "client-1",
   });
   const broadcasts: any[] = [];
+  const canonical = createPromptQueueContextExtras();
 
   const result = (await handleSessionRpcRequest(
     "session/update_queued_prompt",
     { sessionId: "s1", queueItemId: item.id, text: "after" },
     {
+      ...canonical,
+      sessions: new Map(),
+      sessionStore: { list: () => [] },
       promptQueue,
       broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
     } as any,
@@ -2281,7 +2434,8 @@ test("session/update_queued_prompt edits a queued prompt and broadcasts queue", 
 
   assert.equal(result.ok, true);
   assert.equal(result.queueItem.text, "after");
-  assert.equal(broadcasts.at(-1)?.params.update.kind, "prompt_queue");
+  assert.equal(canonical.sessionLiveStateStore.get("s1")?.promptQueue?.queued[0]?.text, "after");
+  assert.equal(broadcasts.length, 0);
 });
 
 test("session/delete_queued_prompt deletes a queued prompt and broadcasts queue", async () => {
@@ -2292,11 +2446,15 @@ test("session/delete_queued_prompt deletes a queued prompt and broadcasts queue"
     clientMessageId: "client-1",
   });
   const broadcasts: any[] = [];
+  const canonical = createPromptQueueContextExtras();
 
   const result = (await handleSessionRpcRequest(
     "session/delete_queued_prompt",
     { sessionId: "s1", queueItemId: item.id },
     {
+      ...canonical,
+      sessions: new Map(),
+      sessionStore: { list: () => [] },
       promptQueue,
       broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
     } as any,
@@ -2304,7 +2462,8 @@ test("session/delete_queued_prompt deletes a queued prompt and broadcasts queue"
 
   assert.equal(result.ok, true);
   assert.equal(result.queue.queued.length, 0);
-  assert.equal(broadcasts.at(-1)?.params.update.queue.queued.length, 0);
+  assert.equal(canonical.sessionLiveStateStore.get("s1")?.promptQueue?.queued.length, 0);
+  assert.equal(broadcasts.length, 0);
 });
 
 test("session/configure routes draft config without requiring a visible session", async () => {
@@ -2454,6 +2613,7 @@ test("session/new uses cwd without requiring cwd", async () => {
   let runtimeWorktree: unknown;
   let storedSummary: any;
   const sessions = new Map();
+  const canonical = createPromptQueueContextExtras();
 
   const result = await handleSessionRpcRequest(
     "session/new",
@@ -2479,6 +2639,7 @@ test("session/new uses cwd without requiring cwd", async () => {
       }),
       sessionStore: {
         upsert: (summary: any) => { storedSummary = summary; },
+        get: () => storedSummary,
       },
       persistRuntimeDescriptor: () => undefined,
       broadcastNotification: () => undefined,
@@ -2486,6 +2647,7 @@ test("session/new uses cwd without requiring cwd", async () => {
       logError: () => undefined,
       handleRuntimeEvent: () => undefined,
       updateSessionSummary: () => undefined,
+      ...canonical,
       sessions,
       createRuntime: async ({ worktree }: any) => {
         runtimeWorktree = worktree;
@@ -2523,6 +2685,7 @@ test("session/new preserves explicit reasoning until authoritative config option
   let runtimeSessionConfig: any;
   let storedSummary: any;
   const sessions = new Map();
+  const canonical = createPromptQueueContextExtras();
 
   const result = await handleSessionRpcRequest(
     "session/new",
@@ -2556,6 +2719,7 @@ test("session/new preserves explicit reasoning until authoritative config option
         upsert: (summary: any) => {
           storedSummary = summary;
         },
+        get: () => storedSummary,
       },
       persistRuntimeDescriptor: () => undefined,
       broadcastNotification: () => undefined,
@@ -2563,6 +2727,7 @@ test("session/new preserves explicit reasoning until authoritative config option
       logError: () => undefined,
       handleRuntimeEvent: () => undefined,
       updateSessionSummary: () => undefined,
+      ...canonical,
       sessions,
       createRuntime: async ({ sessionConfig }: any) => {
         runtimeSessionConfig = sessionConfig;
@@ -2627,7 +2792,7 @@ test("session/draft preserves explicit reasoning until authoritative config opti
   assert.equal(draftSessionConfig.model, "claude-haiku-4-5");
 });
 
-test("session/list_timeline reads provider tool calls repaired during refresh materialization", async () => {
+test("session/list_timeline leaves provider tool calls untouched when no canonical repair runs", async () => {
   const sessionId = "session-opencode-tool-repair";
   let toolCalls: AgentToolCall[] = [{
     id: "call-1",
@@ -2706,11 +2871,43 @@ test("session/list_timeline reads provider tool calls repaired during refresh ma
   ) as any;
 
   assert.equal(result.entries[0]?.kind, "tool_call");
-  assert.equal(result.entries[0]?.toolCall.kind, "write");
+  assert.equal(result.entries[0]?.toolCall.kind, "tool");
   assert.equal(
     result.entries[0]?.toolCall.title,
-    "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
+    "Tool call call-1",
   );
+});
+
+test("session/subscribe sends canonical timeline and live-state snapshots before deltas", async () => {
+  const socket = { readyState: 1 };
+  const notifications: any[] = [];
+  await handleSessionRpcRequest("session/subscribe", { sessionId: "s1" }, {
+    socketId: "socket-1",
+    subscribeSessionTopic: () => undefined,
+    authenticatedSockets: {
+      listAll: () => [{ socketId: "socket-1", socket }],
+    },
+    ...createPromptQueueContextExtras(),
+    sessionTimelineStore: {
+      listPage: () => ({
+        entries: [{ id: "m1", kind: "user_message", sequence: 7 }],
+        hasMore: false,
+      }),
+    },
+    readSessionLiveState: () => ({ sequence: 8 }),
+    notify: (_target: unknown, _method: string, params: unknown) => {
+      notifications.push(params);
+    },
+  } as any);
+
+  assert.deepEqual(notifications.map((item) => item.update.kind), [
+    "timeline_batch",
+    "live_state",
+  ]);
+  assert.equal(notifications[0].update.batch.replace, true);
+  assert.equal(notifications[0].update.batch.deliverySequence, 0);
+  assert.equal(notifications[0].update.batch.lastSequence, 7);
+  assert.equal(notifications[1].update.snapshot.sequence, 8);
 });
 
 test.skip("session/list_timeline prefers replay when replayed tool metadata is stronger than persisted timeline metadata", async () => {
@@ -3160,7 +3357,7 @@ test.skip("session/list_timeline repairs compaction rows from replay even when t
   );
 });
 
-test("session/list_timeline keeps the latest persisted compaction boundary on the first page even without raw marker messages", async () => {
+test("session/list_timeline uses the canonical first page without compaction reanchoring", async () => {
   const sessionId = "session-persisted-compaction-bootstrap";
   type LegacyResumedKind = `${"session"}_${"resumed"}`;
   const legacyResumedKind = ["session", "resumed"].join("_") as LegacyResumedKind;
@@ -3285,25 +3482,25 @@ test("session/list_timeline keeps the latest persisted compaction boundary on th
   assert.deepEqual(
     result.entries.map((entry: any) => [entry.kind, entry.id]),
     [
-      ["context_compaction", `compaction:${sessionId}:compaction-summary`],
       ["assistant_message", "assistant-after-compaction"],
       ["assistant_message", "assistant-latest"],
     ],
   );
   assert.equal(result.hasMore, true);
-  assert.equal(result.nextCursor, "order\t2\tassistant-after-compaction");
+  assert.equal(result.nextCursor, "order\t3\tassistant-after-compaction");
   assert.deepEqual(
     persistedTimeline.map((entry: any) => entry.id),
     [
       "older-assistant",
       `compaction:${sessionId}:compaction-summary`,
+      `resume:${sessionId}:assistant-after-compaction`,
       "assistant-after-compaction",
       "assistant-latest",
     ],
   );
 });
 
-test("session/list_timeline reanchors trailing compaction rows from markerless replay to the top boundary", async () => {
+test("session/list_timeline preserves markerless replay compaction order", async () => {
   const sessionId = "session-markerless-replay-compaction";
   let persistedTimeline = [
     {
@@ -3408,9 +3605,9 @@ test("session/list_timeline reanchors trailing compaction rows from markerless r
   assert.deepEqual(
     result.entries.map((entry: any) => [entry.kind, entry.id]),
     [
-      ["context_compaction", `compaction:${sessionId}:runtime-summary`],
       ["assistant_message", "assistant-after-compaction"],
       ["assistant_message", "assistant-latest"],
+      ["context_compaction", `compaction:${sessionId}:runtime-summary`],
     ],
   );
   assert.equal(result.hasMore, false);
@@ -3418,9 +3615,9 @@ test("session/list_timeline reanchors trailing compaction rows from markerless r
   assert.deepEqual(
     persistedTimeline.map((entry: any) => entry.id),
     [
-      `compaction:${sessionId}:runtime-summary`,
       "assistant-after-compaction",
       "assistant-latest",
+      `compaction:${sessionId}:runtime-summary`,
     ],
   );
 });

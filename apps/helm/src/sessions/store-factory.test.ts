@@ -91,3 +91,55 @@ test("createHelmSessionStores blocks_read reads blocks while keeping sqlite rows
     rmSync(tempDir, { force: true, recursive: true });
   }
 });
+
+test("createHelmSessionStores exposes a durable canonical session state store", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-store-factory-"));
+  const stores = createHelmSessionStores(createOptions(tempDir));
+
+  try {
+    const state = {
+      sequence: 7,
+      status: {
+        runtimeStatus: "running" as const,
+        effectiveStatus: "running" as const,
+        pendingApprovalCount: 0,
+      },
+      config: { configOptions: [], modelOptions: [] },
+      availableCommands: [],
+      sessionInfo: {},
+      diffs: [],
+    };
+
+    stores.sessionStateStore.replace("session-1", state);
+
+    assert.deepEqual(stores.sessionStateStore.get("session-1"), state);
+    assert.equal(stores.sessionStateStore.getAppliedSequence("session-1"), 7);
+  } finally {
+    closeStores(stores);
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("createHelmSessionStores exposes legacy evidence separately from canonical timeline", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-store-factory-"));
+  const stores = createHelmSessionStores(createOptions(tempDir));
+
+  try {
+    stores.sessionMessageStore.append("legacy-session", {
+      id: "legacy-message",
+      role: "assistant",
+      text: "old entity only",
+      timestamp: "2026-07-11T00:00:00.000Z",
+    });
+
+    assert.deepEqual(stores.sessionLegacyEvidenceStore.describe("legacy-session"), {
+      sessionId: "legacy-session",
+      available: true,
+      counts: { message: 1, tool_call: 0, output: 0 },
+    });
+    assert.deepEqual(stores.sessionTimelineStore.list("legacy-session"), []);
+  } finally {
+    closeStores(stores);
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});

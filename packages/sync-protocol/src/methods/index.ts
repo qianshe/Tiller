@@ -27,6 +27,7 @@ import * as sessionDraft from "./session/draft";
 import * as sessionDiscardDraft from "./session/discard-draft";
 import * as sessionList from "./session/list";
 import * as sessionListTimeline from "./session/list-timeline";
+import * as sessionListLegacyEvidence from "./session/list-legacy-evidence";
 import * as sessionGetArtifacts from "./session/get-artifacts";
 import * as sessionCheckResume from "./session/check-resume";
 import * as sessionResume from "./session/resume";
@@ -38,7 +39,6 @@ import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionConfigure from "./session/configure";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
-import * as debugReimportHistory from "./debug/reimport-history";
 import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
 import * as approvalListPending from "./approval/list-pending";
@@ -87,6 +87,7 @@ const METHOD_DESCRIPTORS = {
   [sessionDiscardDraft.method]: sessionDiscardDraft.descriptor,
   [sessionList.method]: sessionList.descriptor,
   [sessionListTimeline.method]: sessionListTimeline.descriptor,
+  [sessionListLegacyEvidence.method]: sessionListLegacyEvidence.descriptor,
   [sessionGetArtifacts.method]: sessionGetArtifacts.descriptor,
   [sessionCheckResume.method]: sessionCheckResume.descriptor,
   [sessionResume.method]: sessionResume.descriptor,
@@ -99,7 +100,6 @@ const METHOD_DESCRIPTORS = {
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
-  [debugReimportHistory.method]: debugReimportHistory.descriptor,
   [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [approvalListPending.method]: approvalListPending.descriptor,
@@ -149,6 +149,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionDiscardDraft.method,
   sessionList.method,
   sessionListTimeline.method,
+  sessionListLegacyEvidence.method,
   sessionGetArtifacts.method,
   sessionCheckResume.method,
   sessionResume.method,
@@ -161,7 +162,6 @@ export const CLIENT_REQUEST_METHODS = [
   sessionSetConfigOption.method,
   sessionRename.method,
   sessionCleanup.method,
-  debugReimportHistory.method,
   permissionListPending.method,
   permissionRespond.method,
   approvalListPending.method,

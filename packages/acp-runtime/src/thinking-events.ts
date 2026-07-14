@@ -75,6 +75,16 @@ function resolveThinkingMessageId(sessionId: string, update: any) {
   );
 }
 
+function normalizeThinkingText(value: string) {
+  const normalized = value
+    .replace(/[\u200B-\u200D\u2060\uFEFF]/gu, "")
+    .trim();
+  const marker = normalized.toLowerCase();
+  return marker !== "" && marker !== "{}" && marker !== "[]" && marker !== "null"
+    ? normalized
+    : null;
+}
+
 export function extractThinkingToolCall(
   sessionId: string,
   updateType: string | undefined,
@@ -91,7 +101,8 @@ export function extractThinkingToolCall(
     extractThinkingContent(update.delta) ??
     extractThinkingContent(update.message) ??
     stringFrom(update.thinking ?? update.reasoning);
-  if (!thinking?.trim()) {
+  const normalizedThinking = thinking ? normalizeThinkingText(thinking) : null;
+  if (!normalizedThinking) {
     return null;
   }
   const now = timestamp();
@@ -102,7 +113,7 @@ export function extractThinkingToolCall(
     kind: "think",
     title: "Thinking",
     status: /complete|done|finished|end/iu.test(updateType ?? "") ? "completed" : "running",
-    output: thinking,
+    output: normalizedThinking,
     timestamp: stringFrom(update.timestamp) ?? now,
     updatedAt: stringFrom(update.updatedAt ?? update.updated_at ?? update.timestamp) ?? now,
   };

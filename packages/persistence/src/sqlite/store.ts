@@ -38,7 +38,7 @@ import {
   sortToolCalls,
   normalizeSessionMessages,
 } from "./merge.js";
-import { normalizePersistedAgentToolCall } from "../normalize.js";
+import { normalizeLegacyPersistedAgentToolCall } from "../normalize.js";
 import { normalizeSessionSummary } from "../summary/store.js";
 
 
@@ -64,16 +64,17 @@ export function createSqliteSessionStore(dbPath: string) {
   const db = openSessionDatabase(dbPath);
 
   return {
+    get(sessionId: string) {
+      return getSessionSummary(db, sessionId) ?? undefined;
+    },
     list() {
       return listSessionSummaries(db);
     },
     upsert(summary: SessionSummary) {
       upsertSessionSummary(db, summary);
-      return listSessionSummaries(db);
     },
     remove(sessionId: string) {
       db.prepare("DELETE FROM session_summaries WHERE id = ?").run(sessionId);
-      return listSessionSummaries(db);
     },
     close() {
       db.close();
@@ -116,25 +117,20 @@ export function createSqliteSessionArtifactStore(dbPath: string) {
   return {
     appendOutput(sessionId: string, chunk: CommandChunk) {
       upsertCommandChunk(db, sessionId, chunk);
-      return getSessionArtifacts(db, sessionId);
     },
     replaceOutputs(sessionId: string, outputs: CommandChunk[]) {
       replaceSessionOutputs(db, sessionId, outputs);
-      return getSessionArtifacts(db, sessionId);
     },
     replaceDiffs(sessionId: string, diffs: FileDiffSummary[]) {
       replaceSessionDiffs(db, sessionId, diffs);
-      return getSessionArtifacts(db, sessionId);
     },
     appendToolCall(sessionId: string, toolCall: AgentToolCall) {
       const existing = getToolCall(db, sessionId, toolCall.id);
       const next = existing ? mergeToolCall(existing, toolCall) : toolCall;
       upsertToolCall(db, sessionId, next);
-      return getSessionArtifacts(db, sessionId);
     },
     replaceToolCalls(sessionId: string, toolCalls: AgentToolCall[]) {
-      replaceSessionToolCalls(db, sessionId, sortToolCalls(toolCalls));
-      return getSessionArtifacts(db, sessionId);
+      replaceSessionToolCalls(db, sessionId, toolCalls);
     },
     get(sessionId: string) {
       return getSessionArtifacts(db, sessionId);
@@ -260,6 +256,15 @@ function listSessionSummaries(db: DatabaseSync) {
     .filter(isNotNull);
 }
 
+function getSessionSummary(db: DatabaseSync, sessionId: string) {
+  const row = db.prepare(`
+    SELECT payload_json
+    FROM session_summaries
+    WHERE id = ?
+  `).get(sessionId) as { payload_json: string } | undefined;
+  return row ? normalizeSessionSummary(parseJson<SessionSummary>(row.payload_json)) : null;
+}
+
 function upsertSessionSummary(db: DatabaseSync, summary: SessionSummary) {
   db.prepare(
     `
@@ -320,8 +325,12 @@ function replaceSessionMessages(db: DatabaseSync, sessionId: string, messages: A
 function upsertCommandChunk(db: DatabaseSync, sessionId: string, chunk: CommandChunk) {
   db.prepare(
     `
-    INSERT OR REPLACE INTO session_outputs(session_id, id, command_id, timestamp, payload_json)
+    INSERT INTO session_outputs(session_id, id, command_id, timestamp, payload_json)
     VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(session_id, id) DO UPDATE SET
+      command_id = excluded.command_id,
+      timestamp = excluded.timestamp,
+      payload_json = excluded.payload_json
   `,
   ).run(sessionId, chunk.id, chunk.commandId, chunk.timestamp, JSON.stringify(chunk));
 }
@@ -359,15 +368,19 @@ function getToolCall(db: DatabaseSync, sessionId: string, id: string) {
   `,
     )
     .get(sessionId, id) as { payload_json: string } | undefined;
-  return row ? normalizePersistedAgentToolCall(parseJson<AgentToolCall>(row.payload_json)) : null;
+  return row ? normalizeLegacyPersistedAgentToolCall(parseJson<AgentToolCall>(row.payload_json)) : null;
 }
 
 function upsertToolCall(db: DatabaseSync, sessionId: string, toolCall: AgentToolCall) {
-  const normalizedToolCall = normalizePersistedAgentToolCall(toolCall)!;
+  const normalizedToolCall = normalizeLegacyPersistedAgentToolCall(toolCall)!;
   db.prepare(
     `
-    INSERT OR REPLACE INTO session_tool_calls(session_id, id, timestamp, updated_at, payload_json)
+    INSERT INTO session_tool_calls(session_id, id, timestamp, updated_at, payload_json)
     VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(session_id, id) DO UPDATE SET
+      timestamp = excluded.timestamp,
+      updated_at = excluded.updated_at,
+      payload_json = excluded.payload_json
   `,
   ).run(
     sessionId,
@@ -394,7 +407,7 @@ function getSessionArtifacts(db: DatabaseSync, sessionId: string): SessionArtifa
     SELECT payload_json
     FROM session_outputs
     WHERE session_id = ?
-    ORDER BY timestamp ASC, id ASC
+    ORDER BY rowid ASC
   `,
     )
     .all(sessionId) as Array<{ payload_json: string }>;
@@ -414,7 +427,7 @@ function getSessionArtifacts(db: DatabaseSync, sessionId: string): SessionArtifa
     SELECT payload_json
     FROM session_tool_calls
     WHERE session_id = ?
-    ORDER BY updated_at ASC, id ASC
+    ORDER BY rowid ASC
   `,
     )
     .all(sessionId) as Array<{ payload_json: string }>;
@@ -426,7 +439,7 @@ function getSessionArtifacts(db: DatabaseSync, sessionId: string): SessionArtifa
     diffs: diffRows.map((row) => parseJson<FileDiffSummary>(row.payload_json)).filter(isNotNull),
     toolCalls: sortToolCalls(
       toolCallRows
-        .map((row) => normalizePersistedAgentToolCall(parseJson<AgentToolCall>(row.payload_json)))
+        .map((row) => normalizeLegacyPersistedAgentToolCall(parseJson<AgentToolCall>(row.payload_json)))
         .filter(isNotNull),
     ),
   };

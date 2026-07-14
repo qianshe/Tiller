@@ -49,12 +49,16 @@ function resetStore() {
     messages: {},
     sessionTimeline: {},
     sessionTimelineDeliveryState: {},
+    sessionLegacyEvidence: {},
     messageHistoryState: {},
     promptQueues: {},
+    sessionLiveStates: {},
+    sessionLiveStateSequences: {},
     outputs: {},
     toolCalls: {},
     sessionPlans: {},
     diffs: {},
+    historicalDiffIncompleteBySession: {},
     activityHistoryState: {},
     approvalItemsById: {},
     pendingApprovalIds: [],
@@ -197,6 +201,58 @@ test("session/list_timeline replaces the canonical timeline and applies live sta
     hasMore: false,
     loading: false,
   });
+  assert.deepEqual(state.activityHistoryState["session-1"], {
+    nextCursor: undefined,
+    hasMore: false,
+    loading: false,
+  });
+});
+
+test("legacy evidence metadata stays lazy until its source page is requested", () => {
+  resetStore();
+  const availability = {
+    sessionId: "session-1",
+    available: true,
+    counts: { message: 2, tool_call: 1, output: 0 },
+  } as const;
+
+  applySessionResult(
+    "session/list_timeline",
+    {
+      sessionId: "session-1",
+      entries: [],
+      hasMore: false,
+      legacyEvidence: availability,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.deepEqual(useDeckStore.getState().sessionLegacyEvidence["session-1"], {
+    availability,
+    pages: {},
+    loading: {},
+  });
+
+  applySessionResult(
+    "session/list_legacy_evidence",
+    {
+      sessionId: "session-1",
+      source: "message",
+      items: [{ source: "message", sourcePosition: 1, entity: { id: "legacy-message" } }],
+      issues: [],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.deepEqual(
+    useDeckStore.getState().sessionLegacyEvidence["session-1"]?.pages.message?.items,
+    [{ source: "message", sourcePosition: 1, entity: { id: "legacy-message" } }],
+  );
 });
 
 test("session/list_timeline prepends older canonical history pages", () => {
@@ -254,9 +310,14 @@ test("session/list_timeline prepends older canonical history pages", () => {
     hasMore: true,
     loading: false,
   });
+  assert.deepEqual(useDeckStore.getState().activityHistoryState["session-1"], {
+    nextCursor: "cursor-2",
+    hasMore: true,
+    loading: false,
+  });
 });
 
-test("session/list_timeline replaces stale tool call mirrors from canonical timeline", () => {
+test("session/list_timeline leaves live tool call overlays untouched", () => {
   resetStore();
   useDeckStore.setState({
     toolCalls: {
@@ -309,11 +370,11 @@ test("session/list_timeline replaces stale tool call mirrors from canonical time
   assert.equal(handled, true);
   assert.deepEqual(
     useDeckStore.getState().toolCalls["session-1"]?.map((entry) => [entry.id, entry.kind, entry.title]),
-    [["call-1", "search", "Grep"]],
+    [["call-1", "shell", "Shell"]],
   );
 });
 
-test("session user_message compatibility updates are ignored once canonical timeline exists", () => {
+test("session updates reject legacy user_message events after canonical cutover", () => {
   resetStore();
   const existingTimeline: SessionTimelineEntry[] = [
     {
@@ -349,17 +410,17 @@ test("session user_message compatibility updates are ignored once canonical time
           timestamp: "2026-06-29T10:00:01.000Z",
           sequence: 2,
         },
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
-  assert.equal(handled, true);
+  assert.equal(handled, false);
   assert.equal(useDeckStore.getState().sessionTimeline["session-1"], existingTimeline);
   assert.equal(useDeckStore.getState().messages["session-1"], undefined);
 });
 
-test("session user_message compatibility updates still append before canonical timeline delivery starts", () => {
+test("session updates reject legacy user_message events before timeline delivery", () => {
   resetStore();
 
   const handled = applySessionUpdate(
@@ -374,13 +435,13 @@ test("session user_message compatibility updates still append before canonical t
           timestamp: "2026-06-29T10:00:01.000Z",
           sequence: 1,
         },
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
-  assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().messages["session-1"]?.[0]?.id, "user-1");
+  assert.equal(handled, false);
+  assert.equal(useDeckStore.getState().messages["session-1"], undefined);
   assert.equal(useDeckStore.getState().sessionTimeline["session-1"], undefined);
 });
 
@@ -465,7 +526,7 @@ test("session timeline_batch requests an authoritative reload when delivery sequ
   ]);
 });
 
-test("session timeline_batch refreshes tool call mirrors from canonical entries", () => {
+test("terminal session timeline_batch removes matching live tool overlays", () => {
   resetStore();
   useDeckStore.setState({
     toolCalls: {
@@ -474,7 +535,7 @@ test("session timeline_batch refreshes tool call mirrors from canonical entries"
           id: "call-1",
           kind: "shell",
           title: "Shell",
-          status: "completed",
+          status: "running",
           input: "{\"pattern\":\"tool-call-repair\",\"output_mode\":\"files_with_matches\"}",
           output: "Found 4 files",
           timestamp: "2026-07-07T09:10:38.372Z",
@@ -520,15 +581,17 @@ test("session timeline_batch refreshes tool call mirrors from canonical entries"
   );
 
   assert.equal(handled, true);
-  assert.deepEqual(
-    useDeckStore.getState().toolCalls["session-1"]?.map((entry) => [entry.id, entry.kind, entry.title]),
-    [["call-1", "search", "Grep"]],
-  );
+  assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
 });
 
 test("session live_state snapshots replace plan and prompt queue", () => {
   resetStore();
   useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "running", model: "old-model" }],
+    statuses: { "session-1": "running" },
+    diffs: {
+      "session-1": [{ path: "src/current.ts", status: "modified", additions: 1, deletions: 0 }],
+    },
     sessionPlans: {
       "session-1": {
         entries: [{ content: "Old plan", priority: "medium", status: "completed" }],
@@ -557,6 +620,13 @@ test("session live_state snapshots replace plan and prompt queue", () => {
       update: {
         kind: "live_state",
         snapshot: {
+          status: {
+            runtimeStatus: "idle",
+            effectiveStatus: "idle",
+            pendingApprovalCount: 0,
+          },
+          config: { model: "legacy-model", configOptions: [], modelOptions: [] },
+          diffs: [{ path: "src/legacy.ts", status: "modified", additions: 9, deletions: 0 }],
           promptQueue: {
             sessionId: "session-1",
             queued: [{
@@ -576,7 +646,13 @@ test("session live_state snapshots replace plan and prompt queue", () => {
   );
 
   assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessionPlans["session-1"], undefined);
+  assert.equal(useDeckStore.getState().sessions[0]?.status, "running");
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "old-model");
+  assert.equal(useDeckStore.getState().diffs["session-1"]?.[0]?.path, "src/current.ts");
+  assert.deepEqual(useDeckStore.getState().sessionPlans["session-1"], {
+    entries: [{ content: "Old plan", priority: "medium", status: "completed" }],
+    updatedAt: "2026-06-29T09:00:00.000Z",
+  });
   assert.deepEqual(useDeckStore.getState().promptQueues["session-1"], {
     sessionId: "session-1",
     queued: [{
@@ -591,7 +667,199 @@ test("session live_state snapshots replace plan and prompt queue", () => {
   });
 });
 
-test("session transcript_event does not mutate canonical timeline entries directly", () => {
+test("session live_state projects the full canonical snapshot", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "live_state",
+        snapshot: {
+          sequence: 8,
+          status: {
+            runtimeStatus: "running",
+            effectiveStatus: "waiting_for_permission",
+            pendingApprovalCount: 1,
+          },
+          config: {
+            agentMode: "plan",
+            model: "gpt-5",
+            reasoningEffort: "high",
+            configOptions: [{ id: "mode", label: "Mode", category: "mode" }],
+            modelOptions: [{ id: "gpt-5", name: "GPT-5", label: "GPT-5" }],
+          },
+          availableCommands: [{ name: "review", description: "Review changes" }],
+          usage: { used: 12, size: 100 },
+          sessionInfo: { title: "Canonical title", updatedAt: "2026-07-12T10:00:00.000Z" },
+          diffs: [{ path: "src/a.ts", status: "modified", additions: 2, deletions: 1 }],
+          plan: {
+            entries: [{ content: "Review", priority: "high", status: "in_progress" }],
+            updatedAt: "2026-07-12T10:00:00.000Z",
+          },
+        },
+      } as any,
+    },
+    createSessionEventContext(),
+  );
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.equal(state.statuses["session-1"], "waiting_for_permission");
+  assert.equal(state.sessions[0]?.status, "waiting_for_permission");
+  assert.equal(state.sessions[0]?.model, "gpt-5");
+  assert.equal(state.sessions[0]?.agentMode, "plan");
+  assert.equal(state.sessions[0]?.reasoningEffort, "high");
+  assert.equal(state.sessions[0]?.title, "Canonical title");
+  assert.equal(state.sessionConfigOptions["session-1"]?.[0]?.currentValue, "plan");
+  assert.equal(state.sessionAvailableCommands["session-1"]?.[0]?.name, "review");
+  assert.equal(state.agentAvailableCommands.a1?.[0]?.name, "review");
+  assert.equal(state.diffs["session-1"]?.[0]?.path, "src/a.ts");
+  assert.equal(state.sessionLiveStates["session-1"]?.usage?.used, 12);
+  assert.equal(state.sessionLiveStateSequences["session-1"], 8);
+});
+
+test("session live_state does not erase known config with an uninitialized canonical config", () => {
+  resetStore();
+  const configOptions = [{
+    id: "model",
+    name: "Model",
+    category: "model",
+    currentValue: "cpa-oai/gpt-5.5",
+    options: [{ value: "cpa-oai/gpt-5.5", label: "GPT-5.5" }],
+  }];
+  useDeckStore.setState({
+    sessions: [{
+      ...session("session-1"),
+      model: "cpa-oai/gpt-5.5",
+      configOptions,
+    }],
+    sessionConfigOptions: { "session-1": configOptions },
+  });
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 1496,
+        status: { runtimeStatus: "idle", effectiveStatus: "idle", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [] },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, createSessionEventContext());
+
+  const state = useDeckStore.getState();
+  assert.equal(state.sessions[0]?.model, "cpa-oai/gpt-5.5");
+  assert.deepEqual(state.sessions[0]?.configOptions, configOptions);
+  assert.deepEqual(state.sessionConfigOptions["session-1"], configOptions);
+  assert.equal(state.sessionLiveStateSequences["session-1"], 1496);
+});
+
+test("sequenced live_state applies one atomic Deck store update", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  let updates = 0;
+  const unsubscribe = useDeckStore.subscribe(() => {
+    updates += 1;
+  });
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 1,
+        status: { runtimeStatus: "running", effectiveStatus: "running", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [] },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+        plan: { entries: [], updatedAt: "2026-07-12T00:00:00.000Z" },
+        promptQueue: { sessionId: "session-1", queued: [] },
+      },
+    } as any,
+  }, createSessionEventContext());
+  unsubscribe();
+
+  assert.equal(updates, 1);
+});
+
+test("session live_state ignores an out-of-order canonical snapshot", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  const context = createSessionEventContext();
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 8,
+        status: { runtimeStatus: "running", effectiveStatus: "running", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [], model: "gpt-5" },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, context);
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 7,
+        status: { runtimeStatus: "error", effectiveStatus: "error", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [], model: "stale-model" },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, context);
+
+  const state = useDeckStore.getState();
+  assert.equal(state.statuses["session-1"], "running");
+  assert.equal(state.sessions[0]?.model, "gpt-5");
+  assert.equal(state.sessionLiveStateSequences["session-1"], 8);
+});
+
+test("session lifecycle updates cannot overwrite a canonical live snapshot", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  const context = createSessionEventContext();
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 8,
+        status: { runtimeStatus: "running", effectiveStatus: "waiting_for_permission", pendingApprovalCount: 1 },
+        config: { configOptions: [], modelOptions: [], model: "gpt-5" },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, context);
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: { kind: "session_updated", session: { ...session("session-1"), status: "idle", model: "stale-model" } },
+  }, context);
+
+  const state = useDeckStore.getState();
+  assert.equal(state.statuses["session-1"], "waiting_for_permission");
+  assert.equal(state.sessions[0]?.status, "waiting_for_permission");
+  assert.equal(state.sessions[0]?.model, "gpt-5");
+});
+
+test("session updates reject legacy transcript_event events", () => {
   resetStore();
   useDeckStore.setState({
     sessionTimeline: {
@@ -627,19 +895,19 @@ test("session transcript_event does not mutate canonical timeline entries direct
           replayCompleteness: "compacted",
           detailsVisibility: "hidden",
         },
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
   const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
-  assert.equal(handled, true);
+  assert.equal(handled, false);
   assert.equal(entry?.kind, "context_compaction");
   assert.equal(entry?.kind === "context_compaction" ? entry.summaryText : undefined, "Earlier compact summary");
   assert.equal(entry?.kind === "context_compaction" ? entry.detailsVisibility : undefined, "expandable");
 });
 
-test("session transcript_event leaves anchored timeline rows untouched until canonical reload", () => {
+test("session updates reject legacy transcript events without changing timeline anchors", () => {
   resetStore();
   useDeckStore.setState({
     sessionTimeline: {
@@ -705,14 +973,14 @@ test("session transcript_event leaves anchored timeline rows untouched until can
           replayCompleteness: "compacted",
           detailsVisibility: "expandable",
         },
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
   const timeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
   const compactionEntries = timeline.filter((entry) => entry.kind === "context_compaction");
-  assert.equal(handled, true);
+  assert.equal(handled, false);
   assert.equal(compactionEntries.length, 1);
   assert.deepEqual(timeline.map((entry) => entry.id), [
     "user-1",
@@ -929,10 +1197,12 @@ test("session/get_artifacts keeps canonical timeline untouched while refreshing 
 
   const timeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
   const liveToolCalls = useDeckStore.getState().toolCalls["session-1"] ?? [];
+  const outputs = useDeckStore.getState().outputs["session-1"] ?? [];
   assert.equal(handled, true);
   assert.deepEqual(timeline.map((entry) => entry.id), ["assistant-1"]);
-  assert.deepEqual(liveToolCalls.map((toolCall) => toolCall.id), ["tool-command-1", "call-1"]);
-  assert.equal(liveToolCalls.find((toolCall) => toolCall.id === "tool-command-1")?.output, "stdout");
+  assert.deepEqual(outputs.map((output) => output.id), ["output-1"]);
+  assert.equal(outputs[0]?.text, "stdout");
+  assert.deepEqual(liveToolCalls.map((toolCall) => toolCall.id), ["call-1"]);
   assert.equal(liveToolCalls.find((toolCall) => toolCall.id === "call-1")?.status, "running");
 });
 
@@ -963,6 +1233,28 @@ test("session/get_artifacts no longer stores session plans", () => {
 
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().sessionPlans["session-1"], undefined);
+});
+
+test("session/get_artifacts records incomplete legacy diff snapshots", () => {
+  resetStore();
+
+  const handled = applySessionResult(
+    "session/get_artifacts",
+    {
+      sessionId: "legacy-diff-session",
+      outputs: [],
+      toolCalls: [],
+      diffs: [{ path: "src/legacy.ts", status: "modified", additions: 2, deletions: 1 }],
+      historicalDiffIncomplete: true,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().historicalDiffIncompleteBySession["legacy-diff-session"], true);
 });
 
 test("session/get_artifacts preserves existing session plans because it no longer owns them", () => {
@@ -1064,7 +1356,6 @@ test("session_updated replaces stale model data on the active session summary", 
       },
     ],
   });
-
   const handled = applySessionUpdate(
     {
       sessionId: "s1",
@@ -1127,7 +1418,7 @@ test("activity RPC notifications append assistant messages without changing sess
   );
 });
 
-test("activity update stores ACP plan updates by session", () => {
+test("activity updates reject legacy plan_update events", () => {
   resetStore();
   const handled = applyActivityUpdate(
     {
@@ -1138,7 +1429,7 @@ test("activity update stores ACP plan updates by session", () => {
           entries: [{ content: "Render drawer", priority: "medium", status: "in_progress" }],
           updatedAt: "2026-06-02T00:00:00.000Z",
         },
-      },
+      } as any,
     },
     {
       toolCallsRef: { current: {} },
@@ -1147,13 +1438,11 @@ test("activity update stores ACP plan updates by session", () => {
     },
   );
 
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().sessionPlans.s1?.entries, [
-    { content: "Render drawer", priority: "medium", status: "in_progress" },
-  ]);
+  assert.equal(handled, false);
+  assert.equal(useDeckStore.getState().sessionPlans.s1, undefined);
 });
 
-test("activity update clears completed plans when an empty plan update arrives", () => {
+test("activity updates reject legacy plan updates without changing stored plans", () => {
   resetStore();
   useDeckStore.setState({
     sessionPlans: {
@@ -1181,13 +1470,13 @@ test("activity update clears completed plans when an empty plan update arrives",
           entries: [],
           updatedAt: "2026-06-02T00:01:00.000Z",
         },
-      },
+      } as any,
     },
     context,
   );
 
-  assert.equal(emptyHandled, true);
-  assert.equal(useDeckStore.getState().sessionPlans.s1, undefined);
+  assert.equal(emptyHandled, false);
+  assert.equal(useDeckStore.getState().sessionPlans.s1?.entries.length, 2);
 
   const replacementHandled = applyActivityUpdate(
     {
@@ -1200,14 +1489,15 @@ test("activity update clears completed plans when an empty plan update arrives",
           ],
           updatedAt: "2026-06-02T00:02:00.000Z",
         },
-      },
+      } as any,
     },
     context,
   );
 
-  assert.equal(replacementHandled, true);
+  assert.equal(replacementHandled, false);
   assert.deepEqual(useDeckStore.getState().sessionPlans.s1?.entries, [
-    { content: "汇总 Diff 详情", priority: "medium", status: "in_progress" },
+    { content: "复核 Markdown 渲染", priority: "medium", status: "completed" },
+    { content: "检查权限审核抽屉", priority: "medium", status: "completed" },
   ]);
 });
 
@@ -1775,6 +2065,46 @@ test("session RPC results apply session list results and prune scoped maps", () 
   assert.deepEqual(dispatched, []);
 });
 
+test("session list clears stale resume requests for authoritative same-process sessions", () => {
+  resetStore();
+  const resumeStartRequestsRef = {
+    current: new Set(["same-process", "historical"]),
+  };
+
+  const handled = applySessionResult(
+    "session/list",
+    {
+      sessions: [
+        {
+          ...session("same-process"),
+          status: "idle" as const,
+          resume: {
+            state: "resume-available" as const,
+            mode: "same-process" as const,
+            restoreMethod: "client-reconnect" as const,
+          },
+        },
+        {
+          ...session("historical"),
+          status: "idle" as const,
+          resume: {
+            state: "resume-available" as const,
+            mode: "reconnect" as const,
+            restoreMethod: "session/load" as const,
+          },
+        },
+      ],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext({ resumeStartRequestsRef }),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual([...resumeStartRequestsRef.current], ["historical"]);
+});
+
 test("session RPC results hydrate config options from listed sessions", () => {
   resetStore();
   const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
@@ -1820,7 +2150,7 @@ test("session RPC results hydrate config options from listed sessions", () => {
   assert.deepEqual(useDeckStore.getState().sessionConfigOptions.s1, configOptions);
 });
 
-test("session config option display preserves session-bound model over provider defaults", () => {
+test("session updates reject legacy config option events", () => {
   resetStore();
   const configOptions: SessionConfigOption[] = [
     {
@@ -1853,6 +2183,7 @@ test("session config option display preserves session-bound model over provider 
       },
     ],
   });
+  const initialConfigOptions = useDeckStore.getState().sessionConfigOptions.s1;
 
   const handled = applySessionUpdate(
     {
@@ -1861,21 +2192,18 @@ test("session config option display preserves session-bound model over provider 
         kind: "config_options",
         state: { model: "gpt-5.5", reasoningEffort: "medium" },
         options: configOptions,
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
-  assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessions[0]?.model, "gpt-5.5");
-  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "medium");
-  assert.deepEqual(
-    useDeckStore.getState().sessionConfigOptions.s1?.map((option) => option.currentValue),
-    ["gpt-5.5", "medium"],
-  );
+  assert.equal(handled, false);
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "gpt-5.4");
+  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "high");
+  assert.deepEqual(useDeckStore.getState().sessionConfigOptions.s1, initialConfigOptions);
 });
 
-test("session config option updates clear stale reasoning when options omit reasoning", () => {
+test("session updates reject legacy config option events without changing configuration", () => {
   resetStore();
   const configOptions: SessionConfigOption[] = [
     {
@@ -1895,6 +2223,7 @@ test("session config option updates clear stale reasoning when options omit reas
       },
     ],
   });
+  const initialConfigOptions = useDeckStore.getState().sessionConfigOptions.s1;
 
   const handled = applySessionUpdate(
     {
@@ -1903,21 +2232,18 @@ test("session config option updates clear stale reasoning when options omit reas
         kind: "config_options",
         state: { model: "claude-haiku-4-5" },
         options: configOptions,
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
-  assert.equal(handled, true);
+  assert.equal(handled, false);
   assert.equal(useDeckStore.getState().sessions[0]?.model, "claude-haiku-4-5");
-  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, undefined);
-  assert.deepEqual(
-    useDeckStore.getState().sessionConfigOptions.s1?.map((option) => option.currentValue),
-    ["claude-haiku-4-5"],
-  );
+  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "medium");
+  assert.deepEqual(useDeckStore.getState().sessionConfigOptions.s1, initialConfigOptions);
 });
 
-test("arbitrary ACP config options stay scoped to their session", () => {
+test("session updates reject legacy arbitrary config option events", () => {
   resetStore();
   const approvalOption: SessionConfigOption = {
     id: "approval-mode",
@@ -1949,13 +2275,13 @@ test("arbitrary ACP config options stay scoped to their session", () => {
         kind: "config_options",
         state: {},
         options: approvalOptions,
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
-  assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessionConfigOptions.s1?.[0]?.currentValue, "on-request");
+  assert.equal(handled, false);
+  assert.equal(useDeckStore.getState().sessionConfigOptions.s1, undefined);
   assert.equal(useDeckStore.getState().sessionConfigOptions.s2?.[0]?.currentValue, "auto");
 });
 
@@ -2068,7 +2394,7 @@ test("successful session/load resume reloads canonical timeline", () => {
         hasMore: true,
         nextCursor: "cursor-1",
         loading: false,
-      },
+      } as any,
     },
   });
 

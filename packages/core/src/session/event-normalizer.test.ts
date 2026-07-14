@@ -27,7 +27,7 @@ test("runtime generated message ids are detected", () => {
   assert.equal(isRuntimeGeneratedMessageId("provider-message-1"), false);
 });
 
-test("broadcast tool call upgrades kind and title from higher-confidence live metadata", () => {
+test("broadcast tool call keeps the first mapper-assigned kind while accepting later details", () => {
   const merged = resolveBroadcastToolCall(
     {
       id: "tool-1",
@@ -47,7 +47,7 @@ test("broadcast tool call upgrades kind and title from higher-confidence live me
     },
   );
 
-  assert.equal(merged.kind, "mcp");
+  assert.equal(merged.kind, "tool");
   assert.equal(merged.title, "New title");
   assert.equal(merged.status, "completed");
   assert.equal(merged.output, "done");
@@ -76,7 +76,7 @@ test("broadcast tool call keeps persisted informative title when live title is f
   assert.equal(merged.title, "grep README");
 });
 
-test("broadcast tool call prefers repaired search kind over stale shell metadata", () => {
+test("broadcast tool call does not reclassify a mapped shell call from a later update", () => {
   const merged = resolveBroadcastToolCall(
     {
       id: "tool-find",
@@ -96,7 +96,7 @@ test("broadcast tool call prefers repaired search kind over stale shell metadata
     },
   );
 
-  assert.equal(merged.kind, "search");
+  assert.equal(merged.kind, "shell");
   assert.equal(merged.title, "Find `**/AGENTS.md`");
 });
 

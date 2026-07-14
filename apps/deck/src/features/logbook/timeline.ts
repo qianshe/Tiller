@@ -2,7 +2,6 @@ import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
 
 import { coalesceDisplayMessages } from "./message-history";
 import {
-  resolveDisplayToolKind,
   resolveDisplayToolTitle,
   resolveMergedToolTitle,
 } from "./tool-title";
@@ -10,7 +9,7 @@ import {
 export function sortAgentMessagesByTimeline(items: AgentMessage[]) {
   return items
     .map((message, index) => ({ message, index }))
-    .sort((left, right) => compareMessageTimelineEntries(left, right))
+    .sort(compareMessageTimelineEntries)
     .map((entry) => entry.message);
 }
 
@@ -72,9 +71,6 @@ export function resolvePendingToolActivity(calls: AgentToolCall[]) {
         call.status === "running" ||
         call.status === "waiting_for_permission",
     )
-    .sort(
-      (left, right) => Date.parse(left.updatedAt) - Date.parse(right.updatedAt),
-    )
     .at(-1);
   if (!pending) {
     return null;
@@ -100,7 +96,7 @@ export function groupToolCalls(
         commandId: key,
         title: resolveDisplayToolTitle(call, key),
         status: call.status,
-        toolKind: resolveDisplayToolKind(call),
+        toolKind: call.kind,
         timestamp: call.timestamp,
         sequence: call.sequence,
         text: call.output ?? "",
@@ -112,20 +108,15 @@ export function groupToolCalls(
 
     current.text = `${current.text}${call.output ?? ""}`;
     current.input = current.input || call.input || "";
-    if (Date.parse(call.timestamp) < Date.parse(current.timestamp)) {
-      current.timestamp = call.timestamp;
-    }
-    current.sequence = minTimelineSequence(current.sequence, call.sequence);
+    current.sequence = firstTimelineSequence(current.sequence, call.sequence);
     current.status = call.status;
-    current.toolKind = mergeGroupedToolKind(
-      current.toolKind,
-      resolveDisplayToolKind(call),
-    );
-    current.title = resolveMergedToolTitle(
-      current.title,
-      resolveDisplayToolTitle(call, key),
-      call.id,
-    );
+    if (call.kind === current.toolKind) {
+      current.title = resolveMergedToolTitle(
+        current.title,
+        resolveDisplayToolTitle(call, key),
+        call.id,
+      );
+    }
     if (call.stream && !current.streams.includes(call.stream)) {
       current.streams.push(call.stream);
     }
@@ -168,15 +159,12 @@ export function mergeToolCallHistory(
     merged[index] = {
       ...existing,
       ...next,
-      kind: resolveToolCallKind(existing, next),
+      kind: existing.kind,
       title: resolveMergedToolTitle(existing.title, next.title, next.id),
       output: mergeToolCallHistoryOutput(existing, next),
       input: next.input ?? existing.input,
-      timestamp:
-        Date.parse(next.timestamp) < Date.parse(existing.timestamp)
-          ? next.timestamp
-          : existing.timestamp,
-      sequence: minTimelineSequence(existing.sequence, next.sequence),
+      timestamp: existing.timestamp,
+      sequence: firstTimelineSequence(existing.sequence, next.sequence),
       updatedAt: next.updatedAt,
       status: next.status,
     };
@@ -196,16 +184,6 @@ export function isActiveThinkingToolCall(toolCall: AgentToolCall) {
     toolCall.kind === "think" &&
     (toolCall.status === "pending" || toolCall.status === "running")
   );
-}
-
-function resolveToolCallKind(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-) {
-  if (shouldPreferSearchRepair(current, incoming)) {
-    return incoming.kind;
-  }
-  return isHigherConfidenceToolKind(incoming.kind, current.kind) ? incoming.kind : current.kind;
 }
 
 function mergeToolCallHistoryOutput(
@@ -277,57 +255,14 @@ function mergeTextByLineOverlap(currentText: string, incomingText: string) {
   return null;
 }
 
-function isHigherConfidenceToolKind(
-  incomingKind: AgentToolCall["kind"],
-  currentKind: AgentToolCall["kind"],
-) {
-  const rank: Record<AgentToolCall["kind"], number> = {
-    unknown: 0,
-    tool: 1,
-    think: 2,
-    todo: 2,
-    fetch: 2,
-    search: 3,
-    read: 3,
-    write: 3,
-    shell: 3,
-    skill: 3,
-    subagent: 3,
-    mcp: 4,
-  };
-  return rank[incomingKind] > rank[currentKind];
-}
-
-function shouldPreferSearchRepair(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-) {
-  return current.kind === "shell" &&
-    incoming.kind === "search" &&
-    Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt);
-}
-
-function mergeGroupedToolKind(
-  currentKind: AgentToolCall["kind"],
-  incomingKind: AgentToolCall["kind"],
-) {
-  if (incomingKind === "unknown") {
-    return currentKind;
-  }
-  if (currentKind === "unknown" || currentKind === "shell" && incomingKind === "search") {
-    return incomingKind;
-  }
-  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
-}
-
-function minTimelineSequence(current: number | undefined, incoming: number | undefined) {
+function firstTimelineSequence(current: number | undefined, incoming: number | undefined) {
   if (current === undefined) {
     return incoming;
   }
   if (incoming === undefined) {
     return current;
   }
-  return Math.min(current, incoming);
+  return current;
 }
 
 type ToolCallTimelineEntry = {
@@ -346,21 +281,7 @@ function compareToolCallTimelineEntries(
   if (timelineDelta !== null) {
     return timelineDelta;
   }
-  const timestampDelta = compareIsoTimestamps(left.toolCall.timestamp, right.toolCall.timestamp);
-  if (timestampDelta !== 0) {
-    return timestampDelta;
-  }
-  const updatedAtDelta = compareIsoTimestamps(left.toolCall.updatedAt, right.toolCall.updatedAt);
-  return updatedAtDelta === 0 ? left.index - right.index : updatedAtDelta;
-}
-
-function compareIsoTimestamps(leftTimestamp: string, rightTimestamp: string) {
-  const leftTime = Date.parse(leftTimestamp);
-  const rightTime = Date.parse(rightTimestamp);
-  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) {
-    return 0;
-  }
-  return leftTime - rightTime;
+  return left.index - right.index;
 }
 
 function compareMessageTimelineEntries(left: MessageTimelineEntry, right: MessageTimelineEntry) {
@@ -368,11 +289,7 @@ function compareMessageTimelineEntries(left: MessageTimelineEntry, right: Messag
     left.message.sequence,
     right.message.sequence,
   );
-  if (timelineDelta !== null) {
-    return timelineDelta;
-  }
-  const timestampDelta = Date.parse(left.message.timestamp) - Date.parse(right.message.timestamp);
-  return timestampDelta === 0 ? left.index - right.index : timestampDelta;
+  return timelineDelta ?? left.index - right.index;
 }
 
 function compareTimelineItems(left: ConversationTimelineItem, right: ConversationTimelineItem) {
@@ -383,11 +300,7 @@ function compareTimelineItems(left: ConversationTimelineItem, right: Conversatio
   if (timelineDelta !== null) {
     return timelineDelta;
   }
-  const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
-  if (timestampDelta !== 0) {
-    return timestampDelta;
-  }
-  return timelineKindRank(left) - timelineKindRank(right);
+  return (left.sourceIndex ?? 0) - (right.sourceIndex ?? 0);
 }
 
 function compareOptionalTimelineSequence(
@@ -399,13 +312,6 @@ function compareOptionalTimelineSequence(
   }
   const sequenceDelta = left - right;
   return sequenceDelta === 0 ? null : sequenceDelta;
-}
-
-function timelineKindRank(item: ConversationTimelineItem) {
-  if (item.kind === "message") {
-    return 2;
-  }
-  return item.toolKind === "think" ? 0 : 1;
 }
 
 export {

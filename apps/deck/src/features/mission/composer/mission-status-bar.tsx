@@ -1,21 +1,25 @@
 type MissionStatusBarProps = {
   className?: string;
   modelLoading: boolean;
+  sessionRestoring?: boolean;
   promptEnhancing: boolean;
   promptEnhancerStatus?: string;
 };
 
 const MODEL_LOADING_LABEL = "模型加载中...";
+const SESSION_RESTORING_LABEL = "会话恢复中...";
 const PROMPT_ENHANCING_LABEL = "增强中...";
 
 export function MissionStatusBar({
   className = "",
   modelLoading,
+  sessionRestoring = false,
   promptEnhancing,
   promptEnhancerStatus,
 }: MissionStatusBarProps) {
   const items: string[] = [];
   if (modelLoading) items.push(MODEL_LOADING_LABEL);
+  if (sessionRestoring) items.push(SESSION_RESTORING_LABEL);
   if (promptEnhancing) items.push(PROMPT_ENHANCING_LABEL);
   
   // 如果有具体的增强器状态消息（包括错误和成功消息），显示它

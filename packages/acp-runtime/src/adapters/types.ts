@@ -1,7 +1,6 @@
 import type {
   AcpRuntimeProviderConfig,
   AgentCapabilities,
-  AgentMessage,
   AgentPlan,
   AgentToolCall,
   SessionReasoningEffort,
@@ -21,18 +20,6 @@ export type AcpLaunchSpec = {
   args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
-};
-
-export type AcpAuthoritativeHistory = {
-  messages: AgentMessage[];
-  toolCalls: AgentToolCall[];
-  plan?: AgentPlan;
-};
-
-export type AcpHistoryContext = {
-  provider: AcpRuntimeProviderConfig;
-  runtimeSessionId: string;
-  cwd: string;
 };
 
 export type ProviderCleanupPlan =
@@ -60,6 +47,13 @@ export type AcpSessionUpdateProjectionContext = {
 export type AcpToolCallNormalizationContext = {
   toolCall: AgentToolCall;
   update: unknown;
+  sessionId?: string;
+  cwd?: string;
+};
+
+export type AcpPromptObservationContext = {
+  runtimeSessionId: string;
+  cwd: string;
 };
 
 export type AcpCompactionDetailsVisibility = "hidden";
@@ -86,14 +80,16 @@ export type AcpAgentAdapter = {
   ): AgentCapabilities;
   resolveCleanup(context: AcpCleanupContext): ProviderCleanupPlan;
   resolveRequestTimeout?(context: AcpRequestTimeoutContext): number | undefined;
-  mapSessionUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
+  mapMessageUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
+  mapToolCallUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
+  mapUnknownUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
+  beginPromptObservation?(context: AcpPromptObservationContext): void;
+  pollPromptEvents?(context: AcpPromptObservationContext): SessionRuntimeEvent[];
+  disposeSession?(sessionId: string): void;
   expandRuntimeEvent?(event: SessionRuntimeEvent): SessionRuntimeEvent[] | null;
-  normalizeToolCall?(context: AcpToolCallNormalizationContext): AgentToolCall;
+  normalizeToolCall?(context: AcpToolCallNormalizationContext): AgentToolCall | null;
   summarizeCompactionSignal?(text: string): AcpCompactionSignalSummary | null;
   resolveCompactionDetailsVisibility?(): AcpCompactionDetailsVisibility | undefined;
-  readTranscriptPlan?(context: AcpHistoryContext): AgentPlan | null;
-  readTranscriptMessages?(context: AcpHistoryContext): AgentMessage[];
-  readTranscriptToolCalls?(context: AcpHistoryContext): AgentToolCall[];
   extractPlanFromToolCall?(toolCall: AgentToolCall): AgentPlan | null;
   isPlanToolCall?(toolCall: AgentToolCall): boolean;
 };

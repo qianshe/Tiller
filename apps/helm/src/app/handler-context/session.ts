@@ -10,7 +10,9 @@ export type HandlerSessionContext = Pick<
   | "sessionStore"
   | "sessionMessageStore"
   | "sessionArtifactStore"
+  | "sessionLegacyEvidenceStore"
   | "sessionAttachmentStore"
+  | "sessionDiffBodyStore"
   | "sessionOutputBodyStore"
   | "sessionRuntimeStore"
   | "sessionPlanStore"
@@ -19,6 +21,8 @@ export type HandlerSessionContext = Pick<
   | "sessionTimelineDispatcher"
   | "sessionTimelineFlushScheduler"
   | "sessionLiveStateStore"
+  | "sessionApprovalStateStore"
+  | "sessionRuntimeEventState"
   | "sessionUpdateStore"
   | "liveMessageBuffer"
   | "promptQueue"
@@ -40,16 +44,12 @@ export type HandlerSessionContext = Pick<
   | "startSessionResume"
   | "handleRuntimeEvent"
   | "hydrateSessionSummary"
-  | "migrateStoredSessionSummary"
   | "buildResumeInfo"
   | "persistRuntimeDescriptor"
-  | "refreshAuthoritativeSessionHistory"
-  | "readSessionPlan"
   | "readSessionLiveState"
   | "updateSessionSummary"
   | "persistSessionMessage"
   | "publishDiffUpdate"
-  | "reimportSessionHistory"
   | "hydrateDiffsFromWorktreeGit"
   | "clearPermissionRequestsForSession"
   | "deleteLocalSessionData"
@@ -61,7 +61,9 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   sessionStore: unknown;
   sessionMessageStore: unknown;
   sessionArtifactStore: unknown;
+  sessionLegacyEvidenceStore: unknown;
   sessionAttachmentStore: unknown;
+  sessionDiffBodyStore?: unknown;
   sessionOutputBodyStore: unknown;
   sessionRuntimeStore: unknown;
   sessionPlanStore: unknown;
@@ -70,6 +72,8 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   sessionTimelineDispatcher?: unknown;
   sessionTimelineFlushScheduler: unknown;
   sessionLiveStateStore?: unknown;
+  sessionApprovalStateStore?: unknown;
+  sessionRuntimeEventState?: unknown;
   sessionUpdateStore: unknown;
   liveMessageBuffer: unknown;
   promptQueue: unknown;
@@ -92,16 +96,12 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   startSessionResume: AnyFunction;
   handleRuntimeEvent: AnyFunction;
   hydrateSessionSummary: AnyFunction;
-  migrateStoredSessionSummary: AnyFunction;
   buildResumeInfo: AnyFunction;
   persistRuntimeDescriptor: AnyFunction;
-  refreshAuthoritativeSessionHistory: AnyFunction;
-  readSessionPlan?: AnyFunction;
   readSessionLiveState?: AnyFunction;
   updateSessionSummary: AnyFunction;
   persistSessionMessage: AnyFunction;
   publishDiffUpdate: AnyFunction;
-  reimportSessionHistory: AnyFunction;
   hydrateDiffsFromWorktreeGit: AnyFunction;
   clearPermissionRequestsForSession: AnyFunction;
   deleteLocalSessionData: AnyFunction;
@@ -123,7 +123,9 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         sessionStore: options.sessionStore,
         sessionMessageStore: options.sessionMessageStore,
         sessionArtifactStore: options.sessionArtifactStore,
+        sessionLegacyEvidenceStore: options.sessionLegacyEvidenceStore,
         sessionAttachmentStore: options.sessionAttachmentStore,
+        sessionDiffBodyStore: options.sessionDiffBodyStore,
         sessionOutputBodyStore: options.sessionOutputBodyStore,
         sessionRuntimeStore: options.sessionRuntimeStore,
         sessionPlanStore: options.sessionPlanStore,
@@ -132,6 +134,8 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         sessionTimelineDispatcher: options.sessionTimelineDispatcher,
         sessionTimelineFlushScheduler: options.sessionTimelineFlushScheduler,
         sessionLiveStateStore: options.sessionLiveStateStore,
+        sessionApprovalStateStore: options.sessionApprovalStateStore,
+        sessionRuntimeEventState: options.sessionRuntimeEventState,
         sessionUpdateStore: options.sessionUpdateStore,
         liveMessageBuffer: options.liveMessageBuffer,
         promptQueue: options.promptQueue,
@@ -154,16 +158,12 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         startSessionResume: options.startSessionResume,
         handleRuntimeEvent: options.handleRuntimeEvent,
         hydrateSessionSummary: options.hydrateSessionSummary,
-        migrateStoredSessionSummary: options.migrateStoredSessionSummary,
         buildResumeInfo: options.buildResumeInfo,
         persistRuntimeDescriptor: options.persistRuntimeDescriptor,
-        refreshAuthoritativeSessionHistory: options.refreshAuthoritativeSessionHistory,
-        readSessionPlan: options.readSessionPlan,
         readSessionLiveState: options.readSessionLiveState,
         updateSessionSummary: options.updateSessionSummary,
         persistSessionMessage: options.persistSessionMessage,
         publishDiffUpdate: options.publishDiffUpdate,
-        reimportSessionHistory: options.reimportSessionHistory,
         hydrateDiffsFromWorktreeGit: options.hydrateDiffsFromWorktreeGit,
         clearPermissionRequestsForSession: options.clearPermissionRequestsForSession,
         deleteLocalSessionData: options.deleteLocalSessionData,

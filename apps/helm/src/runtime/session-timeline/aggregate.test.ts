@@ -6,7 +6,7 @@ import {
   createEmptySessionTimelineAggregate,
 } from "./aggregate";
 
-test("aggregate folds command output into the matching tool_call entry", () => {
+test("aggregate records command output as an independent canonical entry", () => {
   let aggregate = createEmptySessionTimelineAggregate("session-1");
 
   aggregate = applySessionRuntimeEvent(aggregate, {
@@ -34,8 +34,11 @@ test("aggregate folds command output into the matching tool_call entry", () => {
   });
 
   const toolEntry = aggregate.entries.find((entry) => entry.kind === "tool_call");
+  const outputEntry = aggregate.entries.find((entry) => entry.kind === "command_output");
   assert.equal(toolEntry?.kind, "tool_call");
-  assert.equal(toolEntry?.kind === "tool_call" ? toolEntry.toolCall.output : "", "PASS");
+  assert.equal(toolEntry?.kind === "tool_call" ? toolEntry.toolCall.output : "", undefined);
+  assert.equal(outputEntry?.kind, "command_output");
+  assert.equal(outputEntry?.kind === "command_output" ? outputEntry.output.text : "", "PASS");
 });
 
 // --- PLACEHOLDER_TEST_BODY ---

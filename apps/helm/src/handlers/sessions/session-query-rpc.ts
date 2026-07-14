@@ -1,17 +1,6 @@
-import { pageSessionArtifacts } from "@tiller/persistence";
-import type {
-  AgentToolCall,
-  CommandChunk,
-  FileDiffSummary,
-  SessionSummary,
-  SessionTimelineEntry,
-} from "@tiller/shared";
 import { broadcastSessionUpdate } from "../../rpc/notifications";
-import { projectLegacySessionHistoryFromTimeline } from "../../runtime/session-timeline/legacy-projection.js";
-import {
-  MIGRATE_LEGACY_RESUMED_TO_COMPACTION_ONLY,
-  repairCompactionBootstrapTimeline,
-} from "../../runtime/session-timeline/compaction-bootstrap";
+import type { FileDiffSummary, SessionResumeInfo } from "@tiller/shared";
+import { materializeDiffPayloads } from "../../runtime/session/diff-payload";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
 
@@ -31,6 +20,23 @@ function logSessionInfo(context: HelmHandlerContext, event: string, fields: Reco
   context.logInfo?.(`[tiller] ${event} ${formatLogFields(fields)}`);
 }
 
+function resolveLegacyDisplayOnlyResume(
+  sessionId: string,
+  context: Pick<HelmHandlerContext, "sessionLegacyEvidenceStore">,
+  checkedAt = new Date().toISOString(),
+): SessionResumeInfo | undefined {
+  if (!context.sessionLegacyEvidenceStore?.describe(sessionId).available) {
+    return undefined;
+  }
+  return {
+    mode: "none",
+    state: "history-only",
+    reason: "Legacy session evidence is display-only.",
+    checkedAt,
+    restoreMethod: "ui-history",
+  };
+}
+
 function formatLogFields(fields: Record<string, unknown>) {
   return Object.entries(fields)
     .map(([key, value]) => `${key}=${String(value)}`)
@@ -38,13 +44,13 @@ function formatLogFields(fields: Record<string, unknown>) {
 }
 
 export function listSessions(params: { limit?: number; before?: string }, context: HelmHandlerContext) {
-  const normalizedSessions = context.sessionStore.list().map(context.migrateStoredSessionSummary);
-  const page = pageSessionSummaries(normalizedSessions, {
+  const sessions = context.sessionStore.list();
+  const page = pageSessionSummaries(sessions, {
     limit: params.limit,
     before: params.before,
   });
   logSessionDebug(context, "session.list", {
-    count: normalizedSessions.length,
+    count: sessions.length,
     page: page.sessions.length,
     hasMore: page.hasMore,
   });
@@ -61,11 +67,49 @@ export function subscribeSession(params: { sessionId: string }, context: HelmHan
     throw new Error("Session topic subscription requires an authenticated socket");
   }
   context.subscribeSessionTopic(context.socketId, params.sessionId);
-  notifyCurrentSocketPromptQueueSnapshot(params.sessionId, context);
+  notifyCurrentSocketCanonicalSnapshot(params.sessionId, context);
   return {
     ok: true,
     message: `Subscribed to session ${params.sessionId}.`,
   };
+}
+
+function notifyCurrentSocketCanonicalSnapshot(
+  sessionId: string,
+  context: HelmHandlerContext,
+) {
+  const socketRecord = findCurrentSocket(context);
+  if (!socketRecord?.socket) return;
+  const page = context.sessionTimelineStore?.listPage?.(sessionId, {
+    limit: 200,
+    window: "message",
+  });
+  if (page) {
+    const lastSequence = page.entries.reduce(
+      (maximum: number, entry: { sequence?: number }) =>
+        Math.max(maximum, entry.sequence ?? 0),
+      0,
+    );
+    context.notify(socketRecord.socket, "session/update", {
+      sessionId,
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: true,
+          deliverySequence: 0,
+          lastSequence,
+          entries: page.entries,
+        },
+      },
+    });
+  }
+  const liveState = context.readSessionLiveState?.(sessionId);
+  if (liveState) {
+    context.notify(socketRecord.socket, "session/update", {
+      sessionId,
+      update: { kind: "live_state", snapshot: liveState },
+    });
+  }
 }
 
 export function unsubscribeSession(params: { sessionId: string }, context: HelmHandlerContext) {
@@ -83,43 +127,44 @@ export async function getArtifacts(
   params: { sessionId: string; limit?: number; before?: string },
   context: HelmHandlerContext,
 ) {
-  await context.refreshAuthoritativeSessionHistory(params.sessionId);
   const persistedArtifacts = context.sessionArtifactStore.getPage(params.sessionId, {
     limit: params.limit,
     before: params.before,
   });
-  const artifacts = resolveArtifactHistoryPage(params.sessionId, persistedArtifacts, params, context);
-  const diffs = await context.hydrateDiffsFromWorktreeGit(params.sessionId, artifacts.diffs);
+  const legacyEvidence = context.sessionLegacyEvidenceStore?.describe(params.sessionId);
+  const isLegacyDisplayOnly = Boolean(legacyEvidence?.available);
+  const hydratedDiffs = isLegacyDisplayOnly
+    ? persistedArtifacts.diffs
+    : await context.hydrateDiffsFromWorktreeGit(params.sessionId, persistedArtifacts.diffs);
+  const diffs = !isLegacyDisplayOnly && context.sessionDiffBodyStore
+    ? materializeDiffPayloads(params.sessionId, hydratedDiffs, context.sessionDiffBodyStore)
+    : hydratedDiffs;
+  const historicalDiffIncomplete = isLegacyDisplayOnly && diffs.some(
+    (diff: FileDiffSummary) => Boolean(diff.path) && !diff.patch?.trim(),
+  );
   return {
     sessionId: params.sessionId,
-    outputs: artifacts.outputs,
+    outputs: persistedArtifacts.outputs,
     diffs,
-    toolCalls: artifacts.toolCalls,
-    nextCursor: artifacts.nextCursor,
-    hasMore: artifacts.hasMore,
+    toolCalls: persistedArtifacts.toolCalls,
+    nextCursor: persistedArtifacts.nextCursor,
+    hasMore: persistedArtifacts.hasMore,
+    ...(historicalDiffIncomplete ? { historicalDiffIncomplete: true } : {}),
   };
-}
-
-export async function reimportHistory(
-  params: { sessionId: string; limit?: number },
-  context: HelmHandlerContext,
-) {
-  return context.reimportSessionHistory(params.sessionId, { limit: params.limit });
 }
 
 export async function listTimeline(
   params: { sessionId: string; limit?: number; before?: string },
   context: HelmHandlerContext,
 ) {
-  await context.refreshAuthoritativeSessionHistory(params.sessionId);
-  migrateLegacyCompactionTimelineIfNeeded(params.sessionId, context);
   const page = context.sessionTimelineStore.listPage(params.sessionId, {
     limit: params.limit,
     before: params.before,
-    window: "message",
+    window: "turn",
   });
   const liveState = context.readSessionLiveState?.(params.sessionId);
   const storedPlan = context.sessionPlanStore?.get?.(params.sessionId);
+  const legacyEvidence = context.sessionLegacyEvidenceStore?.describe(params.sessionId);
   const effectiveLiveState = storedPlan && !liveState?.plan
     ? { ...(liveState ?? {}), plan: storedPlan }
     : liveState;
@@ -129,59 +174,44 @@ export async function listTimeline(
     entries: page.entries,
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
+    ...(legacyEvidence?.available
+      ? { legacyEvidence }
+      : {}),
     ...(effectiveLiveState ? { liveState: effectiveLiveState } : {}),
   };
 }
 
-function migrateLegacyCompactionTimelineIfNeeded(
-  sessionId: string,
+export function listLegacyEvidence(
+  params: { sessionId: string; source: import("@tiller/shared").LegacyEvidenceSource; limit?: number; after?: string },
   context: HelmHandlerContext,
 ) {
-  if (
-    !MIGRATE_LEGACY_RESUMED_TO_COMPACTION_ONLY ||
-    !context.sessionTimelineStore.list ||
-    !context.sessionTimelineStore.replace
-  ) {
-    return null;
+  if (!context.sessionLegacyEvidenceStore) {
+    return {
+      sessionId: params.sessionId,
+      source: params.source,
+      items: [],
+      issues: [],
+      hasMore: false,
+    };
   }
-  const timeline: SessionTimelineEntry[] =
-    context.sessionTimelineStore.list(sessionId) ?? [];
-  if (!timeline.length) {
-    return null;
-  }
-  const repairedTimeline = repairCompactionBootstrapTimeline({
-    sessionId,
-    timeline,
-    messages: context.sessionMessageStore?.listPage?.(sessionId, { limit: 200 })?.messages ?? [],
-    providerId: resolveSessionProviderId(sessionId, context),
-  });
-  if (!repairedTimeline) {
-    return null;
-  }
-  context.sessionTimelineStore.replace(sessionId, repairedTimeline.entries);
-  logSessionDebug(context, "session.timeline.compaction_repaired", {
-    sessionId,
-    synthesizedBoundary: repairedTimeline.synthesizedBoundary,
-  });
-  return repairedTimeline.entries;
-}
-
-function resolveSessionProviderId(sessionId: string, context: HelmHandlerContext) {
-  return context.sessions?.get?.(sessionId)?.agent?.id ??
-    context.sessions?.get?.(sessionId)?.summary?.agentId ??
-    context.sessionStore?.list?.().find((item: SessionSummary) => item.id === sessionId)?.agentId;
+  return context.sessionLegacyEvidenceStore.listPage(params.sessionId, params);
 }
 
 export function checkResume(params: { sessionId: string }, context: HelmHandlerContext) {
   logSessionDebug(context, "session.resume.check", { sessionId: params.sessionId });
-  const summary = context.sessionStore.list().find((item: any) => item.id === params.sessionId);
+  const summary = context.sessionStore.get(params.sessionId);
   if (!summary) {
     throw new Error("Session not found");
   }
   const hydrated = context.hydrateSessionSummary(summary);
+  const legacyDisplayOnly = resolveLegacyDisplayOnlyResume(
+    params.sessionId,
+    context,
+    hydrated.resume?.checkedAt,
+  );
   return {
     sessionId: params.sessionId,
-    resume:
+    resume: legacyDisplayOnly ??
       hydrated.resume ??
       context.buildResumeInfo(
         hydrated,
@@ -191,6 +221,18 @@ export function checkResume(params: { sessionId: string }, context: HelmHandlerC
 }
 
 export async function resumeSession(params: { sessionId: string }, context: HelmHandlerContext) {
+  const legacyDisplayOnly = resolveLegacyDisplayOnlyResume(params.sessionId, context);
+  if (legacyDisplayOnly) {
+    logSessionInfo(context, "session.resume.skipped_legacy_evidence", {
+      sessionId: params.sessionId,
+    });
+    return {
+      sessionId: params.sessionId,
+      ok: false,
+      resume: legacyDisplayOnly,
+      message: "Legacy session evidence is display-only and cannot be resumed.",
+    };
+  }
   logSessionDebug(context, "session.resume.started", { sessionId: params.sessionId });
   const result = await context.startSessionResume(params.sessionId);
   logSessionInfo(context, "session.resume.completed", {
@@ -206,13 +248,6 @@ export async function resumeSession(params: { sessionId: string }, context: Helm
         session: result.session,
       });
     }
-    const queue = context.promptQueue.snapshot(params.sessionId);
-    if (queue.queued.length > 0 || queue.inFlight) {
-      broadcastSessionUpdate(context, params.sessionId, {
-        kind: "prompt_queue",
-        queue,
-      });
-    }
   }
   return {
     sessionId: params.sessionId,
@@ -222,60 +257,10 @@ export async function resumeSession(params: { sessionId: string }, context: Helm
   };
 }
 
-function notifyCurrentSocketPromptQueueSnapshot(
-  sessionId: string,
-  context: Pick<
-    HelmHandlerContext,
-    "authenticatedSockets" | "notify" | "promptQueue" | "socketId"
-  >,
+function findCurrentSocket(
+  context: Pick<HelmHandlerContext, "authenticatedSockets" | "socketId">,
 ) {
-  const queue = context.promptQueue.snapshot(sessionId);
-  if (queue.queued.length === 0 && !queue.inFlight) {
-    return;
-  }
-
-  const socketRecord = context.authenticatedSockets
+  return context.authenticatedSockets
     ?.listAll?.()
     ?.find((record: { socketId: string }) => record.socketId === context.socketId);
-  if (!socketRecord?.socket) {
-    return;
-  }
-
-  context.notify(socketRecord.socket, "session/update", {
-    sessionId,
-    update: {
-      kind: "prompt_queue",
-      queue,
-    },
-  });
-}
-
-function resolveArtifactHistoryPage(
-  sessionId: string,
-  artifacts: {
-    outputs: CommandChunk[];
-    diffs: FileDiffSummary[];
-    toolCalls: AgentToolCall[];
-    nextCursor?: string;
-    hasMore: boolean;
-  },
-  params: { limit?: number; before?: string },
-  context: HelmHandlerContext,
-) {
-  if (artifacts.outputs.length || artifacts.toolCalls.length) {
-    return artifacts;
-  }
-  const timeline = context.sessionTimelineStore?.list?.(sessionId) ?? [];
-  if (!timeline.length) {
-    return artifacts;
-  }
-  const projected = projectLegacySessionHistoryFromTimeline(timeline);
-  return pageSessionArtifacts({
-    outputs: projected.outputs,
-    diffs: artifacts.diffs,
-    toolCalls: projected.toolCalls,
-  }, {
-    limit: params.limit,
-    before: params.before,
-  });
 }

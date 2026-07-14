@@ -22,6 +22,26 @@ test("live message buffer appends chunks into one assistant message", () => {
   assert.equal(buffer.peek("s1"), null);
 });
 
+test("live message buffer appends explicit ACP deltas without overlap guessing", () => {
+  const buffer = createLiveMessageBuffer();
+  buffer.append("s1", {
+    id: "m1",
+    role: "assistant",
+    text: "重复内容",
+    streamMode: "delta",
+    timestamp: "2026-05-12T00:00:00.000Z",
+  });
+  buffer.append("s1", {
+    id: "m1",
+    role: "assistant",
+    text: "重复内容",
+    streamMode: "delta",
+    timestamp: "2026-05-12T00:00:01.000Z",
+  });
+
+  assert.equal(buffer.peek("s1")?.text, "重复内容重复内容");
+});
+
 test("live message buffer replaces cumulative assistant snapshots", () => {
   const buffer = createLiveMessageBuffer();
   buffer.append("s1", {

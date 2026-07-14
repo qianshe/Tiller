@@ -4,6 +4,7 @@ import type {
   SessionTimelineHistoryGapEntry,
 } from "./session-transcript";
 import { isTranscriptEventEntry } from "./session-transcript";
+import { mergeStreamingText } from "./stream-text";
 
 export type SessionTimelineContentChunk = {
   id: string;
@@ -12,6 +13,7 @@ export type SessionTimelineContentChunk = {
   timestamp: string;
   sequence?: number;
   streaming?: boolean;
+  streamMode?: AgentMessage["streamMode"];
 };
 
 export type SessionTimelineThinkingChunk = {
@@ -57,10 +59,21 @@ export type SessionTimelineToolCallEntry = {
   sequence?: number;
 };
 
+export type SessionTimelineOutputEntry = {
+  id: string;
+  kind: "command_output";
+  commandId: string;
+  output: CommandChunk;
+  timestamp: string;
+  updatedAt: string;
+  sequence?: number;
+};
+
 export type SessionTimelineEntry =
   | SessionTimelineMessageEntry
   | SessionTimelineAssistantEntry
   | SessionTimelineToolCallEntry
+  | SessionTimelineOutputEntry
   | SessionTimelineContextCompactionEntry
   | SessionTimelineHistoryGapEntry;
 
@@ -77,105 +90,14 @@ export type SessionTimelineStorePage = {
   hasMore: boolean;
 };
 
-export type BuildSessionTimelineInput = {
-  messages: AgentMessage[];
-  outputs?: CommandChunk[];
-  toolCalls?: AgentToolCall[];
-};
-
-const USER_PROMPT_REPRESENTATION_WINDOW_MS = 10_000;
-const TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS = 60_000;
-
-type LegacyTimelineSource =
-  | { kind: "message"; message: AgentMessage; timestamp: string; sequence?: number }
-  | { kind: "tool_call"; toolCall: AgentToolCall; timestamp: string; sequence?: number }
-  | { kind: "output"; output: CommandChunk; timestamp: string; sequence?: number };
-
-type TimelineUserMessageAnchor = {
-  id: string;
-  entryId: string;
-  text: string;
-  timestamp: string;
-  sequence?: number;
-};
-
-export function buildSessionTimelineFromLegacy({
-  messages,
-  outputs = [],
-  toolCalls = [],
-}: BuildSessionTimelineInput): SessionTimelineEntry[] {
-  const entries: SessionTimelineEntry[] = [];
-  const sources = buildLegacyTimelineSources({ messages, outputs, toolCalls });
-  for (const source of sources) {
-    if (source.kind === "message") {
-      appendMessageToSessionTimeline(entries, source.message);
-      continue;
-    }
-    if (source.kind === "tool_call") {
-      appendToolCallToSessionTimeline(entries, source.toolCall);
-      continue;
-    }
-    appendToolCallToSessionTimeline(entries, commandOutputToToolCall(source.output));
-  }
-  return sortSessionTimelineEntries(entries);
-}
-
-function buildLegacyTimelineSources({
-  messages,
-  outputs,
-  toolCalls,
-}: Required<BuildSessionTimelineInput>) {
-  return [
-    ...messages.map((message): LegacyTimelineSource => ({
-      kind: "message",
-      message,
-      timestamp: message.timestamp,
-      sequence: message.sequence,
-    })),
-    ...toolCalls.map((toolCall): LegacyTimelineSource => ({
-      kind: "tool_call",
-      toolCall,
-      timestamp: toolCall.timestamp,
-      sequence: toolCall.sequence,
-    })),
-    ...outputs
-      .filter((output) => !toolCalls.some((toolCall) => matchesCommandOutput(toolCall, output)))
-      .map((output): LegacyTimelineSource => ({
-        kind: "output",
-        output,
-        timestamp: output.timestamp,
-        sequence: output.sequence,
-      })),
-  ]
-    .map((item, index) => ({ item, index }))
-    .sort((left, right) => compareTimelineItems(left, right))
-    .map(({ item }) => item);
-}
-
-export function resolveTimelineRepresentedUserMessageIds(
-  entries: SessionTimelineEntry[],
-  messages: AgentMessage[],
-): Set<string> {
-  const candidates = messages.filter(isRepresentableUserMessage);
-  const represented = new Set<string>();
-  for (const anchor of collectTimelineUserMessageAnchors(entries)) {
-    const matchIndex = findRepresentedUserMessageIndex(candidates, anchor);
-    if (matchIndex === -1) {
-      continue;
-    }
-    const [match] = candidates.splice(matchIndex, 1);
-    if (match) {
-      represented.add(match.id);
-    }
-  }
-  return represented;
-}
-
 export function appendMessageToSessionTimeline(
   entries: SessionTimelineEntry[],
   message: AgentMessage,
 ): SessionTimelineEntry[] {
   if (message.role === "assistant") {
+    if (message.contentKind === "thought") {
+      return upsertAssistantThinking(entries, message);
+    }
     return upsertAssistantContent(entries, message);
   }
   return upsertMessageEntry(entries, message);
@@ -191,81 +113,10 @@ export function appendToolCallToSessionTimeline(
   return upsertToolCallEntry(entries, toolCall);
 }
 
-function collectTimelineUserMessageAnchors(
-  entries: SessionTimelineEntry[],
-): TimelineUserMessageAnchor[] {
-  return entries.flatMap((entry) => {
-    if (entry.kind !== "user_message") {
-      return [];
-    }
-    return [{
-      id: entry.message.id,
-      entryId: entry.id,
-      text: entry.message.text.trim(),
-      timestamp: entry.message.timestamp,
-      sequence: entry.message.sequence ?? entry.sequence,
-    }];
-  });
-}
-
-function isRepresentableUserMessage(message: AgentMessage) {
-  return message.role === "user" && Boolean(message.text.trim());
-}
-
-function findRepresentedUserMessageIndex(
-  candidates: AgentMessage[],
-  anchor: TimelineUserMessageAnchor,
-) {
-  const idMatchIndex = candidates.findIndex(
-    (message) => message.id === anchor.id || message.id === anchor.entryId,
-  );
-  if (idMatchIndex !== -1) {
-    return idMatchIndex;
-  }
-
-  let nearestIndex = -1;
-  let nearestDelta = Number.POSITIVE_INFINITY;
-  let textFallbackIndex = -1;
-  for (const [index, message] of candidates.entries()) {
-    if (message.text.trim() !== anchor.text) {
-      continue;
-    }
-    if (textFallbackIndex === -1) {
-      textFallbackIndex = index;
-    }
-    if (hasSameUserPromptSequence(anchor, message)) {
-      return index;
-    }
-    const delta = Math.abs(Date.parse(anchor.timestamp) - Date.parse(message.timestamp));
-    if (
-      Number.isFinite(delta) &&
-      delta <= USER_PROMPT_REPRESENTATION_WINDOW_MS &&
-      delta < nearestDelta
-    ) {
-      nearestDelta = delta;
-      nearestIndex = index;
-    }
-  }
-
-  return nearestIndex === -1 ? textFallbackIndex : nearestIndex;
-}
-
-function hasSameUserPromptSequence(anchor: TimelineUserMessageAnchor, message: AgentMessage) {
-  return typeof anchor.sequence === "number" &&
-    typeof message.sequence === "number" &&
-    anchor.sequence === message.sequence;
-}
-
 export function sortSessionTimelineEntries(
   entries: SessionTimelineEntry[],
 ): SessionTimelineEntry[] {
-  return splitSessionTimelineAssistantEntriesAtBoundaries(entries)
-    .map((entry, index) => ({
-      item: entry,
-      index,
-    }))
-    .sort((left, right) => compareTimelineItems(left, right))
-    .map(({ item }) => item);
+  return splitSessionTimelineAssistantEntriesAtBoundaries(entries);
 }
 
 export function splitSessionTimelineAssistantEntriesAtBoundaries(
@@ -284,10 +135,7 @@ export function splitSessionTimelineAssistantEntriesAtBoundaries(
 export function sortAssistantTimelineChunks(
   chunks: SessionAssistantTimelineChunk[],
 ): SessionAssistantTimelineChunk[] {
-  return chunks
-    .map((chunk, index) => ({ item: chunk, index }))
-    .sort((left, right) => compareTimelineItems(left, right))
-    .map(({ item }) => item);
+  return sortItemsByCompleteSequence(chunks, (chunk) => chunk.sequence);
 }
 
 function upsertMessageEntry(
@@ -331,6 +179,7 @@ function upsertAssistantContent(
     timestamp: message.timestamp,
     sequence: message.sequence,
     streaming: message.streaming,
+    streamMode: message.streamMode,
   };
   entry.chunks = upsertAssistantChunk(entry.chunks, chunk);
   applyAssistantEntryBounds(entry);
@@ -491,10 +340,11 @@ function isAssistantTimelineBoundaryEntry(
   entry: SessionTimelineEntry,
 ): entry is Extract<
   SessionTimelineEntry,
-  { kind: "user_message" | "system_message" | "tool_call" }
+  { kind: "user_message" | "system_message" | "tool_call" | "command_output" }
 > {
   return entry.kind === "user_message" ||
     entry.kind === "system_message" ||
+    entry.kind === "command_output" ||
     (entry.kind === "tool_call" && entry.toolCall.kind !== "subagent");
 }
 
@@ -503,8 +353,11 @@ function isTimelineItemBetween(
   left: { sequence?: number; timestamp: string },
   right: { sequence?: number; timestamp: string },
 ) {
-  return compareTimelineItems({ item, index: 0 }, { item: left, index: -1 }) > 0 &&
-    compareTimelineItems({ item, index: 0 }, { item: right, index: 1 }) < 0;
+  return typeof item.sequence === "number" &&
+    typeof left.sequence === "number" &&
+    typeof right.sequence === "number" &&
+    item.sequence > left.sequence &&
+    item.sequence < right.sequence;
 }
 
 function resolveAssistantSegmentEntryId(baseId: string, segmentIndex: number) {
@@ -514,18 +367,10 @@ function resolveAssistantSegmentEntryId(baseId: string, segmentIndex: number) {
 function sortTimelineEntriesByDefinedSequence(
   entries: SessionTimelineEntry[],
 ) {
-  return entries
-    .map((entry, index) => ({ item: entry, index }))
-    .sort((left, right) => {
-      const leftSequence = isTranscriptEventEntry(left.item) ? undefined : left.item.sequence;
-      const rightSequence = isTranscriptEventEntry(right.item) ? undefined : right.item.sequence;
-      const sequenceDelta = compareOptionalTimelineSequence(
-        leftSequence,
-        rightSequence,
-      );
-      return sequenceDelta ?? left.index - right.index;
-    })
-    .map(({ item }) => item);
+  return sortItemsByCompleteSequence(
+    entries,
+    (entry) => isTranscriptEventEntry(entry) ? undefined : entry.sequence,
+  );
 }
 
 function upsertToolCallEntry(
@@ -533,10 +378,15 @@ function upsertToolCallEntry(
   toolCall: AgentToolCall,
 ): SessionTimelineEntry[] {
   const id = `tool:${toolCall.id}`;
-  const existingIndex = entries.findIndex((entry) =>
-    entry.kind === "tool_call" &&
-    (entry.id === id || isSameToolCommand(entry.toolCall, toolCall)),
+  const exactIndex = entries.findIndex((entry) =>
+    entry.kind === "tool_call" && entry.id === id
   );
+  const existingIndex = exactIndex >= 0
+    ? exactIndex
+    : entries.findIndex((entry) =>
+        entry.kind === "tool_call" &&
+        isSameToolCommand(entry.toolCall, toolCall),
+      );
   const entry: SessionTimelineToolCallEntry = {
     id,
     kind: "tool_call",
@@ -550,6 +400,90 @@ function upsertToolCallEntry(
     return entries;
   }
   entries[existingIndex] = mergeToolCallEntry(entries[existingIndex] as SessionTimelineToolCallEntry, entry);
+  collapseDuplicateToolCommandEntries(entries, existingIndex);
+  return entries;
+}
+
+function collapseDuplicateToolCommandEntries(
+  entries: SessionTimelineEntry[],
+  enrichedIndex: number,
+) {
+  const enriched = entries[enrichedIndex];
+  if (enriched?.kind !== "tool_call" || !enriched.toolCall.commandId) {
+    return;
+  }
+  const matchingIndices = entries
+    .map((candidate, index) => (
+      candidate.kind === "tool_call" &&
+      candidate.toolCall.commandId === enriched.toolCall.commandId
+        ? index
+        : -1
+    ))
+    .filter((index) => index >= 0);
+  if (matchingIndices.length < 2) {
+    return;
+  }
+  matchingIndices.sort((leftIndex, rightIndex) => {
+    const left = entries[leftIndex] as SessionTimelineToolCallEntry;
+    const right = entries[rightIndex] as SessionTimelineToolCallEntry;
+    return (left.sequence ?? Number.MAX_SAFE_INTEGER) -
+      (right.sequence ?? Number.MAX_SAFE_INTEGER) ||
+      leftIndex - rightIndex;
+  });
+  const targetIndex = matchingIndices[0]!;
+  let merged = entries[targetIndex] as SessionTimelineToolCallEntry;
+  for (const index of matchingIndices.slice(1)) {
+    merged = mergeToolCallEntry(
+      merged,
+      entries[index] as SessionTimelineToolCallEntry,
+    );
+  }
+  entries[targetIndex] = merged;
+  for (const index of matchingIndices.slice(1).sort((left, right) => right - left)) {
+    entries.splice(index, 1);
+  }
+}
+
+function upsertAssistantThinking(
+  entries: SessionTimelineEntry[],
+  message: AgentMessage,
+): SessionTimelineEntry[] {
+  const chunkId = resolveAssistantChunkId({
+    entries,
+    assistantEntryId: message.id,
+    baseChunkId: `${message.id}:thinking`,
+    kind: "thinking",
+    sequence: message.sequence,
+  });
+  const entry = findOrCreateAssistantEntry(entries, message.id, message.timestamp, message.sequence);
+  const chunk: SessionTimelineThinkingChunk = {
+    id: chunkId,
+    kind: "thinking",
+    text: message.text,
+    title: "Thinking",
+    status: message.streaming === false ? "completed" : "running",
+    timestamp: message.timestamp,
+    updatedAt: message.timestamp,
+    sequence: message.sequence,
+  };
+  entry.chunks = upsertAssistantChunk(entry.chunks, chunk);
+  applyAssistantEntryBounds(entry);
+  return entries;
+}
+
+function appendOutputToSessionTimeline(
+  entries: SessionTimelineEntry[],
+  output: CommandChunk,
+): SessionTimelineEntry[] {
+  entries.push({
+    id: `output:${output.commandId}:${output.sequence ?? output.id}`,
+    kind: "command_output",
+    commandId: output.commandId,
+    output,
+    timestamp: output.timestamp,
+    updatedAt: output.timestamp,
+    sequence: output.sequence,
+  });
   return entries;
 }
 
@@ -604,14 +538,7 @@ function mergeMessageEntry(
   return {
     ...incoming,
     message: incoming.message,
-    timestamp: shouldPreferIncomingTextTimestamp(
-      current.message.text,
-      incoming.message.text,
-      current.timestamp,
-      incoming.timestamp,
-    )
-      ? incoming.timestamp
-      : current.timestamp,
+    timestamp: current.timestamp,
     updatedAt: incoming.updatedAt,
     sequence: current.sequence ?? incoming.sequence,
   };
@@ -625,14 +552,7 @@ function mergeContentChunk(
     ...incoming,
     id: current.id,
     text: mergeTimelineContentText(current, incoming) ?? "",
-    timestamp: shouldPreferIncomingTextTimestamp(
-      current.text,
-      incoming.text,
-      current.timestamp,
-      incoming.timestamp,
-    )
-      ? incoming.timestamp
-      : current.timestamp,
+    timestamp: current.timestamp,
     sequence: current.sequence ?? incoming.sequence,
   };
 }
@@ -662,19 +582,17 @@ function mergeToolCallEntry(
       ...current.toolCall,
       ...incoming.toolCall,
       id: current.toolCall.id,
-      kind: resolveMergedToolCallKind(current.toolCall, incoming.toolCall),
+      // The ACP mapper classifies a ToolCall once. Timeline updates may enrich
+      // its body/status but cannot reinterpret the original category.
+      kind: current.toolCall.kind,
       title: resolveMergedToolCallTitle(current.toolCall, incoming.toolCall),
       status: resolveMergedToolCallStatus(current.toolCall, incoming.toolCall),
       input: incoming.toolCall.input ?? current.toolCall.input,
       output: resolveMergedToolCallOutput(current.toolCall, incoming.toolCall),
-      timestamp: shouldPreferIncomingToolTimestamp(current.toolCall, incoming.toolCall)
-        ? incoming.toolCall.timestamp
-        : current.toolCall.timestamp,
+      timestamp: current.toolCall.timestamp,
       sequence: current.toolCall.sequence ?? incoming.toolCall.sequence,
     },
-    timestamp: shouldPreferIncomingToolTimestamp(current.toolCall, incoming.toolCall)
-      ? incoming.timestamp
-      : current.timestamp,
+    timestamp: current.timestamp,
     sequence: current.sequence ?? incoming.sequence,
   };
 }
@@ -689,12 +607,6 @@ function isSameToolCommand(left: AgentToolCall, right: AgentToolCall) {
   );
 }
 
-function resolveMergedToolCallKind(current: AgentToolCall, incoming: AgentToolCall) {
-  return toolKindRank(incoming.kind) > toolKindRank(current.kind)
-    ? incoming.kind
-    : current.kind;
-}
-
 function resolveMergedToolCallTitle(current: AgentToolCall, incoming: AgentToolCall) {
   const currentTitle = current.title.trim();
   const incomingTitle = incoming.title.trim();
@@ -705,12 +617,7 @@ function resolveMergedToolCallTitle(current: AgentToolCall, incoming: AgentToolC
     return incoming.title;
   }
   if (isGenericToolCallTitle(incomingTitle)) {
-    if (!isGenericToolCallTitle(currentTitle)) {
-      return current.title;
-    }
-    return toolKindRank(incoming.kind) > toolKindRank(current.kind)
-      ? incoming.title
-      : current.title;
+    return current.title;
   }
   return incoming.title;
 }
@@ -726,22 +633,8 @@ function resolveMergedToolCallStatus(
 }
 
 function shouldKeepTerminalToolStatus(current: AgentToolCall, incoming: AgentToolCall) {
-  if ((current.status !== "completed" && current.status !== "failed") || incoming.status !== "running") {
-    return false;
-  }
-  if (toolKindRank(incoming.kind) > toolKindRank(current.kind)) {
-    return false;
-  }
-  if (!isWeakMergedToolCallTitle(incoming.title, incoming) && incoming.title !== current.title) {
-    return false;
-  }
-  if (incoming.input && incoming.input !== current.input) {
-    return false;
-  }
-  if (incoming.commandId && incoming.commandId !== current.commandId) {
-    return false;
-  }
-  return true;
+  return (current.status === "completed" || current.status === "failed") &&
+    incoming.status === "running";
 }
 
 function isWeakMergedToolCallTitle(title: string, toolCall: AgentToolCall) {
@@ -754,24 +647,6 @@ function isWeakMergedToolCallTitle(title: string, toolCall: AgentToolCall) {
 
 function isGenericToolCallTitle(title: string) {
   return GENERIC_TOOL_CALL_TITLES.has(title.trim().toLowerCase());
-}
-
-function toolKindRank(kind: AgentToolCall["kind"]) {
-  const ranks: Record<AgentToolCall["kind"], number> = {
-    unknown: 0,
-    tool: 1,
-    think: 2,
-    todo: 2,
-    fetch: 2,
-    search: 3,
-    read: 3,
-    write: 3,
-    shell: 3,
-    skill: 3,
-    subagent: 3,
-    mcp: 4,
-  };
-  return ranks[kind];
 }
 
 const GENERIC_TOOL_CALL_TITLES = new Set([
@@ -794,14 +669,12 @@ const GENERIC_TOOL_CALL_TITLES = new Set([
 ]);
 
 function applyAssistantEntryBounds(entry: SessionTimelineAssistantEntry) {
-  const sortedChunks = sortAssistantTimelineChunks(entry.chunks);
-  const firstChunk = sortedChunks[0];
-  const lastChunk = sortedChunks.at(-1);
-  entry.chunks = sortedChunks;
+  const firstChunk = entry.chunks[0];
+  const lastChunk = entry.chunks.at(-1);
   entry.timestamp = firstChunk?.timestamp ?? entry.timestamp;
   entry.updatedAt = lastChunk && "updatedAt" in lastChunk ? lastChunk.updatedAt : lastChunk?.timestamp ?? entry.updatedAt;
-  entry.sequence = minDefined(sortedChunks.map((chunk) => chunk.sequence));
-  entry.streaming = sortedChunks.some((chunk) => chunk.kind === "content" && chunk.streaming);
+  entry.sequence = minDefined(entry.chunks.map((chunk) => chunk.sequence));
+  entry.streaming = entry.chunks.some((chunk) => chunk.kind === "content" && chunk.streaming);
 }
 
 function resolveAssistantEntryIdFromThinking(toolCall: AgentToolCall) {
@@ -813,111 +686,18 @@ function stripThinkingSuffix(value: string) {
   return value.endsWith(":thinking") ? value.slice(0, -":thinking".length) : null;
 }
 
-function matchesCommandOutput(toolCall: AgentToolCall, output: CommandChunk) {
-  return toolCall.id === output.commandId || toolCall.commandId === output.commandId;
-}
-
-function commandOutputToToolCall(output: CommandChunk): AgentToolCall {
-  return {
-    id: output.commandId,
-    commandId: output.commandId,
-    kind: "shell",
-    title: output.commandId,
-    status: "running",
-    output: output.text,
-    stream: output.stream,
-    timestamp: output.timestamp,
-    updatedAt: output.timestamp,
-    sequence: output.sequence,
-  };
-}
-
-function compareTimelineItems<T extends { sequence?: number; timestamp: string }>(
-  left: { item: T; index: number },
-  right: { item: T; index: number },
+function sortItemsByCompleteSequence<T>(
+  items: T[],
+  getSequence: (item: T) => number | undefined,
 ) {
-  const leftItem = left.item;
-  const rightItem = right.item;
-  const timestampDelta = compareIsoTimestamps(leftItem.timestamp, rightItem.timestamp);
-  const timelineDelta = compareOptionalTimelineSequence(leftItem.sequence, rightItem.sequence);
-  if (timelineDelta !== null) {
-    const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
-      timelineDelta,
-      timestampDelta,
-    );
-    if (sequenceResetTimestampDelta !== null) {
-      return sequenceResetTimestampDelta;
-    }
-    return timelineDelta;
+  if (!items.every((item) => typeof getSequence(item) === "number")) {
+    return [...items];
   }
-  // When sequence is absent or present on only one side, fall back to
-  // chronological timestamp (then insertion index) rather than index alone, so
-  // legacy history with partial sequences keeps real message/tool interleaving
-  // instead of collapsing into the kind-segregated rebuild order.
-  return timestampDelta === 0 ? left.index - right.index : timestampDelta;
-}
 
-function compareOptionalTimelineSequence(
-  left: number | undefined,
-  right: number | undefined,
-) {
-  if (left === undefined || right === undefined) {
-    return null;
-  }
-  const sequenceDelta = left - right;
-  return sequenceDelta === 0 ? null : sequenceDelta;
-}
-
-function compareIsoTimestamps(leftTimestamp: string, rightTimestamp: string) {
-  const leftTime = Date.parse(leftTimestamp);
-  const rightTime = Date.parse(rightTimestamp);
-  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) {
-    return 0;
-  }
-  return leftTime - rightTime;
-}
-
-function compareSequenceResetTimestampDelta(
-  timelineDelta: number,
-  timestampDelta: number,
-) {
-  if (
-    timestampDelta === 0 ||
-    Math.abs(timestampDelta) < TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS
-  ) {
-    return null;
-  }
-  return Math.sign(timelineDelta) === Math.sign(timestampDelta)
-    ? null
-    : timestampDelta;
-}
-
-function shouldPreferIncomingTextTimestamp(
-  currentText: string,
-  incomingText: string,
-  currentTimestamp: string,
-  incomingTimestamp: string,
-) {
-  return normalizeComparableText(currentText) === normalizeComparableText(incomingText) &&
-    exceedsTimestampSkew(currentTimestamp, incomingTimestamp);
-}
-
-function shouldPreferIncomingToolTimestamp(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-) {
-  return current.kind === incoming.kind &&
-    current.title.trim() === incoming.title.trim() &&
-    exceedsTimestampSkew(current.timestamp, incoming.timestamp);
-}
-
-function normalizeComparableText(text: string) {
-  return text.replace(/[*_~`]/gu, "").replace(/\s+/gu, " ").trim();
-}
-
-function exceedsTimestampSkew(left: string, right: string) {
-  const delta = Math.abs(Date.parse(left) - Date.parse(right));
-  return Number.isFinite(delta) && delta > TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS;
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => getSequence(left.item)! - getSequence(right.item)! || left.index - right.index)
+    .map(({ item }) => item);
 }
 
 function minDefined(values: Array<number | undefined>) {
@@ -946,10 +726,29 @@ function mergeTimelineContentText(
   current: SessionTimelineContentChunk,
   incoming: SessionTimelineContentChunk,
 ) {
-  if (current.streaming === true && incoming.streaming !== true && incoming.text) {
+  if (
+    current.streaming === true &&
+    incoming.streaming !== true &&
+    shouldPreferFinalAssistantSnapshot(current.text, incoming.text)
+  ) {
     return incoming.text;
   }
-  return mergeOptionalText(current.text, incoming.text);
+  return mergeStreamingText(
+    current.text,
+    incoming.text,
+    incoming.streamMode ?? "auto",
+  );
+}
+
+function shouldPreferFinalAssistantSnapshot(currentText: string, incomingText: string) {
+  const normalizedCurrent = stripTimelineChunkWhitespace(currentText);
+  const normalizedIncoming = stripTimelineChunkWhitespace(incomingText);
+  return normalizedIncoming.length >= normalizedCurrent.length &&
+    normalizedIncoming.includes(normalizedCurrent);
+}
+
+function stripTimelineChunkWhitespace(value: string) {
+  return value.replace(/\s+/gu, "");
 }
 
 function resolveMergedToolCallOutput(
@@ -966,34 +765,5 @@ function mergeThinkingSnapshotText(
   current: string | undefined,
   incoming: string | undefined,
 ) {
-  if (!current) {
-    return incoming;
-  }
-  if (!incoming || current.endsWith(incoming)) {
-    return current;
-  }
-  if (incoming.startsWith(current) || current.startsWith(incoming)) {
-    return incoming.length >= current.length ? incoming : current;
-  }
-  const overlapped = mergeTextByLineOverlap(current, incoming);
-  if (overlapped) {
-    return overlapped;
-  }
-  return incoming.length >= current.length ? incoming : current;
-}
-
-function mergeTextByLineOverlap(currentText: string, incomingText: string) {
-  const currentLines = currentText.split(/\r?\n/u);
-  const incomingLines = incomingText.split(/\r?\n/u);
-  const overlapLineCount = Math.min(currentLines.length, incomingLines.length);
-  for (let size = overlapLineCount; size >= 1; size -= 1) {
-    const currentSlice = currentLines.slice(-size).join("\n");
-    const incomingSlice = incomingLines.slice(0, size).join("\n");
-    if (currentSlice !== incomingSlice) {
-      continue;
-    }
-    const suffix = incomingLines.slice(size).join("\n");
-    return suffix ? `${currentText}\n${suffix}` : currentText;
-  }
-  return null;
+  return mergeStreamingText(current, incoming);
 }

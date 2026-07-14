@@ -149,6 +149,7 @@ const LEGACY_VALID_TOOL_CALL_KINDS = new Set<AgentToolCallKind>([
   "mcp",
   "skill",
   "read",
+  "diagnostics",
   "write",
   "search",
   "shell",

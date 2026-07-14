@@ -4,25 +4,18 @@ import type {
   AgentMessage,
   AgentToolCall,
   CommandChunk,
-  SessionSummary,
+  SessionPromptQueueSnapshot,
   SessionTimelineContextCompactionEntry,
   SessionTimelineEntry,
 } from "@tiller/shared";
 import { compactBinaryToolCallOutput } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
-import { buildSessionCompactionEntry } from "../sessions/compaction-entry";
 import { handleRuntimePermissionRequest } from "./approval-boundary";
 import { createSessionEventPublisher } from "./session/event/publisher";
 import {
-  publishRuntimeCommandOutput,
-  publishRuntimeToolCall,
-  recordRuntimeCommandOutputArtifact,
-  recordRuntimeToolCallArtifact,
+  materializeRuntimeCommandOutputChunk,
 } from "./session/event/effects";
-import {
-  persistTimelineMessage,
-  persistTimelineTranscriptEvent,
-} from "./session/timeline-effects";
+import { materializeDiffPayloads } from "./session/diff-payload";
 import { emitFirstHelmPromptTrace } from "./prompt-trace";
 import { routeSessionRuntimeEvent } from "./session-timeline/event-router";
 import {
@@ -30,23 +23,31 @@ import {
   resolveConfigReasoningEffortForOptions,
 } from "./session/config-options";
 import {
-  clearActiveRuntimeThinking,
   bumpAssistantStreamSegment,
   finalizeActiveRuntimeThinking,
   normalizeRuntimeAssistantMessageId,
   normalizeRuntimeThinkingToolCall,
+  removeRuntimeSegmentState,
   startNextAssistantResponseSegment,
 } from "./segment-state";
 import type { TillerLogFields } from "../logging/logger";
-import { createSessionUpdateRecord } from "./session-updates/reducer";
+import {
+  createSessionUpdateRecord,
+  type PersistedSessionEvent,
+} from "./session-updates/reducer";
+import type { CanonicalSessionStateEvent } from "./session/event/state-reducer";
+import type { SessionRuntimeEventState } from "./session/event/runtime-state";
 
-const liveEventSequenceBySession = new Map<string, number>();
-const ignoredUserEchoSummaryBySession = new Map<string, IgnoredUserEchoSummary>();
-const runtimePlanLogStateBySession = new Map<string, RuntimePlanLogState>();
-const commandOutputSummaryBySession = new Map<string, Map<string, CommandOutputSummary>>();
-const assistantDeltaTimerBySession = new Map<string, TimerHandle>();
-const pendingCommandOutputBySession = new Map<string, PendingCommandOutput>();
-const pendingRunningToolCallBySession = new Map<string, PendingRunningToolCall>();
+const RUNTIME_EVENT_STATE_KEY = {
+  assistantDeltaTimer: "assistant-delta-timer",
+  commandOutputSummaries: "command-output-summaries",
+  ignoredUserEchoSummary: "ignored-user-echo-summary",
+  pendingCommandOutput: "pending-command-output",
+  pendingRunningToolCall: "pending-running-tool-call",
+  planLogState: "plan-log-state",
+  activeToolCalls: "active-tool-calls",
+  toolCallClassifications: "tool-call-classifications",
+} as const;
 
 const DEFAULT_ASSISTANT_FLUSH_WINDOW_MS = 32;
 const DEFAULT_ASSISTANT_MAX_CHARS = 256;
@@ -54,6 +55,7 @@ const DEFAULT_COMMAND_OUTPUT_FLUSH_WINDOW_MS = 32;
 const DEFAULT_COMMAND_OUTPUT_MAX_CHARS = 256;
 const DEFAULT_RUNNING_TOOL_CALL_FLUSH_WINDOW_MS = 64;
 const DEFAULT_RUNNING_TOOL_CALL_MAX_CHARS = 512;
+const MAX_TRACKED_TOOL_CALL_CLASSIFICATIONS = 2_048;
 
 type TimerHandle = ReturnType<typeof setTimeout>;
 
@@ -82,6 +84,11 @@ type PendingRunningToolCall = {
   timer?: TimerHandle;
 };
 
+type StableToolCallClassification = Pick<AgentToolCall, "kind"> & {
+  mcp?: AgentToolCall["mcp"];
+  title?: string;
+};
+
 type IgnoredUserEchoSummary = {
   count: number;
   firstMessageId: string;
@@ -94,15 +101,15 @@ type IgnoredUserEchoSummary = {
 
 function runtimeLogScope(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions.get(sessionId);
-  return `session=${sessionId} agent=${record?.agent.id ?? "<stored>"} cwd=${record?.worktree.path ?? "<stored>"}`;
+  return `session=${sessionId} agent=${record?.agent?.id ?? "<stored>"} cwd=${record?.worktree?.path ?? "<stored>"}`;
 }
 
 function runtimeLogFields(sessionId: string, context: HelmHandlerContext): TillerLogFields {
   const record = context.sessions.get(sessionId);
   return {
     sessionId,
-    agentId: record?.agent.id ?? "<stored>",
-    cwd: record?.worktree.path ?? "<stored>",
+    agentId: record?.agent?.id ?? "<stored>",
+    cwd: record?.worktree?.path ?? "<stored>",
   };
 }
 
@@ -136,30 +143,46 @@ function formatLogFields(fields: TillerLogFields) {
     .join(" ");
 }
 
+function runtimeEventState(context: HelmHandlerContext): SessionRuntimeEventState {
+  if (context.sessionRuntimeEventState) {
+    return context.sessionRuntimeEventState;
+  }
+  throw new Error("Runtime event state is required.");
+}
+
 export function seedLiveEventSequenceForSession(
   sessionId: string,
   sequences: ReadonlyArray<number | undefined>,
+  context: HelmHandlerContext,
 ) {
-  const maxSequence = sequences.reduce<number>((max, value) => {
-    if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
-      return max;
-    }
-    return Math.max(max, value);
-  }, 0);
-  liveEventSequenceBySession.set(
-    sessionId,
-    Math.max(liveEventSequenceBySession.get(sessionId) ?? 0, maxSequence),
-  );
+  runtimeEventState(context).seedSequence(sessionId, sequences);
 }
 
-export function allocateLiveEventSequence(sessionId: string) {
-  const next = (liveEventSequenceBySession.get(sessionId) ?? 0) + 1;
-  liveEventSequenceBySession.set(sessionId, next);
-  return next;
+export function ensureLiveEventSequenceForSession(
+  sessionId: string,
+  context: HelmHandlerContext,
+) {
+  const state = runtimeEventState(context);
+  if (state.isSequenceInitialized(sessionId)) {
+    return;
+  }
+  state.ensureSequence(sessionId, [
+    context.sessionLiveStateStore?.get(sessionId)?.sequence,
+    context.sessionUpdateStore?.getMaxSequence?.(sessionId),
+  ]);
 }
 
-function nextLiveEventSequence(sessionId: string) {
-  return allocateLiveEventSequence(sessionId);
+export function allocateLiveEventSequence(sessionId: string, context: HelmHandlerContext) {
+  ensureLiveEventSequenceForSession(sessionId, context);
+  return runtimeEventState(context).allocateSequence(sessionId);
+}
+
+function nextLiveEventSequence(sessionId: string, context: HelmHandlerContext) {
+  return allocateLiveEventSequence(sessionId, context);
+}
+
+function peekLiveEventSequence(sessionId: string, context: HelmHandlerContext) {
+  return runtimeEventState(context).peekSequence(sessionId);
 }
 
 function hasPendingTimelineCompaction(
@@ -234,9 +257,23 @@ function hasCanonicalTimelinePipeline(
   );
 }
 
+function assertCanonicalTimelinePipeline(
+  context: HelmHandlerContext,
+): asserts context is HelmHandlerContext & Required<Pick<
+  HelmHandlerContext,
+  | "sessionTimelineWorkers"
+  | "sessionTimelineDispatcher"
+  | "sessionTimelineFlushScheduler"
+  | "sessionLiveStateStore"
+>> {
+  if (!hasCanonicalTimelinePipeline(context)) {
+    throw new Error("Canonical runtime services are required.");
+  }
+}
+
 function routeCanonicalTimelineEvent(
   sessionId: string,
-  event: SessionRuntimeEvent,
+  event: PersistedSessionEvent,
   context: HelmHandlerContext & Required<Pick<
     HelmHandlerContext,
     | "sessionTimelineWorkers"
@@ -244,13 +281,14 @@ function routeCanonicalTimelineEvent(
     | "sessionTimelineFlushScheduler"
     | "sessionLiveStateStore"
   >>,
+  sequence?: number,
+  update?: import("@tiller/shared").SessionUpdateRecord,
 ) {
   return routeSessionRuntimeEvent(sessionId, event, {
     workers: context.sessionTimelineWorkers,
-    liveStateStore: context.sessionLiveStateStore,
     flushScheduler: context.sessionTimelineFlushScheduler,
     context,
-  });
+  }, sequence, update);
 }
 
 function inferPendingCompactionCompletion(
@@ -271,17 +309,25 @@ function inferPendingCompactionCompletion(
   if (!pending) {
     return false;
   }
-  routeCanonicalTimelineEvent(sessionId, {
+  const completionEvent = {
     type: "compaction",
     phase: "completed",
     source: pending.source,
     timestamp: resolveCompactionCompletionTimestamp(event, pending),
-  }, context);
+  } as const;
+  const prepared = prepareRuntimeSessionUpdate(sessionId, completionEvent, context);
+  routeCanonicalTimelineEvent(
+    sessionId,
+    completionEvent,
+    context,
+    prepared.resolvedSequence,
+    prepared.update,
+  );
   return true;
 }
 
-export function nextLiveEventSequenceForTest(sessionId: string) {
-  return allocateLiveEventSequence(sessionId);
+export function nextLiveEventSequenceForTest(sessionId: string, context: HelmHandlerContext) {
+  return allocateLiveEventSequence(sessionId, context);
 }
 
 export function flushRuntimeUserEchoLogSummaryForTest(
@@ -293,36 +339,119 @@ export function flushRuntimeUserEchoLogSummaryForTest(
 
 export function persistRuntimeSessionUpdate(
   sessionId: string,
-  event: SessionRuntimeEvent,
+  event: PersistedSessionEvent,
   context: HelmHandlerContext,
   sequence?: number,
 ) {
-  if (!context.sessionUpdateStore?.append) {
-    return;
+  if (!isPersistedSessionStateEvent(event)) {
+    throw new Error("Timeline updates must be committed by the timeline dispatcher.");
   }
-  const record = context.sessions.get(sessionId);
-  const summary = record?.summary ?? context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId);
-  const resolvedSequence = sequence ?? sequenceFromRuntimeEvent(event) ?? nextLiveEventSequence(sessionId);
+  return commitCanonicalStateEvent(sessionId, event, context, sequence)?.sequence;
+}
+
+export function commitCanonicalStateEvent(
+  sessionId: string,
+  event: Exclude<CanonicalSessionStateEvent, { type: "pending-approval-count" }>,
+  context: HelmHandlerContext,
+  sequence?: number,
+) {
+  assertCanonicalTimelinePipeline(context);
+  const prepared = prepareRuntimeSessionUpdate(sessionId, event, context, sequence);
   try {
-    context.sessionUpdateStore.append(createSessionUpdateRecord({
+    const snapshot = context.sessionLiveStateStore.commit(
       sessionId,
-      runtimeSessionId: record?.runtime?.runtimeSessionId ?? summary?.runtimeSessionId ?? sessionId,
-      providerId: record?.agent?.id ?? summary?.agentId ?? "unknown",
-      sequence: resolvedSequence,
-      source: "acp_live",
       event,
-    }));
-  } catch (error) {
-    logRuntimeError(context, "runtime.session_update.persist_failed", {
-      ...runtimeLogFields(sessionId, context),
-      seq: resolvedSequence,
-      type: event.type,
-      message: error instanceof Error ? error.message : "Failed to persist session update.",
+      prepared.resolvedSequence,
+      prepared.update,
+    );
+    if (!snapshot) {
+      throw new Error("Canonical session state persistence is unavailable.");
+    }
+    createSessionEventPublisher(context).sessionUpdate(sessionId, {
+      kind: "live_state",
+      snapshot,
     });
+    return { sequence: prepared.resolvedSequence, snapshot };
+  } catch (error) {
+    logRuntimeError(context, "runtime.session_state.commit_failed", {
+      ...runtimeLogFields(sessionId, context),
+      seq: prepared.resolvedSequence,
+      type: event.type,
+      message: error instanceof Error ? error.message : "Failed to commit canonical session state.",
+    });
+    return undefined;
   }
 }
 
-function sequenceFromRuntimeEvent(event: SessionRuntimeEvent) {
+export function prepareRuntimeSessionUpdate(
+  sessionId: string,
+  event: PersistedSessionEvent,
+  context: HelmHandlerContext,
+  sequence?: number,
+) {
+  ensureLiveEventSequenceForSession(sessionId, context);
+  const resolvedSequence = sequence ?? sequenceFromRuntimeEvent(event) ?? nextLiveEventSequence(sessionId, context);
+  const record = context.sessions?.get?.(sessionId);
+  const summary = record?.summary ?? context.sessionStore?.get?.(sessionId);
+  const update = createSessionUpdateRecord({
+    sessionId,
+    runtimeSessionId: record?.runtime?.runtimeSessionId ?? summary?.runtimeSessionId ?? sessionId,
+    providerId: record?.agent?.id ?? summary?.agentId ?? "unknown",
+    sequence: resolvedSequence,
+    source: "acp_live",
+    event,
+  });
+  context.runtimeMetrics?.observe(sessionId, {
+    providerId: update.providerId,
+    sequence: resolvedSequence,
+    eventType: event.type,
+    payloadBytes: Buffer.byteLength(update.payloadJson),
+  });
+  return {
+    resolvedSequence,
+    update,
+  };
+}
+
+function isPersistedSessionStateEvent(
+  event: PersistedSessionEvent,
+): event is Exclude<CanonicalSessionStateEvent, { type: "pending-approval-count" }> {
+  switch (event.type) {
+    case "status":
+    case "config-options":
+    case "model-options":
+    case "mode-update":
+    case "plan-update":
+    case "available-commands":
+    case "usage-update":
+    case "session-info":
+    case "diff-update":
+    case "prompt-queue":
+      return true;
+    default:
+      return false;
+  }
+}
+
+export function cleanupRuntimeEventState(
+  sessionId: string,
+  context: HelmHandlerContext,
+) {
+  const state = runtimeEventState(context);
+  clearRuntimeEventTimer(context, state.get<TimerHandle>(sessionId, RUNTIME_EVENT_STATE_KEY.assistantDeltaTimer));
+  clearRuntimeEventTimer(
+    context,
+    state.get<PendingCommandOutput>(sessionId, RUNTIME_EVENT_STATE_KEY.pendingCommandOutput)?.timer,
+  );
+  clearRuntimeEventTimer(
+    context,
+    state.get<PendingRunningToolCall>(sessionId, RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall)?.timer,
+  );
+  state.remove(sessionId);
+  removeRuntimeSegmentState(sessionId);
+}
+
+function sequenceFromRuntimeEvent(event: PersistedSessionEvent) {
   switch (event.type) {
     case "message":
       return event.message.sequence;
@@ -379,8 +508,12 @@ function clearRuntimeEventTimer(
 }
 
 function clearAssistantDeltaTimer(sessionId: string, context: HelmHandlerContext) {
-  clearRuntimeEventTimer(context, assistantDeltaTimerBySession.get(sessionId));
-  assistantDeltaTimerBySession.delete(sessionId);
+  const state = runtimeEventState(context);
+  clearRuntimeEventTimer(
+    context,
+    state.get<TimerHandle>(sessionId, RUNTIME_EVENT_STATE_KEY.assistantDeltaTimer),
+  );
+  state.delete(sessionId, RUNTIME_EVENT_STATE_KEY.assistantDeltaTimer);
 }
 
 function flushPendingAssistantDelta(
@@ -396,21 +529,10 @@ function flushPendingAssistantDelta(
     ...deltaMessage,
     streaming: true,
   };
-  if (hasCanonicalTimelinePipeline(context)) {
-    persistRuntimeSessionUpdate(sessionId, { type: "message", message: streamingDelta }, context);
-    routeCanonicalTimelineEvent(sessionId, { type: "message", message: streamingDelta }, context);
-    return true;
-  }
   const orderedDelta = {
     ...streamingDelta,
-    sequence: nextLiveEventSequence(sessionId),
+    sequence: streamingDelta.sequence ?? nextLiveEventSequence(sessionId, context),
   };
-  persistRuntimeSessionUpdate(
-    sessionId,
-    { type: "message", message: orderedDelta },
-    context,
-    orderedDelta.sequence,
-  );
   createSessionEventPublisher(context).sessionUpdate(sessionId, {
     kind: "agent_message",
     message: orderedDelta,
@@ -429,11 +551,13 @@ function scheduleAssistantDeltaFlush(sessionId: string, context: HelmHandlerCont
   if (pendingChars >= config.assistantMaxChars || config.assistantWindowMs <= 0) {
     return flushPendingAssistantDelta(sessionId, context);
   }
-  if (assistantDeltaTimerBySession.has(sessionId)) {
+  const state = runtimeEventState(context);
+  if (state.has(sessionId, RUNTIME_EVENT_STATE_KEY.assistantDeltaTimer)) {
     return false;
   }
-  assistantDeltaTimerBySession.set(
+  state.set(
     sessionId,
+    RUNTIME_EVENT_STATE_KEY.assistantDeltaTimer,
     scheduleRuntimeEventTimer(
       context,
       () => {
@@ -462,12 +586,16 @@ function mergeBufferedCommandChunk(current: CommandChunk, incoming: CommandChunk
 }
 
 function consumePendingCommandOutput(sessionId: string, context: HelmHandlerContext) {
-  const pending = pendingCommandOutputBySession.get(sessionId);
+  const state = runtimeEventState(context);
+  const pending = state.get<PendingCommandOutput>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.pendingCommandOutput,
+  );
   if (!pending) {
     return null;
   }
   clearRuntimeEventTimer(context, pending.timer);
-  pendingCommandOutputBySession.delete(sessionId);
+  state.delete(sessionId, RUNTIME_EVENT_STATE_KEY.pendingCommandOutput);
   return pending;
 }
 
@@ -477,48 +605,31 @@ function emitRuntimeCommandOutputChunk(
   inputChunkCount: number,
   context: HelmHandlerContext,
 ) {
+  assertCanonicalTimelinePipeline(context);
   bumpAssistantStreamSegment(sessionId);
-  if (hasCanonicalTimelinePipeline(context)) {
-    const orderedChunk = {
-      ...chunk,
-      sequence: nextLiveEventSequence(sessionId),
-    };
-    const materializedChunk = recordRuntimeCommandOutputArtifact(
-      context,
-      sessionId,
-      orderedChunk,
-    );
-    persistRuntimeSessionUpdate(
-      sessionId,
-      { type: "command-output", chunk: materializedChunk },
-      context,
-      orderedChunk.sequence,
-    );
-    routeCanonicalTimelineEvent(
-      sessionId,
-      { type: "command-output", chunk: materializedChunk },
-      context,
-    );
-    recordCommandOutputSummary(sessionId, chunk, orderedChunk.sequence, inputChunkCount);
-    return;
-  }
   const orderedChunk = {
     ...chunk,
-    sequence: nextLiveEventSequence(sessionId),
+    sequence: chunk.sequence ?? nextLiveEventSequence(sessionId, context),
   };
-  const materializedChunk = recordRuntimeCommandOutputArtifact(
+  const materializedChunk = materializeRuntimeCommandOutputChunk(
     context,
     sessionId,
     orderedChunk,
   );
-  persistRuntimeSessionUpdate(
+  const prepared = prepareRuntimeSessionUpdate(
     sessionId,
     { type: "command-output", chunk: materializedChunk },
     context,
     orderedChunk.sequence,
   );
-  recordCommandOutputSummary(sessionId, chunk, orderedChunk.sequence, inputChunkCount);
-  publishRuntimeCommandOutput(context, sessionId, materializedChunk);
+  routeCanonicalTimelineEvent(
+    sessionId,
+    { type: "command-output", chunk: materializedChunk },
+    context,
+    prepared.resolvedSequence,
+    prepared.update,
+  );
+  recordCommandOutputSummary(sessionId, chunk, orderedChunk.sequence, inputChunkCount, context);
 }
 
 function flushPendingCommandOutput(sessionId: string, context: HelmHandlerContext) {
@@ -531,7 +642,10 @@ function flushPendingCommandOutput(sessionId: string, context: HelmHandlerContex
 }
 
 function scheduleCommandOutputFlush(sessionId: string, context: HelmHandlerContext) {
-  const pending = pendingCommandOutputBySession.get(sessionId);
+  const pending = runtimeEventState(context).get<PendingCommandOutput>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.pendingCommandOutput,
+  );
   if (!pending) {
     return false;
   }
@@ -557,7 +671,11 @@ function bufferCommandOutputChunk(
   chunk: CommandChunk,
   context: HelmHandlerContext,
 ) {
-  const pending = pendingCommandOutputBySession.get(sessionId);
+  const state = runtimeEventState(context);
+  const pending = state.get<PendingCommandOutput>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.pendingCommandOutput,
+  );
   if (
     pending &&
     pending.chunk.commandId === chunk.commandId &&
@@ -571,7 +689,7 @@ function bufferCommandOutputChunk(
     return;
   }
   flushPendingCommandOutput(sessionId, context);
-  pendingCommandOutputBySession.set(sessionId, {
+  state.set(sessionId, RUNTIME_EVENT_STATE_KEY.pendingCommandOutput, {
     chunk,
     inputChunks: 1,
   });
@@ -585,12 +703,16 @@ function estimateToolCallGrowth(previous: AgentToolCall | undefined, next: Agent
 }
 
 function consumePendingRunningToolCall(sessionId: string, context: HelmHandlerContext) {
-  const pending = pendingRunningToolCallBySession.get(sessionId);
+  const state = runtimeEventState(context);
+  const pending = state.get<PendingRunningToolCall>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall,
+  );
   if (!pending) {
     return null;
   }
   clearRuntimeEventTimer(context, pending.timer);
-  pendingRunningToolCallBySession.delete(sessionId);
+  state.delete(sessionId, RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall);
   return pending;
 }
 
@@ -598,50 +720,38 @@ function emitRuntimeToolCallSnapshot(
   sessionId: string,
   toolCall: AgentToolCall,
   context: HelmHandlerContext,
+  updateSequence?: number,
 ) {
-  if (toolCall.kind !== "subagent") {
-    bumpAssistantStreamSegment(sessionId);
-  }
-  if (hasCanonicalTimelinePipeline(context)) {
-    const orderedToolCall = {
-      ...toolCall,
-      sequence: nextLiveEventSequence(sessionId),
-    };
-    const mergedToolCall = recordRuntimeToolCallArtifact(
-      context,
-      sessionId,
-      orderedToolCall,
-    );
-    if (shouldPersistToolCallSnapshot(mergedToolCall, sessionId, context)) {
-      persistRuntimeSessionUpdate(
-        sessionId,
-        { type: "tool-call", toolCall: mergedToolCall },
-        context,
-        orderedToolCall.sequence,
-      );
-    }
-    routeCanonicalTimelineEvent(
-      sessionId,
-      { type: "tool-call", toolCall: mergedToolCall },
-      context,
-    );
-    return mergedToolCall;
-  }
-  flushLiveAssistantMessage(sessionId, context);
+  assertCanonicalTimelinePipeline(context);
+  const stableToolCall = stabilizeRuntimeToolCallClassification(sessionId, toolCall, context);
   const orderedToolCall = {
-    ...toolCall,
-    sequence: nextLiveEventSequence(sessionId),
+    ...stableToolCall,
+    sequence: stableToolCall.sequence ?? nextLiveEventSequence(sessionId, context),
   };
-  const mergedToolCall = publishRuntimeToolCall(context, sessionId, orderedToolCall);
-  if (shouldPersistToolCallSnapshot(mergedToolCall, sessionId, context)) {
-    persistRuntimeSessionUpdate(
-      sessionId,
-      { type: "tool-call", toolCall: mergedToolCall },
-      context,
-      orderedToolCall.sequence,
-    );
+  trackActiveRuntimeToolCall(sessionId, orderedToolCall, context);
+  if (!shouldPersistHistoricalToolCall(orderedToolCall)) {
+    createSessionEventPublisher(context).sessionUpdate(sessionId, {
+      kind: "tool_call",
+      toolCall: orderedToolCall,
+    });
+    return orderedToolCall;
   }
-  return mergedToolCall;
+  // Provider adapters finalize ToolCall classification before this point.
+  // The canonical path preserves that category verbatim.
+  const prepared = prepareRuntimeSessionUpdate(
+    sessionId,
+    { type: "tool-call", toolCall: orderedToolCall },
+    context,
+    updateSequence ?? orderedToolCall.sequence,
+  );
+  routeCanonicalTimelineEvent(
+    sessionId,
+    { type: "tool-call", toolCall: orderedToolCall },
+    context,
+    prepared.resolvedSequence,
+    prepared.update,
+  );
+  return orderedToolCall;
 }
 
 function flushPendingRunningToolCall(sessionId: string, context: HelmHandlerContext) {
@@ -654,7 +764,10 @@ function flushPendingRunningToolCall(sessionId: string, context: HelmHandlerCont
 }
 
 function scheduleRunningToolCallFlush(sessionId: string, context: HelmHandlerContext) {
-  const pending = pendingRunningToolCallBySession.get(sessionId);
+  const pending = runtimeEventState(context).get<PendingRunningToolCall>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall,
+  );
   if (!pending) {
     return false;
   }
@@ -680,13 +793,18 @@ function bufferRunningToolCall(
   toolCall: AgentToolCall,
   context: HelmHandlerContext,
 ) {
-  const pending = pendingRunningToolCallBySession.get(sessionId);
+  const state = runtimeEventState(context);
+  const pending = state.get<PendingRunningToolCall>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall,
+  );
   if (pending && pending.toolCall.id === toolCall.id) {
     clearRuntimeEventTimer(context, pending.timer);
     pending.timer = undefined;
     const mergedToolCall = {
       ...pending.toolCall,
       ...toolCall,
+      kind: pending.toolCall.kind,
       output: mergeToolCallOutput(pending.toolCall.output, toolCall.output),
       timestamp: pending.toolCall.timestamp,
       updatedAt: toolCall.updatedAt,
@@ -701,7 +819,7 @@ function bufferRunningToolCall(
   if (previous) {
     emitRuntimeToolCallSnapshot(sessionId, previous.toolCall, context);
   }
-  pendingRunningToolCallBySession.set(sessionId, {
+  state.set(sessionId, RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall, {
     toolCall,
     bufferedChars: estimateToolCallGrowth(undefined, toolCall),
   });
@@ -725,6 +843,10 @@ function mergeBufferedToolCallSnapshot(current: AgentToolCall, incoming: AgentTo
   return compactBinaryToolCallOutput({
     ...current,
     ...incoming,
+    kind: current.kind,
+    title: resolveBufferedToolCallTitle(current, incoming),
+    mcp: incoming.mcp ?? current.mcp,
+    input: incoming.input ?? current.input,
     output: mergeToolCallOutput(current.output, incoming.output),
     timestamp: current.timestamp,
     updatedAt: incoming.updatedAt,
@@ -732,18 +854,180 @@ function mergeBufferedToolCallSnapshot(current: AgentToolCall, incoming: AgentTo
   });
 }
 
-function shouldPersistToolCallSnapshot(
-  toolCall: AgentToolCall,
+function isWeakToolCallKind(kind: AgentToolCall["kind"]) {
+  return kind === "tool" || kind === "unknown";
+}
+
+function hasMeaningfulRuntimeThinkingOutput(output: string | undefined) {
+  const normalized = output?.replace(/[\u200B-\u200D\u2060\uFEFF]/gu, "").trim();
+  const marker = normalized?.toLowerCase();
+  return Boolean(marker && marker !== "{}" && marker !== "[]" && marker !== "null");
+}
+
+function stabilizeRuntimeToolCallClassification(
   sessionId: string,
-  context: Pick<HelmHandlerContext, "sessions" | "sessionStore">,
+  toolCall: AgentToolCall,
+  context: HelmHandlerContext,
 ) {
-  const summary =
-    context.sessions.get(sessionId)?.summary ??
-    context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId);
-  if (summary?.status === "error") {
-    return true;
+  const state = runtimeEventState(context);
+  const classifications = state.get<Map<string, StableToolCallClassification>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.toolCallClassifications,
+  ) ?? new Map<string, StableToolCallClassification>();
+  state.set(sessionId, RUNTIME_EVENT_STATE_KEY.toolCallClassifications, classifications);
+  const current = classifications.get(toolCall.id);
+  if (!current || (isWeakToolCallKind(current.kind) && !isWeakToolCallKind(toolCall.kind))) {
+    classifications.set(toolCall.id, {
+      kind: toolCall.kind,
+      ...(toolCall.mcp ? { mcp: toolCall.mcp } : {}),
+      ...(toolCall.kind === "mcp" ? { title: toolCall.title } : {}),
+    });
+    while (classifications.size > MAX_TRACKED_TOOL_CALL_CLASSIFICATIONS) {
+      const oldestId = classifications.keys().next().value;
+      if (typeof oldestId !== "string") {
+        break;
+      }
+      classifications.delete(oldestId);
+    }
+    return toolCall;
   }
-  return true;
+  return {
+    ...toolCall,
+    kind: current.kind,
+    ...(current.mcp ? { mcp: current.mcp } : {}),
+    ...(current.kind === "mcp" && current.title ? { title: current.title } : {}),
+  };
+}
+
+function trackActiveRuntimeToolCall(
+  sessionId: string,
+  toolCall: AgentToolCall,
+  context: HelmHandlerContext,
+) {
+  const state = runtimeEventState(context);
+  const active = state.get<Map<string, AgentToolCall>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.activeToolCalls,
+  ) ?? new Map<string, AgentToolCall>();
+  state.set(sessionId, RUNTIME_EVENT_STATE_KEY.activeToolCalls, active);
+  if (toolCall.status === "pending" || toolCall.status === "running") {
+    const current = active.get(toolCall.id);
+    active.set(
+      toolCall.id,
+      current ? mergeBufferedToolCallSnapshot(current, toolCall) : toolCall,
+    );
+    return;
+  }
+  active.delete(toolCall.id);
+}
+
+function mergeActiveRuntimeToolCallSnapshot(
+  sessionId: string,
+  toolCall: AgentToolCall,
+  context: HelmHandlerContext,
+) {
+  const active = runtimeEventState(context).get<Map<string, AgentToolCall>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.activeToolCalls,
+  );
+  const current = active?.get(toolCall.id);
+  return current ? mergeBufferedToolCallSnapshot(current, toolCall) : toolCall;
+}
+
+function finalizeActiveRuntimeToolCalls(
+  sessionId: string,
+  status: Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled">,
+  context: HelmHandlerContext,
+) {
+  const state = runtimeEventState(context);
+  const active = state.get<Map<string, AgentToolCall>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.activeToolCalls,
+  );
+  if (!active?.size) {
+    return;
+  }
+  const now = new Date().toISOString();
+  for (const toolCall of [...active.values()]) {
+    emitRuntimeToolCallSnapshot(sessionId, {
+      ...toolCall,
+      status,
+      updatedAt: now,
+    }, context);
+  }
+  active.clear();
+}
+
+function finalizeRuntimeThinking(
+  sessionId: string,
+  status: Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled">,
+  context: HelmHandlerContext,
+) {
+  assertCanonicalTimelinePipeline(context);
+  const finalizedThinking = finalizeActiveRuntimeThinking(sessionId, status);
+  if (!finalizedThinking) {
+    return;
+  }
+  const prepared = prepareRuntimeSessionUpdate(
+    sessionId,
+    { type: "tool-call", toolCall: finalizedThinking },
+    context,
+    nextLiveEventSequence(sessionId, context),
+  );
+  routeCanonicalTimelineEvent(
+    sessionId,
+    {
+      type: "tool-call",
+      toolCall: {
+        ...finalizedThinking,
+        sequence: finalizedThinking.sequence ?? prepared.resolvedSequence,
+      },
+    },
+    context,
+    prepared.resolvedSequence,
+    prepared.update,
+  );
+}
+
+export function publishPromptQueueState(
+  sessionId: string,
+  snapshot: SessionPromptQueueSnapshot,
+  context: HelmHandlerContext,
+) {
+  publishCanonicalSessionStateEvent(
+    sessionId,
+    { type: "prompt-queue", snapshot },
+    context,
+  );
+}
+
+/** Publishes a non-timeline runtime state change through the canonical path. */
+export function publishCanonicalSessionStateEvent(
+  sessionId: string,
+  event: Exclude<CanonicalSessionStateEvent, { type: "pending-approval-count" }>,
+  context: HelmHandlerContext,
+) {
+  return commitCanonicalStateEvent(sessionId, event, context)?.sequence;
+}
+
+function resolveBufferedToolCallTitle(current: AgentToolCall, incoming: AgentToolCall) {
+  const title = incoming.title.trim();
+  if (!title || /^Tool call\b/iu.test(title) || /^call_[A-Za-z0-9]+$/u.test(title)) {
+    return current.title;
+  }
+  if (
+    /^(?:tool|shell|read|write|search|grep|glob|diagnostics|skill|subagent|todo)$/iu.test(title) &&
+    current.title.trim().length > title.length
+  ) {
+    return current.title;
+  }
+  return incoming.title;
+}
+
+function shouldPersistHistoricalToolCall(toolCall: AgentToolCall) {
+  return toolCall.status === "completed" ||
+    toolCall.status === "failed" ||
+    toolCall.status === "cancelled";
 }
 
 
@@ -751,14 +1035,19 @@ function logRuntimePlanUpdate(
   sessionId: string,
   event: Extract<SessionRuntimeEvent, { type: "plan-update" }>,
   context: HelmHandlerContext,
+  sequence?: number,
 ) {
   const entries = event.plan.entries.length;
-  const previousEntries = runtimePlanLogStateBySession.get(sessionId)?.lastEntryCount ?? 0;
-  runtimePlanLogStateBySession.set(sessionId, { lastEntryCount: entries });
+  const state = runtimeEventState(context);
+  const previousEntries = state.get<RuntimePlanLogState>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.planLogState,
+  )?.lastEntryCount ?? 0;
+  state.set(sessionId, RUNTIME_EVENT_STATE_KEY.planLogState, { lastEntryCount: entries });
   if (entries > 0) {
     logRuntimeDebug(context, "runtime.plan.updated", {
       ...runtimeLogFields(sessionId, context),
-      seq: nextLiveEventSequence(sessionId),
+      seq: sequence ?? peekLiveEventSequence(sessionId, context),
       entries,
     });
     return;
@@ -766,7 +1055,7 @@ function logRuntimePlanUpdate(
   if (previousEntries > 0) {
     logRuntimeDebug(context, "runtime.plan.cleared", {
       ...runtimeLogFields(sessionId, context),
-      seq: nextLiveEventSequence(sessionId),
+      seq: sequence ?? peekLiveEventSequence(sessionId, context),
       previousEntries,
     });
   }
@@ -777,9 +1066,14 @@ function recordCommandOutputSummary(
   chunk: Extract<SessionRuntimeEvent, { type: "command-output" }>["chunk"],
   sequence: number,
   inputChunkCount = 1,
+  context: HelmHandlerContext,
 ) {
-  const summaries = commandOutputSummaryBySession.get(sessionId) ?? new Map<string, CommandOutputSummary>();
-  commandOutputSummaryBySession.set(sessionId, summaries);
+  const state = runtimeEventState(context);
+  const summaries = state.get<Map<string, CommandOutputSummary>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.commandOutputSummaries,
+  ) ?? new Map<string, CommandOutputSummary>();
+  state.set(sessionId, RUNTIME_EVENT_STATE_KEY.commandOutputSummaries, summaries);
   const key = `${chunk.commandId}\u001f${chunk.stream}`;
   const current = summaries.get(key);
   if (!current) {
@@ -799,15 +1093,19 @@ function recordCommandOutputSummary(
 }
 
 function flushCommandOutputSummaries(sessionId: string, context: HelmHandlerContext) {
-  const summaries = commandOutputSummaryBySession.get(sessionId);
+  const state = runtimeEventState(context);
+  const summaries = state.get<Map<string, CommandOutputSummary>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.commandOutputSummaries,
+  );
   if (!summaries?.size) {
     return;
   }
-  commandOutputSummaryBySession.delete(sessionId);
+  state.delete(sessionId, RUNTIME_EVENT_STATE_KEY.commandOutputSummaries);
   for (const summary of summaries.values()) {
     logRuntimeDebug(context, "runtime.command_output.summary", {
       ...runtimeLogFields(sessionId, context),
-      seq: nextLiveEventSequence(sessionId),
+      seq: summary.lastSeq,
       commandId: summary.commandId,
       stream: summary.stream,
       chunks: summary.chunks,
@@ -819,6 +1117,7 @@ function flushCommandOutputSummaries(sessionId: string, context: HelmHandlerCont
 }
 
 export function flushLiveAssistantMessage(sessionId: string, context: HelmHandlerContext) {
+  assertCanonicalTimelinePipeline(context);
   clearAssistantDeltaTimer(sessionId, context);
   const message = context.liveMessageBuffer.finalize(sessionId);
   if (!message) {
@@ -828,18 +1127,25 @@ export function flushLiveAssistantMessage(sessionId: string, context: HelmHandle
     ...message,
     streaming: false,
   };
-  context.persistSessionMessage(sessionId, finalizedMessage);
-  persistRuntimeSessionUpdate(sessionId, { type: "message", message: finalizedMessage }, context, finalizedMessage.sequence);
-  if (hasCanonicalTimelinePipeline(context)) {
-    routeCanonicalTimelineEvent(sessionId, { type: "message", message: finalizedMessage }, context);
-  } else {
-    persistTimelineMessage(context, sessionId, finalizedMessage);
-    createSessionEventPublisher(context).sessionUpdate(sessionId, {
-      kind: "agent_message",
-      message: finalizedMessage,
-      streaming: false,
-    });
-  }
+  const prepared = prepareRuntimeSessionUpdate(
+    sessionId,
+    { type: "message", message: finalizedMessage },
+    context,
+    finalizedMessage.sequence,
+  );
+  routeCanonicalTimelineEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        ...finalizedMessage,
+        sequence: finalizedMessage.sequence ?? prepared.resolvedSequence,
+      },
+    },
+    context,
+    prepared.resolvedSequence,
+    prepared.update,
+  );
   context.updateSessionSummary(sessionId, (current) => applyAgentMessageToSummary(current, finalizedMessage));
   return true;
 }
@@ -849,7 +1155,7 @@ function resolveRuntimeProviderId(
   context: Pick<HelmHandlerContext, "sessions" | "sessionStore">,
 ) {
   const record = context.sessions.get(sessionId);
-  const summary = context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId);
+  const summary = context.sessionStore.get(sessionId);
   return record?.agent?.id ?? record?.summary?.agentId ?? summary?.agentId;
 }
 
@@ -869,15 +1175,17 @@ export function handleRuntimeEvent(
 ) {
   if (
     !context.sessions.has(sessionId) &&
-    !context.sessionStore.list().some((item: { id: string }) => item.id === sessionId)
+    !context.sessionStore.get(sessionId)
   ) {
     return;
   }
+  assertCanonicalTimelinePipeline(context);
+  ensureLiveEventSequenceForSession(sessionId, context);
   if (shouldIgnoreLateRuntimeEvent(sessionId, event, context)) {
     flushIgnoredUserEchoSummary(sessionId, context);
     logRuntimeDebug(context, "runtime.event.ignored_late", {
       ...runtimeLogFields(sessionId, context),
-      seq: nextLiveEventSequence(sessionId),
+      seq: sequenceFromRuntimeEvent(event) ?? peekLiveEventSequence(sessionId, context),
       type: event.type,
     });
     return;
@@ -895,11 +1203,7 @@ export function handleRuntimeEvent(
   const expandedEvents = expandProviderRuntimeEvents(sessionId, event, context);
   const skipPendingCompactionInference =
     expandedEvents.length !== 1 || expandedEvents[0] !== event;
-  if (
-    hasCanonicalTimelinePipeline(context) &&
-    hasPendingTimelineCompaction(sessionId, context) &&
-    !skipPendingCompactionInference
-  ) {
+  if (hasPendingTimelineCompaction(sessionId, context) && !skipPendingCompactionInference) {
     inferPendingCompactionCompletion(sessionId, event, context);
   }
 
@@ -913,6 +1217,7 @@ function handleNormalizedRuntimeEvent(
   event: SessionRuntimeEvent,
   context: HelmHandlerContext,
 ) {
+  assertCanonicalTimelinePipeline(context);
   switch (event.type) {
     case "status":
       emitFirstHelmPromptTrace(context, {
@@ -920,25 +1225,23 @@ function handleNormalizedRuntimeEvent(
         phase: "helm.runtime.first_status",
         meta: { status: event.status },
       });
+      const statusSequence = commitCanonicalStateEvent(sessionId, event, context)?.sequence;
       flushLiveAssistantMessage(sessionId, context);
-      if (hasCanonicalTimelinePipeline(context)) {
-        context.sessionTimelineFlushScheduler.flushNow(sessionId);
-      }
       if (event.status === "running") {
         startNextAssistantResponseSegment(sessionId);
       } else {
-        const finalizedThinking = finalizeActiveRuntimeThinking(sessionId);
-        if (finalizedThinking) {
-          if (hasCanonicalTimelinePipeline(context)) {
-            routeCanonicalTimelineEvent(sessionId, { type: "tool-call", toolCall: finalizedThinking }, context);
-          } else {
-            publishRuntimeToolCall(context, sessionId, finalizedThinking);
-          }
-        }
+        const terminalStatus = event.status === "error"
+          ? "failed"
+          : event.status === "cancelled"
+            ? "cancelled"
+            : "completed";
+        finalizeRuntimeThinking(sessionId, terminalStatus, context);
+        finalizeActiveRuntimeToolCalls(sessionId, terminalStatus, context);
       }
+      context.sessionTimelineFlushScheduler.flushNow(sessionId);
       logRuntimeInfo(context, "runtime.status.changed", {
         ...runtimeLogFields(sessionId, context),
-        seq: nextLiveEventSequence(sessionId),
+        seq: statusSequence ?? 0,
         status: event.status,
         messageChars: event.message?.length ?? 0,
       });
@@ -947,92 +1250,84 @@ function handleNormalizedRuntimeEvent(
         status: event.status,
         updatedAt: new Date().toISOString(),
       }));
-      createSessionEventPublisher(context).sessionUpdate(sessionId, {
-        kind: "status_change",
-        status: event.status,
-        message: event.message,
-      });
+      if (event.status === "idle" || event.status === "error" || event.status === "cancelled") {
+        context.sessionUpdateStore.compactTail(sessionId);
+      }
       return;
     case "message":
       if (event.message.role === "user") {
         startNextAssistantResponseSegment(sessionId);
         flushLiveAssistantMessage(sessionId, context);
         if (shouldIgnoreRuntimeUserMessage(sessionId, event.message, context)) {
-          recordIgnoredUserEcho(sessionId, event.message);
+          recordIgnoredUserEcho(sessionId, event.message, context);
           return;
         }
         flushIgnoredUserEchoSummary(sessionId, context);
-        if (hasCanonicalTimelinePipeline(context)) {
-          persistRuntimeSessionUpdate(sessionId, event, context);
-          context.persistSessionMessage(sessionId, event.message);
-          context.updateSessionSummary(sessionId, (current) =>
-            applyUserPromptToSummary(current, event.message.text, event.message.timestamp),
-          );
-          routeCanonicalTimelineEvent(sessionId, event, context);
-          return;
-        }
-        publishRuntimeUserMessage(sessionId, event.message, context);
+        const prepared = prepareRuntimeSessionUpdate(sessionId, event, context);
+        routeCanonicalTimelineEvent(
+          sessionId,
+          {
+            ...event,
+            message: {
+              ...event.message,
+              sequence: event.message.sequence ?? prepared.resolvedSequence,
+            },
+          },
+          context,
+          prepared.resolvedSequence,
+          prepared.update,
+        );
+        context.updateSessionSummary(sessionId, (current) =>
+          applyUserPromptToSummary(current, event.message.text, event.message.timestamp),
+        );
         return;
       }
       const message = {
         ...event.message,
         id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
+        sequence: event.message.sequence ?? nextLiveEventSequence(sessionId, context),
       };
       emitFirstHelmPromptTrace(context, {
         sessionId,
         phase: "helm.runtime.first_message",
         meta: { chars: message.text.length },
       });
-      clearActiveRuntimeThinking(sessionId);
       if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
         flushLiveAssistantMessage(sessionId, context);
       }
       context.liveMessageBuffer.append(sessionId, message);
       if (message.streaming === false) {
         flushLiveAssistantMessage(sessionId, context);
+        finalizeRuntimeThinking(sessionId, "completed", context);
         return;
       }
       scheduleAssistantDeltaFlush(sessionId, context);
       return;
     case "compaction":
-      persistRuntimeSessionUpdate(sessionId, event, context);
-      const shouldStartNewAssistantTurn = !hasPendingTimelineCompaction(sessionId, context);
-      if (hasCanonicalTimelinePipeline(context)) {
-        if (shouldStartNewAssistantTurn) {
-          startNextAssistantResponseSegment(sessionId);
-        }
-        routeCanonicalTimelineEvent(sessionId, event, context);
-        return;
-      }
       flushLiveAssistantMessage(sessionId, context);
+      const shouldStartNewAssistantTurn = !hasPendingTimelineCompaction(sessionId, context);
+      const prepared = prepareRuntimeSessionUpdate(sessionId, event, context);
       if (shouldStartNewAssistantTurn) {
         startNextAssistantResponseSegment(sessionId);
       }
-      const compactionEntry = buildSessionCompactionEntry({
+      routeCanonicalTimelineEvent(
         sessionId,
+        event,
         context,
-        phase: event.phase,
-        source: event.source,
-        summaryText: event.summaryText,
-        summaryMessageId: event.messageId,
-        timestamp: event.timestamp,
-        idSuffix: event.messageId ? undefined : `compaction:${event.timestamp}`,
-      });
-      const storedCompactionEntry =
-        persistTimelineTranscriptEvent(context, sessionId, compactionEntry) ?? compactionEntry;
-      createSessionEventPublisher(context).sessionUpdate(sessionId, {
-        kind: "transcript_event",
-        entry: storedCompactionEntry,
-      });
+        prepared.resolvedSequence,
+        prepared.update,
+      );
       return;
     case "permission-request":
       flushLiveAssistantMessage(sessionId, context);
-      if (hasCanonicalTimelinePipeline(context)) {
-        context.sessionTimelineFlushScheduler.flushNow(sessionId);
-      }
+      context.sessionTimelineFlushScheduler.flushNow(sessionId);
+      const preparedApproval = context.sessionApprovalStateStore && context.sessionLiveStateStore
+        ? prepareRuntimeSessionUpdate(sessionId, event, context)
+        : undefined;
+      const approvalSequence = preparedApproval?.resolvedSequence;
       logRuntimeInfo(context, "runtime.permission.requested", {
         ...runtimeLogFields(sessionId, context),
-        seq: nextLiveEventSequence(sessionId),
+        seq: approvalSequence ?? 0,
         requestId: event.request.id,
         reasonChars: event.request.reason.length,
       });
@@ -1041,22 +1336,18 @@ function handleNormalizedRuntimeEvent(
           sessionId,
           request: event.request,
           logScope: runtimeLogScope(sessionId, context),
+          sequence: approvalSequence,
+          update: preparedApproval?.update,
         },
         context,
       );
       return;
     case "plan-update":
-      persistRuntimeSessionUpdate(sessionId, event, context);
-      logRuntimePlanUpdate(sessionId, event, context);
-      if (hasCanonicalTimelinePipeline(context)) {
-        routeCanonicalTimelineEvent(sessionId, event, context);
+      {
+        const sequence = commitCanonicalStateEvent(sessionId, event, context)?.sequence;
+        logRuntimePlanUpdate(sessionId, event, context, sequence);
         return;
       }
-      createSessionEventPublisher(context).sessionUpdate(sessionId, {
-        kind: "plan_update",
-        plan: event.plan,
-      });
-      return;
     case "tool-call":
       emitFirstHelmPromptTrace(context, {
         sessionId,
@@ -1064,42 +1355,76 @@ function handleNormalizedRuntimeEvent(
         meta: { kind: event.toolCall.kind },
       });
       if (event.toolCall.kind === "think") {
-        const toolCall = normalizeRuntimeThinkingToolCall(sessionId, event.toolCall);
-        if (hasCanonicalTimelinePipeline(context)) {
-          persistRuntimeSessionUpdate(sessionId, { ...event, toolCall }, context);
-          routeCanonicalTimelineEvent(sessionId, { ...event, toolCall }, context);
+        if (!hasMeaningfulRuntimeThinkingOutput(event.toolCall.output)) {
           return;
         }
-        const orderedThinkingToolCall = {
-          ...toolCall,
-          sequence: nextLiveEventSequence(sessionId),
-        };
-        persistRuntimeSessionUpdate(
+        const notificationSequence = event.toolCall.sequence ?? nextLiveEventSequence(sessionId, context);
+        const toolCall = normalizeRuntimeThinkingToolCall(sessionId, {
+          ...event.toolCall,
+          sequence: notificationSequence,
+        });
+        const prepared = prepareRuntimeSessionUpdate(
           sessionId,
-          { ...event, toolCall: orderedThinkingToolCall },
+          { ...event, toolCall },
           context,
-          orderedThinkingToolCall.sequence,
+          notificationSequence,
         );
-        publishRuntimeToolCall(context, sessionId, orderedThinkingToolCall);
+        routeCanonicalTimelineEvent(
+          sessionId,
+          {
+            ...event,
+            toolCall: {
+              ...toolCall,
+              sequence: toolCall.sequence ?? prepared.resolvedSequence,
+            },
+          },
+          context,
+          prepared.resolvedSequence,
+          prepared.update,
+        );
         return;
       }
+      const stableToolCall = stabilizeRuntimeToolCallClassification(
+        sessionId,
+        event.toolCall,
+        context,
+      );
       flushLiveAssistantMessage(sessionId, context);
-      const compactedToolCall = compactBinaryToolCallOutput(event.toolCall);
+      if (stableToolCall.kind !== "subagent") {
+        finalizeRuntimeThinking(sessionId, "completed", context);
+        bumpAssistantStreamSegment(sessionId);
+      }
+      const notificationSequence = stableToolCall.sequence ?? nextLiveEventSequence(sessionId, context);
+      const compactedToolCall = compactBinaryToolCallOutput({
+        ...stableToolCall,
+        sequence: notificationSequence,
+      });
+      const activeToolCall = mergeActiveRuntimeToolCallSnapshot(
+        sessionId,
+        compactedToolCall,
+        context,
+      );
+      trackActiveRuntimeToolCall(sessionId, activeToolCall, context);
       if (
-        compactedToolCall.status === "running" &&
-        compactedToolCall.kind !== "subagent"
+        activeToolCall.status === "running" &&
+        activeToolCall.kind !== "subagent"
       ) {
-        bufferRunningToolCall(sessionId, compactedToolCall, context);
+        bufferRunningToolCall(sessionId, activeToolCall, context);
         return;
       }
       const pendingRunningToolCall = consumePendingRunningToolCall(sessionId, context);
-      if (pendingRunningToolCall && pendingRunningToolCall.toolCall.id !== compactedToolCall.id) {
+      if (pendingRunningToolCall && pendingRunningToolCall.toolCall.id !== activeToolCall.id) {
         emitRuntimeToolCallSnapshot(sessionId, pendingRunningToolCall.toolCall, context);
       }
-      const resolvedToolCall = pendingRunningToolCall?.toolCall.id === compactedToolCall.id
-        ? mergeBufferedToolCallSnapshot(pendingRunningToolCall.toolCall, compactedToolCall)
-        : compactedToolCall;
-      emitRuntimeToolCallSnapshot(sessionId, resolvedToolCall, context);
+      const resolvedToolCall = pendingRunningToolCall?.toolCall.id === activeToolCall.id
+        ? mergeBufferedToolCallSnapshot(pendingRunningToolCall.toolCall, activeToolCall)
+        : activeToolCall;
+      emitRuntimeToolCallSnapshot(
+        sessionId,
+        resolvedToolCall,
+        context,
+        notificationSequence,
+      );
       return;
     case "command-output":
       emitFirstHelmPromptTrace(context, {
@@ -1108,23 +1433,34 @@ function handleNormalizedRuntimeEvent(
         meta: { commandId: event.chunk.commandId, stream: event.chunk.stream },
       });
       flushLiveAssistantMessage(sessionId, context);
-      bufferCommandOutputChunk(sessionId, event.chunk, context);
+      bufferCommandOutputChunk(sessionId, {
+        ...event.chunk,
+        sequence: event.chunk.sequence ?? nextLiveEventSequence(sessionId, context),
+      }, context);
       return;
     case "diff-update":
-      persistRuntimeSessionUpdate(sessionId, event, context);
-      flushLiveAssistantMessage(sessionId, context);
-      logRuntimeInfo(context, "runtime.diff.updated", {
-        ...runtimeLogFields(sessionId, context),
-        seq: nextLiveEventSequence(sessionId),
-        files: event.files.length,
-        paths: event.files.map((file) => file.path).slice(0, 8),
-      });
-      void context.publishDiffUpdate(sessionId, event.files);
-      return;
+      {
+        const files = context.sessionDiffBodyStore
+          ? materializeDiffPayloads(sessionId, event.files, context.sessionDiffBodyStore)
+          : event.files;
+        context.sessionArtifactStore.replaceDiffs(sessionId, files);
+        const sequence = commitCanonicalStateEvent(
+          sessionId,
+          { ...event, files },
+          context,
+        )?.sequence;
+        flushLiveAssistantMessage(sessionId, context);
+        logRuntimeInfo(context, "runtime.diff.updated", {
+          ...runtimeLogFields(sessionId, context),
+          seq: sequence ?? 0,
+          files: event.files.length,
+          paths: event.files.map((file) => file.path).slice(0, 8),
+        });
+        return;
+      }
     case "config-options": {
       flushLiveAssistantMessage(sessionId, context);
-      const current = context.sessions.get(sessionId)?.summary ??
-        context.sessionStore.list().find((item: SessionSummary) => item.id === sessionId);
+      const current = context.sessions.get(sessionId)?.summary ?? context.sessionStore.get(sessionId);
       const resolvedModel = current?.model ?? event.state.model;
       const resolvedConfigOptions = resolveConfigOptionsForSelection({
         incomingOptions: event.options,
@@ -1141,15 +1477,21 @@ function handleNormalizedRuntimeEvent(
         model: resolvedModel,
         reasoningEffort: resolvedReasoningEffort,
       };
+      const canonicalEvent = {
+        ...event,
+        state: resolvedState,
+        options: resolvedOptions,
+      };
+      const sequence = commitCanonicalStateEvent(sessionId, canonicalEvent, context)?.sequence;
       logRuntimeDebug(context, "runtime.config_options.received", {
         ...runtimeLogFields(sessionId, context),
-        seq: nextLiveEventSequence(sessionId),
+        seq: sequence ?? 0,
         agentMode: event.state.agentMode ?? "<none>",
         model: resolvedModel ?? "<none>",
         reasoning: resolvedReasoningEffort ?? "<none>",
         options: resolvedOptions.length,
       });
-      const updated = context.updateSessionSummary(sessionId, (current) => ({
+      context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         agentMode: current.agentMode ?? event.state.agentMode,
         model: resolvedModel,
@@ -1157,86 +1499,56 @@ function handleNormalizedRuntimeEvent(
         reasoningEffort: resolvedReasoningEffort,
         updatedAt: new Date().toISOString(),
       }));
-      createSessionEventPublisher(context).sessionUpdate(sessionId, {
-        kind: "config_options",
-        state: resolvedState,
-        options: resolvedOptions,
-      });
-      if (updated) {
-        createSessionEventPublisher(context).sessionUpdate(sessionId, {
-          kind: "session_updated",
-          session: context.hydrateSessionSummary(updated),
-        });
-      }
       return;
     }
     case "model-options": {
       flushLiveAssistantMessage(sessionId, context);
+      const sequence = commitCanonicalStateEvent(sessionId, event, context)?.sequence;
       logRuntimeDebug(context, "runtime.model_options.received", {
         ...runtimeLogFields(sessionId, context),
-        seq: nextLiveEventSequence(sessionId),
+        seq: sequence ?? 0,
         currentModel: event.state.currentModelId ?? "<none>",
         options: event.state.options.length,
       });
-      const updated = context.updateSessionSummary(sessionId, (current) => ({
+      context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         model: current.model ?? event.state.currentModelId,
         modelOptions: event.state.options,
         updatedAt: new Date().toISOString(),
       }));
-      createSessionEventPublisher(context).sessionUpdate(sessionId, {
-        kind: "model_options",
-        currentModelId: event.state.currentModelId,
-        options: event.state.options,
-      });
-      if (updated) {
-        createSessionEventPublisher(context).sessionUpdate(sessionId, {
-          kind: "session_updated",
-          session: context.hydrateSessionSummary(updated),
-        });
-      }
       return;
     }
     case "available-commands": {
       flushLiveAssistantMessage(sessionId, context);
+      const sequence = commitCanonicalStateEvent(sessionId, event, context)?.sequence;
       logRuntimeDebug(context, "runtime.available_commands.received", {
         ...runtimeLogFields(sessionId, context),
-        seq: nextLiveEventSequence(sessionId),
+        seq: sequence ?? 0,
         commands: event.commands.length,
       });
-      const updated = context.updateSessionSummary(sessionId, (current) => ({
+      context.updateSessionSummary(sessionId, (current) => ({
         ...current,
         availableCommands: event.commands,
         updatedAt: new Date().toISOString(),
       }));
-      createSessionEventPublisher(context).sessionUpdate(sessionId, {
-        kind: "commands_available",
-        commands: event.commands,
-      });
-      if (updated) {
-        createSessionEventPublisher(context).sessionUpdate(sessionId, {
-          kind: "session_updated",
-          session: context.hydrateSessionSummary(updated),
-        });
-      }
+      return;
+    }
+    case "mode-update":
+    case "session-info":
+    case "usage-update": {
+      commitCanonicalStateEvent(sessionId, event, context);
       return;
     }
     case "error":
       flushLiveAssistantMessage(sessionId, context);
-      if (hasCanonicalTimelinePipeline(context)) {
-        context.sessionTimelineFlushScheduler.flushNow(sessionId);
-      }
+      finalizeRuntimeThinking(sessionId, "failed", context);
+      finalizeActiveRuntimeToolCalls(sessionId, "failed", context);
+      context.sessionTimelineFlushScheduler.flushNow(sessionId);
       logRuntimeError(context, "runtime.error", {
         ...runtimeLogFields(sessionId, context),
-        seq: nextLiveEventSequence(sessionId),
+        seq: peekLiveEventSequence(sessionId, context),
         code: event.code ?? "UNKNOWN",
         messageChars: event.message.length,
-      });
-      context.persistSessionMessage(sessionId, {
-        id: `${sessionId}-system-${Date.now()}`,
-        role: "system",
-        text: event.message,
-        timestamp: new Date().toISOString(),
       });
       context.updateSessionSummary(sessionId, (current) => ({
         ...current,
@@ -1269,11 +1581,16 @@ function isRuntimeUserMessageEvent(event: SessionRuntimeEvent) {
 function recordIgnoredUserEcho(
   sessionId: string,
   message: Extract<SessionRuntimeEvent, { type: "message" }>["message"],
+  context: HelmHandlerContext,
 ) {
-  const seq = nextLiveEventSequence(sessionId);
-  const current = ignoredUserEchoSummaryBySession.get(sessionId);
+  const state = runtimeEventState(context);
+  const seq = message.sequence ?? peekLiveEventSequence(sessionId, context);
+  const current = state.get<IgnoredUserEchoSummary>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.ignoredUserEchoSummary,
+  );
   if (!current) {
-    ignoredUserEchoSummaryBySession.set(sessionId, {
+    state.set(sessionId, RUNTIME_EVENT_STATE_KEY.ignoredUserEchoSummary, {
       count: 1,
       firstMessageId: message.id,
       firstSeq: seq,
@@ -1316,33 +1633,16 @@ function listLocalUserMessages(sessionId: string, context: HelmHandlerContext): 
   }
 }
 
-function publishRuntimeUserMessage(
-  sessionId: string,
-  message: Extract<SessionRuntimeEvent, { type: "message" }>["message"],
-  context: HelmHandlerContext,
-) {
-  const userMessage = {
-    ...message,
-    sequence: nextLiveEventSequence(sessionId),
-  };
-  persistRuntimeSessionUpdate(sessionId, { type: "message", message: userMessage }, context, userMessage.sequence);
-  context.persistSessionMessage(sessionId, userMessage);
-  persistTimelineMessage(context, sessionId, userMessage);
-  context.updateSessionSummary(sessionId, (current) =>
-    applyUserPromptToSummary(current, userMessage.text, userMessage.timestamp),
-  );
-  createSessionEventPublisher(context).sessionUpdate(sessionId, {
-    kind: "user_message",
-    message: userMessage,
-  });
-}
-
 function flushIgnoredUserEchoSummary(sessionId: string, context: HelmHandlerContext) {
-  const summary = ignoredUserEchoSummaryBySession.get(sessionId);
+  const state = runtimeEventState(context);
+  const summary = state.get<IgnoredUserEchoSummary>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.ignoredUserEchoSummary,
+  );
   if (!summary) {
     return;
   }
-  ignoredUserEchoSummaryBySession.delete(sessionId);
+  state.delete(sessionId, RUNTIME_EVENT_STATE_KEY.ignoredUserEchoSummary);
   logRuntimeDebug(context, "runtime.message.user_echo.ignored_summary", {
     ...runtimeLogFields(sessionId, context),
     role: "user",
@@ -1364,7 +1664,7 @@ function shouldIgnoreLateRuntimeEvent(
   const activeRecord = context.sessions.get(sessionId);
   const current =
     activeRecord?.summary ??
-    context.sessionStore.list().find((item: { id: string }) => item.id === sessionId);
+    context.sessionStore.get(sessionId);
   if (current?.status === "error" && activeRecord) {
     return false;
   }

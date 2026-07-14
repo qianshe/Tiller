@@ -4,7 +4,7 @@ import type {
   SessionSummary,
   SessionTimelineEntry,
 } from "@tiller/shared";
-import { deriveToolCallsFromTimeline } from "../utils/timeline-tool-calls";
+import { deriveToolCallsFromTimeline } from "../utils/timeline-activity";
 
 /**
  * Measures the total streamed character volume of a session so callers can
@@ -27,6 +27,8 @@ export function resolveSessionStreamContentLength(sources: {
       }
     } else if (entry.kind === "tool_call") {
       length += (entry.toolCall.output?.length ?? 0) + (entry.toolCall.input?.length ?? 0);
+    } else if (entry.kind === "command_output") {
+      length += entry.output.text?.length ?? 0;
     } else if (entry.kind === "context_compaction" || entry.kind === "history_gap") {
       // Transcript events don't contribute to character count
       continue;

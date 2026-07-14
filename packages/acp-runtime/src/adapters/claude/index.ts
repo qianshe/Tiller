@@ -1,14 +1,15 @@
 import type { AcpAgentAdapter } from "../types";
 import { isCommandNamed, resolveDefaultLaunch, resolveUnsupportedCleanup } from "../shared";
-import { normalizeClaudeToolCall } from "./tool-calls";
-import { createClaudePlanUpdateMapper } from "./plan-events";
-import { readClaudeTranscriptMessagesFromDisk } from "./transcript/history";
-import { readClaudeTranscriptPlanFromDisk } from "./transcript/plan";
-import { readClaudeTranscriptToolCallsFromDisk } from "./transcript/tool-calls";
+import { createClaudeToolCallNormalizer } from "./tool-calls";
+import { createClaudePlanUpdateProjector } from "./plan-events";
+import { createClaudePromptToolCallObserver } from "./prompt-tool-calls";
 
 const CLAUDE_ACP_COMMANDS = ["claude-acp", "claude-agent-acp", "claude-code-acp"];
 
 export function createClaudeAcpAdapter(): AcpAgentAdapter {
+  const planProjector = createClaudePlanUpdateProjector();
+  const toolCallNormalizer = createClaudeToolCallNormalizer();
+  const promptToolCalls = createClaudePromptToolCallObserver();
   return {
     id: "claude",
     isMatch: (provider) =>
@@ -31,13 +32,15 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
     },
     resolveCapabilities: (_provider, _initializeResult, detected) => detected,
     resolveCleanup: ({ provider }) => resolveUnsupportedCleanup(provider),
-    mapSessionUpdate: createClaudePlanUpdateMapper(),
-    normalizeToolCall: ({ toolCall, update }) => normalizeClaudeToolCall(toolCall, update),
-    readTranscriptPlan: ({ runtimeSessionId, cwd }) =>
-      readClaudeTranscriptPlanFromDisk({ runtimeSessionId, cwd }),
-    readTranscriptMessages: ({ runtimeSessionId, cwd }) =>
-      readClaudeTranscriptMessagesFromDisk({ runtimeSessionId, cwd }),
-    readTranscriptToolCalls: ({ runtimeSessionId, cwd }) =>
-      readClaudeTranscriptToolCallsFromDisk({ runtimeSessionId, cwd }),
+    beginPromptObservation: (context) => promptToolCalls.begin(context),
+    pollPromptEvents: (context) => promptToolCalls.poll(context),
+    mapToolCallUpdate: planProjector.mapUpdate,
+    disposeSession: (sessionId) => {
+      planProjector.disposeSession(sessionId);
+      toolCallNormalizer.disposeSession(sessionId);
+      promptToolCalls.dispose(sessionId);
+    },
+    normalizeToolCall: ({ toolCall, update, sessionId, cwd }) =>
+      toolCallNormalizer.normalize(toolCall, update, sessionId, cwd),
   };
 }

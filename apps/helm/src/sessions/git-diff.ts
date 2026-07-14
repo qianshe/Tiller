@@ -1,69 +1,106 @@
-import { execFile } from "node:child_process";
-import { readFile } from "node:fs/promises";
+import { spawn } from "node:child_process";
+import { readFile, stat } from "node:fs/promises";
 import { resolve, sep } from "node:path";
-import { promisify } from "node:util";
 import type { FileDiffSummary } from "@tiller/shared";
 
-const execFileAsync = promisify(execFile);
-const GIT_DIFF_MAX_BUFFER = 5 * 1024 * 1024;
+const GIT_DIFF_MAX_BUFFER = 16 * 1024 * 1024;
+const MAX_UNTRACKED_PATCH_BYTES = 4 * 1024 * 1024;
+const UNTRACKED_READ_CONCURRENCY = 4;
 
+/**
+ * Uses one tracked diff process and one untracked-file listing process per
+ * hydration. Per-file Git processes are intentionally forbidden here.
+ */
 export async function readWorktreeGitDiffs(cwd: string): Promise<FileDiffSummary[]> {
   try {
-    const [nameStatusResult, numstatResult] = await Promise.all([
-      execFileAsync("git", ["-C", cwd, "diff", "--name-status", "HEAD", "--"], {
-        maxBuffer: GIT_DIFF_MAX_BUFFER,
-      }),
-      execFileAsync("git", ["-C", cwd, "diff", "--numstat", "HEAD", "--"], {
-        maxBuffer: GIT_DIFF_MAX_BUFFER,
-      }),
+    const [trackedResult, untrackedResult] = await Promise.all([
+      readGitProcess(cwd, ["diff", "--no-ext-diff", "--find-renames=0", "--patch", "HEAD", "--"]),
+      readGitProcess(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]),
     ]);
-    const statsByPath = parseGitNumstat(numstatResult.stdout);
-    const files = parseGitNameStatus(nameStatusResult.stdout);
-    const trackedDiffs = await Promise.all(
-      files.map(async (file) => {
-        const stats = statsByPath.get(normalizeDiffPath(file.path));
-        const patch = await readWorktreeGitPatch(cwd, file.path);
-        return {
-          ...file,
-          additions: stats?.additions ?? countPatchLines(patch, "+"),
-          deletions: stats?.deletions ?? countPatchLines(patch, "-"),
-          ...(patch ? { patch } : {}),
-        };
-      }),
+    const trackedDiffs = parseGitPatchSet(trackedResult);
+    const untrackedPaths = untrackedResult.split("\0").filter(Boolean);
+    const untrackedDiffs = await mapWithConcurrency(
+      untrackedPaths,
+      UNTRACKED_READ_CONCURRENCY,
+      (filePath) => buildUntrackedFileDiff(cwd, filePath),
     );
-    const untrackedDiffs = await readWorktreeUntrackedDiffs(cwd);
     return [...trackedDiffs, ...untrackedDiffs];
   } catch {
     return [];
   }
 }
 
-async function readWorktreeGitPatch(cwd: string, filePath: string) {
-  try {
-    const result = await execFileAsync(
-      "git",
-      ["-C", cwd, "diff", "--no-ext-diff", "HEAD", "--", filePath],
-      { maxBuffer: GIT_DIFF_MAX_BUFFER },
-    );
-    const patch = result.stdout.trimEnd();
-    return patch || undefined;
-  } catch {
-    return undefined;
-  }
+function readGitProcess(cwd: string, args: string[]): Promise<string> {
+  return new Promise((resolveResult, reject) => {
+    const child = spawn("git", ["-C", cwd, ...args], {
+      stdio: ["ignore", "pipe", "ignore"],
+      windowsHide: true,
+    });
+    const chunks: Buffer[] = [];
+    let bytes = 0;
+    let settled = false;
+    const finish = (callback: () => void) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      callback();
+    };
+    child.stdout.on("data", (chunk: Buffer) => {
+      bytes += chunk.byteLength;
+      if (bytes > GIT_DIFF_MAX_BUFFER) {
+        child.kill();
+        finish(() => reject(new Error("Git diff output exceeded the 16 MiB limit.")));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    child.once("error", (error) => finish(() => reject(error)));
+    child.once("close", (code) => {
+      if (code !== 0) {
+        finish(() => reject(new Error(`Git exited with code ${code ?? "unknown"}.`)));
+        return;
+      }
+      finish(() => resolveResult(Buffer.concat(chunks).toString("utf8")));
+    });
+  });
 }
 
-async function readWorktreeUntrackedDiffs(cwd: string): Promise<FileDiffSummary[]> {
-  try {
-    const result = await execFileAsync(
-      "git",
-      ["-C", cwd, "ls-files", "--others", "--exclude-standard", "-z"],
-      { maxBuffer: GIT_DIFF_MAX_BUFFER },
-    );
-    const files = result.stdout.split("\0").filter(Boolean);
-    return Promise.all(files.map((filePath) => buildUntrackedFileDiff(cwd, filePath)));
-  } catch {
-    return [];
-  }
+function parseGitPatchSet(output: string): FileDiffSummary[] {
+  return output
+    .split(/(?=^diff --git )/mu)
+    .map((patch) => patch.trimEnd())
+    .filter(Boolean)
+    .map((patch): FileDiffSummary | undefined => {
+      const path = resolvePatchPath(patch);
+      if (!path) {
+        return undefined;
+      }
+      return {
+        path,
+        status: patch.includes("new file mode")
+          ? "added" as const
+          : patch.includes("deleted file mode")
+            ? "deleted" as const
+            : "modified" as const,
+        additions: countPatchLines(patch, "+"),
+        deletions: countPatchLines(patch, "-"),
+        patch,
+      };
+    })
+    .filter((diff): diff is FileDiffSummary => Boolean(diff));
+}
+
+function resolvePatchPath(patch: string) {
+  const added = /^\+\+\+ b\/(.+)$/mu.exec(patch)?.[1];
+  const deleted = /^--- a\/(.+)$/mu.exec(patch)?.[1];
+  return normalizeDiffPath(unquoteGitPath(added ?? deleted ?? ""));
+}
+
+function unquoteGitPath(value: string) {
+  return value.startsWith('"') && value.endsWith('"')
+    ? value.slice(1, -1).replaceAll("\\\"", '"').replaceAll("\\\\", "\\")
+    : value;
 }
 
 async function buildUntrackedFileDiff(
@@ -79,7 +116,16 @@ async function buildUntrackedFileDiff(
     ) {
       return { path: filePath, status: "added", additions: 0, deletions: 0 };
     }
-
+    const fileStat = await stat(absoluteFile);
+    if (fileStat.size > MAX_UNTRACKED_PATCH_BYTES) {
+      return {
+        path: filePath,
+        status: "added",
+        additions: 0,
+        deletions: 0,
+        patchTruncated: true,
+      };
+    }
     const content = await readFile(absoluteFile, "utf8");
     const patch = buildAddedFilePatch(filePath, content);
     return {
@@ -92,6 +138,27 @@ async function buildUntrackedFileDiff(
   } catch {
     return { path: filePath, status: "added", additions: 0, deletions: 0 };
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  map: (value: T) => Promise<R>,
+) {
+  const results = new Array<R>(values.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    for (;;) {
+      const index = cursor;
+      cursor += 1;
+      if (index >= values.length) {
+        return;
+      }
+      results[index] = await map(values[index] as T);
+    }
+  });
+  await Promise.all(workers);
+  return results;
 }
 
 function buildAddedFilePatch(filePath: string, content: string) {
@@ -110,49 +177,6 @@ function buildAddedFilePatch(filePath: string, content: string) {
     .join("\n");
 }
 
-function parseGitNameStatus(output: string): FileDiffSummary[] {
-  return output
-    .split(/\r?\n/u)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const [statusToken = "M", ...paths] = line.split(/\t+/u);
-      const path = paths.at(-1) ?? "";
-      return {
-        path,
-        status: statusToken.startsWith("A")
-          ? ("added" as const)
-          : statusToken.startsWith("D")
-            ? ("deleted" as const)
-            : ("modified" as const),
-        additions: 0,
-        deletions: 0,
-      };
-    })
-    .filter((file) => Boolean(file.path));
-}
-
-function parseGitNumstat(output: string) {
-  const stats = new Map<string, { additions: number; deletions: number }>();
-  for (const line of output.split(/\r?\n/u)) {
-    const [additionsRaw, deletionsRaw, ...paths] = line.split(/\t+/u);
-    const path = paths.at(-1);
-    if (!path) {
-      continue;
-    }
-    stats.set(normalizeDiffPath(path), {
-      additions: parseGitStatNumber(additionsRaw),
-      deletions: parseGitStatNumber(deletionsRaw),
-    });
-  }
-  return stats;
-}
-
-function parseGitStatNumber(value: string | undefined) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : 0;
-}
-
 export function normalizeDiffPath(path: string) {
   return path.replace(/\\/g, "/");
 }
@@ -161,7 +185,6 @@ function countPatchLines(patch: string | undefined, marker: "+" | "-") {
   if (!patch) {
     return 0;
   }
-
   const ignoredPrefix = marker === "+" ? "+++" : "---";
   return patch
     .split(/\r?\n/u)

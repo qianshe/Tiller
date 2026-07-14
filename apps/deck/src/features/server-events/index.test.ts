@@ -194,7 +194,7 @@ test("live thinking tool calls update the chat tool-call store immediately", () 
   assert.deepEqual(toolCallsRef.current.s1, [thinkingToolCall]);
 });
 
-test("activity tool and command updates keep canonical timeline untouched", () => {
+test("activity tool overlays keep canonical timeline untouched", () => {
   resetStore();
   const existingTimeline: SessionTimelineEntry[] = [
     {
@@ -226,15 +226,6 @@ test("activity tool and command updates keep canonical timeline untouched", () =
     updatedAt: "2026-05-04T01:00:01.000Z",
     sequence: 2,
   };
-  const commandChunk = {
-    id: "chunk-1",
-    commandId: "tool-1",
-    stream: "stdout" as const,
-    text: "stdout",
-    timestamp: "2026-05-04T01:00:02.000Z",
-    sequence: 3,
-  };
-
   applyActivityUpdate(
     { sessionId: "s1", update: { kind: "tool_call", toolCall } },
     {
@@ -253,27 +244,9 @@ test("activity tool and command updates keep canonical timeline untouched", () =
     },
   );
 
-  applyActivityUpdate(
-    { sessionId: "s1", update: { kind: "command_output", commandId: "tool-1", chunk: commandChunk } },
-    {
-      toolCallsRef,
-      mergeSessionToolCalls: (sessionId, incoming) => {
-        useDeckStore.getState().setToolCalls((current) => {
-          const next = {
-            ...current,
-            [sessionId]: [...(current[sessionId] ?? []), ...incoming],
-          };
-          toolCallsRef.current = next;
-          return next;
-        });
-      },
-      appendSystemMessage: () => undefined,
-    },
-  );
-
   assert.equal(useDeckStore.getState().sessionTimeline.s1, existingTimeline);
-  assert.equal(useDeckStore.getState().outputs.s1?.[0]?.text, "stdout");
-  assert.equal(useDeckStore.getState().toolCalls.s1?.length, 2);
+  assert.equal(useDeckStore.getState().outputs.s1, undefined);
+  assert.equal(useDeckStore.getState().toolCalls.s1?.length, 1);
 });
 
 test("assistant message chunks clear active live thinking from the chat store", () => {

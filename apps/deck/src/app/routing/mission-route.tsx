@@ -16,6 +16,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
     selectedAgentId,
     activeSession,
     diffs,
+    historicalDiffIncompleteBySession,
     outputs,
     messages,
     sessionTimeline,
@@ -203,6 +204,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       selectedAgentId={selectedAgentId}
       activeSession={activeSession}
       diffs={diffs}
+      historicalDiffIncompleteBySession={historicalDiffIncompleteBySession}
       outputs={outputs}
       messages={messages}
       sessionTimeline={sessionTimeline}

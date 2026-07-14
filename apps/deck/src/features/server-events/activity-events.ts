@@ -1,11 +1,9 @@
 import type { MutableRefObject } from "react";
-import type { AgentPlan, AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
+import type { AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
 import { dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
 import { useDeckStore } from "../../store";
 import { stripRedundantAttachmentData } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
-
-const MAX_OUTPUTS_PER_SESSION = 2000;
 
 export type ActivityServerEventContext = {
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
@@ -60,20 +58,6 @@ export function applyActivityUpdate(
       }
       return true;
     }
-    case "command_output": {
-      const chunk = update.chunk;
-      store.setOutputs((current) => {
-        const existing = current[sessionId] ?? [];
-        const appended = [...existing, chunk];
-        return {
-          ...current,
-          [sessionId]: appended.length > MAX_OUTPUTS_PER_SESSION
-            ? appended.slice(-MAX_OUTPUTS_PER_SESSION)
-            : appended,
-        };
-      });
-      return true;
-    }
     case "tool_call": {
       const toolCall = update.toolCall;
       const isAlreadySettled = toolCall.status === "completed" || toolCall.status === "failed";
@@ -88,42 +72,12 @@ export function applyActivityUpdate(
       }
       return true;
     }
-    case "plan_update":
-      // Plan updates are session-scoped state carried over the activity update transport.
-      store.setSessionPlans((current) =>
-        mergeSessionPlanUpdate(current, sessionId, update.plan),
-      );
-      return true;
-    case "diff_update":
-      store.setDiffs((current) => ({
-        ...current,
-        [sessionId]: update.files,
-      }));
-      return true;
     default:
       return false;
   }
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
-
-function mergeSessionPlanUpdate(
-  current: Record<string, AgentPlan>,
-  sessionId: string,
-  incoming: AgentPlan,
-) {
-  if (incoming.entries.length === 0) {
-    if (!current[sessionId]) {
-      return current;
-    }
-    const { [sessionId]: _removed, ...rest } = current;
-    return rest;
-  }
-  return {
-    ...current,
-    [sessionId]: incoming,
-  };
-}
 
 function clearActiveThinkingToolCalls(
   sessionId: string,

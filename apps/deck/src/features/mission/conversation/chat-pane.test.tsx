@@ -38,6 +38,7 @@ function renderChatPane(overrides: Record<string, unknown> = {}) {
       activeSessionMessages={[]}
       sessionMessagesById={{}}
       sessionTimelineById={{}}
+      sessionLegacyEvidenceById={{}}
       activeSessionPlan={null}
       sessionPlansById={{}}
       dismissedCompletedSessionPlanKeys={{}}
@@ -47,6 +48,7 @@ function renderChatPane(overrides: Record<string, unknown> = {}) {
       expandedMessageIds={new Set()}
       messageHistoryState={{}}
       onLoadOlderMessages={() => undefined}
+      onLoadLegacyEvidence={() => undefined}
       onToggleExpandedMessage={() => undefined}
       activityLoading={null}
       pendingToolPresent={false}

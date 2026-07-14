@@ -17,7 +17,6 @@ import type {
   PromptTraceEvent,
   SessionConfigOption,
   SessionConfigOptionValue,
-  SessionHistoryReimportResult,
   SessionLiveStateSnapshot,
   SessionReasoningEffort,
   SessionSummary,
@@ -25,15 +24,20 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 import type {
+  SessionDiffBodyStore,
   SessionOutputBodyStore,
   SessionPlanStore,
   StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
+import type { SessionLegacyEvidenceStore } from "@tiller/persistence";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 import type { SessionPromptQueueManager } from "../runtime/session/prompt-queue";
 import type { SessionTimelineDispatcher } from "../runtime/session-timeline/dispatcher";
 import type { SessionTimelineFlushScheduler } from "../runtime/session-timeline/flush-scheduler";
 import type { SessionLiveStateStore } from "../runtime/session-timeline/live-state-store";
+import type { SessionApprovalStateStore } from "../runtime/session/event/approval-store";
+import type { SessionRuntimeEventState } from "../runtime/session/event/runtime-state";
+import type { RuntimeMetrics } from "../logging/runtime-metrics";
 import type { SessionTimelineWorkerRegistry } from "../runtime/session-timeline/worker-registry";
 import type { TillerLogger } from "../logging/logger";
 
@@ -45,7 +49,9 @@ export type SessionRecord = {
 };
 
 export type PermissionRecord = { sessionId: string; request: PermissionRequest };
-export type ApprovalRecord = PermissionRecord;
+export type ApprovalRecord = PermissionRecord & {
+  status?: "pending" | "resolving";
+};
 
 export type RuntimeDraftReason = "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user" | "obsolete";
 
@@ -124,7 +130,9 @@ export type HelmHandlerContext = {
   sessionStore: any;
   sessionMessageStore: any;
   sessionArtifactStore: any;
+  sessionLegacyEvidenceStore?: SessionLegacyEvidenceStore;
   sessionAttachmentStore: any;
+  sessionDiffBodyStore?: SessionDiffBodyStore;
   sessionOutputBodyStore: SessionOutputBodyStore;
   sessionRuntimeStore: any;
   sessionPlanStore: SessionPlanStore;
@@ -133,6 +141,9 @@ export type HelmHandlerContext = {
   sessionTimelineDispatcher?: SessionTimelineDispatcher;
   sessionTimelineFlushScheduler?: SessionTimelineFlushScheduler;
   sessionLiveStateStore?: SessionLiveStateStore;
+  sessionApprovalStateStore?: SessionApprovalStateStore;
+  sessionRuntimeEventState?: SessionRuntimeEventState;
+  runtimeMetrics?: RuntimeMetrics;
   sessionUpdateStore: any;
   liveMessageBuffer: LiveMessageBuffer;
   runtimeEventThrottleConfig?: RuntimeEventThrottleConfig;
@@ -229,7 +240,6 @@ export type HelmHandlerContext = {
     event: import("@tiller/acp-runtime").SessionRuntimeEvent,
   ) => void;
   hydrateSessionSummary: (summary: SessionSummary) => SessionSummary;
-  migrateStoredSessionSummary: (summary: SessionSummary) => SessionSummary;
   buildResumeInfo: (
     summary: SessionSummary,
     agent: AcpAgentProvider | undefined,
@@ -239,13 +249,7 @@ export type HelmHandlerContext = {
     agent: AcpAgentProvider | undefined,
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
   ) => void;
-  refreshAuthoritativeSessionHistory: (sessionId: string) => Promise<void>;
-  readSessionPlan?: (sessionId: string) => AgentPlan | undefined;
   readSessionLiveState?: (sessionId: string) => SessionLiveStateSnapshot | undefined;
-  reimportSessionHistory: (
-    sessionId: string,
-    options?: { limit?: number },
-  ) => Promise<SessionHistoryReimportResult>;
   updateSessionSummary: (
     sessionId: string,
     mutate: (summary: SessionSummary) => SessionSummary,

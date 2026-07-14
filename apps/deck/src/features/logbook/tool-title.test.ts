@@ -123,6 +123,52 @@ test("resolveToolCallTone trusts explicit search kind over title heuristics", ()
   });
 });
 
+test("resolveToolCallTone renders explicit diagnostics and keeps legacy read compatibility", () => {
+  assert.deepEqual(
+    resolveToolCallTone(
+      "diagnostics",
+      "Diagnostics: packages/acp-runtime/src/adapters/opencode/tool-calls.ts",
+    ),
+    {
+      label: "Diagnostics",
+      className: "tool-call-read",
+      icon: "!",
+    },
+  );
+  assert.deepEqual(
+    resolveToolCallTone(
+      "read",
+      "Diagnostics: packages/acp-runtime/src/adapters/opencode/tool-calls.ts",
+    ),
+    {
+      label: "Diagnostics",
+      className: "tool-call-read",
+      icon: "!",
+    },
+  );
+});
+
+test("groupToolCalls preserves long shell commands for the row tooltip", () => {
+  const command = [
+    "pnpm --filter @tiller/deck test",
+    "-- --test-name-pattern",
+    '"keeps the complete shell command available instead of truncating after seventy two characters"',
+  ].join(" ");
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-long",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({ command }),
+      timestamp: "2026-07-14T00:00:00.000Z",
+      updatedAt: "2026-07-14T00:00:01.000Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, command);
+});
+
 
 test("groupToolCalls uses structured file paths for read and write titles", () => {
   const grouped = groupToolCalls([
@@ -177,7 +223,28 @@ test("groupToolCalls summarizes search tools from structured query inputs", () =
   assert.equal(grouped[1]?.title, "Glob: apps/deck/**/*.tsx");
 });
 
-test("groupToolCalls treats shell-shaped structured Grep payloads as search activity", () => {
+test("groupToolCalls uses structured file paths for diagnostics titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-diagnostics",
+      kind: "diagnostics",
+      title: "Diagnostics",
+      status: "completed",
+      input: JSON.stringify({
+        filePath: "D:\\myProject\\tools\\Tiller\\packages\\acp-runtime\\src\\events.ts",
+      }),
+      timestamp: "2026-07-14T00:00:00.000Z",
+      updatedAt: "2026-07-14T00:00:01.000Z",
+    },
+  ]);
+
+  assert.equal(
+    grouped[0]?.title,
+    "Diagnostics: packages/acp-runtime/src/events.ts",
+  );
+});
+
+test("groupToolCalls preserves the server-assigned shell kind for structured Grep payloads", () => {
   const grouped = groupToolCalls([
     {
       id: "call-shell-grep",
@@ -194,11 +261,10 @@ test("groupToolCalls treats shell-shaped structured Grep payloads as search acti
     },
   ]);
 
-  assert.equal(grouped[0]?.toolKind, "search");
-  assert.equal(grouped[0]?.title, "Search: Tiller");
+  assert.equal(grouped[0]?.toolKind, "shell");
 });
 
-test("groupToolCalls treats shell-shaped Find payloads as search while preserving resolved titles", () => {
+test("groupToolCalls preserves the server-assigned shell kind for structured Find payloads", () => {
   const grouped = groupToolCalls([
     {
       id: "call-shell-find",
@@ -213,8 +279,7 @@ test("groupToolCalls treats shell-shaped Find payloads as search while preservin
     },
   ]);
 
-  assert.equal(grouped[0]?.toolKind, "search");
-  assert.equal(grouped[0]?.title, "Find `**/AGENTS.md`");
+  assert.equal(grouped[0]?.toolKind, "shell");
 });
 
 test("resolveToolCallTone displays todo as a generic built-in activity", () => {

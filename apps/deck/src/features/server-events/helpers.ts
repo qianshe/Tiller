@@ -94,9 +94,14 @@ export function mergeCommandHistory(
     merged[existingIndex] = { ...merged[existingIndex], ...chunk };
   }
 
-  return merged.sort(
-    (left, right) => Date.parse(left.timestamp) - Date.parse(right.timestamp),
-  );
+  if (!merged.every((chunk) => typeof chunk.sequence === "number")) {
+    return merged;
+  }
+
+  return merged
+    .map((chunk, index) => ({ chunk, index }))
+    .sort((left, right) => left.chunk.sequence! - right.chunk.sequence! || left.index - right.index)
+    .map(({ chunk }) => chunk);
 }
 
 export function upsertSessionSummary(

@@ -24,5 +24,6 @@ export type SessionAttachmentStore = {
   get: (id: string) => StoredSessionAttachment | undefined;
   listForMessage: (sessionId: string, messageId: string) => StoredSessionAttachment[];
   readBytes: (id: string) => Buffer | undefined;
+  remove: (id: string) => void;
   removeSession: (sessionId: string) => void;
 };

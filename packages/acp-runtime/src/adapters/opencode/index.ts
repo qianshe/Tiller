@@ -38,7 +38,7 @@ export function createOpenCodeAcpAdapter(): AcpAgentAdapter {
     },
     resolveRequestTimeout: ({ method }) =>
       isOpenCodeSessionRequest(method) ? OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS : undefined,
-    mapSessionUpdate: mapOpenCodePlanUpdate,
+    mapToolCallUpdate: mapOpenCodePlanUpdate,
     extractPlanFromToolCall: extractOpenCodePlanFromToolCall,
     isPlanToolCall: isOpenCodePlanToolCall,
     normalizeToolCall: ({ toolCall, update }) => normalizeOpenCodeToolCall(toolCall, update),

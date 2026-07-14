@@ -16,10 +16,13 @@ test("createSessionServices exposes the runtime service graph without starting p
     sessionArtifactStore: {} as never,
     sessionAttachmentStore: {} as never,
     sessionOutputBodyStore: {} as never,
+    sessionDiffBodyStore: {} as never,
     sessionRuntimeStore: {} as never,
     sessionPlanStore: {} as never,
     sessionTimelineStore: {} as never,
     sessionUpdateStore: {} as never,
+    sessionStateStore: {} as never,
+    sessionApprovalStore: {} as never,
     getAgents: () => [],
     getProjects: () => [],
     getWorktrees: () => [],
@@ -48,65 +51,40 @@ test("reimport success keeps ACP load replay as the history source", () => {
   );
 });
 
-test("reimport failure restores the previous session plan", () => {
-  const source = readFileSync(resolve(currentDir, "service-factory.ts"), "utf8");
+test("session restore never rewrites an existing canonical timeline", () => {
+  const source = readFileSync(resolve(currentDir, "resume-service.ts"), "utf8");
 
-  assert.match(source, /const previousPlan = providerHistory\.readSessionPlan\(sessionId\);/u);
-  assert.match(
-    source,
-    /restorePreviousLocalHistory[\s\S]*providerHistory\.recordSessionPlan\(sessionId, previousPlan\);/u,
-  );
+  assert.doesNotMatch(source, /repairCompactionBootstrapTimeline/u);
+  assert.doesNotMatch(source, /sessionTimelineStore\?\.replace/u);
+  assert.doesNotMatch(source, /sessionTimelineStore\.replace/u);
 });
 
-test("reimport resets replay timeline and restores it on failure", () => {
+test("reimport no longer patches plan, messages, or tool calls from transcript or local repair paths", () => {
   const source = readFileSync(resolve(currentDir, "service-factory.ts"), "utf8");
 
-  assert.match(source, /const previousTimeline = options\.sessionTimelineStore\.list\(sessionId\);/u);
-  assert.match(
-    source,
-    /restorePreviousLocalHistory[\s\S]*previousTimeline\.length[\s\S]*options\.sessionTimelineStore\.replace\(sessionId, previousTimeline\);/u,
-  );
-  assert.match(
-    source,
-    /options\.sessionArtifactStore\.remove\(sessionId\);\s*options\.sessionTimelineStore\.remove\(sessionId\);\s*resetSessionTimelineRuntimeState\(sessionId\);\s*providerHistory\.resetRefresh\(sessionId\);/u,
-  );
+  assert.doesNotMatch(source, /readAdapterTranscriptPlanRepair\(/u);
+  assert.doesNotMatch(source, /appendTranscriptRepairPlanUpdate\(/u);
+  assert.doesNotMatch(source, /applyLocalMessageRepair\(/u);
+  assert.doesNotMatch(source, /readAdapterTranscriptMessageRepair\(/u);
+  assert.doesNotMatch(source, /applyTranscriptMessageRepair\(/u);
+  assert.doesNotMatch(source, /readAdapterTranscriptToolCallRepair\(/u);
+  assert.doesNotMatch(source, /applyTranscriptToolCallRepair\(/u);
 });
 
-test("reimport can repair missing plans through the provider adapter", () => {
+test("reimport no longer merges prompts or sanitizes recovered ordering after ACP replay", () => {
   const source = readFileSync(resolve(currentDir, "service-factory.ts"), "utf8");
 
-  assert.match(
-    source,
-    /if \(!plan\) \{[\s\S]*readAdapterTranscriptPlanRepair\(\{[\s\S]*summary: recoverySummary/u,
-  );
-  assert.match(
-    source,
-    /appendTranscriptRepairPlanUpdate\(\{[\s\S]*sessionUpdateStore: options\.sessionUpdateStore/u,
-  );
+  assert.doesNotMatch(source, /preservePreviousUserPromptsAfterReimport\(/u);
+  assert.doesNotMatch(source, /recoverUserPromptFromSessionSummary\(/u);
+  assert.doesNotMatch(source, /sanitizeRecoveredHistoryOrdering\(/u);
 });
 
-test("reimport can repair generic Claude tool calls through the provider adapter transcript", () => {
+test("startSessionResume delegates directly to the resume service without transcript repair", () => {
   const source = readFileSync(resolve(currentDir, "service-factory.ts"), "utf8");
 
   assert.match(
     source,
-    /readAdapterTranscriptToolCallRepair\(\{[\s\S]*summary: recoverySummary/u,
+    /async function startSessionResume\([\s\S]*const result = await sessionResume\.startSessionResume\(sessionId, resumeOptions\);[\s\S]*ensureLiveEventSequenceForSession\(sessionId, options\.createHandlerContext\(\)\);[\s\S]*return result;/u,
   );
-  assert.match(
-    source,
-    /applyTranscriptToolCallRepair\(\{[\s\S]*sessionArtifactStore: options\.sessionArtifactStore[\s\S]*sessionUpdateStore: options\.sessionUpdateStore/u,
-  );
-});
-
-test("startSessionResume also repairs generic Claude tool calls through the provider adapter transcript", () => {
-  const source = readFileSync(resolve(currentDir, "service-factory.ts"), "utf8");
-
-  assert.match(
-    source,
-    /async function startSessionResume\([\s\S]*readAdapterTranscriptToolCallRepair\(\{[\s\S]*summary,\s*[\s\S]*agent/u,
-  );
-  assert.match(
-    source,
-    /async function startSessionResume\([\s\S]*applyTranscriptToolCallRepair\(\{[\s\S]*sessionTimelineStore: options\.sessionTimelineStore[\s\S]*sessionUpdateStore: options\.sessionUpdateStore/u,
-  );
+  assert.doesNotMatch(source, /async function startSessionResume\([\s\S]*applyTranscriptToolCallRepair\(/u);
 });

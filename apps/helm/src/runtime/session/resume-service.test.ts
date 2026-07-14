@@ -8,7 +8,6 @@ import type {
   AgentPlan,
   AgentToolCall,
   AcpAgentProvider,
-  SessionUpdateRecord,
   SessionSummary,
   SessionTimelineEntry,
   WorktreeSummary,
@@ -18,15 +17,12 @@ import { createSessionResumeService } from "./resume-service.js";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(currentDir, "resume-service.ts"), "utf8");
 
-test("restore replay completion logs only when replay content was persisted", () => {
-  assert.match(source, /hasRestoreReplayContent/);
-  assert.match(
-    source,
-    /if \(hasRestoreReplayContent\(replayCounts\)\) \{\s*logResumeInfo\(options, "runtime\.restore_replay\.completed"/,
-  );
+test("restore discards ACP replay instead of rebuilding local history", () => {
+  assert.doesNotMatch(source, /createRestoreReplayBuffer|providerHistory|acp_load_replay/u);
+  assert.match(source, /onRestoreReplayEvent: \(\) => undefined/u);
 });
 
-test("session restore records ACP load replay without mutating local display history", async () => {
+test("session restore discards ACP load replay without mutating local display history", async () => {
   const sessionId = "session-opencode-restore";
   const agent: AcpAgentProvider = {
     id: "opencode",
@@ -57,11 +53,12 @@ test("session restore records ACP load replay without mutating local display his
   let appliedSource = "";
   let appliedMessages: AgentMessage[] = [];
   const storedMessages: AgentMessage[] = [];
-  let replayUpdates: SessionUpdateRecord[] = [];
+  const runtimeEvents: Array<{ type: string; status?: string }> = [];
 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -122,11 +119,6 @@ test("session restore records ACP load replay without mutating local display his
         appendToolCall: () => undefined,
         replaceDiffs: () => undefined,
       },
-      sessionUpdateStore: {
-        replaceSession: (_sessionId: string, updates: SessionUpdateRecord[]) => {
-          replayUpdates = updates;
-        },
-      },
     } as any),
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
@@ -139,7 +131,9 @@ test("session restore records ACP load replay without mutating local display his
     }),
     hydrateSessionSummary: (next: SessionSummary) => next,
     persistRuntimeDescriptor: () => undefined,
-    handleRuntimeEvent: () => undefined,
+    handleRuntimeEvent: (_sessionId: string, event: { type: string; status?: string }) => {
+      runtimeEvents.push(event);
+    },
     logConnectionLifecycle: () => undefined,
     logInfo: () => undefined,
     logError: () => undefined,
@@ -150,12 +144,10 @@ test("session restore records ACP load replay without mutating local display his
   assert.equal(appliedSource, "");
   assert.deepEqual(appliedMessages, []);
   assert.deepEqual(storedMessages, []);
-  assert.deepEqual(replayUpdates.map((update) => [update.source, update.providerId, update.runtimeSessionId, update.updateType]), [
-    ["acp_load_replay", "opencode", "runtime-1", "message"],
-  ]);
+  assert.deepEqual(runtimeEvents, [{ type: "status", status: "idle" }]);
 });
 
-test("session restore records replayed ACP plan for reimport hydration", async () => {
+test("session restore does not reimport replayed ACP plan", async () => {
   const sessionId = "session-codex-plan-restore";
   const plan: AgentPlan = {
     updatedAt: "2026-06-08T01:00:00.000Z",
@@ -188,11 +180,11 @@ test("session restore records replayed ACP plan for reimport hydration", async (
     runtimeSessionId: "runtime-codex-plan",
   };
   let recordedPlan: AgentPlan | undefined;
-  let replayUpdates: SessionUpdateRecord[] = [];
 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -241,11 +233,6 @@ test("session restore records replayed ACP plan for reimport hydration", async (
         appendToolCall: () => undefined,
         replaceDiffs: () => undefined,
       },
-      sessionUpdateStore: {
-        replaceSession: (_sessionId: string, updates: SessionUpdateRecord[]) => {
-          replayUpdates = updates;
-        },
-      },
     } as any),
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
@@ -266,11 +253,7 @@ test("session restore records replayed ACP plan for reimport hydration", async (
 
   await service.startSessionResume(sessionId);
 
-  assert.deepEqual(recordedPlan, plan);
-  assert.deepEqual(
-    replayUpdates.map((update) => [update.source, update.updateType]),
-    [["acp_load_replay", "plan-update"]],
-  );
+  assert.equal(recordedPlan, undefined);
 });
 
 test("session restore failure logs visible error details", async () => {
@@ -304,6 +287,7 @@ test("session restore failure logs visible error details", async () => {
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -434,6 +418,7 @@ test("force reload active session releases old runtime before ACP load restore",
   const service = createSessionResumeService({
     sessions,
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -505,7 +490,7 @@ test("force reload active session releases old runtime before ACP load restore",
   assert.equal(oldRuntimeCancelled, false);
 });
 
-test("session restore waits for asynchronous ACP replay before flushing", async () => {
+test("session restore ignores asynchronous ACP replay", async () => {
   const sessionId = "session-codex-replay";
   const agent: AcpAgentProvider = {
     id: "codex",
@@ -533,11 +518,11 @@ test("session restore waits for asynchronous ACP replay before flushing", async 
   const storedMessages: AgentMessage[] = [];
   const storedToolCalls: AgentToolCall[] = [];
   let storedTimeline: SessionTimelineEntry[] = [];
-  let replayUpdates: SessionUpdateRecord[] = [];
 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -632,11 +617,6 @@ test("session restore waits for asynchronous ACP replay before flushing", async 
           return entries;
         },
       },
-      sessionUpdateStore: {
-        replaceSession: (_sessionId: string, updates: SessionUpdateRecord[]) => {
-          replayUpdates = updates;
-        },
-      },
     } as any),
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
@@ -660,17 +640,9 @@ test("session restore waits for asynchronous ACP replay before flushing", async 
   assert.deepEqual(storedMessages, []);
   assert.deepEqual(storedToolCalls, []);
   assert.deepEqual(storedTimeline, []);
-  assert.deepEqual(
-    replayUpdates.map((update) => [update.updateType, update.sequence]),
-    [
-      ["message", 1],
-      ["tool-call", 2],
-      ["message", 3],
-    ],
-  );
 });
 
-test("session restore repairs a trailing compacted boundary from replay without replacing local history", async () => {
+test("session restore preserves a trailing compacted boundary from the canonical timeline", async () => {
   const sessionId = "session-compacted-tail-patch";
   const agent: AcpAgentProvider = {
     id: "codex",
@@ -745,6 +717,7 @@ test("session restore repairs a trailing compacted boundary from replay without 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -824,9 +797,6 @@ test("session restore repairs a trailing compacted boundary from replay without 
         appendToolCall: () => undefined,
         replaceDiffs: () => undefined,
       },
-      sessionUpdateStore: {
-        replaceSession: () => undefined,
-      },
       sessionTimelineStore: {
         list: () => persistedTimeline,
         replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
@@ -862,21 +832,21 @@ test("session restore repairs a trailing compacted boundary from replay without 
     persistedTimeline.map((entry) => entry.id),
     [
       "older-user",
-      `compaction:${sessionId}:compaction-summary`,
       "anchor-user",
+      `compaction:${sessionId}:compaction-summary`,
     ],
   );
   assert.deepEqual(
     persistedTimeline.map((entry) => entry.kind),
     [
       "user_message",
-      "context_compaction",
       "user_message",
+      "context_compaction",
     ],
   );
 });
 
-test("session restore reanchors trailing compaction rows even when replay omits summary markers", async () => {
+test("session restore preserves markerless trailing compaction order", async () => {
   const sessionId = "session-compacted-replay-without-markers";
   const agent: AcpAgentProvider = {
     id: "claudecode",
@@ -949,6 +919,7 @@ test("session restore reanchors trailing compaction rows even when replay omits 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -1015,9 +986,6 @@ test("session restore reanchors trailing compaction rows even when replay omits 
         appendToolCall: () => undefined,
         replaceDiffs: () => undefined,
       },
-      sessionUpdateStore: {
-        replaceSession: () => undefined,
-      },
       sessionTimelineStore: {
         list: () => persistedTimeline,
         replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
@@ -1048,9 +1016,9 @@ test("session restore reanchors trailing compaction rows even when replay omits 
   assert.deepEqual(
     persistedTimeline.map((entry) => [entry.kind, entry.id]),
     [
-      ["context_compaction", `compaction:${sessionId}:runtime-summary`],
       ["assistant_message", "assistant-after-compaction"],
       ["user_message", "user-after-compaction"],
+      ["context_compaction", `compaction:${sessionId}:runtime-summary`],
     ],
   );
 });
@@ -1083,6 +1051,7 @@ test("session restore prefers runtime model state over stale persisted summary v
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: (next: SessionSummary) => {
         stored.summary = next;
@@ -1134,7 +1103,6 @@ test("session restore prefers runtime model state over stale persisted summary v
         appendToolCall: () => undefined,
         replaceDiffs: () => undefined,
       },
-      sessionUpdateStore: { replaceSession: () => undefined },
     } as any),
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({

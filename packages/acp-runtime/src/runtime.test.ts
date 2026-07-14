@@ -19,9 +19,6 @@ import {
   resolveAdapterPluginManifest,
   extractAdapterPlanFromToolCall,
   isAdapterPlanToolCall,
-  readAdapterTranscriptPlan,
-  readAdapterTranscriptMessages,
-  readAdapterTranscriptToolCalls,
   resolvePreferredAgentId,
   resolveRuntimeSessionId,
   resolveSessionCapabilities,
@@ -140,146 +137,16 @@ test("resolveAcpAgentAdapter chooses provider-specific adapters before generic f
   assert.equal(resolveAcpAgentAdapter({ id: "custom", name: "Custom", command: "custom-acp", transport: "stdio", protocol: "acp" }).id, "generic");
 });
 
-test("Claude transcript plan repair stays behind the Claude adapter", () => {
-  assert.equal(
-    typeof resolveAcpAgentAdapter({
-      id: "claude-acp",
-      name: "Claude Agent",
-      command: "claude-agent-acp",
-      transport: "stdio",
-      protocol: "acp",
-    }).readTranscriptPlan,
-    "function",
-  );
-  assert.equal(
-    resolveAcpAgentAdapter({
-      id: "custom",
-      name: "Custom",
-      command: "custom-acp",
-      transport: "stdio",
-      protocol: "acp",
-    }).readTranscriptPlan,
-    undefined,
-  );
-});
-
-test("Claude transcript message repair stays behind the Claude adapter", () => {
-  assert.equal(
-    typeof resolveAcpAgentAdapter({
-      id: "claude-acp",
-      name: "Claude Agent",
-      command: "claude-agent-acp",
-      transport: "stdio",
-      protocol: "acp",
-    }).readTranscriptMessages,
-    "function",
-  );
-  assert.deepEqual(
-    readAdapterTranscriptMessages({
-      provider: {
-        id: "custom",
-        name: "Custom",
-        command: "custom-acp",
-        transport: "stdio",
-        protocol: "acp",
-      },
-      runtimeSessionId: "runtime-1",
-      cwd: "D:/repo",
-    }),
-    [],
-  );
-});
-
-test("Claude transcript tool-call repair stays behind the Claude adapter", () => {
-  assert.equal(
-    typeof resolveAcpAgentAdapter({
-      id: "claude-acp",
-      name: "Claude Agent",
-      command: "claude-agent-acp",
-      transport: "stdio",
-      protocol: "acp",
-    }).readTranscriptToolCalls,
-    "function",
-  );
-  assert.deepEqual(
-    readAdapterTranscriptToolCalls({
-      provider: {
-        id: "custom",
-        name: "Custom",
-        command: "custom-acp",
-        transport: "stdio",
-        protocol: "acp",
-      },
-      runtimeSessionId: "runtime-1",
-      cwd: "D:/repo",
-    }),
-    [],
-  );
-});
-
-test("Codex transcript tool-call repair stays behind the Codex adapter", () => {
-  assert.equal(
-    typeof resolveAcpAgentAdapter({
-      id: "codex",
-      name: "Codex",
-      command: "codex-acp",
-      transport: "stdio",
-      protocol: "acp",
-    }).readTranscriptToolCalls,
-    "function",
-  );
-  assert.deepEqual(
-    readAdapterTranscriptToolCalls({
-      provider: {
-        id: "custom",
-        name: "Custom",
-        command: "custom-acp",
-        transport: "stdio",
-        protocol: "acp",
-      },
-      runtimeSessionId: "runtime-1",
-      cwd: "D:/repo",
-    }),
-    [],
-  );
-});
-
-test("Codex live transcript supplements are disabled and transcript stays for history only", () => {
+test("Codex adapter exposes bounded prompt observation for missing multi-agent notifications", () => {
   const adapter = resolveAcpAgentAdapter({
     id: "codex",
     name: "Codex",
     command: "codex-acp",
     transport: "stdio",
     protocol: "acp",
-  }) as { supplementRuntimeEvents?: unknown };
-  assert.equal(adapter.supplementRuntimeEvents, undefined);
-});
-
-test("Codex transcript plan repair stays behind the Codex adapter", () => {
-  assert.equal(
-    typeof resolveAcpAgentAdapter({
-      id: "codex",
-      name: "Codex",
-      command: "codex-acp",
-      transport: "stdio",
-      protocol: "acp",
-    }).readTranscriptPlan,
-    "function",
-  );
-  assert.equal(
-    readAdapterTranscriptPlan({
-      provider: {
-        id: "custom",
-        name: "Custom",
-        command: "custom-acp",
-        transport: "stdio",
-        protocol: "acp",
-      },
-      runtimeSessionId: "runtime-1",
-      cwd: "D:/repo",
-    }),
-    null,
-  );
+  });
+  assert.equal(typeof adapter.beginPromptObservation, "function");
+  assert.equal(typeof adapter.pollPromptEvents, "function");
 });
 
 test("tool-call plan repair stays behind provider adapters", () => {

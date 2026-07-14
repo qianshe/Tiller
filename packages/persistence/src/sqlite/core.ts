@@ -82,6 +82,11 @@ export function openSessionDatabase(dbPath: string) {
       PRIMARY KEY(session_id, group_id)
     );
 
+    CREATE TABLE IF NOT EXISTS session_timeline_anchor_states(
+      session_id TEXT PRIMARY KEY,
+      initialized_at TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS session_updates(
       session_id TEXT NOT NULL,
       sequence INTEGER NOT NULL,
@@ -165,6 +170,33 @@ export function openSessionDatabase(dbPath: string) {
       payload_json TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS session_diff_bodies(
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      path TEXT NOT NULL,
+      mime_type TEXT NOT NULL,
+      sha256 TEXT NOT NULL,
+      byte_size INTEGER NOT NULL,
+      storage_key TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      UNIQUE(session_id, path)
+    );
+
+    CREATE TABLE IF NOT EXISTS session_states(
+      session_id TEXT PRIMARY KEY,
+      applied_sequence INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS session_approval_states(
+      session_id TEXT PRIMARY KEY,
+      applied_sequence INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_session_summaries_updated_at ON session_summaries(updated_at);
     CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_tool_calls_page ON session_tool_calls(session_id, updated_at, id);
@@ -177,6 +209,8 @@ export function openSessionDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_session_attachments_sha256 ON session_attachments(sha256);
     CREATE INDEX IF NOT EXISTS idx_session_output_bodies_session ON session_output_bodies(session_id, output_id);
     CREATE INDEX IF NOT EXISTS idx_session_output_bodies_sha256 ON session_output_bodies(sha256);
+    CREATE INDEX IF NOT EXISTS idx_session_diff_bodies_session ON session_diff_bodies(session_id, path);
+    CREATE INDEX IF NOT EXISTS idx_session_diff_bodies_sha256 ON session_diff_bodies(sha256);
     CREATE INDEX IF NOT EXISTS idx_session_diffs_session ON session_diffs(session_id);
     CREATE INDEX IF NOT EXISTS idx_session_plans_updated_at ON session_plans(updated_at);
   `);
@@ -203,17 +237,17 @@ export function recordMigrationVersion(db: DatabaseSync, version: number) {
   );
 }
 
-export function runTransaction(db: DatabaseSync, action: () => void) {
+export function runTransaction<T>(db: DatabaseSync, action: () => T): T {
   if (activeTransactions.has(db)) {
-    action();
-    return;
+    return action();
   }
 
   activeTransactions.add(db);
   db.exec("BEGIN IMMEDIATE");
   try {
-    action();
+    const result = action();
     db.exec("COMMIT");
+    return result;
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;

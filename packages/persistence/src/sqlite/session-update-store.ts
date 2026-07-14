@@ -1,10 +1,12 @@
 import type { SessionUpdateRecord, SessionUpdateRecordPage } from "@tiller/shared";
 import { normalizePageLimit } from "../pagination";
-import { openSessionDatabase, runTransaction, type DatabaseSync } from "./core";
+import { openSessionDatabase, type DatabaseSync } from "./core";
 
 const DEFAULT_SESSION_UPDATE_PAGE_LIMIT = 50;
 const MAX_SESSION_UPDATE_PAGE_LIMIT = 200;
 const CURSOR_PREFIX = "sequence";
+export const SESSION_UPDATE_JOURNAL_TAIL = 256;
+export const SESSION_UPDATE_COMPACTION_INTERVAL = 512;
 
 type SessionUpdateRow = {
   session_id: string;
@@ -19,19 +21,24 @@ type SessionUpdateRow = {
 
 export function createSqliteSessionUpdateStore(dbPath: string) {
   const db = openSessionDatabase(dbPath);
+  const insert = createSessionUpdateInserter(db);
 
   return {
     append(update: SessionUpdateRecord) {
-      insertSessionUpdate(db, update);
+      insert(update);
+      maybeCompactSessionUpdates(db, update);
     },
-    replaceSession(sessionId: string, updates: SessionUpdateRecord[]) {
-      replaceSessionUpdates(db, sessionId, updates);
+    getMaxSequence(sessionId: string) {
+      const row = db.prepare(
+        "SELECT COALESCE(MAX(sequence), 0) AS value FROM session_updates WHERE session_id = ?",
+      ).get(sessionId) as { value: number };
+      return row.value;
+    },
+    compactTail(sessionId: string, retain = SESSION_UPDATE_JOURNAL_TAIL) {
+      return compactSessionUpdates(db, sessionId, retain);
     },
     listPage(sessionId: string, options: { limit?: number; before?: string } = {}): SessionUpdateRecordPage {
       return listSessionUpdatePage(db, sessionId, options);
-    },
-    listSinceSequence(sessionId: string, afterSequence: number, limit = MAX_SESSION_UPDATE_PAGE_LIMIT) {
-      return listSessionUpdatesSinceSequence(db, sessionId, afterSequence, limit);
     },
     remove(sessionId: string) {
       db.prepare("DELETE FROM session_updates WHERE session_id = ?").run(sessionId);
@@ -42,22 +49,9 @@ export function createSqliteSessionUpdateStore(dbPath: string) {
   };
 }
 
-function replaceSessionUpdates(
-  db: DatabaseSync,
-  sessionId: string,
-  updates: SessionUpdateRecord[],
-) {
-  runTransaction(db, () => {
-    db.prepare("DELETE FROM session_updates WHERE session_id = ?").run(sessionId);
-    for (const update of updates) {
-      insertSessionUpdate(db, update);
-    }
-  });
-}
-
-function insertSessionUpdate(db: DatabaseSync, update: SessionUpdateRecord) {
-  db.prepare(`
-    INSERT OR REPLACE INTO session_updates(
+export function createSessionUpdateInserter(db: DatabaseSync) {
+  const statement = db.prepare(`
+    INSERT INTO session_updates(
       session_id,
       sequence,
       runtime_session_id,
@@ -68,16 +62,53 @@ function insertSessionUpdate(db: DatabaseSync, update: SessionUpdateRecord) {
       payload_json
     )
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
-    update.sessionId,
-    update.sequence,
-    update.runtimeSessionId,
-    update.providerId,
-    update.source,
-    update.updateType,
-    update.receivedAt,
-    update.payloadJson,
-  );
+  `);
+  return (update: SessionUpdateRecord) => {
+    statement.run(
+      update.sessionId,
+      update.sequence,
+      update.runtimeSessionId,
+      update.providerId,
+      update.source,
+      update.updateType,
+      update.receivedAt,
+      update.payloadJson,
+    );
+  };
+}
+
+export function maybeCompactSessionUpdates(
+  db: DatabaseSync,
+  update: SessionUpdateRecord,
+) {
+  if (
+    update.sequence < SESSION_UPDATE_COMPACTION_INTERVAL ||
+    update.sequence % SESSION_UPDATE_COMPACTION_INTERVAL !== 0
+  ) {
+    return 0;
+  }
+  return compactSessionUpdates(db, update.sessionId);
+}
+
+export function compactSessionUpdates(
+  db: DatabaseSync,
+  sessionId: string,
+  retain = SESSION_UPDATE_JOURNAL_TAIL,
+) {
+  const normalizedRetain = Number.isInteger(retain) && retain > 0
+    ? retain
+    : SESSION_UPDATE_JOURNAL_TAIL;
+  const latest = db.prepare(
+    "SELECT COALESCE(MAX(sequence), 0) AS value FROM session_updates WHERE session_id = ?",
+  ).get(sessionId) as { value: number };
+  const firstRetainedSequence = latest.value - normalizedRetain + 1;
+  if (firstRetainedSequence <= 1) {
+    return 0;
+  }
+  const result = db.prepare(
+    "DELETE FROM session_updates WHERE session_id = ? AND sequence < ?",
+  ).run(sessionId, firstRetainedSequence) as { changes?: number };
+  return result.changes ?? 0;
 }
 
 function listSessionUpdatePage(
@@ -137,27 +168,6 @@ function rowToSessionUpdate(row: SessionUpdateRow): SessionUpdateRecord {
     receivedAt: row.received_at,
     payloadJson: row.payload_json,
   };
-}
-
-function listSessionUpdatesSinceSequence(
-  db: DatabaseSync,
-  sessionId: string,
-  afterSequence: number,
-  limit: number,
-) {
-  const normalizedLimit = normalizePageLimit(
-    limit,
-    DEFAULT_SESSION_UPDATE_PAGE_LIMIT,
-    MAX_SESSION_UPDATE_PAGE_LIMIT,
-  );
-  const rows = db.prepare(`
-      SELECT session_id, sequence, runtime_session_id, provider_id, source, update_type, received_at, payload_json
-      FROM session_updates
-      WHERE session_id = ? AND sequence > ?
-      ORDER BY sequence ASC
-      LIMIT ?
-    `).all(sessionId, afterSequence, normalizedLimit) as SessionUpdateRow[];
-  return rows.map(rowToSessionUpdate);
 }
 
 function encodeCursor(row: SessionUpdateRow | undefined) {

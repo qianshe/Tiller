@@ -21,6 +21,7 @@ export {
   type HelmSessionStores,
   type SessionArtifactStore,
   type SessionAttachmentStore,
+  type SessionDiffBodyStore,
   type SessionMessageStore,
   type SessionOutputBodyStore,
   type SessionPlanStore,
@@ -30,7 +31,6 @@ export {
   type StoredSessionArtifacts,
 } from "./store-factory";
 export {
-  type StoredProviderHistoryState,
   type StoredSessionRuntimeDescriptor,
 } from "@tiller/persistence";
 export {

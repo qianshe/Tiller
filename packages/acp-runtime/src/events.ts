@@ -4,8 +4,15 @@ import {
   looksLikeContinuationSummary,
 } from "@tiller/shared";
 import type { AcpRuntimeProviderConfig, AgentToolCall, SessionStatus } from "@tiller/shared";
-import type { SessionRuntimeEvent } from "./runtime-types";
-import { mapAdapterSessionUpdate, normalizeAdapterToolCall, summarizeAdapterCompactionSignal, SUPPRESS_SESSION_UPDATE } from "./adapters";
+import type { MappedSessionRuntimeEvents, SessionRuntimeEvent } from "./runtime-types";
+import {
+  mapAdapterMessageUpdate,
+  mapAdapterToolCallUpdate,
+  mapAdapterUnknownUpdate,
+  normalizeAdapterToolCall,
+  summarizeAdapterCompactionSignal,
+  SUPPRESS_SESSION_UPDATE,
+} from "./adapters";
 import type { AcpSessionUpdateProjection } from "./adapters";
 import { extractAvailableCommands } from "./available-command-events";
 import { extractCommandChunk, extractPermissionRequest } from "./command-events";
@@ -32,16 +39,35 @@ function timestamp() {
 function normalizeProviderToolCall(
   provider: AcpRuntimeProviderConfig | undefined,
   providerId: string | undefined,
+  sessionId: string,
   toolCall: AgentToolCall,
   update: any,
+  cwd?: string,
 ) {
-  return normalizeAdapterToolCall(provider, providerId, { toolCall, update });
+  return normalizeAdapterToolCall(provider, providerId, {
+    toolCall,
+    update,
+    sessionId,
+    cwd,
+  });
 }
+
+type SessionUpdateMappingOptions = {
+  provider?: AcpRuntimeProviderConfig;
+  providerId?: string;
+  sessionCwd?: string;
+};
+
+type MappedSessionRuntimeEvent = {
+  sessionId: string;
+  event: SessionRuntimeEvent;
+  derivedEvents?: SessionRuntimeEvent[];
+};
 
 export function mapSessionUpdateNotification(
   payload: any,
-  options: { provider?: AcpRuntimeProviderConfig; providerId?: string } = {},
-): { sessionId: string; event: SessionRuntimeEvent } | null {
+  options: SessionUpdateMappingOptions = {},
+): MappedSessionRuntimeEvent | null {
   if (payload?.method !== "session/update") {
     return null;
   }
@@ -54,6 +80,7 @@ export function mapSessionUpdateNotification(
 
   const updateType = resolveSessionUpdateType(update);
   const text = extractTextContent(update.content) ?? extractTextContent(update.delta) ?? extractTextContent(update.message);
+  const adapterContext = { sessionId, updateType, update, text };
 
   const thinkingToolCall = extractThinkingToolCall(sessionId, updateType, update);
   if (thinkingToolCall) {
@@ -66,40 +93,38 @@ export function mapSessionUpdateNotification(
     };
   }
 
-  const adapterEvent = mapAdapterSessionUpdate(options.provider, {
-    sessionId,
-    updateType,
-    update,
-    text,
-  });
-  if (isSuppressedAdapterSessionUpdate(adapterEvent)) {
-    return null;
-  }
-  if (adapterEvent) {
-    return { sessionId, event: adapterEvent };
-  }
+  if (isMessageChunkUpdateType(updateType)) {
+    const adapterEvent = mapAdapterMessageUpdate(options.provider, adapterContext);
+    if (isSuppressedAdapterSessionUpdate(adapterEvent)) {
+      return null;
+    }
+    if (adapterEvent) {
+      return { sessionId, event: adapterEvent };
+    }
 
-  const compactionEvent = extractCompactionEvent(sessionId, updateType, update, text);
-  if (compactionEvent) {
-    return {
-      sessionId,
-      event: compactionEvent,
-    };
-  }
+    const compactionEvent = extractCompactionEvent(sessionId, updateType, update, text);
+    if (compactionEvent) {
+      return {
+        sessionId,
+        event: compactionEvent,
+      };
+    }
 
-  if (text && isMessageChunkUpdateType(updateType)) {
-    return {
-      sessionId,
-      event: {
-        type: "message",
-        message: {
-          id: resolveMessageId(sessionId, update),
-          role: updateType === "user_message_chunk" ? "user" : "assistant",
-          text,
-          timestamp: timestamp(),
+    if (text) {
+      return {
+        sessionId,
+        event: {
+          type: "message",
+          message: {
+            id: resolveMessageId(sessionId, update),
+            role: updateType === "user_message_chunk" ? "user" : "assistant",
+            text,
+            timestamp: timestamp(),
+            streamMode: "delta",
+          },
         },
-      },
-    };
+      };
+    }
   }
 
   const plan = extractAgentPlan(updateType, update);
@@ -136,15 +161,88 @@ export function mapSessionUpdateNotification(
     };
   }
 
+  if (updateType === "current_mode_update" && typeof update.currentModeId === "string") {
+    return {
+      sessionId,
+      event: {
+        type: "mode-update",
+        agentMode: update.currentModeId,
+      },
+    };
+  }
+
+  if (updateType === "session_info_update") {
+    return {
+      sessionId,
+      event: {
+        type: "session-info",
+        ...("title" in update && (typeof update.title === "string" || update.title === null)
+          ? { title: update.title }
+          : {}),
+        ...("updatedAt" in update && (typeof update.updatedAt === "string" || update.updatedAt === null)
+          ? { updatedAt: update.updatedAt }
+          : {}),
+      },
+    };
+  }
+
+  if (
+    updateType === "usage_update" &&
+    typeof update.used === "number" &&
+    typeof update.size === "number"
+  ) {
+    const cost = update.cost;
+    return {
+      sessionId,
+      event: {
+        type: "usage-update",
+        usage: {
+          used: update.used,
+          size: update.size,
+          ...(cost === null
+            ? { cost: null }
+            : (
+              cost &&
+              typeof cost.amount === "number" &&
+              typeof cost.currency === "string"
+                ? { cost: { amount: cost.amount, currency: cost.currency } }
+                : {}
+            )),
+        },
+      },
+    };
+  }
+
   const explicitToolCall = extractToolCall(sessionId, updateType, update);
+  const adapterToolEvent = isToolCallUpdateType(updateType)
+    ? mapAdapterToolCallUpdate(options.provider, adapterContext)
+    : null;
+  if (isSuppressedAdapterSessionUpdate(adapterToolEvent)) {
+    return null;
+  }
   if (explicitToolCall) {
+    const toolCall = normalizeProviderToolCall(
+      options.provider,
+      options.providerId,
+      sessionId,
+      explicitToolCall,
+      update,
+      options.sessionCwd,
+    );
+    if (!toolCall) {
+      return adapterToolEvent ? { sessionId, event: adapterToolEvent } : null;
+    }
     return {
       sessionId,
       event: {
         type: "tool-call",
-        toolCall: normalizeProviderToolCall(options.provider, options.providerId, explicitToolCall, update),
+        toolCall,
       },
+      ...(adapterToolEvent ? { derivedEvents: [adapterToolEvent] } : {}),
     };
+  }
+  if (adapterToolEvent) {
+    return { sessionId, event: adapterToolEvent };
   }
 
   const permissionRequest = extractPermissionRequest(sessionId, updateType, update);
@@ -193,7 +291,40 @@ export function mapSessionUpdateNotification(
     };
   }
 
+  const adapterUnknownEvent = mapAdapterUnknownUpdate(options.provider, adapterContext);
+  if (isSuppressedAdapterSessionUpdate(adapterUnknownEvent)) {
+    return null;
+  }
+  if (adapterUnknownEvent) {
+    return { sessionId, event: adapterUnknownEvent };
+  }
+
   return null;
+}
+
+export function mapSessionUpdateNotificationBatch(
+  payload: any,
+  options: SessionUpdateMappingOptions = {},
+): MappedSessionRuntimeEvents | null {
+  const mapped = mapSessionUpdateNotification(payload, options);
+  if (!mapped) {
+    return null;
+  }
+  if (mapped.event.type === "command-output" && mapped.event.toolCall) {
+    const { toolCall, ...commandOutput } = mapped.event;
+    return {
+      sessionId: mapped.sessionId,
+      events: [
+        { type: "tool-call", toolCall },
+        commandOutput,
+        ...(mapped.derivedEvents ?? []),
+      ],
+    };
+  }
+  return {
+    sessionId: mapped.sessionId,
+    events: [mapped.event, ...(mapped.derivedEvents ?? [])],
+  };
 }
 
 function isSuppressedAdapterSessionUpdate(
@@ -297,13 +428,6 @@ function extractCompactionEvent(
   };
 }
 
-function resolveThinkingMessageId(sessionId: string, update: any) {
-  return (
-    stringFrom(update.messageId ?? update.message_id ?? update.message?.id ?? update.id) ??
-    `${sessionId}-thinking`
-  );
-}
-
 function hashStableMessageSeed(sessionId: string, update: any) {
   const updateType = resolveSessionUpdateType(update) ?? "message";
   const text =
@@ -376,6 +500,10 @@ function resolveExplicitCompactionPhase(
 
 function isMessageChunkUpdateType(updateType: string | undefined) {
   return updateType === "agent_message_chunk" || updateType === "user_message_chunk";
+}
+
+function isToolCallUpdateType(updateType: string | undefined) {
+  return updateType === "tool_call" || updateType === "tool_call_update";
 }
 
 function summarizeCompactionProbe(args: {
@@ -500,7 +628,10 @@ function extractTextContent(content: any): string | null {
   }
 
   if (Array.isArray(content)) {
-    return content.map((item) => extractTextContent(item)).filter(Boolean).join("") || null;
+    const parts = content
+      .map((item) => extractTextContent(item))
+      .filter((part): part is string => Boolean(part));
+    return joinTextContentBlocks(parts);
   }
 
   if (content.type === "text" && typeof content.text === "string") {
@@ -516,6 +647,21 @@ function extractTextContent(content: any): string | null {
   }
 
   return extractTextContent(content.content) ?? null;
+}
+
+function joinTextContentBlocks(parts: string[]): string | null {
+  if (!parts.length) {
+    return null;
+  }
+  return parts.reduce((text, part) => {
+    if (!text) {
+      return part;
+    }
+    if (/\s$/u.test(text) || /^\s/u.test(part)) {
+      return `${text}${part}`;
+    }
+    return `${text}\n\n${part}`;
+  }, "");
 }
 
 function normalizeSessionStatus(updateType: string | undefined): SessionStatus | null {

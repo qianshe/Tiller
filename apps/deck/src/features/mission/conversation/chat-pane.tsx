@@ -2,6 +2,7 @@ import type {
   AgentPlan,
   AgentMessage,
   AgentToolCall,
+  LegacyEvidenceSource,
   PermissionDecision,
   PermissionRequest,
   SessionPromptQueueSnapshot,
@@ -17,8 +18,9 @@ import type {
 } from "react";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
-import { useDeckStore } from "../../../store";
+import { useDeckStore, type SessionLegacyEvidenceState } from "../../../store";
 import { MissionMessageTimeline } from "./message-timeline";
+import { LegacyEvidencePanel } from "./legacy-evidence-panel";
 import { MissionPermissionDrawer } from "./permission-drawer";
 import { MissionQueuedPrompts } from "./queued-prompts";
 import type { MissionToolLoadingState } from "./tool-loading";
@@ -32,7 +34,7 @@ import {
   shouldAutoScrollSessionBody,
   splitMissionToolCalls,
 } from "./chat-pane-model";
-import { deriveToolCallsFromTimeline } from "../utils/timeline-tool-calls";
+import { deriveToolCallsFromTimeline } from "../utils/timeline-activity";
 import { resolveChatSessionToolLoading } from "./chat-session-state";
 import {
   createAgentPlanDismissalKey,
@@ -103,6 +105,7 @@ type MissionChatPaneProps = {
   activeSessionMessages: AgentMessage[];
   sessionMessagesById: Record<string, AgentMessage[] | undefined>;
   sessionTimelineById: Record<string, SessionTimelineEntry[] | undefined>;
+  sessionLegacyEvidenceById: Record<string, SessionLegacyEvidenceState | undefined>;
   activeSessionPlan?: AgentPlan | null;
   sessionPlansById: Record<string, AgentPlan | undefined>;
   dismissedCompletedSessionPlanKeys?: Record<string, string | undefined>;
@@ -119,6 +122,7 @@ type MissionChatPaneProps = {
   expandedMessageIds: ReadonlySet<string>;
   messageHistoryState: Record<string, HistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
+  onLoadLegacyEvidence: (sessionId: string, source: LegacyEvidenceSource, after?: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
   activityLoading: MissionToolActivity | null;
   pendingToolPresent: boolean;
@@ -178,6 +182,7 @@ export function MissionChatPane({
   activeSessionMessages,
   sessionMessagesById,
   sessionTimelineById,
+  sessionLegacyEvidenceById,
   activeSessionPlan,
   sessionPlansById,
   dismissedCompletedSessionPlanKeys = {},
@@ -191,6 +196,7 @@ export function MissionChatPane({
   expandedMessageIds,
   messageHistoryState,
   onLoadOlderMessages,
+  onLoadLegacyEvidence,
   onToggleExpandedMessage,
   activityLoading,
   pendingToolPresent,
@@ -843,6 +849,7 @@ export function MissionChatPane({
                     (session.id === activeSessionId ? activeSessionMessages : EMPTY_MESSAGES)
                   }
                   timelineItems={sessionTimelineById[session.id] ?? EMPTY_TIMELINE_ITEMS}
+                  legacyEvidenceState={sessionLegacyEvidenceById[session.id]}
                   sessionToolCalls={
                     sessionToolCallsById[session.id] ??
                     (session.id === activeSessionId ? activeSessionToolCalls : EMPTY_TOOL_CALLS)
@@ -879,6 +886,7 @@ export function MissionChatPane({
                   showThinking={showThinking}
                   showPermissionWorktree={showPermissionWorktree}
                   onLoadOlderMessages={handleLoadOlderMessages}
+                  onLoadLegacyEvidence={onLoadLegacyEvidence}
                   onToggleExpandedMessage={handleToggleExpandedMessage}
                   onUpdateQueuedPrompt={onUpdateQueuedPrompt}
                   onDeleteQueuedPrompt={onDeleteQueuedPrompt}
@@ -938,6 +946,7 @@ type MissionChatSessionCardProps = {
   expandedMessageIds: ReadonlySet<string>;
   flat?: boolean;
   isRuntimeActive: boolean;
+  legacyEvidenceState: SessionLegacyEvidenceState | undefined;
   messageHistoryState?: HistoryState;
   onBodyScroll: (sessionId: string, body: HTMLDivElement) => void;
   onClear: (session: SessionSummary) => void;
@@ -946,6 +955,7 @@ type MissionChatSessionCardProps = {
   onDismissCompletedPlan: (sessionId: string, planKey: string) => void;
   onFocus: (sessionId: string) => void;
   onLoadOlderMessages: (sessionId: string) => void;
+  onLoadLegacyEvidence: (sessionId: string, source: LegacyEvidenceSource, after?: string) => void;
   onRename: (session: SessionSummary) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   onToggleExpandedMessage: (messageId: string) => void;
@@ -984,6 +994,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   expandedMessageIds,
   flat = false,
   isRuntimeActive,
+  legacyEvidenceState,
   messageHistoryState,
   onBodyScroll,
   onClear,
@@ -992,6 +1003,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   onDismissCompletedPlan,
   onFocus,
   onLoadOlderMessages,
+  onLoadLegacyEvidence,
   onRename,
   onRespondToPermission,
   onToggleExpandedMessage,
@@ -1130,6 +1142,10 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
           historyLoading={conversationDisplayMode === "history-loading"}
         />
       )}
+      <LegacyEvidencePanel
+        state={legacyEvidenceState}
+        onLoad={(source, after) => onLoadLegacyEvidence(session.id, source, after)}
+      />
     </SessionCard>
   );
 });

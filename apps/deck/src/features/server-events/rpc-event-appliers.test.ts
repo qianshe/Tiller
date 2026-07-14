@@ -197,7 +197,7 @@ test("applySessionUpdate keeps agent_message notifications out of the canonical 
   assert.deepEqual(useDeckStore.getState().sessionTimeline.s1 ?? [], []);
 });
 
-test("applySessionUpdate caches available commands by session and agent", () => {
+test("applySessionUpdate caches canonical live-state commands by session and agent", () => {
   resetStore();
   useDeckStore.setState({ sessions: [session("s1")] });
 
@@ -205,8 +205,12 @@ test("applySessionUpdate caches available commands by session and agent", () => 
     {
       sessionId: "s1",
       update: {
-        kind: "commands_available",
-        commands: [{ name: "review" }, { name: "compact" }],
+        kind: "live_state",
+        snapshot: {
+          sequence: 1,
+          status: { effectiveStatus: "running", pendingApprovalCount: 0 },
+          availableCommands: [{ name: "review" }, { name: "compact" }],
+        },
       },
     },
     {} as any,
@@ -383,7 +387,7 @@ test("applyInventoryResult preserves haiku reasoning when ACP options expose it"
   );
 });
 
-test("applySessionUpdate refreshes ACP connection inventory on status changes", () => {
+test("applySessionUpdate does not refresh ACP connection inventory on canonical status snapshots", () => {
   resetStore();
   useDeckStore.setState({ sessions: [session("s1")] });
   const dispatched: Array<{ method: string; params: unknown }> = [];
@@ -392,9 +396,11 @@ test("applySessionUpdate refreshes ACP connection inventory on status changes", 
     {
       sessionId: "s1",
       update: {
-        kind: "status_change",
-        status: "idle",
-        message: "ACP prompt completed",
+        kind: "live_state",
+        snapshot: {
+          sequence: 1,
+          status: { effectiveStatus: "idle", pendingApprovalCount: 0 },
+        },
       },
     },
     {
@@ -406,5 +412,5 @@ test("applySessionUpdate refreshes ACP connection inventory on status changes", 
   );
 
   assert.equal(handled, true);
-  assert.deepEqual(dispatched, [{ method: "agent/connections", params: {} }]);
+  assert.deepEqual(dispatched, []);
 });

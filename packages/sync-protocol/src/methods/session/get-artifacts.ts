@@ -20,6 +20,7 @@ export const ResultSchema = z.object({
   toolCalls: z.array(typedUnknown<AgentToolCall>()),
   nextCursor: z.string().optional(),
   hasMore: z.boolean().optional(),
+  historicalDiffIncomplete: z.boolean().optional(),
 });
 export type Params = z.infer<typeof ParamsSchema>;
 export type Result = z.infer<typeof ResultSchema>;

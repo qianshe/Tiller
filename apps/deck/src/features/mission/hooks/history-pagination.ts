@@ -115,7 +115,7 @@ export function useHistoryPagination({
         loading: true,
       },
     }));
-    void dispatch(client, "session/get_artifacts", {
+    void dispatch(client, "session/list_timeline", {
       sessionId,
       limit: activityPageLimit,
       before: historyState.nextCursor,

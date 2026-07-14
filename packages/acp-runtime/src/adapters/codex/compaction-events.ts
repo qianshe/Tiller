@@ -68,6 +68,7 @@ export function expandCodexRuntimeEvent(
       message: {
         ...event.message,
         text: match.trailingText,
+        streaming: false,
       },
     },
   ];

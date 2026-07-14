@@ -7,9 +7,10 @@ import { createHelmRuntimeComposition } from "./runtime-composition";
 
 function createSessionStore(): SessionServicesOptions["sessionStore"] {
   return {
+    get: () => undefined,
     list: () => [],
-    upsert: () => [],
-    remove: () => [],
+    upsert: () => undefined,
+    remove: () => undefined,
   };
 }
 
@@ -51,6 +52,7 @@ function createSessionAttachmentStore(): SessionServicesOptions["sessionAttachme
     get: () => undefined,
     listForMessage: () => [],
     readBytes: () => undefined,
+    remove: () => undefined,
     removeSession: () => undefined,
   };
 }
@@ -104,9 +106,50 @@ function createSessionTimelineStore(): SessionServicesOptions["sessionTimelineSt
 function createSessionUpdateStore(): SessionServicesOptions["sessionUpdateStore"] {
   return {
     append: () => undefined,
-    replaceSession: () => undefined,
+    getMaxSequence: () => 0,
+    compactTail: () => 0,
     listPage: () => ({ updates: [], hasMore: false }),
     remove: () => undefined,
+  };
+}
+
+function createSessionStateStore(): SessionServicesOptions["sessionStateStore"] {
+  return {
+    get: () => undefined,
+    getAppliedSequence: () => 0,
+    replace: (_sessionId, state) => state,
+    commitUpdate: (_update, state) => state,
+    remove: () => undefined,
+    close: () => undefined,
+  };
+}
+
+function createSessionDiffBodyStore(): SessionServicesOptions["sessionDiffBodyStore"] {
+  return {
+    putText: () => ({
+      id: "diff-1",
+      sessionId: "session-1",
+      path: "file.ts",
+      mimeType: "text/plain; charset=utf-8",
+      sha256: "sha256",
+      byteSize: 0,
+      storageKey: "storage-key",
+      uri: "/api/sessions/session-1/diffs/file.ts",
+      createdAt: new Date(0).toISOString(),
+    }),
+    get: () => undefined,
+    readText: () => undefined,
+    removeSession: () => undefined,
+  };
+}
+
+function createSessionApprovalStore(): SessionServicesOptions["sessionApprovalStore"] {
+  return {
+    get: () => undefined,
+    replace: (_sessionId, state) => state,
+    commitUpdate: (_update, state) => state,
+    remove: () => undefined,
+    close: () => undefined,
   };
 }
 
@@ -117,10 +160,13 @@ test("createHelmRuntimeComposition owns runtime maps queue and services", () => 
     sessionArtifactStore: createSessionArtifactStore(),
     sessionAttachmentStore: createSessionAttachmentStore(),
     sessionOutputBodyStore: createSessionOutputBodyStore(),
+    sessionDiffBodyStore: createSessionDiffBodyStore(),
     sessionRuntimeStore: createSessionRuntimeStore(),
     sessionPlanStore: createSessionPlanStore(),
     sessionTimelineStore: createSessionTimelineStore(),
     sessionUpdateStore: createSessionUpdateStore(),
+    sessionStateStore: createSessionStateStore(),
+    sessionApprovalStore: createSessionApprovalStore(),
     getAgents: () => [],
     getProjects: () => [],
     getWorktrees: () => [],

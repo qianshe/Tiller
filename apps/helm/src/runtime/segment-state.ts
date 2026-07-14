@@ -109,7 +109,16 @@ export function clearActiveRuntimeThinking(sessionId: string) {
   activeAssistantRuntimeThinkingBySession.delete(sessionId);
 }
 
-export function finalizeActiveRuntimeThinking(sessionId: string): AgentToolCall | undefined {
+export function removeRuntimeSegmentState(sessionId: string) {
+  messageSegmentIds.removeSession(sessionId);
+  activeAssistantRuntimeMessageBySession.delete(sessionId);
+  activeAssistantRuntimeThinkingBySession.delete(sessionId);
+}
+
+export function finalizeActiveRuntimeThinking(
+  sessionId: string,
+  status: Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled"> = "completed",
+): AgentToolCall | undefined {
   const active = activeAssistantRuntimeThinkingBySession.get(sessionId);
   if (!active) {
     return undefined;
@@ -121,7 +130,8 @@ export function finalizeActiveRuntimeThinking(sessionId: string): AgentToolCall 
     commandId: active.segmentId,
     kind: "think",
     title: "Thinking",
-    status: "completed",
+    status,
+    output: active.text,
     timestamp: active.timestamp,
     updatedAt: now,
     sequence: active.sequence,

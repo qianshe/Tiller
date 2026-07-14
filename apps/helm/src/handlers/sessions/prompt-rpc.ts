@@ -4,6 +4,8 @@ import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "../../runtime/session/config-options";
+import { publishCanonicalSessionStateEvent } from "../../runtime/events";
+import { createSessionBootstrapEvents } from "../../runtime/session/event/bootstrap";
 import { sendPromptToSession } from "../../runtime/session/router";
 import type { HelmHandlerContext } from "../context";
 
@@ -117,6 +119,9 @@ async function promptRuntimeDraft(
   });
   context.sessionStore.upsert(summary);
   context.persistRuntimeDescriptor(summary, draft.agent, draft.runtime.sessionCapabilities);
+  for (const event of createSessionBootstrapEvents(summary)) {
+    context.handleRuntimeEvent(sessionId, event);
+  }
   broadcastSessionUpdate(context, sessionId, { kind: "session_updated", session: summary });
   logSessionInfo(context, "runtime.draft.activated", {
     draftId: params.draftId,
@@ -181,9 +186,5 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
     lastMessagePreview: "Prompt failed",
   }));
   broadcastErrorRaised(context, { sessionId, message });
-  broadcastSessionUpdate(context, sessionId, {
-    kind: "status_change",
-    status: "error",
-    message,
-  });
+  publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
 }

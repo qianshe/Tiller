@@ -1,6 +1,7 @@
 import type { WebSocket } from "ws";
 import { JsonRpcConnection, type ConnectionHandlers } from "@tiller/sync-protocol";
 import type { HelmHandlerContext } from "../handlers/context";
+import type { RuntimeMetrics } from "../logging/runtime-metrics";
 import { handleHelmRpcNotification, handleHelmRpcRequest } from "../rpc/router";
 import { createWebSocketJsonRpcStream } from "../rpc/websocket-stream";
 
@@ -44,11 +45,28 @@ export type AttachHelmRpcConnectionOptions = {
   getSocketId: (socket: WebSocket) => string | undefined;
   createHandlerContext: (socketId?: string) => HelmHandlerContext;
   logError: (message: string) => void;
+  logInfo?: (message: string) => void;
+  runtimeMetrics?: Pick<RuntimeMetrics, "observe">;
 };
 
 export function attachHelmRpcConnection(options: AttachHelmRpcConnectionOptions) {
+  let coalescedDeltaCount = 0;
   const stream = createWebSocketJsonRpcStream(options.socket, (error) => {
     options.logError(`[tiller] json-rpc decode failed: ${formatError(error)}`);
+  }, {
+    onCoalesced: (count) => {
+      coalescedDeltaCount += count;
+      options.runtimeMetrics?.observe("__transport__", {
+        eventType: "websocket.coalesced",
+        coalescedDeltaCount: count,
+      });
+    },
+    onEncoded: (bytes) => {
+      options.runtimeMetrics?.observe("__transport__", {
+        eventType: "websocket.encoded",
+        wsBufferedBytes: bytes,
+      });
+    },
   });
   const connection = new JsonRpcConnection(
     stream,
@@ -61,6 +79,11 @@ export function attachHelmRpcConnection(options: AttachHelmRpcConnectionOptions)
     }),
   );
   options.socket.once("close", () => {
+    if (coalescedDeltaCount > 0) {
+      options.logInfo?.(
+        `[tiller] websocket.backpressure.summary coalescedDeltaCount=${coalescedDeltaCount}`,
+      );
+    }
     connection.close();
   });
   return connection;

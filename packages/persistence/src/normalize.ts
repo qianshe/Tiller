@@ -44,7 +44,9 @@ export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): 
   return compactBinaryToolCallOutput({
     ...current,
     ...incoming,
-    kind: resolveMergedToolCallKind(current, incoming),
+    // Live ACP mapper classification is immutable; this merge only updates
+    // payload/status for an already identified entity.
+    kind: current.kind,
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
     mcp: incoming.mcp ?? current.mcp,
     output: mergeToolCallOutput(current.output, incoming.output),
@@ -60,59 +62,25 @@ export function mergeToolCallOutput(currentOutput: string | undefined, incomingO
 }
 
 export function sortCommandChunks(items: CommandChunk[]) {
-  return [...items].sort((left, right) =>
-    compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id),
-  );
+  return sortSequencedItems(items);
 }
 
 export function sortToolCalls(items: AgentToolCall[]) {
-  return [...items].sort(compareToolCallPosition);
+  return sortSequencedItems(items);
 }
 
-function compareToolCallPosition(left: AgentToolCall, right: AgentToolCall) {
-  const sequenceDelta = compareOptionalTimelineSequence(
-    left.sequence,
-    right.sequence,
-  );
-  if (sequenceDelta !== 0) {
-    return sequenceDelta;
+function sortSequencedItems<T extends { sequence?: number }>(items: T[]) {
+  if (!items.every((item) => typeof item.sequence === "number")) {
+    return [...items];
   }
-  return compareHistoryPosition(
-    left.timestamp || left.updatedAt,
-    left.id,
-    right.timestamp || right.updatedAt,
-    right.id,
-  );
+
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => left.item.sequence! - right.item.sequence! || left.index - right.index)
+    .map(({ item }) => item);
 }
 
-function compareOptionalTimelineSequence(
-  left: number | undefined,
-  right: number | undefined,
-) {
-  if (left === undefined || right === undefined) {
-    return 0;
-  }
-  return left - right;
-}
-
-export function resolveToolCallKind(
-  currentKind: AgentToolCallKind,
-  incomingKind: AgentToolCallKind,
-) {
-  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
-}
-
-function resolveMergedToolCallKind(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-) {
-  if (shouldPreferSearchRepair(current, incoming)) {
-    return incoming.kind;
-  }
-  return resolveToolCallKind(current.kind, incoming.kind);
-}
-
-export function isHigherConfidenceToolKind(
+export function isLegacyToolKindMoreSpecific(
   incomingKind: AgentToolCallKind,
   currentKind: AgentToolCallKind,
 ) {
@@ -124,6 +92,7 @@ export function isHigherConfidenceToolKind(
     fetch: 2,
     search: 3,
     read: 3,
+    diagnostics: 3,
     write: 3,
     shell: 3,
     skill: 3,
@@ -133,30 +102,21 @@ export function isHigherConfidenceToolKind(
   return rank[incomingKind] > rank[currentKind];
 }
 
-function shouldPreferSearchRepair(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-) {
-  return current.kind === "shell" &&
-    incoming.kind === "search" &&
-    Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt);
-}
-
-export function normalizePersistedAgentToolCall(
+export function normalizeLegacyPersistedAgentToolCall(
   toolCall: AgentToolCall | null,
 ): AgentToolCall | null {
   if (!toolCall) {
     return null;
   }
 
-  const normalizedKind = normalizePersistedAgentToolCallKind(toolCall.kind);
+  const normalizedKind = normalizeLegacyPersistedAgentToolCallKind(toolCall.kind);
   const mcp = resolveAgentToolCallMcp({
     existing: toolCall.mcp,
     input: toolCall.input,
     title: toolCall.title,
     rawTitle: toolCall.mcp?.rawTitle,
   });
-  if (!mcp || (normalizedKind !== "mcp" && !isHigherConfidenceToolKind("mcp", normalizedKind))) {
+  if (!mcp || (normalizedKind !== "mcp" && !isLegacyToolKindMoreSpecific("mcp", normalizedKind))) {
     return compactBinaryToolCallOutput({ ...toolCall, kind: normalizedKind });
   }
 
@@ -188,7 +148,7 @@ function resolveQualifiedMcpToolCallTitle(mcp: NonNullable<AgentToolCall["mcp"]>
   return formatAgentToolCallMcpTitle(mcp);
 }
 
-function normalizePersistedAgentToolCallKind(value: unknown): AgentToolCallKind {
+function normalizeLegacyPersistedAgentToolCallKind(value: unknown): AgentToolCallKind {
   if (value === "terminal") return "shell";
   if (value === "edit") return "write";
   return typeof value === "string"
@@ -196,6 +156,7 @@ function normalizePersistedAgentToolCallKind(value: unknown): AgentToolCallKind 
       "mcp",
       "skill",
       "read",
+      "diagnostics",
       "write",
       "search",
       "shell",
@@ -219,19 +180,6 @@ function primitiveStringFrom(value: unknown) {
   if (typeof value === "string") return value;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   return undefined;
-}
-
-export function compareHistoryPosition(
-  leftTimestamp: string,
-  leftId: string,
-  rightTimestamp: string,
-  rightId: string,
-) {
-  const timestampDelta = Date.parse(leftTimestamp) - Date.parse(rightTimestamp);
-  if (timestampDelta !== 0) {
-    return timestampDelta;
-  }
-  return leftId.localeCompare(rightId);
 }
 
 function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {

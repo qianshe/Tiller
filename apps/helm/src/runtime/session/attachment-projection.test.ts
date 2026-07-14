@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, AgentPromptContent } from "@tiller/shared";
-import { persistMessageImageAttachments, persistPromptImageAttachments } from "./attachment-projection.js";
+import {
+  hydratePromptImageAttachments,
+  persistMessageImageAttachments,
+  persistPromptImageAttachments,
+} from "./attachment-projection.js";
 
 test("persistPromptImageAttachments stores inline images and returns reference-only content", () => {
   const storedInputs: unknown[] = [];
@@ -38,6 +42,7 @@ test("persistPromptImageAttachments stores inline images and returns reference-o
       get: () => undefined,
       listForMessage: () => [],
       readBytes: () => undefined,
+      remove: () => undefined,
       removeSession: () => undefined,
     },
   });
@@ -86,6 +91,7 @@ test("persistPromptImageAttachments keeps reference-only images unchanged", () =
       get: () => undefined,
       listForMessage: () => [],
       readBytes: () => undefined,
+      remove: () => undefined,
       removeSession: () => undefined,
     },
   });
@@ -126,6 +132,7 @@ test("persistMessageImageAttachments projects message attachments without changi
       get: () => undefined,
       listForMessage: () => [],
       readBytes: () => undefined,
+      remove: () => undefined,
       removeSession: () => undefined,
     },
   });
@@ -142,4 +149,38 @@ test("persistMessageImageAttachments projects message attachments without changi
       byteSize: 3,
     },
   ]);
+});
+
+test("hydratePromptImageAttachments restores attachment references only when they belong to the session", () => {
+  const content = hydratePromptImageAttachments({
+    sessionId: "session-1",
+    content: [{
+      type: "image",
+      mimeType: "image/png",
+      attachmentId: "attachment-1",
+      uri: "/api/sessions/session-1/attachments/attachment-1",
+    }],
+    attachments: {
+      put: () => {
+        throw new Error("unused");
+      },
+      get: () => ({
+        id: "attachment-1",
+        sessionId: "session-1",
+        mimeType: "image/png",
+        sha256: "sha256",
+        byteSize: 3,
+        storageKey: "storage-key",
+        uri: "/api/sessions/session-1/attachments/attachment-1",
+        createdAt: "2026-07-12T00:00:00.000Z",
+      }),
+      listForMessage: () => [],
+      readBytes: () => Buffer.from("png"),
+      remove: () => undefined,
+      removeSession: () => undefined,
+    },
+  });
+
+  assert.equal(content?.[0]?.type, "image");
+  assert.equal(content?.[0]?.type === "image" ? content[0].data : undefined, Buffer.from("png").toString("base64"));
 });

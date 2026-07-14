@@ -14,6 +14,7 @@ import {
   resolveToolStatusLabel,
 } from "./plain-tool-model";
 import { splitStreamingMarkdown } from "./streaming-markdown";
+import { resolveToolCallChangeStats } from "./tool-call-change-stats";
 
 const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
@@ -574,11 +575,11 @@ export function PlainThinkingItem({
           <span aria-hidden="true" className="inline-flex size-4 shrink-0 items-center justify-center text-primary">
             <PlainThinkingIcon />
           </span>
-          <span className="inline-flex min-w-0 h-4 items-center truncate font-medium">
+          <span className="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium">
             Thinking
           </span>
           {preview ? (
-            <span className="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground/70">
+            <span className="inline-flex h-4 min-w-0 flex-1 items-center truncate leading-none text-muted-foreground/70">
               {preview}
             </span>
           ) : null}
@@ -721,11 +722,13 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary
-          className="flex w-full cursor-pointer list-none items-center gap-1.5 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起工具调用" : "展开工具调用"}
         >
-          <Icon name="hammer" size={12} className="text-primary" />
-          <span className="whitespace-nowrap font-medium text-muted-foreground">
+          <span aria-hidden="true" className="inline-flex size-4 shrink-0 items-center justify-center text-primary">
+            <Icon name="hammer" size={12} />
+          </span>
+          <span className="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium leading-none text-muted-foreground">
             工具调用 · {group.length} 项
           </span>
           <span className="min-w-0 truncate text-muted-foreground/70">
@@ -748,7 +751,7 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
         </summary>
         <div
           ref={contentRef}
-          className="plain-tool-group-content grid max-h-36 gap-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground"
+          className="plain-tool-group-content grid grid-cols-[0.75rem_max-content_minmax(0,1fr)_auto_auto] max-h-36 gap-x-1.5 gap-y-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground"
           data-mission-swipe-lock="true"
         >
           {group.map((item) => (
@@ -770,7 +773,9 @@ export function PlainSubagentItem({
   const isRunning = isActiveToolStatus(item.status);
   const shouldAutoOpen = isRunning && !hasNewerContent;
   const [open, setOpen] = useState(shouldAutoOpen);
-  const text = item.text.trim() || formatToolInputPreview(item.input) || "暂无 Subagent 内容";
+  const text = resolveSubagentOutput(item.text) ||
+    formatToolInputPreview(item.input) ||
+    "暂无 Subagent 内容";
   const summary = resolveSubagentSummary(item);
   const label = resolveSubagentLabel(item);
   const statusBadge = resolveSubagentStatusBadge(item);
@@ -879,6 +884,30 @@ function resolveSubagentStatusBadge(item: ConversationToolCallItem) {
   return null;
 }
 
+function resolveSubagentOutput(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const parsed = parseJsonRecord(trimmed);
+  const output = typeof parsed?.output === "string" ? parsed.output : trimmed;
+  const taskOutput = output.match(/<output>\s*([\s\S]*?)\s*<\/output>/iu)?.[1]?.trim();
+  if (taskOutput) {
+    return taskOutput;
+  }
+  if (/<(?:retrieval_status|task_id|task_type|status)>/iu.test(output)) {
+    return "";
+  }
+  return output
+    .replace(/^Task completed in [^\r\n]+(?:\r?\n)+(?:Agent:[^\r\n]+(?:\r?\n)+)?---(?:\r?\n)+/iu, "")
+    .replace(/\r?\n?<!--\s*OMO_INTERNAL_INITIATOR\s*-->/giu, "")
+    .replace(/\r?\n*<task_metadata>[\s\S]*?<\/task_metadata>/giu, "")
+    .replace(/\r?\n*to continue:\s*task\([\s\S]*$/iu, "")
+    .replace(/\r?\n+agentId:\s*\S+\s+\(use SendMessage[\s\S]*$/iu, "")
+    .replace(/^\(Subagent completed but returned no output\.\)$/iu, "")
+    .trim();
+}
+
 function isBackgroundCancelSubagent(item: ConversationToolCallItem) {
   return item.title.trim().toLowerCase() === "background_cancel";
 }
@@ -957,35 +986,76 @@ function firstString(record: Record<string, unknown>, keys: string[]) {
 function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
   const tone = resolveToolCallTone(item.toolKind, item.title);
   const preview = item.text.trim() || formatToolInputPreview(item.input);
+  const displayTitle = resolveToolCallDisplayTitle(tone.label, item.title);
+  const changeStats = resolveToolCallChangeStats(
+    item.toolKind,
+    item.input,
+    item.text,
+  );
   return (
     <details
-      className="plain-tool-call text-muted-foreground"
+      className="plain-tool-call col-span-5 grid grid-cols-subgrid text-muted-foreground"
       data-tool-kind={tone.label.toLowerCase()}
     >
-      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-1.5 py-0.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
+      <summary className="col-span-5 grid min-w-0 cursor-pointer list-none grid-cols-subgrid items-center py-0.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
         <span aria-hidden="true" className={cn("grid size-3 shrink-0 place-items-center rounded-sm", tone.className)}>
           <Icon name={resolveToolCallIconName(tone.label)} size={9} />
         </span>
-        <Badge
-          variant="secondary"
-          className={cn("inline-flex h-4 shrink-0 items-center rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
+        <span className="inline-flex shrink-0 items-center">
+          <Badge
+            variant="secondary"
+            className={cn("inline-flex h-4 shrink-0 items-center rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
+          >
+            {tone.label}
+          </Badge>
+        </span>
+        <strong
+          className="min-w-0 flex-1 truncate font-medium leading-4 text-foreground"
+          title={displayTitle}
         >
-          {tone.label}
-        </Badge>
-        <strong className="min-w-0 flex-1 truncate font-medium leading-4 text-foreground">
-          {item.title}
+          {displayTitle}
         </strong>
-        <span className="ml-auto inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground/60">
+        {changeStats ? (
+          <span
+            aria-label={`修改统计：新增 ${changeStats.additions} 行，删除 ${changeStats.deletions} 行`}
+            className="col-start-4 inline-flex shrink-0 items-center gap-1 font-mono text-2xs tabular-nums"
+          >
+            <span className={cn("tool-call-additions", resolveToolCallStatClass(changeStats.additions, "additions"))}>+{changeStats.additions}</span>
+            <span className="text-muted-foreground/50">/</span>
+            <span className={cn("tool-call-deletions", resolveToolCallStatClass(changeStats.deletions, "deletions"))}>-{changeStats.deletions}</span>
+          </span>
+        ) : null}
+        <span className="col-start-5 inline-flex h-4 shrink-0 items-center justify-self-end text-2xs text-muted-foreground/60">
           {resolveToolStatusLabel(item.status)}
         </span>
       </summary>
       {preview ? (
-        <pre className="mt-0.5 max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
+        <pre className="col-span-5 mt-0.5 min-w-0 max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
           {preview}
         </pre>
       ) : null}
     </details>
   );
+}
+
+function resolveToolCallDisplayTitle(label: string, title: string) {
+  if (label === "Skill") {
+    return title.replace(/^Skill:\s*/iu, "").trim() || "Skill";
+  }
+  if (label === "Diagnostics") {
+    return title.replace(/^Diagnostics(?:\s*:)?\s*/iu, "").trim() || "Diagnostics";
+  }
+  return title;
+}
+
+function resolveToolCallStatClass(
+  value: number,
+  kind: "additions" | "deletions",
+) {
+  if (value === 0) {
+    return "text-muted-foreground/60";
+  }
+  return kind === "additions" ? "text-success" : "text-destructive";
 }
 
 function resolveToolGroupBadgeLabel(labels: string[]): string {

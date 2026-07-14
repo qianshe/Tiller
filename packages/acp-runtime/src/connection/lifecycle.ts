@@ -3,9 +3,14 @@ import { Readable, Writable } from "node:stream";
 import { setImmediate as waitUntilNextEventLoopTurn } from "node:timers/promises";
 import * as acp from "@agentclientprotocol/sdk";
 import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
-import { resolveAcpLaunchConfig } from "../adapters";
+import {
+  beginAdapterPromptObservation,
+  disposeAdapterSession,
+  pollAdapterPromptEvents,
+  resolveAcpLaunchConfig,
+} from "../adapters";
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
-import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotification, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
+import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotificationBatch, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
 import { createProtocolLogSink, writeChunkLog, writeLogLine, type AcpProtocolLoggingOptions, type ProtocolLogSink } from "../protocol-logging";
 import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess, terminateChildProcessAndWait } from "../process";
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
@@ -110,6 +115,9 @@ export class AcpConnection {
     });
     this.state.child.once("exit", (code, signal) => {
       this.status = "closed";
+      for (const session of this.sessions.values()) {
+        disposeAdapterSession(this.state.provider, session.runtimeSessionId);
+      }
       if (this.suppressExitError) {
         return;
       }
@@ -269,6 +277,7 @@ export class AcpConnection {
       this.pendingSessions.delete(tillerSessionId);
       const runtimeSessionId = this.sessions.get(tillerSessionId)?.runtimeSessionId ?? tillerSessionId;
       this.sessions.delete(tillerSessionId);
+      disposeAdapterSession(this.state.provider, runtimeSessionId);
       if (this.state.capabilities.sessionClose) {
         await this.closeRemoteSession(runtimeSessionId);
       }
@@ -299,6 +308,7 @@ export class AcpConnection {
     }
 
     this.sessions.delete(tillerSessionId);
+    disposeAdapterSession(this.state.provider, session.runtimeSessionId);
     if (this.state.capabilities.sessionClose) {
       await this.closeRemoteSession(session.runtimeSessionId);
     }
@@ -443,6 +453,18 @@ export class AcpConnection {
       throw new Error(`Session is not active: ${tillerSessionId}`);
     }
     const promptContent = content?.length ? content : [{ type: "text" as const, text }];
+    const promptObservation = {
+      runtimeSessionId: session.runtimeSessionId,
+      cwd: session.worktree.path,
+    };
+    const publishPromptEvents = () => {
+      for (const event of pollAdapterPromptEvents(this.state.provider, promptObservation)) {
+        session.onEvent(event);
+      }
+    };
+    beginAdapterPromptObservation(this.state.provider, promptObservation);
+    const promptObservationTimer = setInterval(publishPromptEvents, 500);
+    promptObservationTimer.unref();
     session.onEvent({ type: "status", status: "running", message: "ACP agent is responding" });
     try {
       await withConnectionRequest(
@@ -454,8 +476,10 @@ export class AcpConnection {
         this.state.provider,
       );
       await waitUntilNextEventLoopTurn();
+      publishPromptEvents();
       session.onEvent({ type: "status", status: "idle", message: "ACP prompt completed" });
     } catch (error) {
+      publishPromptEvents();
       const message = error instanceof Error ? error.message : "Failed to send ACP prompt.";
     writeLogLine(this.state.logFile, "sdk-error", message);
       if (/ACP connection closed/iu.test(message)) {
@@ -468,6 +492,8 @@ export class AcpConnection {
         message,
       });
       session.onEvent({ type: "status", status: "error", message: "ACP prompt failed" });
+    } finally {
+      clearInterval(promptObservationTimer);
     }
   }
 
@@ -480,6 +506,7 @@ export class AcpConnection {
       .catch(() => undefined)
       .finally(() => {
         this.sessions.delete(tillerSessionId);
+        disposeAdapterSession(this.state.provider, session.runtimeSessionId);
         this.disposeIfIdle();
       });
     session.onEvent({ type: "status", status: "cancelled", message: "Cancelled by remote operator" });
@@ -674,15 +701,24 @@ export class AcpConnection {
   }
 
   private handleSessionUpdate(params: unknown): void {
-    const mapped = mapSessionUpdateNotification(
+    const runtimeSessionId = (params as any)?.sessionId ??
+      (params as any)?.session_id;
+    const session = typeof runtimeSessionId === "string"
+      ? this.findSessionByRuntimeId(runtimeSessionId)
+      : undefined;
+    const mapped = mapSessionUpdateNotificationBatch(
       { method: "session/update", params },
-      { provider: this.state.provider, providerId: this.state.provider.id },
+      {
+        provider: this.state.provider,
+        providerId: this.state.provider.id,
+        sessionCwd: session?.worktree.path,
+      },
     );
     writeLogLine(
       this.state.logFile,
       "session-update",
       JSON.stringify(
-        summarizeSessionUpdateNotification(params, mapped?.event.type, {
+        summarizeSessionUpdateNotification(params, mapped?.events[0]?.type, {
           providerId: this.state.provider.id,
         }),
       ),
@@ -692,7 +728,9 @@ export class AcpConnection {
     }
     for (const session of this.sessions.values()) {
       if (session.runtimeSessionId === mapped.sessionId) {
-        session.onEvent(mapped.event);
+        for (const event of mapped.events) {
+          session.onEvent(event);
+        }
         return;
       }
     }
@@ -729,6 +767,9 @@ export class AcpConnection {
   async dispose(): Promise<void> {
     this.status = "closed";
     this.suppressExitError = true;
+    for (const session of this.sessions.values()) {
+      disposeAdapterSession(this.state.provider, session.runtimeSessionId);
+    }
     if (this.state.child.pid) {
       await terminateChildProcessAndWait(this.state.child);
     }

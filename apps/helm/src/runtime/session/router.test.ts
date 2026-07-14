@@ -2,10 +2,12 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type {
   AgentMessage,
+  CanonicalSessionState,
   PromptTraceEvent,
   SessionSummary,
   SessionTimelineBatch,
   SessionTimelineEntry,
+  SessionTimelineMessageEntry,
   SessionUpdateRecord,
 } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
@@ -17,6 +19,7 @@ import { flushLiveAssistantMessage, handleRuntimeEvent } from "../events";
 import { createSessionTimelineFlushScheduler } from "../session-timeline/flush-scheduler";
 import { createSessionTimelineWorker } from "../session-timeline/worker";
 import { createSessionLiveStateStore } from "../session-timeline/live-state-store";
+import { createSessionRuntimeEventState } from "./event/runtime-state";
 
 function deferred<T>() {
   let resolve!: (value: T | PromiseLike<T>) => void;
@@ -78,6 +81,7 @@ function createContext(options: {
   const broadcasts: Array<{ method: string; params: any }> = [];
   const traceEvents: PromptTraceEvent[] = [];
   const subscriptions: string[] = [];
+  const sessionStates = new Map<string, CanonicalSessionState>();
   let currentSummary = summary;
   const sessions = new Map<string, any>();
   if (options.activeRuntime) {
@@ -88,14 +92,30 @@ function createContext(options: {
       runtime: options.activeRuntime,
     });
   }
-  const timelineWorker = options.canonicalTimeline
+  const timelineWorker = options.canonicalTimeline !== false
     ? createSessionTimelineWorker({ sessionId })
     : null;
   const sessionTimelineDispatcher = timelineWorker
     ? {
-        dispatch: (_sessionId: string, batch: SessionTimelineBatch) => {
+        dispatch: (
+          _sessionId: string,
+          batch: SessionTimelineBatch,
+          updates: SessionUpdateRecord[] = [],
+        ) => {
           canonicalBatches.push(batch);
-          timelineEntries.splice(0, timelineEntries.length, ...batch.entries);
+          sessionUpdates.push(...updates);
+          if (batch.replace) {
+            timelineEntries.splice(0, timelineEntries.length, ...batch.entries);
+            return;
+          }
+          for (const entry of batch.entries) {
+            const index = timelineEntries.findIndex((candidate) => candidate.id === entry.id);
+            if (index === -1) {
+              timelineEntries.push(entry);
+            } else {
+              timelineEntries[index] = entry;
+            }
+          }
         },
       }
     : null;
@@ -105,15 +125,35 @@ function createContext(options: {
           forSession: () => timelineWorker,
           has: () => true,
           remove: () => undefined,
+          evictIdle: () => [],
+          size: () => 1,
         },
         dispatcher: sessionTimelineDispatcher,
         windowMs: 0,
       })
     : null;
+  const sessionLiveStateStore = createSessionLiveStateStore({
+    get: (targetSessionId) => sessionStates.get(targetSessionId),
+    getAppliedSequence: (targetSessionId) => sessionStates.get(targetSessionId)?.sequence ?? 0,
+    replace: (targetSessionId, state) => {
+      sessionStates.set(targetSessionId, state);
+      return state;
+    },
+    commitUpdate: (update, state) => {
+      sessionUpdates.push(update);
+      sessionStates.set(update.sessionId, state);
+      return state;
+    },
+    remove: (targetSessionId) => {
+      sessionStates.delete(targetSessionId);
+    },
+    close: async () => undefined,
+  });
   const context = {
     socketId: "socket-1",
     sessions,
     promptQueue: createSessionPromptQueueManager(),
+    sessionRuntimeEventState: createSessionRuntimeEventState(),
     liveMessageBuffer: createLiveMessageBuffer(),
     drainPromptQueue: async (sessionId: string) => {
       await drainPromptQueue(sessionId, context as unknown as HelmHandlerContext);
@@ -126,6 +166,13 @@ function createContext(options: {
       append: (update: SessionUpdateRecord) => {
         sessionUpdates.push(update);
       },
+      getMaxSequence: (targetSessionId: string) => Math.max(
+        sessionStates.get(targetSessionId)?.sequence ?? 0,
+        ...sessionUpdates
+          .filter((update) => update.sessionId === targetSessionId)
+          .map((update) => update.sequence),
+      ),
+      compactTail: () => 0,
     },
     sessionTimelineStore: {
       append: (_sessionId: string, entry: SessionTimelineEntry) => {
@@ -154,7 +201,7 @@ function createContext(options: {
           },
           sessionTimelineDispatcher,
           sessionTimelineFlushScheduler,
-          sessionLiveStateStore: createSessionLiveStateStore(),
+          sessionLiveStateStore,
         }
       : {}),
     updateSessionSummary: (_sessionId: string, mutate: (current: SessionSummary) => SessionSummary) => {
@@ -166,7 +213,10 @@ function createContext(options: {
       return currentSummary;
     },
     hydrateSessionSummary: (next: SessionSummary) => next,
-    sessionStore: { list: () => [currentSummary] },
+    sessionStore: {
+      get: (targetSessionId: string) => targetSessionId === sessionId ? currentSummary : undefined,
+      list: () => [currentSummary],
+    },
     broadcastNotification: (method: string, params: any) => broadcasts.push({ method, params }),
     broadcastSessionTopic: (_sessionId: string, method: string, params: any) => {
       broadcasts.push({ method, params });
@@ -210,9 +260,29 @@ function createContext(options: {
   };
 }
 
+function timelineMessages(entries: SessionTimelineEntry[]) {
+  return entries.flatMap((entry) => {
+    if (entry.kind === "user_message") {
+      return [[entry.message.role, entry.message.text] as const];
+    }
+    if (entry.kind !== "assistant_message") {
+      return [];
+    }
+    return entry.chunks
+      .filter((chunk) => chunk.kind === "content")
+      .map((chunk) => ["assistant", chunk.text] as const);
+  });
+}
+
+function findUserMessageEntry(entries: SessionTimelineEntry[]) {
+  return entries.find((entry): entry is SessionTimelineMessageEntry =>
+    entry.kind === "user_message"
+  );
+}
+
 test("sendPromptToSession dispatches through an active runtime", async () => {
   const prompted: string[] = [];
-  const { context, persisted, sessionUpdates, traceEvents } = createContext({
+  const { context, persisted, timelineEntries, traceEvents } = createContext({
     activeRuntime: {
       prompt: async (text) => {
         prompted.push(text);
@@ -229,12 +299,10 @@ test("sendPromptToSession dispatches through an active runtime", async () => {
   await flushPromises();
   assert.deepEqual(prompted, ["你好"]);
   assert.equal(result.accepted, "sent");
-  assert.equal(persisted.length, 1);
-  assert.equal(persisted[0]?.id, "client-1");
-  assert.equal(typeof persisted[0]?.sequence, "number");
-  assert.deepEqual(sessionUpdates.map((update) => [update.source, update.updateType, update.sequence]), [
-    ["acp_live", "message", persisted[0]?.sequence],
-  ]);
+  const userEntry = findUserMessageEntry(timelineEntries);
+  assert.equal(userEntry?.id, "client-1");
+  assert.equal(typeof userEntry?.sequence, "number");
+  assert.deepEqual(persisted, []);
   assert.deepEqual(traceEvents.map((event) => event.phase).filter((phase) => phase.startsWith("helm.prompt.")), [
     "helm.prompt.ack",
     "helm.prompt.send_start",
@@ -267,9 +335,9 @@ test("sendPromptToSession records the local user prompt as a timeline entry befo
   assert.equal(timelineEntries[0]?.id, "client-timeline");
 });
 
-test("sendPromptToSession routes local user prompts through canonical timeline batches before runtime dispatch", async () => {
+test("sendPromptToSession routes local user prompts through canonical timeline batches without legacy writes", async () => {
   const snapshotsDuringPrompt: Array<Array<[string, number | undefined]>> = [];
-  const { context, canonicalBatches, broadcasts, timelineEntries } = createContext({
+  const { context, canonicalBatches, broadcasts, persisted, timelineEntries } = createContext({
     canonicalTimeline: true,
     activeRuntime: {
       prompt: async () => {
@@ -307,11 +375,12 @@ test("sendPromptToSession routes local user prompts through canonical timeline b
     ),
     false,
   );
+  assert.deepEqual(persisted, []);
 });
 
 test("sendPromptToSession appends prompts after restored timeline history", async () => {
   const prompted: string[] = [];
-  const { context, persisted, timelineEntries } = createContext({
+  const { context, timelineEntries } = createContext({
     sessionId: "session-seeded-prompt",
     activeRuntime: {
       prompt: async (text) => {
@@ -336,6 +405,11 @@ test("sendPromptToSession appends prompts after restored timeline history", asyn
     updatedAt: "2026-06-10T09:00:00.000Z",
     sequence: 237,
   });
+  context.sessionLiveStateStore?.apply(
+    "session-seeded-prompt",
+    { type: "status", status: "idle" },
+    237,
+  );
 
   await sendPromptToSession(
     {
@@ -348,12 +422,15 @@ test("sendPromptToSession appends prompts after restored timeline history", asyn
   await flushPromises();
 
   assert.deepEqual(prompted, ["新的审核 prompt"]);
-  assert.equal(persisted[0]?.sequence, 238);
+  assert.equal(
+    findUserMessageEntry(timelineEntries)?.sequence,
+    239,
+  );
   assert.deepEqual(
     timelineEntries.map((entry) => [entry.kind, (entry as any).sequence]),
     [
       ["assistant_message", 237],
-      ["user_message", 238],
+      ["user_message", 239],
     ],
   );
 });
@@ -379,7 +456,7 @@ test("sendPromptToSession subscribes the prompting socket before runtime dispatc
 });
 
 test("sendPromptToSession flushes buffered assistant text after prompt completion", async () => {
-  const { context, persisted } = createContext({
+  const { context, timelineEntries } = createContext({
     activeRuntime: {
       prompt: async () => {
         context.liveMessageBuffer.append("session-1", {
@@ -400,7 +477,7 @@ test("sendPromptToSession flushes buffered assistant text after prompt completio
   await flushPromises();
 
   assert.deepEqual(
-    persisted.map((message) => [message.role, message.text]),
+    timelineMessages(timelineEntries),
     [
       ["user", "请回复"],
       ["assistant", "延迟到 prompt 完成后 flush 的回复"],
@@ -409,7 +486,7 @@ test("sendPromptToSession flushes buffered assistant text after prompt completio
 });
 
 test("sendPromptToSession does not duplicate assistant text already flushed by status handling", async () => {
-  const { context, persisted } = createContext({
+  const { context, timelineEntries } = createContext({
     activeRuntime: {
       prompt: async () => {
         context.liveMessageBuffer.append("session-1", {
@@ -431,7 +508,7 @@ test("sendPromptToSession does not duplicate assistant text already flushed by s
   await flushPromises();
 
   assert.deepEqual(
-    persisted.map((message) => [message.role, message.text]),
+    timelineMessages(timelineEntries),
     [
       ["user", "请回复一次"],
       ["assistant", "已由 status 路径 flush 的回复"],
@@ -468,7 +545,7 @@ test("sendPromptToSession acknowledges before a long ACP prompt completes", asyn
 });
 
 test("sendPromptToSession accepts new runtime status after a previous error", async () => {
-  const { context, broadcasts } = createContext({
+  const { context, sessions } = createContext({
     summary: { status: "error" },
     activeRuntime: {
       prompt: async () => {
@@ -492,19 +569,12 @@ test("sendPromptToSession accepts new runtime status after a previous error", as
   );
   await waitForPromptSettled(context, "session-1");
 
-  assert.equal(
-    broadcasts.some(
-      (item) => item.method === "session/update"
-        && item.params.update.kind === "status_change"
-        && item.params.update.status === "running",
-    ),
-    true,
-  );
+  assert.equal(sessions.get("session-1")?.summary.status, "running");
 });
 
 test("sendPromptToSession rejects unsupported slash commands before ACP prompt", async () => {
   const prompted: string[] = [];
-  const { context, persisted } = createContext({
+  const { context, timelineEntries } = createContext({
     summary: { availableCommands: [{ name: "review" }] },
     activeRuntime: {
       prompt: async (text) => {
@@ -520,7 +590,7 @@ test("sendPromptToSession rejects unsupported slash commands before ACP prompt",
   );
 
   assert.deepEqual(prompted, []);
-  assert.equal(persisted.length, 0);
+  assert.equal(timelineEntries.length, 0);
 });
 
 test("sendPromptToSession allows supported slash commands as ACP text prompts", async () => {
@@ -561,7 +631,7 @@ test("sendPromptToSession allows scoped slash command invocations", async () => 
 
 test("sendPromptToSession restores a stale session before dispatch", async () => {
   const prompted: string[] = [];
-  const { context, persisted } = createContext({
+  const { context, timelineEntries } = createContext({
     restoreOk: true,
     restoreRuntime: {
       prompt: async (text) => {
@@ -578,8 +648,10 @@ test("sendPromptToSession restores a stale session before dispatch", async () =>
 
   await flushPromises();
   assert.deepEqual(prompted, ["恢复后发送"]);
-  assert.equal(persisted.length, 1);
-  assert.equal(persisted[0]?.text, "恢复后发送");
+  assert.equal(
+    findUserMessageEntry(timelineEntries)?.message.text,
+    "恢复后发送",
+  );
 });
 
 test("sendPromptToSession queues behind an active in-flight prompt", async () => {
@@ -605,12 +677,12 @@ test("sendPromptToSession queues behind an active in-flight prompt", async () =>
   assert.equal(result.accepted, "queued");
   assert.equal(persisted.length, 0);
   assert.equal(context.promptQueue.snapshot("session-1").queued[0]?.text, "second");
-  assert.equal(broadcasts.at(-1)?.params.update.kind, "prompt_queue");
+  assert.equal(broadcasts.at(-1)?.params.update.kind, "live_state");
 });
 
 test("drainPromptQueue sends queued prompts in FIFO order", async () => {
   const prompted: string[] = [];
-  const { context, persisted } = createContext({
+  const { context, timelineEntries } = createContext({
     activeRuntime: {
       prompt: async (text) => {
         prompted.push(text);
@@ -624,7 +696,14 @@ test("drainPromptQueue sends queued prompts in FIFO order", async () => {
   await drainPromptQueue("session-1", context);
 
   assert.deepEqual(prompted, ["second", "third"]);
-  assert.deepEqual(persisted.map((message) => message.text), ["second", "third"]);
+  assert.deepEqual(
+    timelineEntries
+      .filter((entry): entry is SessionTimelineMessageEntry =>
+        entry.kind === "user_message"
+      )
+      .map((entry) => entry.message.text),
+    ["second", "third"],
+  );
 });
 
 test("sendPromptToSession fails when no runtime can be restored", async () => {
@@ -665,7 +744,8 @@ test("configureSessionRuntime applies config through an active runtime", async (
   assert.equal(configured[0]?.agentMode, undefined);
   assert.equal(result.message, "Session config updated.");
   assert.equal(result.state.model, "gpt-5.5");
-  assert.equal(broadcasts.at(-1)?.params.update.kind, "session_updated");
+  assert.equal(broadcasts.at(-1)?.params.update.kind, "live_state");
+  assert.equal(broadcasts.at(-1)?.params.update.snapshot.config.model, "gpt-5.5");
 });
 
 test("configureSessionRuntime returns current model state and options for a no-op active-session configure", async () => {
@@ -732,7 +812,7 @@ test("configureSessionRuntime persists explicit model over runtime default state
   );
 
   assert.equal(result.state.model, "gpt-5.4");
-  assert.equal(broadcasts.at(-1)?.params.update.session.model, "gpt-5.4");
+  assert.equal(broadcasts.at(-1)?.params.update.snapshot.config.model, "gpt-5.4");
 });
 
 test("configureSessionRuntime applies arbitrary ACP config option to the session runtime", async () => {
@@ -778,7 +858,7 @@ test("configureSessionRuntime applies arbitrary ACP config option to the session
     value: "auto",
   });
   assert.deepEqual(result.options, runtimeOptions);
-  assert.deepEqual(broadcasts.at(-1)?.params.update.session.configOptions, runtimeOptions);
+  assert.deepEqual(broadcasts.at(-1)?.params.update.snapshot.config.configOptions, runtimeOptions);
 });
 
 test("configureSessionRuntime omits reasoning when config options do not support it", async () => {
@@ -811,7 +891,7 @@ test("configureSessionRuntime omits reasoning when config options do not support
 
   assert.equal(result.state.model, "claude-haiku-4-5");
   assert.equal(result.state.reasoningEffort, undefined);
-  assert.equal(broadcasts.at(-1)?.params.update.session.reasoningEffort, undefined);
+  assert.equal(broadcasts.at(-1)?.params.update.snapshot.config.reasoningEffort, undefined);
 });
 
 test("configureSessionRuntime preserves reasoning for haiku when ACP exposes it", async () => {
@@ -850,9 +930,9 @@ test("configureSessionRuntime preserves reasoning for haiku when ACP exposes it"
 
   assert.equal(result.state.model, "opencode/haiku");
   assert.equal(result.state.reasoningEffort, "medium");
-  assert.equal(broadcasts.at(-1)?.params.update.session.reasoningEffort, "medium");
+  assert.equal(broadcasts.at(-1)?.params.update.snapshot.config.reasoningEffort, "medium");
   assert.equal(
-    result.options.some((option) => option.category === "thought_level"),
+    result.options.some((option: { category?: string }) => option.category === "thought_level"),
     true,
   );
 });
@@ -923,9 +1003,9 @@ test("configureSessionRuntime saves config when no runtime is active", async () 
   assert.equal(result.state.model, "provider-default");
 });
 
-test("cancelSessionRuntime cancels and clears an active runtime", async () => {
+test("cancelSessionRuntime canonicalizes active tools before clearing the runtime", async () => {
   let cancelled = false;
-  const { context, sessions } = createContext({
+  const { context, sessions, timelineEntries, broadcasts } = createContext({
     activeRuntime: {
       prompt: async () => undefined,
       cancel: () => {
@@ -936,11 +1016,38 @@ test("cancelSessionRuntime cancels and clears an active runtime", async () => {
   });
   const { cancelSessionRuntime } = await import("./router");
 
+  handleRuntimeEvent("session-1", {
+    type: "status",
+    status: "running",
+  }, context);
+  handleRuntimeEvent("session-1", {
+    type: "tool-call",
+    toolCall: {
+      id: "subagent-running",
+      kind: "subagent",
+      title: "Read-only display check",
+      status: "running",
+      timestamp: "2026-07-13T00:00:01.000Z",
+      updatedAt: "2026-07-13T00:00:01.000Z",
+    },
+  }, context);
+
   const handled = await cancelSessionRuntime("session-1", context);
 
   assert.equal(handled, true);
   assert.equal(cancelled, true);
   assert.equal(sessions.has("session-1"), false);
+  const subagentEntry = timelineEntries.find((entry) =>
+    entry.kind === "tool_call" && entry.toolCall.id === "subagent-running"
+  );
+  assert.equal(
+    subagentEntry?.kind === "tool_call" ? subagentEntry.toolCall.status : undefined,
+    "cancelled",
+  );
+  const liveStateUpdates = broadcasts.filter((item) =>
+    item.method === "session/update" && item.params?.update?.kind === "live_state"
+  );
+  assert.equal(liveStateUpdates.at(-1)?.params.update.snapshot.status.effectiveStatus, "cancelled");
 });
 
 test("cancelSessionRuntime broadcasts an error when the runtime is missing", async () => {

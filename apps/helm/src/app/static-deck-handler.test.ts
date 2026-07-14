@@ -73,6 +73,7 @@ test("createStaticDeckHandler serves owned session attachments from the attachme
           }
         : undefined,
       listForMessage: () => [],
+      remove: () => undefined,
       removeSession: () => undefined,
       readBytes: (id) => id === "attachment-1" ? Buffer.from("png") : undefined,
     },
@@ -109,6 +110,7 @@ test("createStaticDeckHandler rejects attachments that do not belong to the requ
         createdAt: "2026-06-01T00:00:00.000Z",
       }),
       listForMessage: () => [],
+      remove: () => undefined,
       removeSession: () => undefined,
       readBytes: () => Buffer.from("png"),
     },
@@ -193,6 +195,42 @@ test("createStaticDeckHandler rejects output bodies that do not belong to the re
     headers: { "content-type": "text/plain; charset=utf-8" },
     body: "Output body not found.",
   });
+});
+
+test("createStaticDeckHandler serves complete diff bodies through their local reference", async () => {
+  const captured: CapturedResponse = {};
+  const handler = createStaticDeckHandler({
+    deckStaticDir: "/deck/dist",
+    sessionDiffBodyStore: {
+      putText: () => {
+        throw new Error("unused");
+      },
+      get: (sessionId, path) => sessionId === "session-1" && path === "src/file.ts"
+        ? {
+            id: "diff-1",
+            sessionId,
+            path,
+            mimeType: "text/plain; charset=utf-8",
+            sha256: "sha256",
+            byteSize: 12,
+            storageKey: "private/path/not/exposed",
+            uri: "/api/sessions/session-1/diffs/src%2Ffile.ts",
+            createdAt: "2026-07-12T00:00:00.000Z",
+          }
+        : undefined,
+      readText: () => "diff body\n",
+      removeSession: () => undefined,
+    },
+    loadStaticAsset: async () => {
+      throw new Error("static loader should not handle diff body requests");
+    },
+    logError: () => undefined,
+  });
+
+  await handler(createRequest("/api/sessions/session-1/diffs/src%2Ffile.ts"), createResponse(captured));
+
+  assert.equal(captured.statusCode, 200);
+  assert.equal(captured.body, "diff body\n");
 });
 
 test("createStaticDeckHandler preserves not-found and forbidden responses", async () => {

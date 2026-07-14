@@ -6,7 +6,10 @@ import { useConfiguredHelms } from "../../helm-connection/utils/configured-helms
 import { resolveTechnicalPanelPreferences } from "../../preferences/utils/helpers";
 import { formatResumeLabel } from "../utils/session-state";
 import { usePromptImages } from "../hooks/prompt-images";
-import { deriveToolCallsFromTimeline } from "../utils/timeline-tool-calls";
+import {
+  deriveHistoricalActivityFromTimeline,
+  mergeHistoricalAndLiveToolCalls,
+} from "../utils/timeline-activity";
 import { buildChatWindowModel } from "../workspace/chat-window-model";
 import {
   MODEL_OPTIONS,
@@ -60,9 +63,9 @@ export function useMissionViewModel(ctx: any) {
     draftChatWindow,
   } = source;
 const activeSessionToolCalls = activeSessionId
-  ? (
-    toolCalls?.[activeSessionId] ??
-    deriveToolCallsFromTimeline(sessionTimeline?.[activeSessionId])
+  ? mergeHistoricalAndLiveToolCalls(
+    deriveHistoricalActivityFromTimeline(sessionTimeline?.[activeSessionId]).toolCalls,
+    toolCalls?.[activeSessionId] ?? [],
   )
   : [];
 const activeSession = useMemo(

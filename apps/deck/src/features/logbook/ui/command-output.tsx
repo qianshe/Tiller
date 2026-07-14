@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CommandChunk } from "@tiller/shared";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
+import { hydratedBodyCache } from "../utils/body-cache";
 
 type CommandOutputProps = {
   items: CommandChunk[];
@@ -29,7 +30,10 @@ export function CommandOutput({ items, emptyLabel }: CommandOutputProps) {
 }
 
 function CommandOutputItem({ item }: { item: CommandChunk }) {
-  const [expandedText, setExpandedText] = useState<string | null>(null);
+  const entityKey = item.contentRef?.uri ?? item.id;
+  const [expandedText, setExpandedText] = useState<string | null>(
+    () => hydratedBodyCache.get(entityKey) ?? null,
+  );
   const [loading, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
   const text = expandedText ?? item.text;
@@ -45,7 +49,9 @@ function CommandOutputItem({ item }: { item: CommandChunk }) {
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      setExpandedText(await response.text());
+      const content = await response.text();
+      hydratedBodyCache.set(entityKey, content);
+      setExpandedText(content);
     } catch {
       setFailed(true);
     } finally {

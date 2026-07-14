@@ -37,53 +37,26 @@ test("session topic subscription methods validate session ids", () => {
   });
 });
 
-test("session/update accepts every kind", () => {
+test("session/update accepts only canonical state, timeline, lifecycle, and live overlays", () => {
   assert.equal(sessionUpdate.method, "session/update");
   for (const kind of [
     "agent_message",
     "tool_call",
-    "command_output",
-    "diff_update",
-    "status_change",
-    "config_options",
-    "model_options",
-    "commands_available",
     "session_updated",
-    "prompt_queue",
-    "plan_update",
-    "user_message",
-    "permission_request",
-    "permission_resolved",
+    "timeline_batch",
+    "live_state",
   ]) {
     sessionUpdate.ParamsSchema.parse({
       sessionId: "s1",
-      update: kind === "command_output"
-        ? { kind, commandId: "c1", chunk: {} }
-        : kind === "permission_resolved"
-          ? { kind, permissionRequestId: "pr1", decision: {} }
-          : kind === "diff_update"
-            ? { kind, files: [] }
-            : kind === "config_options"
-              ? { kind, state: {}, options: [] }
-              : kind === "model_options"
-                ? { kind, options: [] }
-                : kind === "commands_available"
-                  ? { kind, commands: [] }
-                  : kind === "session_updated"
-                    ? { kind, session: {} }
-                    : kind === "prompt_queue"
-                      ? { kind, queue: { sessionId: "s1", queued: [] } }
-                      : kind === "plan_update"
-                        ? { kind, plan: { entries: [], updatedAt: "2026-06-02T00:00:00.000Z" } }
-                        : kind === "user_message"
-                          ? { kind, message: { id: "m1", role: "user", text: "hello", timestamp: "2026-05-15T00:00:00.000Z" } }
-                          : kind === "agent_message"
-                            ? { kind, message: {} }
-                            : kind === "tool_call"
-                              ? { kind, toolCall: {} }
-                              : kind === "permission_request"
-                                ? { kind, permissionRequest: {} }
-                                : { kind, status: "running" },
+      update: kind === "session_updated"
+        ? { kind, session: {} }
+        : kind === "timeline_batch"
+          ? { kind, batch: { replace: false, deliverySequence: 1, lastSequence: 1, entries: [] } }
+          : kind === "live_state"
+            ? { kind, snapshot: {} }
+            : kind === "agent_message"
+              ? { kind, message: {} }
+              : { kind, toolCall: {} },
     });
   }
 });

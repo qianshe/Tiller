@@ -75,28 +75,18 @@ function createToolCall(id: string, timestamp: string): AgentToolCall {
   };
 }
 
-test("SessionSummaryStore contract supports list upsert and remove", () => {
+test("SessionSummaryStore contract supports keyed reads, list, upsert, and remove", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-store-contract-summary-"));
   const store = createSqliteSessionStore(join(tempRoot, "sessions.sqlite"));
   try {
     assert.deepEqual(store.list(), []);
 
-    assert.deepEqual(
-      store
-        .upsert(createSummary({ id: "older", updatedAt: "2026-05-29T10:00:00.000Z" }))
-        .map((summary) => summary.id),
-      ["older"],
-    );
-    assert.deepEqual(
-      store
-        .upsert(createSummary({ id: "newer", updatedAt: "2026-05-29T11:00:00.000Z" }))
-        .map((summary) => summary.id),
-      ["newer", "older"],
-    );
-    assert.deepEqual(
-      store.remove("newer").map((summary) => summary.id),
-      ["older"],
-    );
+    store.upsert(createSummary({ id: "older", updatedAt: "2026-05-29T10:00:00.000Z" }));
+    assert.equal(store.get("older")?.id, "older");
+    store.upsert(createSummary({ id: "newer", updatedAt: "2026-05-29T11:00:00.000Z" }));
+    assert.deepEqual(store.list().map((summary) => summary.id), ["newer", "older"]);
+    store.remove("newer");
+    assert.deepEqual(store.list().map((summary) => summary.id), ["older"]);
   } finally {
     store.close();
     rmSync(tempRoot, { recursive: true, force: true });

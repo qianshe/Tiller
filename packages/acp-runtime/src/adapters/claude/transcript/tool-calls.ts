@@ -1,4 +1,13 @@
-import { existsSync, readFileSync } from "node:fs";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  readSync,
+  readdirSync,
+  statSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import {
   formatAgentToolCallMcpTitle,
   resolveAgentToolCallMcp,
@@ -14,6 +23,17 @@ type PendingToolUse = {
 };
 
 export type ClaudeTranscriptToolCallOptions = ClaudeTranscriptPlanOptions;
+export type ClaudeTranscriptToolUse = {
+  input: unknown;
+  name: string;
+};
+
+type ClaudeTranscriptExtractionOptions = {
+  includePending?: boolean;
+};
+
+const LIVE_TOOL_LOOKUP_BYTES = 512 * 1024;
+const LIVE_TOOL_LOOKUP_FILES = 4;
 
 export function readClaudeTranscriptToolCallsFromDisk(
   options: ClaudeTranscriptToolCallOptions,
@@ -25,7 +45,10 @@ export function readClaudeTranscriptToolCallsFromDisk(
   return extractClaudeToolCallsFromTranscriptText(readFileSync(path, "utf8"));
 }
 
-export function extractClaudeToolCallsFromTranscriptText(raw: string): AgentToolCall[] {
+export function extractClaudeToolCallsFromTranscriptText(
+  raw: string,
+  options: ClaudeTranscriptExtractionOptions = {},
+): AgentToolCall[] {
   const pendingToolUses = new Map<string, PendingToolUse>();
   const toolCalls: AgentToolCall[] = [];
   let sequence = 0;
@@ -60,30 +83,161 @@ export function extractClaudeToolCallsFromTranscriptText(raw: string): AgentTool
       if (!toolUse) {
         continue;
       }
-      const mcp = resolveAgentToolCallMcp({
-        input: toolUse.input,
-        title: toolUse.name,
-        rawTitle: toolUse.name,
-      });
       sequence += 1;
-      toolCalls.push({
-        id: toolUse.id,
-        kind: mcp ? "mcp" : inferClaudeTranscriptToolKind(toolUse.name),
-        title: mcp ? formatAgentToolCallMcpTitle(mcp) : normalizeClaudeTranscriptToolTitle(toolUse.name),
-        status: partRecord.is_error === true ? "failed" : "completed",
-        ...(mcp ? { mcp } : {}),
-        input: stringifyToolPayload(toolUse.input),
-        output:
-          stringifyToolResultContent(partRecord.content) ??
-          stringifyToolResultContent(record.toolUseResult),
-        timestamp: toolUse.timestamp,
-        updatedAt: timestamp,
+      toolCalls.push(createClaudeTranscriptToolCall(
+        toolUse,
+        partRecord.is_error === true ? "failed" : "completed",
         sequence,
-      });
+        timestamp,
+        (
+          stringifyToolResultContent(partRecord.content) ??
+          stringifyToolResultContent(record.toolUseResult)
+        ),
+      ));
+      pendingToolUses.delete(toolUseId);
+    }
+  }
+
+  if (options.includePending) {
+    for (const toolUse of pendingToolUses.values()) {
+      sequence += 1;
+      toolCalls.push(createClaudeTranscriptToolCall(
+        toolUse,
+        "running",
+        sequence,
+        toolUse.timestamp,
+      ));
     }
   }
 
   return toolCalls;
+}
+
+function createClaudeTranscriptToolCall(
+  toolUse: PendingToolUse,
+  status: AgentToolCall["status"],
+  sequence: number,
+  updatedAt: string,
+  output?: string,
+): AgentToolCall {
+  const mcp = resolveAgentToolCallMcp({
+    input: toolUse.input,
+    title: toolUse.name,
+    rawTitle: toolUse.name,
+  });
+  const kind = mcp ? "mcp" : inferClaudeTranscriptToolKind(toolUse.name);
+  return {
+    id: toolUse.id,
+    kind,
+    title: mcp
+      ? formatAgentToolCallMcpTitle(mcp)
+      : resolveClaudeTranscriptToolTitle(toolUse.name, kind, toolUse.input),
+    status,
+    ...(mcp ? { mcp } : {}),
+    input: stringifyToolPayload(toolUse.input),
+    ...(output ? { output } : {}),
+    timestamp: toolUse.timestamp,
+    updatedAt,
+    sequence,
+  };
+}
+
+function resolveClaudeTranscriptToolTitle(
+  name: string,
+  kind: AgentToolCall["kind"],
+  input: unknown,
+): string {
+  if (kind === "shell") {
+    const inputRecord = recordFrom(input);
+    const command = firstString(
+      inputRecord.command,
+      inputRecord.cmd,
+      inputRecord.script,
+      inputRecord.shell,
+    );
+    if (command) {
+      return command;
+    }
+  }
+  return normalizeClaudeTranscriptToolTitle(name);
+}
+
+export function readClaudeTranscriptToolUseFromDisk(
+  options: ClaudeTranscriptToolCallOptions & { toolCallId: string },
+): ClaudeTranscriptToolUse | null {
+  const transcriptPath = resolveClaudeTranscriptPath(options);
+  const files = [transcriptPath];
+  const subagentDir = join(
+    dirname(transcriptPath),
+    options.runtimeSessionId,
+    "subagents",
+  );
+  if (existsSync(subagentDir)) {
+    const subagentFiles = readdirSync(subagentDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
+      .map((entry) => {
+        const path = join(subagentDir, entry.name);
+        return { path, modifiedAt: statSync(path).mtimeMs };
+      })
+      .sort((left, right) => right.modifiedAt - left.modifiedAt)
+      .slice(0, LIVE_TOOL_LOOKUP_FILES)
+      .map((entry) => entry.path);
+    files.push(...subagentFiles);
+  }
+  for (const path of files) {
+    if (!existsSync(path)) {
+      continue;
+    }
+    const toolUse = findClaudeTranscriptToolUse(
+      readFileTail(path, LIVE_TOOL_LOOKUP_BYTES),
+      options.toolCallId,
+    );
+    if (toolUse) {
+      return toolUse;
+    }
+  }
+  return null;
+}
+
+export function findClaudeTranscriptToolUse(
+  raw: string,
+  toolCallId: string,
+): ClaudeTranscriptToolUse | null {
+  const lines = raw.split(/\r?\n/u);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    const record = parseLine(lines[index] ?? "");
+    if (!record) {
+      continue;
+    }
+    for (const part of contentParts(recordFrom(record.message).content)) {
+      const partRecord = recordFrom(part);
+      if (
+        firstString(partRecord.type) === "tool_use" &&
+        firstString(partRecord.id) === toolCallId
+      ) {
+        const name = firstString(partRecord.name);
+        return name ? { name, input: partRecord.input } : null;
+      }
+    }
+  }
+  return null;
+}
+
+function readFileTail(path: string, byteLimit: number) {
+  const size = statSync(path).size;
+  const start = Math.max(0, size - byteLimit);
+  const length = size - start;
+  if (length <= 0) {
+    return "";
+  }
+  const file = openSync(path, "r");
+  try {
+    const buffer = Buffer.allocUnsafe(length);
+    const bytesRead = readSync(file, buffer, 0, length, start);
+    return buffer.subarray(0, bytesRead).toString("utf8");
+  } finally {
+    closeSync(file);
+  }
 }
 
 function inferClaudeTranscriptToolKind(name: string): AgentToolCall["kind"] {

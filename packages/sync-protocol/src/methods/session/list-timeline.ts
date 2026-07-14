@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { SessionTimelineEntry } from "@tiller/shared";
+import type { LegacyEvidenceAvailability, SessionTimelineEntry } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { requestDescriptor } from "../descriptor";
 
@@ -15,6 +15,7 @@ export const ResultSchema = z.object({
   entries: z.array(typedUnknown<SessionTimelineEntry>()),
   nextCursor: z.string().optional(),
   hasMore: z.boolean(),
+  legacyEvidence: typedUnknown<LegacyEvidenceAvailability>().optional(),
   liveState: typedUnknown<import("@tiller/shared").SessionLiveStateSnapshot>().optional(),
 });
 export type Params = z.infer<typeof ParamsSchema>;

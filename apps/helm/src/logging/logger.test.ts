@@ -1,4 +1,7 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Writable } from "node:stream";
 import test from "node:test";
 import { createTillerLogger } from "./logger";
@@ -93,6 +96,56 @@ test("structured logs redact forbidden text fields", () => {
   assert.equal(joined.includes("[redacted chars=16]"), true);
 });
 
+test("structured logs redact nested provider and tool payload aliases", () => {
+  const destination = createMemoryDestination();
+  const logger = createTillerLogger({
+    logsDir: ".",
+    level: "debug",
+    destination,
+    console: { log() {}, debug() {}, warn() {}, error() {} },
+  });
+  const sentinel = "TILLER_PRIVATE_SENTINEL_7f3a";
+
+  logger.info("runtime.privacy_probe", {
+    command: sentinel,
+    arguments: [sentinel],
+    rawInput: sentinel,
+    rawOutput: sentinel,
+    reason: sentinel,
+    providerPayload: { nested: sentinel },
+    safe: { messageChars: sentinel.length },
+  });
+
+  const joined = destination.lines.join("\n");
+  assert.equal(joined.includes(sentinel), false);
+  assert.equal(joined.includes(`\"messageChars\":${sentinel.length}`), true);
+});
+
+test("file logger never writes privacy sentinels from message and tool payload fields", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "tiller-privacy-log-"));
+  const sentinel = "TILLER_FILE_PRIVATE_SENTINEL_9b42";
+  try {
+    const logger = createTillerLogger({
+      logsDir: directory,
+      level: "debug",
+      console: { log() {}, debug() {}, warn() {}, error() {} },
+    });
+    logger.info("runtime.privacy_probe", {
+      text: sentinel,
+      content: sentinel,
+      output: sentinel,
+      patch: sentinel,
+      prompt: sentinel,
+      tool: { rawInput: sentinel, rawOutput: sentinel, reason: sentinel },
+    });
+    await logger.close();
+
+    assert.equal(readFileSync(logger.logFile, "utf8").includes(sentinel), false);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("legacy writeLogLine still writes through the structured logger", () => {
   const destination = createMemoryDestination();
   const logger = createTillerLogger({
@@ -109,7 +162,7 @@ test("legacy writeLogLine still writes through the structured logger", () => {
   assert.equal(JSON.parse(line).level, "warn");
 });
 
-test("pretty format writes human-readable event lines", () => {
+test("pretty format writes human-readable event lines", async () => {
   const destination = createMemoryDestination();
   const logger = createTillerLogger({
     logsDir: ".",
@@ -120,7 +173,7 @@ test("pretty format writes human-readable event lines", () => {
   });
 
   logger.info("runtime.started", { sessionId: "session-1" });
-  logger.close();
+  await logger.close();
 
   const joined = destination.lines.join("\n");
   assert.match(joined, /runtime\.started/);
@@ -133,7 +186,28 @@ test("pretty format writes human-readable event lines", () => {
   assert.equal(joined.trimStart().startsWith("{"), false);
 });
 
-test("pretty console mirror avoids duplicate legacy console output", () => {
+test("pretty format supports the default rotating file destination", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "tiller-pretty-log-"));
+  try {
+    const logger = createTillerLogger({
+      logsDir: directory,
+      level: "info",
+      format: "pretty",
+      console: { log() {}, debug() {}, warn() {}, error() {} },
+    });
+
+    logger.info("runtime.started", { sessionId: "session-1" });
+    await logger.close();
+
+    const output = readFileSync(logger.logFile, "utf8");
+    assert.match(output, /runtime\.started/);
+    assert.match(output, /sessionId/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("pretty console mirror avoids duplicate legacy console output", async () => {
   const destination = createMemoryDestination();
   const consoleDestination = createMemoryDestination();
   const consoleLines: string[] = [];
@@ -160,7 +234,7 @@ test("pretty console mirror avoids duplicate legacy console output", () => {
   });
 
   logger.logInfo("[tiller] runtime ready");
-  logger.close();
+  await logger.close();
 
   const fileOutput = destination.lines.join("\n");
   const consoleOutput = consoleDestination.lines.join("\n");
@@ -177,7 +251,7 @@ test("pretty console mirror avoids duplicate legacy console output", () => {
   assert.deepEqual(consoleLines, []);
 });
 
-test("pretty console mirror writes structured fields as plain json", () => {
+test("pretty console mirror writes structured fields as plain json", async () => {
   const destination = createMemoryDestination();
   const consoleDestination = createMemoryDestination();
   const logger = createTillerLogger({
@@ -191,7 +265,7 @@ test("pretty console mirror writes structured fields as plain json", () => {
 
   logger.info("session.resume.completed", { sessionId: "session-1" });
   logger.info("session.resume.checked", { sessionId: "session-1" });
-  logger.close();
+  await logger.close();
 
   const fileOutput = destination.lines.join("\n");
   const consoleOutput = consoleDestination.lines.join("\n");
@@ -205,7 +279,7 @@ test("pretty console mirror writes structured fields as plain json", () => {
   assert.doesNotMatch(rawConsoleOutput, /\u001B\[/u);
 });
 
-test("pretty console mirror renders simple server and update events as readable text", () => {
+test("pretty console mirror renders simple server and update events as readable text", async () => {
   const destination = createMemoryDestination();
   const consoleDestination = createMemoryDestination();
   const logger = createTillerLogger({
@@ -223,7 +297,7 @@ test("pretty console mirror renders simple server and update events as readable 
     latest: "0.1.5",
     command: "npm install -g @qianshe/tiller@latest",
   });
-  logger.close();
+  await logger.close();
 
   const fileOutput = destination.lines.join("\n");
   const consoleOutput = consoleDestination.lines.join("\n");

@@ -4,15 +4,8 @@ import {
   type AgentToolCall,
 } from "@tiller/shared";
 
-export function resolveDisplayToolKind(call: AgentToolCall): AgentToolCall["kind"] {
-  if (call.kind === "shell" && isStructuredSearchInput(parseToolCallInputObject(call.input))) {
-    return "search";
-  }
-  return call.kind;
-}
-
 export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
-  const displayKind = resolveDisplayToolKind(call);
+  const displayKind = call.kind;
 
   // Codex reports SKILL.md reads as a generic `tool` kind with the shell command
   // stuffed into title/input — so always probe for a skill name first.
@@ -49,6 +42,10 @@ export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
   }
   if (displayKind === "read" || displayKind === "write") {
     return extractFilePathFromStructuredInput(parseToolCallInputObject(call.input)) ?? stripLeadingActionVerb(title, displayKind);
+  }
+  if (displayKind === "diagnostics") {
+    const path = extractFilePathFromStructuredInput(parseToolCallInputObject(call.input));
+    return path ? `Diagnostics: ${path}` : title;
   }
   if (displayKind === "search") {
     return summarizeSearchInput(title, parseToolCallInputObject(call.input)) ?? title;
@@ -171,19 +168,6 @@ function extractStructuredSearchQuery(
   return typeof query === "string" && query.trim() ? query.trim() : undefined;
 }
 
-function isStructuredSearchInput(
-  parsed: Record<string, unknown> | null,
-) {
-  if (!parsed || !extractStructuredSearchQuery(parsed)) {
-    return false;
-  }
-
-  if (extractCommandFromParsedInput(parsed) !== undefined) {
-    return false;
-  }
-  return true;
-}
-
 function isInformativeSearchTitle(title: string) {
   return Boolean(
     title &&
@@ -258,7 +242,7 @@ function summarizeCommand(input: string) {
     return `Skill: ${skillName}`;
   }
 
-  return command.length > 72 ? `${command.slice(0, 72)}…` : command;
+  return command;
 }
 
 function extractSkillNameFromCommand(command: string) {

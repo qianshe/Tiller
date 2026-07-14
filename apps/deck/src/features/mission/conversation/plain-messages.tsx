@@ -24,7 +24,6 @@ import { TranscriptEventRow } from "./transcript-event-row";
 
 export const INITIAL_PLAIN_MESSAGE_RENDER_LIMIT = 96;
 export const PLAIN_MESSAGE_RENDER_LOAD_STEP = 96;
-const TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS = 60_000;
 const PLAIN_MESSAGE_TOP_LOAD_THRESHOLD_PX = 200;
 const PLAIN_HISTORY_REVEAL_LOCK_DATASET_KEY = "plainHistoryRevealLock";
 const PLAIN_HISTORY_REVEAL_UNLOCK_DELAY_MS = 220;
@@ -786,6 +785,7 @@ export function resolvePlainConversationDisplayItems({
       displayMessages,
       showThinking ? thinkingToolCalls : [],
       toolCalls,
+      showThinking,
     );
   }
 
@@ -798,7 +798,12 @@ export function resolvePlainConversationDisplayItems({
     return canonicalItems;
   }
 
-  const optimisticItems = buildPlainConversationItems(optimisticMessages, [], []);
+  const optimisticItems = buildPlainConversationItems(
+    optimisticMessages,
+    [],
+    [],
+    showThinking,
+  );
   return mergeAdjacentToolItems(
     mergeAdjacentThinkingItems(
       [...canonicalItems, ...optimisticItems].sort(comparePlainConversationItems),
@@ -957,9 +962,30 @@ function buildPlainConversationItems(
   messages: AgentMessage[],
   thinkingToolCalls: AgentToolCall[],
   toolCalls: AgentToolCall[],
+  showThinking: boolean,
 ): PlainConversationItem[] {
   const visibleToolCalls = toolCalls.filter((toolCall) => toolCall.kind !== "think");
-  const messageItems = messages.flatMap((message, index) => {
+  const messageItems = messages.flatMap<PlainConversationItem>((message, index) => {
+    if (message.role === "assistant" && message.contentKind === "thought") {
+      return showThinking
+        ? [{
+            kind: "thinking",
+            sourceIndex: index,
+            timestamp: message.timestamp,
+            sequence: message.sequence,
+            toolCall: {
+              id: `${message.id}:thinking`,
+              kind: "think",
+              title: "Thinking",
+              status: message.streaming === false ? "completed" : "running",
+              output: message.text,
+              timestamp: message.timestamp,
+              updatedAt: message.timestamp,
+              sequence: message.sequence,
+            },
+          }]
+        : [];
+    }
     const text = normalizeLocalCommandMessageText(message.text);
     return text
       ? [{ kind: "message" as const, sourceIndex: index, timestamp: message.timestamp, sequence: message.sequence, message: text === message.text ? message : { ...message, text } }]
@@ -967,14 +993,14 @@ function buildPlainConversationItems(
   });
   const thinkingItems = thinkingToolCalls.map((toolCall, index) => ({
     kind: "thinking" as const,
-    sourceIndex: messageItems.length + index,
+    sourceIndex: messages.length + index,
     timestamp: toolCall.timestamp,
     sequence: toolCall.sequence,
     toolCall,
   }));
   const toolItems = groupToolCalls(visibleToolCalls).map((toolCall, index) => toPlainToolConversationItem(
     toolCall,
-    messageItems.length + thinkingItems.length + index,
+    messages.length + thinkingItems.length + index,
   ));
   const sorted = [...messageItems, ...thinkingItems, ...toolItems].sort(comparePlainConversationItems);
   return mergeAdjacentToolItems(mergeAdjacentThinkingItems(sorted));
@@ -1115,20 +1141,9 @@ function compareSequencedPlainConversationItems(
     left.sequence,
     right.sequence,
   );
-  const timestampDelta = comparePlainItemTimestamps(left.timestamp, right.timestamp);
   const sourceIndexDelta = comparePlainConversationSourceIndex(left, right);
   if (timelineDelta !== null) {
-    const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
-      timelineDelta,
-      timestampDelta,
-    );
-    if (sequenceResetTimestampDelta !== null) {
-      return sequenceResetTimestampDelta;
-    }
     return timelineDelta;
-  }
-  if (timestampDelta !== 0) {
-    return timestampDelta;
   }
   if (sourceIndexDelta !== null) {
     return sourceIndexDelta;
@@ -1353,23 +1368,12 @@ function comparePlainConversationItems(left: PlainConversationItem, right: Plain
   if (transcriptAnchorDelta !== null) {
     return transcriptAnchorDelta;
   }
-  const timestampDelta = comparePlainItemTimestamps(left.timestamp, right.timestamp);
   const timelineDelta = compareOptionalTimelineSequence(
     left.sequence,
     right.sequence,
   );
   if (timelineDelta !== null) {
-    const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
-      timelineDelta,
-      timestampDelta,
-    );
-    if (sequenceResetTimestampDelta !== null) {
-      return sequenceResetTimestampDelta;
-    }
     return timelineDelta;
-  }
-  if (timestampDelta !== 0) {
-    return timestampDelta;
   }
   const sourceIndexDelta = comparePlainConversationSourceIndex(left, right);
   if (sourceIndexDelta !== null) {
@@ -1387,30 +1391,6 @@ function compareOptionalTimelineSequence(
   }
   const sequenceDelta = left - right;
   return sequenceDelta === 0 ? null : sequenceDelta;
-}
-
-function compareSequenceResetTimestampDelta(
-  timelineDelta: number,
-  timestampDelta: number,
-) {
-  if (
-    timestampDelta === 0 ||
-    Math.abs(timestampDelta) < TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS
-  ) {
-    return null;
-  }
-  return Math.sign(timelineDelta) === Math.sign(timestampDelta)
-    ? null
-    : timestampDelta;
-}
-
-function comparePlainItemTimestamps(leftTimestamp: string, rightTimestamp: string) {
-  const leftTime = Date.parse(leftTimestamp);
-  const rightTime = Date.parse(rightTimestamp);
-  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) {
-    return 0;
-  }
-  return leftTime - rightTime;
 }
 
 function comparePlainConversationSourceIndex(

@@ -25,12 +25,12 @@ test("sqlite session update store pages newest updates in display order", () => 
   const store = createSqliteSessionUpdateStore(dbPath);
 
   try {
-    store.replaceSession("session-1", [
+    [
       update(1, "user_message_chunk", "acp_live"),
       update(2, "agent_message_chunk"),
       update(3, "tool_call"),
       update(4, "tool_call_update"),
-    ]);
+    ].forEach((item) => store.append(item));
 
     const latest = store.listPage("session-1", { limit: 2 });
 
@@ -50,22 +50,18 @@ test("sqlite session update store pages newest updates in display order", () => 
   }
 });
 
-test("sqlite session update store replaces and removes one session", () => {
+test("sqlite session update store removes one session without touching another", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-session-update-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
   const store = createSqliteSessionUpdateStore(dbPath);
 
   try {
-    store.replaceSession("session-1", [update(1, "user_message_chunk")]);
+    store.append(update(1, "user_message_chunk"));
     store.append({
       ...update(1, "agent_message_chunk"),
       sessionId: "session-2",
       runtimeSessionId: "runtime-2",
     });
-
-    store.replaceSession("session-1", [update(5, "agent_message_chunk", "acp_load_replay")]);
-    assert.deepEqual(store.listPage("session-1").updates.map((item) => item.sequence), [5]);
-    assert.equal(store.listPage("session-1").updates[0]?.source, "acp_load_replay");
 
     store.remove("session-1");
     assert.deepEqual(store.listPage("session-1").updates, []);
@@ -76,26 +72,45 @@ test("sqlite session update store replaces and removes one session", () => {
   }
 });
 
-test("sqlite session update store reads incremental updates after a sequence", () => {
+test("sqlite session update store compacts the diagnostic journal to the latest tail", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-session-update-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
   const store = createSqliteSessionUpdateStore(dbPath);
 
   try {
-    store.replaceSession("session-1", [
-      update(1, "message"),
-      update(2, "tool-call"),
-      update(3, "message"),
-      update(4, "plan-update"),
-    ]);
+    for (let sequence = 1; sequence <= 512; sequence += 1) {
+      store.append(update(sequence, "message"));
+    }
+    const newest = store.listPage("session-1", { limit: 200 });
+    const older = store.listPage("session-1", { limit: 200, before: newest.nextCursor });
 
-    assert.deepEqual(
-      store.listSinceSequence?.("session-1", 2).map((item) => item.sequence),
-      [3, 4],
+    assert.equal(store.getMaxSequence("session-1"), 512);
+    assert.equal(newest.updates[0]?.sequence, 313);
+    assert.equal(newest.updates.at(-1)?.sequence, 512);
+    assert.deepEqual(older.updates.map((item) => item.sequence), Array.from({ length: 56 }, (_, index) => index + 257));
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("sqlite session update store exposes max sequence and rejects conflicts", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-session-update-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionUpdateStore(dbPath);
+
+  try {
+    store.append(update(4, "message"));
+    store.append(update(9, "tool-call"));
+
+    assert.equal(store.getMaxSequence("session-1"), 9);
+    assert.throws(
+      () => store.append(update(4, "different-event")),
+      /UNIQUE|constraint|session_updates/iu,
     );
-    assert.deepEqual(
-      store.listSinceSequence?.("session-1", 3, 1).map((item) => item.sequence),
-      [4],
+    assert.equal(
+      store.listPage("session-1").updates.find((item) => item.sequence === 4)?.updateType,
+      "message",
     );
   } finally {
     store.close();

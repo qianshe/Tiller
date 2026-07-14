@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   mapSessionUpdateNotification,
+  mapSessionUpdateNotificationBatch,
   sanitizeProtocolLogPayload,
   summarizeSessionUpdateNotification,
 } from "./runtime";
@@ -90,6 +91,34 @@ test("mapSessionUpdateNotification maps agent text chunks into Tiller message ev
   assert.equal(mapped.event.message.role, "assistant");
   assert.equal(mapped.event.message.text, "你好，我正在分析这个项目。");
   assert.match(mapped.event.message.timestamp, /\d{4}-\d{2}-\d{2}T/);
+});
+
+test("mapSessionUpdateNotification preserves boundaries between multiple text blocks", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_text_blocks",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "msg_text_blocks",
+        content: [
+          { type: "text", text: "1. 列出当前项目文件" },
+          { type: "text", text: "2. 调用 MCP 工具" },
+        ],
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
+  }
+  assert.equal(
+    mapped.event.message.text,
+    "1. 列出当前项目文件\n\n2. 调用 MCP 工具",
+  );
+  assert.equal(mapped.event.message.streamMode, "delta");
 });
 
 test("mapSessionUpdateNotification maps snake_case user text chunks into Tiller message events", () => {
@@ -784,6 +813,111 @@ test("mapSessionUpdateNotification maps inferred command output", () => {
   assert.equal(mapped.event.chunk.text, "PASS src/index.test.ts");
 });
 
+test("mapSessionUpdateNotificationBatch splits inferred command output once in canonical order", () => {
+  const mapped = mapSessionUpdateNotificationBatch({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_cmd_batch",
+      update: {
+        type: "command_output",
+        commandId: "cmd_batch_1",
+        stream: "stdout",
+        output: "PASS src/batch.test.ts",
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped.sessionId, "sess_cmd_batch");
+  assert.deepEqual(mapped.events.map((event) => event.type), [
+    "tool-call",
+    "command-output",
+  ]);
+  assert.equal(mapped.events[0]?.type, "tool-call");
+  assert.equal(mapped.events[1]?.type, "command-output");
+});
+
+test("mapSessionUpdateNotificationBatch preserves thought chunks as thinking tool calls", () => {
+  const mapped = mapSessionUpdateNotificationBatch({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_thought_batch",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "thought-1",
+        content: { type: "text", text: "checking the repository" },
+      },
+    },
+  });
+
+  assert.ok(mapped);
+  assert.equal(mapped.events.length, 1);
+  assert.equal(mapped.events[0]?.type, "tool-call");
+  if (mapped.events[0]?.type !== "tool-call") {
+    throw new Error("Expected thinking tool call");
+  }
+  assert.equal(mapped.events[0].toolCall.kind, "think");
+  assert.equal(mapped.events[0].toolCall.id, "thought-1:thinking");
+  assert.equal(mapped.events[0].toolCall.output, "checking the repository");
+});
+
+test("mapSessionUpdateNotificationBatch covers ACP session state variants without loss", () => {
+  const fixtures = [
+    {
+      update: {
+        sessionUpdate: "current_mode_update",
+        currentModeId: "architect",
+      },
+      expected: {
+        type: "mode-update",
+        agentMode: "architect",
+      },
+    },
+    {
+      update: {
+        sessionUpdate: "session_info_update",
+        title: null,
+        updatedAt: "2026-07-11T12:00:00.000Z",
+      },
+      expected: {
+        type: "session-info",
+        title: null,
+        updatedAt: "2026-07-11T12:00:00.000Z",
+      },
+    },
+    {
+      update: {
+        sessionUpdate: "usage_update",
+        used: 123,
+        size: 200_000,
+        cost: { amount: 0.02, currency: "USD" },
+      },
+      expected: {
+        type: "usage-update",
+        usage: {
+          used: 123,
+          size: 200_000,
+          cost: { amount: 0.02, currency: "USD" },
+        },
+      },
+    },
+  ] as const;
+
+  for (const fixture of fixtures) {
+    const mapped = mapSessionUpdateNotificationBatch({
+      method: "session/update",
+      params: {
+        sessionId: "session-state-variants",
+        update: fixture.update,
+      },
+    });
+    assert.ok(mapped);
+    assert.deepEqual(mapped.events, [fixture.expected]);
+  }
+});
+
 test("mapSessionUpdateNotification maps inferred diff summaries", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
@@ -877,6 +1011,78 @@ test("mapSessionUpdateNotification derives Codex mcp tool names from rawInput se
     server: "mcp_router",
     tool: "activate_project",
     arguments: { project: "D:\\myProject\\tools\\Tiller" },
+  }));
+});
+
+test("mapSessionUpdateNotification prefers Codex rawInput over an empty input placeholder", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_codex_raw_input_placeholder",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_codex_raw_input_placeholder",
+        kind: "other",
+        title: "call_codex_raw_input_placeholder",
+        status: "in_progress",
+        input: {},
+        rawInput: {
+          server: "mcp_router",
+          tool: "find_symbol",
+          arguments: { relative_path: "packages/shared/src/session-timeline.ts" },
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/find_symbol");
+  assert.equal(mapped.event.toolCall.input, JSON.stringify({
+    server: "mcp_router",
+    tool: "find_symbol",
+    arguments: { relative_path: "packages/shared/src/session-timeline.ts" },
+  }));
+});
+
+test("mapSessionUpdateNotification keeps top-level rawInput when nested toolCall metadata is sparse", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_nested_codex_raw_input",
+      update: {
+        sessionUpdate: "tool_call_update",
+        rawInput: {
+          server: "mcp_router",
+          tool: "find_referencing_symbols",
+          arguments: { relative_path: "packages/shared/src/session-timeline.ts" },
+        },
+        toolCall: {
+          id: "call_nested_codex_raw_input",
+          kind: "other",
+          title: "call_nested_codex_raw_input",
+          status: "completed",
+          input: {},
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/find_referencing_symbols");
+  assert.equal(mapped.event.toolCall.input, JSON.stringify({
+    server: "mcp_router",
+    tool: "find_referencing_symbols",
+    arguments: { relative_path: "packages/shared/src/session-timeline.ts" },
   }));
 });
 
@@ -987,8 +1193,8 @@ test("mapSessionUpdateNotification ignores empty ACP plan updates", () => {
   assert.equal(mapped, null);
 });
 
-test("mapSessionUpdateNotification maps Codex update_plan tools into plan updates", () => {
-  const mapped = mapSessionUpdateNotification(
+test("mapSessionUpdateNotificationBatch preserves Codex update_plan tools before derived plans", () => {
+  const mapped = mapSessionUpdateNotificationBatch(
     {
       jsonrpc: "2.0",
       method: "session/update",
@@ -1021,11 +1227,12 @@ test("mapSessionUpdateNotification maps Codex update_plan tools into plan update
     },
   );
 
-  assert.equal(mapped?.event.type, "plan-update");
-  if (mapped?.event.type !== "plan-update") {
-    throw new Error("Expected plan-update event");
+  assert.deepEqual(mapped?.events.map((event) => event.type), ["tool-call", "plan-update"]);
+  const planEvent = mapped?.events[1];
+  if (planEvent?.type !== "plan-update") {
+    throw new Error("Expected derived plan-update event");
   }
-  assert.deepEqual(mapped.event.plan.entries, [
+  assert.deepEqual(planEvent.plan.entries, [
     { content: "检查同步链路", priority: "medium", status: "completed" },
     { content: "修复 Codex plan 投影", priority: "medium", status: "in_progress" },
     { content: "跑回归测试", priority: "medium", status: "pending" },
@@ -1215,7 +1422,7 @@ test("mapSessionUpdateNotification classifies Claude Agent tool as subagent", ()
   assert.equal(mapped.event.toolCall.title, "Agent");
 });
 
-test("mapSessionUpdateNotification maps Claude task tools into plan updates", () => {
+test("mapSessionUpdateNotificationBatch preserves Claude task tools before derived plans", () => {
   const provider = {
     id: "claudecode",
     name: "ClaudeCode",
@@ -1225,7 +1432,7 @@ test("mapSessionUpdateNotification maps Claude task tools into plan updates", ()
   };
   const sessionId = "session-claude-task-plan-live";
 
-  const created = mapSessionUpdateNotification(
+  const created = mapSessionUpdateNotificationBatch(
     {
       jsonrpc: "2.0",
       method: "session/update",
@@ -1242,15 +1449,16 @@ test("mapSessionUpdateNotification maps Claude task tools into plan updates", ()
     },
     { provider, providerId: "claudecode" },
   );
-  assert.equal(created?.event.type, "plan-update");
-  if (created?.event.type !== "plan-update") {
-    throw new Error("Expected plan-update event");
+  assert.deepEqual(created?.events.map((event) => event.type), ["tool-call", "plan-update"]);
+  const createdPlan = created?.events[1];
+  if (createdPlan?.type !== "plan-update") {
+    throw new Error("Expected derived plan-update event");
   }
-  assert.deepEqual(created.event.plan.entries, [
+  assert.deepEqual(createdPlan.plan.entries, [
     { content: "恢复实时 Claude plan", priority: "medium", status: "pending" },
   ]);
 
-  const createdOutput = mapSessionUpdateNotification(
+  const createdOutput = mapSessionUpdateNotificationBatch(
     {
       jsonrpc: "2.0",
       method: "session/update",
@@ -1265,15 +1473,16 @@ test("mapSessionUpdateNotification maps Claude task tools into plan updates", ()
     },
     { provider, providerId: "claudecode" },
   );
-  assert.equal(createdOutput?.event.type, "plan-update");
-  if (createdOutput?.event.type !== "plan-update") {
-    throw new Error("Expected plan-update event");
+  assert.deepEqual(createdOutput?.events.map((event) => event.type), ["tool-call", "plan-update"]);
+  const createdOutputPlan = createdOutput?.events[1];
+  if (createdOutputPlan?.type !== "plan-update") {
+    throw new Error("Expected derived plan-update event");
   }
-  assert.deepEqual(createdOutput.event.plan.entries, [
+  assert.deepEqual(createdOutputPlan.plan.entries, [
     { content: "恢复实时 Claude plan", priority: "medium", status: "pending" },
   ]);
 
-  const updated = mapSessionUpdateNotification(
+  const updated = mapSessionUpdateNotificationBatch(
     {
       jsonrpc: "2.0",
       method: "session/update",
@@ -1290,16 +1499,17 @@ test("mapSessionUpdateNotification maps Claude task tools into plan updates", ()
     },
     { provider, providerId: "claudecode" },
   );
-  assert.equal(updated?.event.type, "plan-update");
-  if (updated?.event.type !== "plan-update") {
-    throw new Error("Expected plan-update event");
+  assert.deepEqual(updated?.events.map((event) => event.type), ["tool-call", "plan-update"]);
+  const updatedPlan = updated?.events[1];
+  if (updatedPlan?.type !== "plan-update") {
+    throw new Error("Expected derived plan-update event");
   }
-  assert.deepEqual(updated.event.plan.entries, [
+  assert.deepEqual(updatedPlan.plan.entries, [
     { content: "恢复实时 Claude plan", priority: "medium", status: "in_progress" },
   ]);
 });
 
-test("mapSessionUpdateNotification maps Claude TodoWrite into plan updates (ACP title field)", () => {
+test("mapSessionUpdateNotificationBatch preserves Claude TodoWrite before the derived plan", () => {
   const provider = {
     id: "claudecode",
     name: "ClaudeCode",
@@ -1309,7 +1519,7 @@ test("mapSessionUpdateNotification maps Claude TodoWrite into plan updates (ACP 
   };
   const sessionId = "session-claude-todowrite-plan";
 
-  const mapped = mapSessionUpdateNotification(
+  const mapped = mapSessionUpdateNotificationBatch(
     {
       jsonrpc: "2.0",
       method: "session/update",
@@ -1332,12 +1542,13 @@ test("mapSessionUpdateNotification maps Claude TodoWrite into plan updates (ACP 
     { provider, providerId: "claudecode" },
   );
 
-  assert.equal(mapped?.event.type, "plan-update");
-  if (mapped?.event.type !== "plan-update") {
-    throw new Error("Expected plan-update event from TodoWrite");
+  assert.deepEqual(mapped?.events.map((event) => event.type), ["tool-call", "plan-update"]);
+  const planEvent = mapped?.events[1];
+  if (planEvent?.type !== "plan-update") {
+    throw new Error("Expected derived plan-update event from TodoWrite");
   }
-  assert.equal(mapped.event.plan.entries.length, 2);
-  assert.deepEqual(mapped.event.plan.entries, [
+  assert.equal(planEvent.plan.entries.length, 2);
+  assert.deepEqual(planEvent.plan.entries, [
     { content: "Fix plan display", priority: "medium", status: "in_progress" },
     { content: "Run tests", priority: "medium", status: "pending" },
   ]);
@@ -1402,6 +1613,182 @@ test("mapSessionUpdateNotification classifies Codex multi_agent_v1 spawn_agent c
   }
   assert.equal(mapped.event.toolCall.kind, "subagent");
   assert.equal(mapped.event.toolCall.title, "spawn_agent");
+});
+
+test("mapSessionUpdateNotification classifies wrapped Codex multi-agent calls with opaque titles", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-subagent-wrapped",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-subagent-wrapped",
+          title: "call-codex-subagent-wrapped",
+          status: "in_progress",
+          rawInput: {
+            namespace: "multi_agent_v1",
+            name: "spawn_agent",
+            arguments: {
+              message: "Inspect the session timeline",
+              fork_context: true,
+            },
+          },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "spawn_agent");
+});
+
+test("mapSessionUpdateNotification classifies all wrapped Codex multi-agent actions", () => {
+  const actions = [
+    "send_message",
+    "followup_task",
+    "wait_agent",
+    "interrupt_agent",
+    "list_agents",
+    "resume_agent",
+  ];
+
+  for (const action of actions) {
+    const mapped = mapSessionUpdateNotification(
+      {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: `session-codex-${action}`,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: `call-codex-${action}`,
+            title: `call-codex-${action}`,
+            status: "in_progress",
+            rawInput: {
+              namespace: "multi_agent_v1",
+              name: action,
+              arguments: { agent_id: "agent-1" },
+            },
+          },
+        },
+      },
+      { providerId: "codex" },
+    );
+
+    assert.equal(mapped?.event.type, "tool-call");
+    if (mapped?.event.type !== "tool-call") {
+      throw new Error("Expected tool-call event");
+    }
+    assert.equal(mapped.event.toolCall.kind, "subagent");
+    assert.equal(mapped.event.toolCall.title, action);
+  }
+});
+
+test("mapSessionUpdateNotification classifies wrapped Codex MCP calls from namespace and name", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-mcp-wrapped",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-mcp-wrapped",
+          title: "call-codex-mcp-wrapped",
+          status: "in_progress",
+          rawInput: {
+            namespace: "mcp__mcp_router",
+            name: "find_symbol",
+            arguments: { relative_path: "packages/shared/src/session-timeline.ts" },
+          },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "mcp");
+  assert.equal(mapped.event.toolCall.title, "Tool: mcp_router/find_symbol");
+  assert.deepEqual(mapped.event.toolCall.mcp, {
+    serverName: "mcp_router",
+    toolName: "find_symbol",
+    source: "structured-tool-name",
+    rawTitle: "mcp__mcp_router.find_symbol",
+  });
+});
+
+test("mapSessionUpdateNotification classifies wrapped Codex web calls as fetch", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-web-wrapped",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-web-wrapped",
+          title: "call-codex-web-wrapped",
+          status: "in_progress",
+          rawInput: {
+            namespace: "web",
+            name: "run",
+            arguments: { query: "Agent Client Protocol" },
+          },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "fetch");
+  assert.equal(mapped.event.toolCall.title, "Searching for: Agent Client Protocol");
+});
+
+test("mapSessionUpdateNotification classifies wrapped Codex skill shell calls as skills", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-skill-wrapped",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-skill-wrapped",
+          title: "call-codex-skill-wrapped",
+          status: "completed",
+          rawInput: {
+            name: "shell_command",
+            arguments: {
+              command: "Get-Content C:/Users/qjq/.codex/skills/frontend-design/SKILL.md",
+            },
+          },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "skill");
+  assert.equal(mapped.event.toolCall.title, "Skill: frontend-design");
 });
 
 test("mapSessionUpdateNotification keeps mode-only config updates out of plan projection", () => {
@@ -2350,7 +2737,7 @@ test("mapSessionUpdateNotification repairs OpenCode replayed symbol listings int
   assert.equal(mapped.event.toolCall.title, "Symbols");
 });
 
-test("mapSessionUpdateNotification repairs OpenCode replayed diagnostics summaries into read tool calls", () => {
+test("mapSessionUpdateNotification repairs OpenCode replayed diagnostics summaries into diagnostics tool calls", () => {
   const mapped = mapSessionUpdateNotification(
     {
       jsonrpc: "2.0",
@@ -2380,7 +2767,7 @@ test("mapSessionUpdateNotification repairs OpenCode replayed diagnostics summari
   if (mapped?.event.type !== "tool-call") {
     throw new Error("Expected tool-call event");
   }
-  assert.equal(mapped.event.toolCall.kind, "read");
+  assert.equal(mapped.event.toolCall.kind, "diagnostics");
   assert.equal(mapped.event.toolCall.title, "Diagnostics");
 });
 
@@ -2551,8 +2938,8 @@ test("mapSessionUpdateNotification suppresses OpenCode title-only todowrite fram
   assert.equal(mapped, null);
 });
 
-test("mapSessionUpdateNotification lets provider adapters project todo updates into plans", () => {
-  const mapped = mapSessionUpdateNotification(
+test("mapSessionUpdateNotificationBatch preserves OpenCode todo tools before derived plans", () => {
+  const mapped = mapSessionUpdateNotificationBatch(
     {
       jsonrpc: "2.0",
       method: "session/update",
@@ -2561,6 +2948,7 @@ test("mapSessionUpdateNotification lets provider adapters project todo updates i
         update: {
           sessionUpdate: "tool_call_update",
           toolCall: {
+            id: "call-opencode-plan",
             tool: "todowrite",
             state: {
               input: {
@@ -2582,17 +2970,18 @@ test("mapSessionUpdateNotification lets provider adapters project todo updates i
     },
   );
 
-  assert.equal(mapped?.event.type, "plan-update");
-  if (mapped?.event.type !== "plan-update") {
-    throw new Error("Expected plan-update event");
+  assert.deepEqual(mapped?.events.map((event) => event.type), ["tool-call", "plan-update"]);
+  const planEvent = mapped?.events[1];
+  if (planEvent?.type !== "plan-update") {
+    throw new Error("Expected derived plan-update event");
   }
-  assert.deepEqual(mapped.event.plan.entries, [
+  assert.deepEqual(planEvent.plan.entries, [
     { content: "Adapter projection", priority: "medium", status: "completed" },
   ]);
 });
 
-test("mapSessionUpdateNotification projects OpenCode count-title todo updates when rawInput carries todos", () => {
-  const mapped = mapSessionUpdateNotification(
+test("mapSessionUpdateNotificationBatch preserves count-title OpenCode todo tools before plans", () => {
+  const mapped = mapSessionUpdateNotificationBatch(
     {
       jsonrpc: "2.0",
       method: "session/update",
@@ -2601,6 +2990,7 @@ test("mapSessionUpdateNotification projects OpenCode count-title todo updates wh
         update: {
           sessionUpdate: "tool_call_update",
           toolCall: {
+            id: "call-opencode-plan-rawinput",
             title: "3 todos",
             kind: "write",
             rawInput: {
@@ -2625,11 +3015,12 @@ test("mapSessionUpdateNotification projects OpenCode count-title todo updates wh
     },
   );
 
-  assert.equal(mapped?.event.type, "plan-update");
-  if (mapped?.event.type !== "plan-update") {
-    throw new Error("Expected plan-update event");
+  assert.deepEqual(mapped?.events.map((event) => event.type), ["tool-call", "plan-update"]);
+  const planEvent = mapped?.events[1];
+  if (planEvent?.type !== "plan-update") {
+    throw new Error("Expected derived plan-update event");
   }
-  assert.deepEqual(mapped.event.plan.entries, [
+  assert.deepEqual(planEvent.plan.entries, [
     { content: "读文件", priority: "medium", status: "completed" },
     { content: "AST 搜索", priority: "medium", status: "in_progress" },
     { content: "写总结", priority: "medium", status: "pending" },

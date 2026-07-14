@@ -1,13 +1,9 @@
 import type {
-  AgentMessage,
   AgentPromptContent,
-  AgentToolCall,
-  CommandChunk,
   SessionConfigOptionValue,
   SessionQueuedPrompt,
   SessionReasoningEffort,
   SessionSummary,
-  SessionTimelineEntry,
 } from "@tiller/shared";
 import { SendPromptUseCase } from "@tiller/core";
 import {
@@ -19,12 +15,13 @@ import { createSessionEventPublisher } from "./event/publisher";
 import {
   allocateLiveEventSequence,
   flushLiveAssistantMessage,
-  persistRuntimeSessionUpdate,
-  seedLiveEventSequenceForSession,
+  handleRuntimeEvent,
+  prepareRuntimeSessionUpdate,
+  publishCanonicalSessionStateEvent,
+  publishPromptQueueState,
 } from "../events";
 import type { HelmHandlerContext } from "../../handlers/context";
 import { emitHelmPromptTrace } from "../prompt-trace";
-import { persistTimelineMessage } from "./timeline-effects";
 import { routeSessionRuntimeEvent } from "../session-timeline/event-router";
 import {
   resolveConfigOptionsForSelection,
@@ -32,7 +29,13 @@ import {
 } from "./config-options";
 import { assertSupportedSlashCommand } from "./command-support";
 import { createUserPromptMessage as createProjectedUserPromptMessage } from "./user-message";
-import { persistMessageImageAttachments } from "./attachment-projection";
+import {
+  collectPromptAttachmentIds,
+  hydratePromptImageAttachments,
+  persistMessageImageAttachments,
+  persistPromptImageAttachments,
+} from "./attachment-projection";
+import { PROMPT_QUEUE_CAPACITY_ERROR_CODE } from "./prompt-queue";
 
 export type SessionPromptRequest = {
   sessionId: string;
@@ -105,10 +108,7 @@ async function resolvePromptRuntime(
 }
 
 function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
-  createSessionEventPublisher(context).sessionUpdate(sessionId, {
-    kind: "prompt_queue",
-    queue: context.promptQueue.snapshot(sessionId),
-  });
+  publishPromptQueueState(sessionId, context.promptQueue.snapshot(sessionId), context);
 }
 
 function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, message: string) {
@@ -119,11 +119,7 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
     lastMessagePreview: "Prompt failed",
   }));
   createSessionEventPublisher(context).errorRaised({ sessionId, message });
-  createSessionEventPublisher(context).sessionUpdate(sessionId, {
-    kind: "status_change",
-    status: "error",
-    message,
-  });
+  publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
 }
 
 function subscribePromptingSocketToSession(sessionId: string, context: HelmHandlerContext) {
@@ -142,48 +138,6 @@ function applyDispatchingUserPromptToSummary(
     ...applyUserPromptToSummary(current, text, timestamp),
     status: "running" as const,
   };
-}
-
-function seedPromptTimelineSequence(sessionId: string, context: HelmHandlerContext) {
-  seedLiveEventSequenceForSession(sessionId, collectPersistedTimelineSequences(sessionId, context));
-}
-
-function collectPersistedTimelineSequences(
-  sessionId: string,
-  context: HelmHandlerContext,
-): Array<number | undefined> {
-  const sequences: Array<number | undefined> = [];
-  try {
-    for (const entry of (context.sessionTimelineStore?.list?.(sessionId) ?? []) as SessionTimelineEntry[]) {
-      if (entry.kind === "context_compaction" || entry.kind === "history_gap") {
-        continue;
-      }
-      sequences.push(entry.sequence);
-      if (entry.kind === "assistant_message") {
-        sequences.push(...entry.chunks.map((chunk) => chunk.sequence));
-      } else if (entry.kind === "tool_call") {
-        sequences.push(entry.toolCall.sequence);
-      } else {
-        sequences.push(entry.message.sequence);
-      }
-    }
-  } catch {
-    // Best-effort seeding. If timeline storage is unavailable, fall back to
-    // message/artifact stores below and let normal prompt dispatch continue.
-  }
-  try {
-    sequences.push(...(context.sessionMessageStore?.list?.(sessionId) ?? []).map((message: AgentMessage) => message.sequence));
-  } catch {
-    // Ignore unavailable legacy message storage.
-  }
-  try {
-    const artifacts = context.sessionArtifactStore?.get?.(sessionId);
-    sequences.push(...(artifacts?.toolCalls ?? []).map((toolCall: AgentToolCall) => toolCall.sequence));
-    sequences.push(...(artifacts?.outputs ?? []).map((output: CommandChunk) => output.sequence));
-  } catch {
-    // Ignore unavailable artifact storage.
-  }
-  return sequences;
 }
 
 export async function sendPromptImmediately(
@@ -215,7 +169,14 @@ export async function sendPromptImmediately(
     meta: { queued: true, chars: item.text.length, images: imageAttachments.length },
   });
 
-  await record.runtime.prompt(item.text, item.content);
+  await record.runtime.prompt(
+    item.text,
+    hydratePromptImageAttachments({
+      sessionId: item.sessionId,
+      content: item.content,
+      attachments: context.sessionAttachmentStore,
+    }),
+  );
   emitHelmPromptTrace(context, {
     traceId: item.clientMessageId,
     sessionId: item.sessionId,
@@ -233,8 +194,11 @@ export async function sendPromptImmediately(
 
 function createUserPromptMessage(
   item: Pick<SessionQueuedPrompt, "sessionId" | "text" | "content" | "clientMessageId"> & { timestamp: string },
+  context: HelmHandlerContext,
 ) {
-  return createProjectedUserPromptMessage(item, allocateLiveEventSequence);
+  return createProjectedUserPromptMessage(item, (sessionId) =>
+    allocateLiveEventSequence(sessionId, context)
+  );
 }
 
 async function appendUserPromptMessage(
@@ -247,27 +211,19 @@ async function appendUserPromptMessage(
     message: userMessage,
     attachments: context.sessionAttachmentStore,
   });
-  context.persistSessionMessage(sessionId, storedUserMessage);
-  persistRuntimeSessionUpdate(
+  assertCanonicalTimelinePipeline(context);
+  const event = { type: "message" as const, message: storedUserMessage };
+  const prepared = prepareRuntimeSessionUpdate(
     sessionId,
-    { type: "message", message: storedUserMessage },
+    event,
     context,
     storedUserMessage.sequence,
   );
-  if (hasCanonicalTimelinePipeline(context)) {
-    routeSessionRuntimeEvent(sessionId, { type: "message", message: storedUserMessage }, {
-      workers: context.sessionTimelineWorkers,
-      liveStateStore: context.sessionLiveStateStore,
-      flushScheduler: context.sessionTimelineFlushScheduler,
-      context,
-    });
-  } else {
-    persistTimelineMessage(context, sessionId, storedUserMessage);
-    createSessionEventPublisher(context).sessionUpdate(sessionId, {
-      kind: "user_message",
-      message: storedUserMessage,
-    });
-  }
+  routeSessionRuntimeEvent(sessionId, event, {
+    workers: context.sessionTimelineWorkers,
+    flushScheduler: context.sessionTimelineFlushScheduler,
+    context,
+  }, prepared.resolvedSequence, prepared.update);
   const updated = context.updateSessionSummary(sessionId, (current) =>
     applyDispatchingUserPromptToSummary(current, storedUserMessage.text, storedUserMessage.timestamp),
   );
@@ -279,21 +235,24 @@ async function appendUserPromptMessage(
   }
 }
 
-function hasCanonicalTimelinePipeline(
+function assertCanonicalTimelinePipeline(
   context: HelmHandlerContext,
-): context is HelmHandlerContext & Required<Pick<
+): asserts context is HelmHandlerContext & Required<Pick<
   HelmHandlerContext,
   | "sessionTimelineWorkers"
   | "sessionTimelineDispatcher"
   | "sessionTimelineFlushScheduler"
   | "sessionLiveStateStore"
 >> {
-  return Boolean(
+  if (
     context.sessionTimelineWorkers &&
       context.sessionTimelineDispatcher &&
       context.sessionTimelineFlushScheduler &&
-      context.sessionLiveStateStore,
-  );
+      context.sessionLiveStateStore
+  ) {
+    return;
+  }
+  throw new Error("Canonical runtime services are required.");
 }
 
 async function runInFlightPrompt(
@@ -339,7 +298,7 @@ export async function drainPromptQueue(sessionId: string, context: HelmHandlerCo
         content: next.content,
         clientMessageId: next.clientMessageId,
         timestamp,
-      });
+      }, context);
       await appendUserPromptMessage(sessionId, userMessage, context);
       
       try {
@@ -387,8 +346,23 @@ export async function sendPromptToSession(
   );
 
   subscribePromptingSocketToSession(params.sessionId, context);
-  seedPromptTimelineSequence(params.sessionId, context);
-
+  const clientMessageId = params.clientMessageId
+    ?? `${params.sessionId}-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const existingAttachmentIds = new Set(collectPromptAttachmentIds(params.content));
+  const promptInput: SessionPromptRequest = {
+    ...params,
+    clientMessageId,
+    ...(params.content?.length
+      ? {
+          content: persistPromptImageAttachments({
+            sessionId: params.sessionId,
+            messageId: clientMessageId,
+            content: params.content,
+            attachments: context.sessionAttachmentStore,
+          }),
+        }
+      : {}),
+  };
   const useCase = new SendPromptUseCase<SessionQueuedPrompt, ReturnType<typeof context.promptQueue.snapshot>, ReturnType<typeof createUserPromptMessage>, AgentPromptContent>({
     runtime: {
       prompt: async (input) => {
@@ -417,7 +391,14 @@ export async function sendPromptToSession(
             images: promptContent?.filter((content) => content.type === "image").length ?? 0,
           },
         });
-        await activeRecord.runtime.prompt(input.text, promptContent);
+        await activeRecord.runtime.prompt(
+          input.text,
+          hydratePromptImageAttachments({
+            sessionId: input.sessionId,
+            content: promptContent,
+            attachments: context.sessionAttachmentStore,
+          }),
+        );
         emitHelmPromptTrace(context, {
           traceId: input.clientMessageId,
           sessionId: input.sessionId,
@@ -439,7 +420,7 @@ export async function sendPromptToSession(
         await appendUserPromptMessage(sessionId, message, context);
       },
     },
-    createUserMessage: createUserPromptMessage,
+    createUserMessage: (item) => createUserPromptMessage(item, context),
     onQueueChanged: (sessionId) => broadcastPromptQueue(context, sessionId),
     onPromptFailed: (sessionId, error) => {
       const message = error instanceof Error ? error.message : "Prompt failed.";
@@ -460,10 +441,22 @@ export async function sendPromptToSession(
     },
   });
 
-  const result = await useCase.execute(params);
+  let result;
+  try {
+    result = await useCase.execute(promptInput);
+  } catch (error) {
+    if ((error as { code?: string }).code === PROMPT_QUEUE_CAPACITY_ERROR_CODE) {
+      for (const attachmentId of collectPromptAttachmentIds(promptInput.content)) {
+        if (!existingAttachmentIds.has(attachmentId)) {
+          context.sessionAttachmentStore.remove(attachmentId);
+        }
+      }
+    }
+    throw error;
+  }
   emitHelmPromptTrace(context, {
-    traceId: params.clientMessageId,
-    sessionId: params.sessionId,
+    traceId: promptInput.clientMessageId,
+    sessionId: promptInput.sessionId,
     phase: result.accepted === "queued" ? "helm.prompt.queued" : "helm.prompt.ack",
     meta: { accepted: result.accepted },
   });
@@ -476,7 +469,7 @@ export async function configureSessionRuntime(
 ) {
   const current =
     context.sessions.get(params.sessionId)?.summary ??
-    context.sessionStore.list().find((item: any) => item.id === params.sessionId);
+    context.sessionStore.get(params.sessionId);
   if (!current) {
     throw new Error("Session not found");
   }
@@ -499,7 +492,7 @@ export async function configureSessionRuntime(
     previousOptions: current.configOptions,
     selectedModel: nextModel,
   });
-  const nextConfigOptions = resolvedConfigOptions.options;
+  const nextConfigOptions = resolvedConfigOptions.options ?? current.configOptions ?? [];
   const nextReasoning = resolveConfigReasoningEffortForOptions(
     params.reasoningEffort ?? runtimeResult?.state.reasoningEffort ?? current.reasoningEffort,
     resolvedConfigOptions,
@@ -515,7 +508,19 @@ export async function configureSessionRuntime(
     updatedAt,
   });
   context.updateSessionSummary(params.sessionId, () => next);
-  createSessionEventPublisher(context).sessionUpdate(params.sessionId, { kind: "session_updated", session: next });
+  publishCanonicalSessionStateEvent(
+    params.sessionId,
+    {
+      type: "config-options",
+      state: {
+        agentMode: nextAgentMode,
+        model: nextModel,
+        reasoningEffort: nextReasoning,
+      },
+      options: nextConfigOptions,
+    },
+    context,
+  );
   return {
     sessionId: params.sessionId,
     ok: true,
@@ -539,6 +544,11 @@ export async function cancelSessionRuntime(
     return true;
   }
 
+  handleRuntimeEvent(sessionId, {
+    type: "status",
+    status: "cancelled",
+    message: "Cancelled by user",
+  }, context);
   record.runtime.cancel();
   context.sessions.delete(sessionId);
   return true;

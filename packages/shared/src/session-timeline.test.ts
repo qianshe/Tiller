@@ -6,8 +6,6 @@ import type { SessionTimelineBatch, SessionTimelineEntry } from "./session-timel
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
-  buildSessionTimelineFromLegacy,
-  resolveTimelineRepresentedUserMessageIds,
   sortSessionTimelineEntries,
 } from "./session-timeline";
 
@@ -192,202 +190,7 @@ test("sortSessionTimelineEntries leaves compaction-only boundaries untouched", (
   ]);
 });
 
-test("buildSessionTimelineFromLegacy interleaves a sequence-less tool call by timestamp instead of grouping it after messages", () => {
-  // Real chronology: user(seq 1) -> tool(no sequence) -> assistant(seq 3).
-  // Legacy history can carry tool calls without a sequence (e.g. pre-migration
-  // records), and they must still land between the two messages by timestamp.
-  const timeline = buildSessionTimelineFromLegacy({
-    messages: [
-      message({ id: "user-1", role: "user", text: "Start", sequence: 1 }),
-      message({ id: "assistant-1", role: "assistant", text: "Answer", sequence: 3 }),
-    ],
-    toolCalls: [
-      {
-        id: "tool-1",
-        commandId: "tool-1",
-        kind: "search",
-        title: "Search",
-        status: "completed",
-        output: "result",
-        timestamp: at(2),
-        updatedAt: at(2),
-      } as AgentToolCall,
-    ],
-    outputs: [],
-  });
-
-  assert.deepEqual(
-    timeline.map((entry) => entry.kind),
-    ["user_message", "tool_call", "assistant_message"],
-  );
-});
-
-test("buildSessionTimelineFromLegacy splits cumulative assistant text around tool boundaries", () => {
-  const timeline = buildSessionTimelineFromLegacy({
-    messages: [
-      message({ id: "assistant-1", role: "assistant", text: "先说明。", sequence: 1 }),
-      message({ id: "assistant-1", role: "assistant", text: "先说明。工具后继续。", sequence: 3 }),
-    ],
-    toolCalls: [
-      toolCall({
-        id: "tool-1",
-        commandId: "tool-1",
-        kind: "search",
-        output: "result",
-        status: "completed",
-        title: "Search",
-        sequence: 2,
-      }),
-    ],
-    outputs: [],
-  });
-
-  assert.deepEqual(
-    timeline.map((entry) => [entry.kind, entry.id]),
-    [
-      ["assistant_message", "assistant-1"],
-      ["tool_call", "tool:tool-1"],
-      ["assistant_message", "assistant-1#p1"],
-    ],
-  );
-  assert.deepEqual(
-    timeline.map((entry) =>
-      entry.kind === "assistant_message"
-        ? entry.chunks.map((chunk) => [chunk.text, chunk.sequence])
-        : entry.kind === "tool_call" || entry.kind === "user_message" || entry.kind === "system_message"
-          ? [entry.id, entry.sequence]
-          : [entry.id, entry.kind],
-    ),
-    [
-      [["先说明。", 1]],
-      ["tool:tool-1", 2],
-      [["工具后继续。", 3]],
-    ],
-  );
-});
-
-test("resolveTimelineRepresentedUserMessageIds consumes repeated user prompt anchors one-to-one", () => {
-  const localUsers = [
-    {
-      id: "local-user-1",
-      role: "user" as const,
-      text: "继续",
-      timestamp: at(1),
-    },
-    {
-      id: "local-user-2",
-      role: "user" as const,
-      text: "继续",
-      timestamp: at(4),
-    },
-  ];
-  const timeline: SessionTimelineEntry[] = [
-    {
-      id: "provider-user-2",
-      kind: "user_message",
-      message: {
-        id: "provider-user-2",
-        role: "user",
-        text: "继续",
-        timestamp: at(4),
-      },
-      timestamp: at(4),
-      updatedAt: at(4),
-    },
-  ];
-
-  assert.deepEqual(
-    [...resolveTimelineRepresentedUserMessageIds(timeline, localUsers)],
-    ["local-user-2"],
-  );
-});
-
-test("buildSessionTimelineFromLegacy nests assistant content and thinking chunks in sequence order while keeping tool calls independent", () => {
-  const timeline = buildSessionTimelineFromLegacy({
-    messages: [
-      message({ id: "user-1", role: "user", text: "Start", sequence: 1 }),
-      message({ id: "assistant-1", role: "assistant", text: "Final answer", sequence: 3 }),
-    ],
-    toolCalls: [
-      toolCall({
-        id: "assistant-1:thinking",
-        commandId: "assistant-1:thinking",
-        kind: "think",
-        output: "Plan first",
-        status: "completed",
-        title: "Thinking",
-        sequence: 2,
-      }),
-      toolCall({
-        id: "tool-1",
-        commandId: "tool-1",
-        kind: "search",
-        output: "Search result",
-        status: "completed",
-        title: "Search",
-        sequence: 4,
-      }),
-    ],
-    outputs: [],
-  });
-
-  assert.deepEqual(
-    timeline.map((entry) => entry.kind),
-    ["user_message", "assistant_message", "tool_call"],
-  );
-  assert.equal(timeline[1]?.id, "assistant-1");
-  assert.deepEqual(
-    timeline[1]?.kind === "assistant_message"
-      ? timeline[1].chunks.map((chunk) => chunk.kind)
-      : [],
-    ["thinking", "content"],
-  );
-  assert.equal(
-    timeline[2]?.kind === "tool_call" ? timeline[2].toolCall.kind : undefined,
-    "search",
-  );
-});
-
-test("buildSessionTimelineFromLegacy keeps compacted chronology when sequence resets", () => {
-  const timeline = buildSessionTimelineFromLegacy({
-    messages: [
-      {
-        id: "old-assistant",
-        role: "assistant",
-        text: "旧回复结尾",
-        timestamp: "2026-06-10T09:28:50.000Z",
-        sequence: 87,
-      },
-      {
-        id: "new-user",
-        role: "user",
-        text: "新的 prompt",
-        timestamp: "2026-06-10T10:19:22.000Z",
-        sequence: 2,
-      },
-      {
-        id: "new-assistant",
-        role: "assistant",
-        text: "新回复开始",
-        timestamp: "2026-06-10T10:19:40.000Z",
-        sequence: 4,
-      },
-    ],
-    toolCalls: [],
-    outputs: [],
-  });
-
-  assert.deepEqual(
-    timeline.map((entry) => [entry.kind, entry.id]),
-    [
-      ["assistant_message", "old-assistant"],
-      ["user_message", "new-user"],
-      ["assistant_message", "new-assistant"],
-    ],
-  );
-});
-
-test("sortSessionTimelineEntries keeps earlier compacted history anchored when live sequenced entries arrive", () => {
+test("sortSessionTimelineEntries relies on sequence rather than timestamps", () => {
   const timeline = sortSessionTimelineEntries([
     {
       id: "old-assistant",
@@ -458,12 +261,90 @@ test("sortSessionTimelineEntries keeps earlier compacted history anchored when l
   assert.deepEqual(
     timeline.map((entry) => [entry.kind, entry.id]),
     [
-      ["assistant_message", "old-assistant"],
       ["user_message", "new-user"],
       ["assistant_message", "new-assistant"],
       ["tool_call", "live-tool"],
+      ["assistant_message", "old-assistant"],
     ],
   );
+});
+
+test("appendMessageToSessionTimeline preserves assistant thought messages as thinking chunks", () => {
+  const entries = appendMessageToSessionTimeline([], {
+    id: "thought-1",
+    role: "assistant",
+    contentKind: "thought",
+    text: "先检查调用链",
+    timestamp: at(1),
+    sequence: 1,
+    streaming: true,
+  });
+
+  assert.equal(entries[0]?.kind, "assistant_message");
+  assert.deepEqual(
+    entries[0]?.kind === "assistant_message" ? entries[0].chunks[0] : undefined,
+    {
+      id: "thought-1:thinking",
+      kind: "thinking",
+      text: "先检查调用链",
+      title: "Thinking",
+      status: "running",
+      timestamp: at(1),
+      updatedAt: at(1),
+      sequence: 1,
+    },
+  );
+});
+
+test("sortSessionTimelineEntries preserves stored order when any sequence is missing", () => {
+  const timeline = sortSessionTimelineEntries([
+    {
+      id: "arrived-first",
+      kind: "user_message",
+      message: {
+        id: "arrived-first",
+        role: "user",
+        text: "first",
+        timestamp: at(3),
+        sequence: 3,
+      },
+      timestamp: at(3),
+      updatedAt: at(3),
+      sequence: 3,
+    },
+    {
+      id: "arrived-second",
+      kind: "user_message",
+      message: {
+        id: "arrived-second",
+        role: "user",
+        text: "second",
+        timestamp: at(2),
+        sequence: 2,
+      },
+      timestamp: at(2),
+      updatedAt: at(2),
+      sequence: 2,
+    },
+    {
+      id: "legacy",
+      kind: "user_message",
+      message: {
+        id: "legacy",
+        role: "user",
+        text: "legacy",
+        timestamp: at(1),
+      },
+      timestamp: at(1),
+      updatedAt: at(1),
+    },
+  ]);
+
+  assert.deepEqual(timeline.map((entry) => entry.id), [
+    "arrived-first",
+    "arrived-second",
+    "legacy",
+  ]);
 });
 
 test("sortSessionTimelineEntries keeps a cumulative assistant reply intact across subagent boundaries", () => {
@@ -597,7 +478,7 @@ test("appendToolCallToSessionTimeline merges tool output updates by command id",
   assert.equal(entries[0]?.kind === "tool_call" ? entries[0].toolCall.output : undefined, "stdout");
 });
 
-test("appendToolCallToSessionTimeline lets richer running updates reopen a terminal tool row", () => {
+test("appendToolCallToSessionTimeline keeps the first kind and terminal status", () => {
   const entries: SessionTimelineEntry[] = [];
 
   appendToolCallToSessionTimeline(entries, toolCall({
@@ -623,11 +504,11 @@ test("appendToolCallToSessionTimeline lets richer running updates reopen a termi
   assert.equal(entries[0]?.kind, "tool_call");
   assert.equal(
     entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
-    "running",
+    "completed",
   );
   assert.equal(
     entries[0]?.kind === "tool_call" ? entries[0].toolCall.kind : undefined,
-    "write",
+    "tool",
   );
   assert.equal(
     entries[0]?.kind === "tool_call" ? entries[0].toolCall.input : undefined,
@@ -772,6 +653,95 @@ test("appendToolCallToSessionTimeline keeps subagent classification when a later
   );
 });
 
+test("appendToolCallToSessionTimeline updates a subagent result onto its launched entry by command id", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-launch",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "Subagent",
+    status: "running",
+    sequence: 3,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-result",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "Subagent",
+    status: "completed",
+    output: "subagent reply",
+    sequence: 7,
+  }));
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.id : undefined,
+    "subagent-launch",
+  );
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
+    "completed",
+  );
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.output : undefined,
+    "subagent reply",
+  );
+});
+
+test("appendToolCallToSessionTimeline collapses lifecycle rows after a subagent identity is enriched", () => {
+  const entries: SessionTimelineEntry[] = [];
+  const launchInput = JSON.stringify({ prompt: "Run the background check" });
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-launch",
+    kind: "subagent",
+    title: "Claude background lifecycle",
+    status: "running",
+    input: launchInput,
+    sequence: 3,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-message",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "Subagent",
+    status: "running",
+    sequence: 5,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-launch",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "Claude background lifecycle",
+    status: "running",
+    input: launchInput,
+    sequence: 3,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-output",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "Subagent",
+    status: "completed",
+    output: "CLAUDE_BACKGROUND_CHILD_OK",
+    sequence: 7,
+  }));
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.kind, "tool_call");
+  if (entries[0]?.kind !== "tool_call") {
+    return;
+  }
+  assert.equal(entries[0].toolCall.id, "subagent-launch");
+  assert.equal(entries[0].toolCall.title, "Claude background lifecycle");
+  assert.equal(entries[0].toolCall.input, launchInput);
+  assert.equal(entries[0].toolCall.output, "CLAUDE_BACKGROUND_CHILD_OK");
+  assert.equal(entries[0].toolCall.status, "completed");
+  assert.equal(entries[0].sequence, 3);
+});
+
 test("SessionTimelineBatch is the only canonical write envelope", () => {
   const batch: SessionTimelineBatch = {
     replace: false,
@@ -837,4 +807,29 @@ test("SessionTimelineEntry uses sequence field (not sequence) as canonical seque
 
   assert.equal(entry.sequence, 1);
   assert.equal(entry.kind, "assistant_message");
+});
+
+test("timeline ToolCall updates retain the first mapper-assigned kind", () => {
+  const entries = appendToolCallToSessionTimeline([], {
+    id: "tool-1",
+    kind: "shell",
+    title: "Shell",
+    status: "running",
+    timestamp: at(1),
+    updatedAt: at(1),
+    sequence: 1,
+  });
+  appendToolCallToSessionTimeline(entries, {
+    id: "tool-1",
+    kind: "search",
+    title: "Search",
+    status: "completed",
+    timestamp: at(1),
+    updatedAt: at(2),
+    sequence: 1,
+  });
+
+  const entry = entries[0];
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "shell");
 });

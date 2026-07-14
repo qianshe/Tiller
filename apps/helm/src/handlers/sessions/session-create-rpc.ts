@@ -5,6 +5,11 @@ import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "../../runtime/session/config-options";
+import {
+  ensureLiveEventSequenceForSession,
+  publishCanonicalSessionStateEvent,
+} from "../../runtime/events";
+import { createSessionBootstrapEvents } from "../../runtime/session/event/bootstrap";
 import type { HelmHandlerContext } from "../context";
 import { resolveProjectSessionWorktree } from "./session-worktree";
 
@@ -140,7 +145,11 @@ export async function createSession(
       capabilities: runtime.sessionCapabilities ?? {},
     });
     context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, worktree, runtime });
+    ensureLiveEventSequenceForSession(sessionId, context);
     context.persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
+    for (const event of createSessionBootstrapEvents(summaryWithRuntime)) {
+      context.handleRuntimeEvent(sessionId, event);
+    }
     broadcastSessionUpdate(context, sessionId, {
       kind: "session_updated",
       session: summaryWithRuntime,
@@ -161,11 +170,7 @@ export async function createSession(
       updatedAt: new Date().toISOString(),
       lastMessagePreview: "Session startup failed",
     }));
-    broadcastSessionUpdate(context, sessionId, {
-      kind: "status_change",
-      status: "error",
-      message: "Session startup failed",
-    });
+    publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
     throw error;
   }
 }

@@ -7,6 +7,18 @@ import { persistAdapter } from "./persist";
 import type { DeckStore } from "./index";
 
 export const DECK_STORE_STORAGE_KEY = "tiller.deck.store";
+const DEFAULT_PERSIST_WRITE_DELAY_MS = 100;
+
+let transientPersistenceDepth = 0;
+
+export function withDeckStorePersistenceSuppressed<T>(operation: () => T): T {
+  transientPersistenceDepth += 1;
+  try {
+    return operation();
+  } finally {
+    transientPersistenceDepth -= 1;
+  }
+}
 
 type PersistedDeckStore = Pick<
   DeckStore,
@@ -16,7 +28,6 @@ type PersistedDeckStore = Pick<
   | "openChatSessionIds"
   | "focusedChatWindowId"
   | "draftChatWindow"
-  | "sessionPlans"
   | "dismissedCompletedSessionPlanKeys"
 >;
 
@@ -36,15 +47,16 @@ export function createDeckStorePersistOptions(): PersistOptions<
       openChatSessionIds: state.openChatSessionIds,
       focusedChatWindowId: state.focusedChatWindowId,
       draftChatWindow: state.draftChatWindow,
-      sessionPlans: state.sessionPlans,
       dismissedCompletedSessionPlanKeys: state.dismissedCompletedSessionPlanKeys,
     }),
     merge: (persistedState, currentState) => {
       const persisted = persistedState as PersistedDeckStore | undefined;
       if (!persisted) return currentState;
+      const { sessionPlans: _legacySessionPlans, ...persistedValues } = persisted as
+        PersistedDeckStore & { sessionPlans?: unknown };
       return {
         ...currentState,
-        ...persisted,
+        ...persistedValues,
         openChatSessionIds: Array.isArray(persisted.openChatSessionIds)
           ? persisted.openChatSessionIds.filter((id): id is string => typeof id === "string")
           : currentState.openChatSessionIds,
@@ -55,9 +67,6 @@ export function createDeckStorePersistOptions(): PersistOptions<
         draftChatWindow: isDraftChatWindow(persisted.draftChatWindow)
           ? persisted.draftChatWindow
           : currentState.draftChatWindow,
-        sessionPlans: isSessionPlanMap(persisted.sessionPlans)
-          ? persisted.sessionPlans
-          : currentState.sessionPlans,
         dismissedCompletedSessionPlanKeys: isStringMap(
           persisted.dismissedCompletedSessionPlanKeys,
         )
@@ -86,16 +95,56 @@ export function createDeckStorePersistOptions(): PersistOptions<
   };
 }
 
-export function createDeckStorePersistStorage(storage: Storage) {
+export function createDeckStorePersistStorage(
+  storage: Storage,
+  options: { writeDelayMs?: number } = {},
+) {
   const adapter = persistAdapter(storage);
+  const writeDelayMs = options.writeDelayMs ?? DEFAULT_PERSIST_WRITE_DELAY_MS;
+  const lastWrittenByKey = new Map<string, string>();
+  let pending: { name: string; value: string } | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  function flush() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    const next = pending;
+    pending = undefined;
+    if (!next || lastWrittenByKey.get(next.name) === next.value) {
+      return;
+    }
+    adapter.setItem(next.name, next.value);
+    lastWrittenByKey.set(next.name, next.value);
+  }
+
   return {
     getItem(name: string) {
       return sanitizeDeckStorePayload(adapter.getItem(name), "hydrate");
     },
     setItem(name: string, value: string) {
-      adapter.setItem(name, sanitizeDeckStorePayload(value, "store") ?? value);
+      if (transientPersistenceDepth > 0) {
+        return;
+      }
+      const sanitized = sanitizeDeckStorePayload(value, "store") ?? value;
+      if (lastWrittenByKey.get(name) === sanitized || pending?.value === sanitized) {
+        return;
+      }
+      pending = { name, value: sanitized };
+      if (writeDelayMs <= 0) {
+        flush();
+        return;
+      }
+      if (!timer) {
+        timer = setTimeout(flush, writeDelayMs);
+      }
     },
     removeItem(name: string) {
+      if (pending?.name === name) {
+        pending = undefined;
+      }
+      lastWrittenByKey.delete(name);
       adapter.removeItem(name);
     },
   };
@@ -148,23 +197,6 @@ function isDraftChatWindow(value: unknown): value is PersistedDeckStore["draftCh
     typeof value.projectId === "string" &&
     (typeof value.cwd === "string" || value.cwd === null) &&
     (typeof value.agentId === "string" || value.agentId === null)
-  );
-}
-
-function isSessionPlanMap(value: unknown): value is PersistedDeckStore["sessionPlans"] {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return Object.values(value).every((plan) =>
-    isRecord(plan) &&
-    typeof plan.updatedAt === "string" &&
-    Array.isArray(plan.entries) &&
-    plan.entries.every((entry) =>
-      isRecord(entry) &&
-      typeof entry.content === "string" &&
-      (entry.priority === "high" || entry.priority === "medium" || entry.priority === "low") &&
-      (entry.status === "pending" || entry.status === "in_progress" || entry.status === "completed"),
-    ),
   );
 }
 

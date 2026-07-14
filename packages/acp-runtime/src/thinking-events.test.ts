@@ -34,3 +34,20 @@ test("extractThinkingToolCall maps completed reasoning content", () => {
   assert.equal(toolCall.status, "completed");
   assert.equal(toolCall.timestamp, "2026-05-29T00:00:00.000Z");
 });
+
+test("extractThinkingToolCall ignores structurally empty reasoning payloads", () => {
+  for (const text of ["", "   ", "{}", "[]", "null"]) {
+    const toolCall = extractThinkingToolCall("sess_empty_reasoning", "agent_thought_chunk", {
+      content: { type: "text", text },
+    });
+
+    assert.equal(toolCall, null, `expected ${JSON.stringify(text)} to be ignored`);
+  }
+
+  assert.equal(
+    extractThinkingToolCall("sess_empty_reasoning", "agent_thought_chunk", {
+      content: { type: "text", text: "\u200B\u2060\uFEFF" },
+    }),
+    null,
+  );
+});

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
-import type { AgentMessage, AgentToolCall, SessionUpdateRecord } from "@tiller/shared";
+import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { AgentMessage, AgentToolCall, CommandChunk, SessionUpdateRecord } from "@tiller/shared";
 import {
   applySessionUpdateRecordToState,
   applySessionRuntimeEventToState,
@@ -8,6 +10,11 @@ import {
 } from "./reducer";
 
 const BASE_TIME = Date.parse("2026-06-08T00:00:00.000Z");
+
+test("conversation reducer does not perform a full timeline sort per entity update", () => {
+  const source = readFileSync(new URL("./reducer.ts", import.meta.url), "utf8");
+  assert.doesNotMatch(source, /sortSessionTimelineEntries/u);
+});
 
 function at(sequence: number) {
   return new Date(BASE_TIME + sequence * 1000).toISOString();
@@ -17,6 +24,17 @@ function assistant(id: string, text: string, sequence: number): AgentMessage {
   return {
     id,
     role: "assistant",
+    text,
+    timestamp: at(sequence),
+    sequence,
+  };
+}
+
+function thought(id: string, text: string, sequence: number): AgentMessage {
+  return {
+    id,
+    role: "assistant",
+    contentKind: "thought",
     text,
     timestamp: at(sequence),
     sequence,
@@ -47,6 +65,17 @@ function toolCall(
     output,
     timestamp: at(sequence),
     updatedAt: at(sequence + (status === "completed" ? 10 : 0)),
+    sequence,
+  };
+}
+
+function output(id: string, text: string, sequence: number): CommandChunk {
+  return {
+    id,
+    commandId: "command-1",
+    stream: "stdout",
+    text,
+    timestamp: at(sequence),
     sequence,
   };
 }
@@ -95,7 +124,7 @@ test("session update reducer backfills missing tool-call sequences from update r
       runtimeSessionId: "runtime-1",
       providerId: "codex",
       sequence: 2,
-      source: "agent_transcript_repair",
+      source: "acp_load_replay",
       updateType: "tool-call",
       receivedAt: at(2),
       payloadJson: JSON.stringify({
@@ -147,6 +176,128 @@ test("session update reducer backfills missing tool-call sequences from update r
       : undefined,
     2,
   );
+});
+
+test("session update reducer keeps thought and content messages distinct with a shared provider id", () => {
+  const finalState = [
+    { type: "message" as const, message: thought("assistant-turn-1", "checking", 1) },
+    { type: "message" as const, message: assistant("assistant-turn-1", "answer", 2) },
+    { type: "message" as const, message: thought("assistant-turn-1", "checking files", 3) },
+  ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
+
+  assert.deepEqual(
+    finalState.messages.map((message) => ({
+      id: message.id,
+      kind: message.contentKind ?? "content",
+      sequence: message.sequence,
+      text: message.text,
+    })),
+    [
+      {
+        id: "assistant-turn-1",
+        kind: "thought",
+        sequence: 1,
+        text: "checking files",
+      },
+      {
+        id: "assistant-turn-1:content",
+        kind: "content",
+        sequence: 2,
+        text: "answer",
+      },
+    ],
+  );
+});
+
+test("session update reducer preserves the first output sequence on later body updates", () => {
+  const events: SessionRuntimeEvent[] = [
+    { type: "command-output" as const, chunk: output("output-1", "preview", 4) },
+    {
+      type: "command-output" as const,
+      chunk: {
+        ...output("output-1", "preview", 8),
+        contentRef: {
+          id: "body-1",
+          uri: "tiller://session-output/body-1",
+          mimeType: "text/plain; charset=utf-8",
+          byteSize: 4096,
+          sha256: "abc123",
+        },
+      },
+    },
+  ];
+  const finalState = events.reduce(
+    applySessionRuntimeEventToState,
+    createEmptySessionUpdateReducerState(),
+  );
+
+  assert.equal(finalState.outputs[0]?.sequence, 4);
+  assert.equal(finalState.outputs[0]?.timestamp, at(4));
+  assert.equal(finalState.outputs[0]?.contentRef?.id, "body-1");
+});
+
+test("session update reducer does not downgrade terminal tool calls", () => {
+  const finalState = [
+    { type: "tool-call" as const, toolCall: toolCall("tool-terminal", "completed", 2, "ok") },
+    { type: "tool-call" as const, toolCall: toolCall("tool-terminal", "running", 9) },
+  ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
+
+  assert.equal(finalState.toolCalls[0]?.status, "completed");
+  assert.equal(finalState.toolCalls[0]?.sequence, 2);
+  assert.equal(finalState.toolCalls[0]?.output, "ok");
+});
+
+test("session update reducer does not let legacy repair records overwrite canonical message timestamps", () => {
+  const sessionId = "session-canonical-timestamp";
+  const canonicalTimestamp = "2026-07-08T04:45:06.316Z";
+  const legacyRepairTimestamp = "2026-07-07T17:12:51.998Z";
+  const records: SessionUpdateRecord[] = [
+    {
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 1,
+      source: "acp_load_replay",
+      updateType: "message",
+      receivedAt: canonicalTimestamp,
+      payloadJson: JSON.stringify({
+        type: "message",
+        message: {
+          id: "user-1",
+          role: "user",
+          text: "保持原始时间线",
+          timestamp: canonicalTimestamp,
+          sequence: 1,
+        },
+      }),
+    },
+    {
+      sessionId,
+      runtimeSessionId: "runtime-1",
+      providerId: "codex",
+      sequence: 2,
+      source: "agent_transcript_repair",
+      updateType: "message",
+      receivedAt: legacyRepairTimestamp,
+      payloadJson: JSON.stringify({
+        type: "message",
+        message: {
+          id: "user-1",
+          role: "user",
+          text: "保持原始时间线",
+          timestamp: legacyRepairTimestamp,
+          sequence: 1,
+        },
+      }),
+    },
+  ];
+
+  const finalState = records.reduce(
+    applySessionUpdateRecordToState,
+    createEmptySessionUpdateReducerState(),
+  );
+
+  assert.equal(finalState.messages[0]?.timestamp, canonicalTimestamp);
 });
 
 test("session update reducer keeps colliding user and assistant message ids distinct", () => {
@@ -333,7 +484,7 @@ test("session update reducer replaces repeated tool input snapshots instead of c
   );
 });
 
-test("session update reducer lets later search repairs override stale shell classifications", () => {
+test("session update reducer preserves the first mapper-assigned ToolCall kind", () => {
   const finalState = [
     {
       type: "tool-call" as const,
@@ -363,7 +514,7 @@ test("session update reducer lets later search repairs override stale shell clas
     },
   ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
 
-  assert.equal(finalState.toolCalls[0]?.kind, "search");
+  assert.equal(finalState.toolCalls[0]?.kind, "shell");
   assert.equal(finalState.toolCalls[0]?.title, "Grep");
 });
 

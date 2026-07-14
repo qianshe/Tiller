@@ -1,11 +1,18 @@
 export function mergeStreamingText(
   currentText: string | undefined,
   incomingText: string | undefined,
+  mode: "auto" | "delta" | "snapshot" = "auto",
 ) {
   if (!incomingText) {
     return currentText;
   }
   if (!currentText) {
+    return incomingText;
+  }
+  if (mode === "delta") {
+    return `${currentText}${incomingText}`;
+  }
+  if (mode === "snapshot") {
     return incomingText;
   }
   if (currentText === incomingText) {

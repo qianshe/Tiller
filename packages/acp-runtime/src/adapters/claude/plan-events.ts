@@ -21,10 +21,10 @@ type ClaudeLivePlanState = {
   toolCallTaskIds: Map<string, string>;
 };
 
-export function createClaudePlanUpdateMapper() {
+export function createClaudePlanUpdateProjector() {
   const sessions = new Map<string, ClaudeLivePlanState>();
 
-  return (
+  const mapUpdate = (
     context: AcpSessionUpdateProjectionContext,
   ): AcpSessionUpdateProjection | null => {
     if (context.updateType !== "tool_call" && context.updateType !== "tool_call_update") {
@@ -67,6 +67,13 @@ export function createClaudePlanUpdateMapper() {
         updatedAt: context.now ?? new Date().toISOString(),
       },
     };
+  };
+
+  return {
+    mapUpdate,
+    disposeSession: (sessionId: string) => {
+      sessions.delete(sessionId);
+    },
   };
 }
 

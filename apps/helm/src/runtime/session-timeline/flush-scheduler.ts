@@ -62,9 +62,9 @@ export function createSessionTimelineFlushScheduler(
       return;
     }
     const worker = deps.workers.forSession(sessionId);
-    const batches = worker.flush();
-    for (const batch of batches) {
-      deps.dispatcher.dispatch(sessionId, batch);
+    const commits = worker.flush();
+    for (const commit of commits) {
+      deps.dispatcher.dispatch(sessionId, commit.batch, commit.updates);
     }
   }
 

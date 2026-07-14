@@ -1,15 +1,13 @@
 import type { AcpAgentAdapter } from "../types";
 import { isCommandNamed, resolveDefaultLaunch } from "../shared";
 import { applyCodexSessionLaunchArgs } from "../session-config";
-import { expandCodexRuntimeEvent, summarizeCodexCompactionSignal } from "./compaction-events";
-import { extractCodexPlanFromToolCall, isCodexPlanToolCall } from "./plan-events";
-import { mapCodexSessionUpdate } from "./session-updates";
-import { readCodexTranscriptMessagesFromDisk } from "./transcript/history";
-import { readCodexTranscriptPlanFromDisk } from "./transcript/plan";
-import { readCodexTranscriptToolCallsFromDisk } from "./transcript/tool-calls";
+import { expandCodexRuntimeEvent, mapCodexCompactionUpdate, summarizeCodexCompactionSignal } from "./compaction-events";
+import { extractCodexPlanFromToolCall, isCodexPlanToolCall, mapCodexPlanUpdate } from "./plan-events";
 import { normalizeCodexToolCall } from "./tool-calls";
+import { createCodexPromptToolCallObserver } from "./prompt-tool-calls";
 
 export function createCodexAcpAdapter(): AcpAgentAdapter {
+  const promptToolCalls = createCodexPromptToolCallObserver();
   return {
     id: "codex",
     isMatch: (provider) => provider.id === "codex" || isCommandNamed(provider.command, "codex-acp"),
@@ -26,15 +24,13 @@ export function createCodexAcpAdapter(): AcpAgentAdapter {
       providerId: provider.id,
       message: "Codex ACP does not expose remote session deletion yet.",
     }),
-    mapSessionUpdate: mapCodexSessionUpdate,
+    mapMessageUpdate: mapCodexCompactionUpdate,
+    mapToolCallUpdate: mapCodexPlanUpdate,
+    beginPromptObservation: (context) => promptToolCalls.begin(context),
+    pollPromptEvents: (context) => promptToolCalls.poll(context),
+    disposeSession: (sessionId) => promptToolCalls.dispose(sessionId),
     expandRuntimeEvent: expandCodexRuntimeEvent,
     normalizeToolCall: ({ toolCall, update }) => normalizeCodexToolCall(toolCall, update),
-    readTranscriptPlan: ({ runtimeSessionId, cwd }) =>
-      readCodexTranscriptPlanFromDisk({ runtimeSessionId, cwd }),
-    readTranscriptMessages: ({ runtimeSessionId, cwd }) =>
-      readCodexTranscriptMessagesFromDisk({ runtimeSessionId, cwd }),
-    readTranscriptToolCalls: ({ runtimeSessionId, cwd }) =>
-      readCodexTranscriptToolCallsFromDisk({ runtimeSessionId, cwd }),
     extractPlanFromToolCall: extractCodexPlanFromToolCall,
     isPlanToolCall: isCodexPlanToolCall,
     summarizeCompactionSignal: summarizeCodexCompactionSignal,

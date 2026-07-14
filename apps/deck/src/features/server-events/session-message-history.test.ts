@@ -115,12 +115,14 @@ test("replaceInitialMessageHistory keeps earlier repeated local user prompts whe
       role: "user",
       text: "继续",
       timestamp: "2026-05-29T10:00:00.000Z",
+      sequence: 1,
     }),
     message({
       id: "local-user-2",
       role: "user",
       text: "继续",
       timestamp: "2026-05-29T10:00:03.000Z",
+      sequence: 3,
     }),
   ];
   const loaded = [
@@ -129,6 +131,7 @@ test("replaceInitialMessageHistory keeps earlier repeated local user prompts whe
       role: "user",
       text: "继续",
       timestamp: "2026-05-29T10:00:03.000Z",
+      sequence: 3,
     }),
   ];
 
@@ -147,24 +150,28 @@ test("replaceInitialMessageHistory preserves local assistant segments when loade
       role: "user",
       text: "先看一下",
       timestamp: "2026-05-29T10:00:00.000Z",
+      sequence: 1,
     }),
     message({
       id: "local-assistant-1",
       role: "assistant",
       text: "先读相关文件。",
       timestamp: "2026-05-29T10:00:01.000Z",
+      sequence: 2,
     }),
     message({
       id: "local-assistant-2",
       role: "assistant",
       text: "再跑一轮测试。",
       timestamp: "2026-05-29T10:00:02.000Z",
+      sequence: 3,
     }),
     message({
       id: "local-user-2",
       role: "user",
       text: "继续",
       timestamp: "2026-05-29T10:00:03.000Z",
+      sequence: 4,
     }),
   ];
   const loaded = [
@@ -173,12 +180,14 @@ test("replaceInitialMessageHistory preserves local assistant segments when loade
       role: "user",
       text: "先看一下",
       timestamp: "2026-05-29T10:00:00.000Z",
+      sequence: 1,
     }),
     message({
       id: "provider-user-2",
       role: "user",
       text: "继续",
       timestamp: "2026-05-29T10:00:03.000Z",
+      sequence: 4,
     }),
   ];
 

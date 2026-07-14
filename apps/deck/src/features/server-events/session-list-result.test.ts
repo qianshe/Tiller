@@ -51,3 +51,62 @@ test("deriveSessionListResult merges paged sessions and derives config and comma
   assert.deepEqual(result.availableCommands.bySession.incoming, incoming.availableCommands);
   assert.deepEqual(result.availableCommands.byAgent.codex, incoming.availableCommands);
 });
+
+test("deriveSessionListResult keeps canonical live status over stale lifecycle inventory", () => {
+  const result = deriveSessionListResult({
+    currentSessions: [],
+    liveStatesBySession: {
+      resumed: {
+        sequence: 42,
+        status: {
+          runtimeStatus: "idle",
+          effectiveStatus: "idle",
+          pendingApprovalCount: 0,
+        },
+      },
+    },
+    payload: {
+      sessions: [session({
+        id: "resumed",
+        updatedAt: "2026-05-29T00:03:00.000Z",
+        status: "starting",
+      })],
+    },
+  });
+
+  assert.equal(result.nextSessions[0]?.status, "idle");
+  assert.equal(result.nextStatuses.resumed, "idle");
+});
+
+test("deriveSessionListResult preserves listed config when canonical config is uninitialized", () => {
+  const configOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "cpa-oai/gpt-5.5",
+      options: [{ value: "cpa-oai/gpt-5.5", label: "GPT-5.5" }],
+    },
+  ];
+  const result = deriveSessionListResult({
+    currentSessions: [],
+    liveStatesBySession: {
+      resumed: {
+        sequence: 1496,
+        config: { configOptions: [], modelOptions: [] },
+      },
+    },
+    payload: {
+      sessions: [session({
+        id: "resumed",
+        updatedAt: "2026-07-13T15:15:45.133Z",
+        model: "cpa-oai/gpt-5.5",
+        configOptions,
+      })],
+    },
+  });
+
+  assert.equal(result.nextSessions[0]?.model, "cpa-oai/gpt-5.5");
+  assert.deepEqual(result.nextSessions[0]?.configOptions, configOptions);
+  assert.deepEqual(result.configOptionsBySession.resumed, configOptions);
+});

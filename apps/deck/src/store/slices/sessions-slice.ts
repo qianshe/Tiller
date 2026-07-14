@@ -1,6 +1,7 @@
 import type {
   AvailableCommand,
   SessionConfigOption,
+  SessionLiveStateSnapshot,
   SessionPromptQueueSnapshot,
   SessionStatus,
   SessionSummary,
@@ -40,6 +41,14 @@ export type SessionPromptQueuesUpdater =
   | ((
       current: Record<string, SessionPromptQueueSnapshot>,
     ) => Record<string, SessionPromptQueueSnapshot>);
+export type SessionLiveStatesUpdater =
+  | Record<string, SessionLiveStateSnapshot>
+  | ((
+      current: Record<string, SessionLiveStateSnapshot>,
+    ) => Record<string, SessionLiveStateSnapshot>);
+export type SessionLiveStateSequencesUpdater =
+  | Record<string, number>
+  | ((current: Record<string, number>) => Record<string, number>);
 export type AgentAvailableCommandsUpdater =
   | Record<string, AvailableCommand[]>
   | ((
@@ -78,6 +87,8 @@ export type SessionsSlice = {
   sessionConfigOptions: Record<string, SessionConfigOption[]>;
   sessionAvailableCommands: Record<string, AvailableCommand[]>;
   promptQueues: Record<string, SessionPromptQueueSnapshot>;
+  sessionLiveStates: Record<string, SessionLiveStateSnapshot>;
+  sessionLiveStateSequences: Record<string, number>;
   agentAvailableCommands: Record<string, AvailableCommand[]>;
   activeSessionId: string | null;
   openChatSessionIds: string[];
@@ -94,6 +105,8 @@ export type SessionsSlice = {
   ) => void;
   setPromptQueues: (updater: SessionPromptQueuesUpdater) => void;
   setPromptQueue: (sessionId: string, queue: SessionPromptQueueSnapshot) => void;
+  setSessionLiveStates: (updater: SessionLiveStatesUpdater) => void;
+  setSessionLiveStateSequences: (updater: SessionLiveStateSequencesUpdater) => void;
   setAgentAvailableCommands: (
     updater: AgentAvailableCommandsUpdater,
   ) => void;
@@ -197,6 +210,8 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
   sessionConfigOptions: {},
   sessionAvailableCommands: {},
   promptQueues: {},
+  sessionLiveStates: {},
+  sessionLiveStateSequences: {},
   agentAvailableCommands: readAgentAvailableCommands(),
   activeSessionId: null,
   openChatSessionIds: [],
@@ -243,6 +258,18 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
   setPromptQueue: (sessionId, queue) =>
     set((state) => ({
       promptQueues: { ...state.promptQueues, [sessionId]: queue },
+    })),
+  setSessionLiveStates: (updater) =>
+    set((state) => ({
+      sessionLiveStates:
+        typeof updater === "function" ? updater(state.sessionLiveStates) : updater,
+    })),
+  setSessionLiveStateSequences: (updater) =>
+    set((state) => ({
+      sessionLiveStateSequences:
+        typeof updater === "function"
+          ? updater(state.sessionLiveStateSequences)
+          : updater,
     })),
   setAgentAvailableCommands: (updater) =>
     set((state) => {

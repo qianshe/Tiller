@@ -75,7 +75,7 @@ test("worktree model blocks sending while historical session is restoring", () =
   assert.match(model.activeSessionRestoreGate.message, /正在恢复 ACP 会话/);
 });
 
-test("worktree model marks composer model controls loading while ACP session is restoring", () => {
+test("worktree model keeps ACP restoration separate from model loading", () => {
   const model = buildMissionWorktreeModel(baseInput({
     activeSession: {
       ...baseInput().activeSession,
@@ -89,7 +89,8 @@ test("worktree model marks composer model controls loading while ACP session is 
     draftModelLoading: false,
   }));
 
-  assert.equal(model.composerModelLoading, true);
+  assert.equal(model.composerModelLoading, false);
+  assert.equal(model.composerSessionRestoring, true);
 });
 
 
@@ -254,6 +255,91 @@ test("worktree model uses the active session project worktrees for inspector sco
   assert.deepEqual(
     model.filteredWorktrees.map((worktree: { name: string }) => worktree.name),
     ["main", "test-worktree"],
+  );
+});
+
+test("worktree model merges canonical timeline history with live tool activity", () => {
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession: {
+      ...baseInput().activeSession,
+      status: "running",
+    },
+    statuses: {
+      "session-1": "running",
+    },
+    sessionTimeline: {
+      "session-1": [
+        {
+          id: "tool:call-1",
+          kind: "tool_call",
+          toolCall: {
+            id: "call-1",
+            kind: "read",
+            title: "Read",
+            status: "completed",
+            timestamp: "2026-07-09T10:00:01.000Z",
+            updatedAt: "2026-07-09T10:00:01.000Z",
+            sequence: 1,
+          },
+          timestamp: "2026-07-09T10:00:01.000Z",
+          updatedAt: "2026-07-09T10:00:01.000Z",
+          sequence: 1,
+        },
+        {
+          id: "output:call-1:2",
+          kind: "command_output",
+          commandId: "call-1",
+          output: {
+            id: "output-1",
+            commandId: "call-1",
+            stream: "stdout",
+            text: "historical stdout",
+            timestamp: "2026-07-09T10:00:02.000Z",
+            sequence: 2,
+          },
+          timestamp: "2026-07-09T10:00:02.000Z",
+          updatedAt: "2026-07-09T10:00:02.000Z",
+          sequence: 2,
+        },
+      ],
+    },
+    toolCalls: {
+      "session-1": [
+        {
+          id: "call-2",
+          kind: "shell",
+          title: "Shell",
+          status: "running",
+          timestamp: "2026-07-09T10:00:03.000Z",
+          updatedAt: "2026-07-09T10:00:03.000Z",
+          sequence: 3,
+        },
+      ],
+    },
+    outputs: {
+      "session-1": [
+        {
+          id: "output-2",
+          commandId: "call-2",
+          stream: "stdout",
+          text: "live stdout",
+          timestamp: "2026-07-09T10:00:04.000Z",
+          sequence: 4,
+        },
+      ],
+    },
+  }));
+
+  assert.deepEqual(
+    model.activeToolCalls.map((toolCall: { id: string; status: string }) => [toolCall.id, toolCall.status]),
+    [
+      ["call-1", "completed"],
+      ["call-2", "running"],
+    ],
+  );
+  assert.deepEqual(
+    model.activeOutputs.map((output: { id: string }) => output.id),
+    ["output-1", "output-2"],
   );
 });
 

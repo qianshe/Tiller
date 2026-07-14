@@ -63,10 +63,16 @@ export type {
   AcpSessionConfigState,
   AcpSessionRestoreStrategy,
   ProviderCleanupResult,
+  MappedSessionRuntimeEvents,
   SessionRuntimeEvent,
 } from "./runtime-types";
 
-export { mapSessionUpdateNotification, normalizeProviderCleanupResult, summarizeSessionUpdateNotification } from "./events";
+export {
+  mapSessionUpdateNotification,
+  mapSessionUpdateNotificationBatch,
+  normalizeProviderCleanupResult,
+  summarizeSessionUpdateNotification,
+} from "./events";
 export {
   sanitizeProtocolLogPayload,
   type AcpProtocolLoggingOptions,
@@ -88,9 +94,6 @@ export {
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
   resolveAdapterCompactionDetailsVisibility,
-  readAdapterTranscriptMessages,
-  readAdapterTranscriptToolCalls,
-  readAdapterTranscriptPlan,
   resolveAdapterRequestTimeout,
   resolveAdapterPluginManifest,
   type AcpAgentAdapter,

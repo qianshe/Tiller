@@ -48,7 +48,9 @@ export function resolveBroadcastToolCall<T extends BroadcastToolCallLike>(
   }
   return {
     ...persisted,
-    kind: resolveBroadcastToolCallKind(persisted.kind, incoming.kind),
+    // ACP adapters assign the category once. Later snapshots only enrich the
+    // same entity; they must not create a second classification truth.
+    kind: persisted.kind ?? incoming.kind,
     title: resolveBroadcastToolCallTitle(
       persisted.title,
       incoming.title,
@@ -59,24 +61,6 @@ export function resolveBroadcastToolCall<T extends BroadcastToolCallLike>(
     ...(incoming.output !== undefined ? { output: incoming.output } : {}),
     ...(incoming.input !== undefined ? { input: incoming.input } : {}),
   };
-}
-
-function resolveBroadcastToolCallKind(
-  currentKind: string | undefined,
-  incomingKind: string | undefined,
-) {
-  if (!incomingKind) {
-    return currentKind;
-  }
-  if (!currentKind) {
-    return incomingKind;
-  }
-  if (currentKind === "shell" && incomingKind === "search") {
-    return incomingKind;
-  }
-  return toolCallKindRank(incomingKind) > toolCallKindRank(currentKind)
-    ? incomingKind
-    : currentKind;
 }
 
 function resolveBroadcastToolCallTitle(
@@ -98,28 +82,6 @@ function isInformativeToolCallTitle(title: string | undefined, id: string | unde
       !/^call_[A-Za-z0-9]+$/u.test(normalized) &&
       !/^Tool call\b/u.test(normalized),
   );
-}
-
-function toolCallKindRank(kind: string | undefined) {
-  switch (kind) {
-    case "mcp":
-      return 4;
-    case "read":
-    case "write":
-    case "search":
-    case "shell":
-    case "skill":
-    case "subagent":
-      return 3;
-    case "think":
-    case "todo":
-    case "fetch":
-      return 2;
-    case "tool":
-      return 1;
-    default:
-      return 0;
-  }
 }
 
 export function oneLine(value: string, maxLength = 220) {

@@ -17,15 +17,17 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
   }
 
   const source = update.toolCall ?? update.tool_call ?? update.tool ?? update.terminal ?? update;
-  const parsedToolInput = parseToolInput(resolveRawToolInput(source, update));
+  const rawToolInput = resolveRawToolInput(source, update);
+  const rawToolOutput = resolveRawToolOutput(source, update);
+  const parsedToolInput = parseToolInput(rawToolInput);
   const id = stringFrom(source.id ?? source.toolCallId ?? source.tool_call_id ?? source.callId ?? update.id) ?? `${sessionId}-tool-${Date.now()}`;
   const commandId = stringFrom(source.commandId ?? source.command_id ?? source.terminalId ?? update.commandId);
   const toolName = extractToolName(source, update, parsedToolInput);
   const rawTitle = stringFrom(source.title ?? source.label ?? source.displayName ?? source.display_name ?? source.name ?? source.toolName ?? source.tool_name ?? source.tool ?? source.command ?? update.title ?? update.name);
-  const output = stringifyToolPayload(source.output ?? source.result ?? source.rawOutput ?? source.raw_output ?? source.content ?? source.text ?? source.state?.output);
-  const input = stringifyToolPayload(source.input ?? source.arguments ?? source.args ?? source.params ?? source.command ?? source.rawInput ?? source.raw_input ?? source.state?.input);
+  const output = stringifyToolPayload(rawToolOutput);
+  const input = stringifyToolPayload(rawToolInput);
   const mcp = resolveAgentToolCallMcp({ input: parsedToolInput, toolName, rawTitle });
-  const kind = inferToolCallKind(type, source, rawTitle);
+  const kind = inferToolCallKind(type, source, rawTitle, rawToolInput);
   const title = resolveToolTitle(rawTitle, toolName, commandId, id, input, kind, mcp);
   const now = timestamp();
 
@@ -167,8 +169,13 @@ function primitiveStringFrom(value: unknown): string | undefined {
   return undefined;
 }
 
-function inferToolCallKind(updateType: string, source: any, rawTitle?: string): AgentToolCall["kind"] {
-  const toolInput = parseToolInput(resolveRawToolInput(source, source));
+function inferToolCallKind(
+  updateType: string,
+  source: any,
+  rawTitle?: string,
+  rawToolInput?: unknown,
+): AgentToolCall["kind"] {
+  const toolInput = parseToolInput(rawToolInput ?? resolveRawToolInput(source, source));
   const toolName = toolNameFromToolInput(toolInput);
   const structuredKind = inferKindFromStructuredInput(toolInput);
   const explicitKind = resolveExplicitToolCallKind(source);
@@ -204,6 +211,8 @@ function inferToolCallKind(updateType: string, source: any, rawTitle?: string): 
     .toLowerCase();
 
   if (explicitKind === "subagent") return "subagent";
+  if (/\b(?:lsp[_-]?)?diagnostics?\b/u.test(descriptorRaw)) return "diagnostics";
+  if (/\b(?:todo[_-]?write|todowrite)\b/u.test(descriptorRaw)) return "todo";
   if (explicitKind === "shell" && structuredKind === "search") return "search";
   if (explicitKind && explicitKind !== "tool" && explicitKind !== "unknown") return explicitKind;
   if (isSkillToolInput(toolInput) || /(^|[_-])skill(s)?($|[_-])|execute_skill|load_skill/u.test(raw)) return "skill";
@@ -232,6 +241,8 @@ function resolveExplicitToolCallKind(source: any): AgentToolCall["kind"] | undef
     mcp: "mcp",
     skill: "skill",
     read: "read",
+    diagnostic: "diagnostics",
+    diagnostics: "diagnostics",
     write: "write",
     search: "search",
     shell: "shell",
@@ -295,25 +306,60 @@ function extractPathFromInput(input: string | undefined): string | undefined {
 }
 
 function resolveRawToolInput(source: any, update: any) {
-  return (
-    source.rawInput ??
-    source.raw_input ??
-    update.rawInput ??
-    update.raw_input ??
+  const rawInput = source.rawInput ?? source.raw_input ?? update.rawInput ?? update.raw_input;
+  const fallbackInput =
     source.input ??
     source.arguments ??
     source.args ??
     source.params ??
+    source.command ??
     source.state?.input ??
     update.input ??
     update.arguments ??
     update.args ??
-    update.params
-  );
+    update.params ??
+    update.command;
+  return resolvePreferredToolPayload(rawInput, fallbackInput);
+}
+
+function resolveRawToolOutput(source: any, update: any) {
+  const rawOutput = source.rawOutput ?? source.raw_output ?? update.rawOutput ?? update.raw_output;
+  const fallbackOutput =
+    source.output ??
+    source.result ??
+    source.content ??
+    source.text ??
+    source.state?.output ??
+    update.output ??
+    update.result ??
+    update.content ??
+    update.text ??
+    update.state?.output;
+  return resolvePreferredToolPayload(rawOutput, fallbackOutput);
+}
+
+function resolvePreferredToolPayload(primary: unknown, fallback: unknown) {
+  return hasMeaningfulToolPayload(primary) ? primary : fallback ?? primary;
+}
+
+function hasMeaningfulToolPayload(value: unknown) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return true;
 }
 
 const KIND_TITLES: Record<string, string> = {
-  read: "Read", write: "Write", shell: "Shell", search: "Search",
+  read: "Read", diagnostics: "Diagnostics", write: "Write", shell: "Shell", search: "Search",
   fetch: "Fetch", skill: "Skill", think: "Thinking", todo: "Todo",
 };
 

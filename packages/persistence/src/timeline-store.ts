@@ -1,7 +1,5 @@
 import type { SessionTimelineBatch } from "@tiller/shared";
 import {
-  isLaterReplayDuplicate,
-  normalizeComparableReplayText,
   sortAssistantTimelineChunks,
   type SessionTimelineEntry,
 } from "@tiller/shared";
@@ -11,7 +9,7 @@ export type SessionTimelinePageOptions = {
   limit?: number;
   entryLimit?: number;
   before?: string;
-  window?: "entry" | "message";
+  window?: "entry" | "message" | "turn";
 };
 
 export type SessionTimelinePage = {
@@ -60,14 +58,10 @@ export function pageSessionTimeline(
 }
 
 function normalizeTimelineEntriesForPage(entries: SessionTimelineEntry[]) {
-  const normalizedEntries = entries.map((entry) => entry.kind === "assistant_message"
+  return entries.map((entry) => entry.kind === "assistant_message"
     ? { ...entry, chunks: sortAssistantTimelineChunks(entry.chunks) }
     : entry,
   );
-  const duplicateIds = collectEquivalentReplayDuplicateTimelineEntryIds(normalizedEntries);
-  return duplicateIds.size
-    ? normalizedEntries.filter((entry) => !duplicateIds.has(entry.id))
-    : normalizedEntries;
 }
 
 function resolvePageStartIndex(
@@ -75,7 +69,18 @@ function resolvePageStartIndex(
   limit: number,
   options: SessionTimelinePageOptions,
 ) {
-  if (options.window !== "message") {
+  if (options.window === "turn") {
+    const turnAnchors = buildSessionTimelineMessageGroupAnchors(
+      entries.map((entry, position) => ({ position, entry })),
+    ).filter((anchor) => anchor.groupKind === "user");
+    if (turnAnchors.length) {
+      return turnAnchors.length <= limit
+        ? 0
+        : turnAnchors[turnAnchors.length - limit]?.startPosition ?? 0;
+    }
+  }
+
+  if (options.window !== "message" && options.window !== "turn") {
     return Math.max(entries.length - limit, 0);
   }
 
@@ -93,76 +98,6 @@ function resolvePageStartIndex(
     MAX_TIMELINE_PAGE_LIMIT,
   );
   return Math.max(messageStartIndex, entries.length - entryLimit, 0);
-}
-
-type ReplayDuplicateTimelineObservation = {
-  id: string;
-  index: number;
-  role: "user" | "assistant";
-  text: string;
-  timestamp: string;
-  sequence: number;
-};
-
-function collectEquivalentReplayDuplicateTimelineEntryIds(entries: SessionTimelineEntry[]) {
-  const duplicateIds = new Set<string>();
-  const observations = entries
-    .map((entry, index) => toReplayDuplicateTimelineObservation(entry, index))
-    .filter((entry): entry is ReplayDuplicateTimelineObservation => Boolean(entry))
-    .sort((left, right) => {
-      const timestampDelta = Date.parse(left.timestamp) - Date.parse(right.timestamp);
-      return timestampDelta === 0 ? left.index - right.index : timestampDelta;
-    });
-  const seenBySignature = new Map<string, ReplayDuplicateTimelineObservation[]>();
-  for (const observation of observations) {
-    const signature = `${observation.role}\u001f${observation.text}`;
-    const seen = seenBySignature.get(signature) ?? [];
-    if (seen.some((candidate) => isLaterReplayDuplicate(candidate, observation))) {
-      duplicateIds.add(observation.id);
-      continue;
-    }
-    seen.push(observation);
-    seenBySignature.set(signature, seen);
-  }
-  return duplicateIds;
-}
-
-function toReplayDuplicateTimelineObservation(
-  entry: SessionTimelineEntry,
-  index: number,
-): ReplayDuplicateTimelineObservation | null {
-  if (entry.kind === "user_message") {
-    return typeof entry.message.sequence === "number" && entry.message.text.trim()
-      ? {
-          id: entry.id,
-          index,
-          role: "user",
-          text: normalizeComparableReplayText(entry.message.text),
-          timestamp: entry.message.timestamp,
-          sequence: entry.message.sequence,
-        }
-      : null;
-  }
-  if (entry.kind !== "assistant_message") {
-    return null;
-  }
-  const text = entry.chunks
-    .filter((chunk) => chunk.kind === "content")
-    .map((chunk) => chunk.text)
-    .join("")
-    .trim();
-  const sequence = entry.sequence ?? entry.chunks.find((chunk) => typeof chunk.sequence === "number")?.sequence;
-  const timestamp = entry.chunks.find((chunk) => chunk.kind === "content" && chunk.text.trim())?.timestamp ?? entry.timestamp;
-  return typeof sequence === "number" && text
-    ? {
-        id: entry.id,
-        index,
-        role: "assistant",
-        text: normalizeComparableReplayText(text),
-        timestamp,
-        sequence: sequence,
-      }
-    : null;
 }
 
 function isAssistantContentWindowAnchor(
@@ -211,9 +146,10 @@ export function resolveSessionTimelineMessageGroupId(entry: SessionTimelineEntry
 
 export function buildSessionTimelineMessageGroupAnchors(
   positionedEntries: SessionTimelinePositionedEntry[],
+  options: { seenGroupIds?: Iterable<string> } = {},
 ): SessionTimelineMessageGroupAnchor[] {
   const anchors: SessionTimelineMessageGroupAnchor[] = [];
-  const seenGroupIds = new Set<string>();
+  const seenGroupIds = new Set<string>(options.seenGroupIds);
   let pendingTranscriptStart: number | undefined;
 
   for (const { position, entry } of positionedEntries) {

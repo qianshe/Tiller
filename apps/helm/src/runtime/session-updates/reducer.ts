@@ -6,13 +6,13 @@ import type {
   CommandChunk,
   FileDiffSummary,
   SessionTimelineEntry,
+  SessionPromptQueueSnapshot,
   SessionUpdateRecord,
 } from "@tiller/shared";
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
   compactBinaryToolCallOutput,
-  sortSessionTimelineEntries,
 } from "@tiller/shared";
 import {
   buildSessionCompactionEntryFromProvider,
@@ -28,6 +28,16 @@ export type SessionUpdateReducerState = {
   plan?: AgentPlan;
 };
 
+export type PersistedSessionEvent =
+  | SessionRuntimeEvent
+  | { type: "prompt-queue"; snapshot: SessionPromptQueueSnapshot }
+  | {
+      type: "approval-status";
+      approvalId: string;
+      status: "pending" | "resolving" | "expired";
+      updatedAt: string;
+    };
+
 export function createEmptySessionUpdateReducerState(): SessionUpdateReducerState {
   return {
     entries: [],
@@ -42,8 +52,8 @@ export function applySessionUpdateRecordToState(
   state: SessionUpdateReducerState,
   record: SessionUpdateRecord,
 ): SessionUpdateReducerState {
-  const event = parseSessionRuntimeEvent(record.payloadJson);
-  return event
+  const event = parsePersistedSessionEvent(record.payloadJson);
+  return event && event.type !== "prompt-queue" && event.type !== "approval-status"
     ? applySessionRuntimeEventToStateWithMeta(
       state,
       backfillSessionUpdateEventMeta(event, record),
@@ -62,15 +72,15 @@ export function applySessionRuntimeEventToState(
 function applySessionRuntimeEventToStateWithMeta(
   state: SessionUpdateReducerState,
   event: SessionRuntimeEvent,
-  meta?: Pick<SessionUpdateRecord, "providerId" | "sessionId" | "source">,
+  meta?: Pick<SessionUpdateRecord, "providerId" | "sessionId">,
 ): SessionUpdateReducerState {
   switch (event.type) {
     case "message":
-      return applyMessage(state, event.message, meta?.source);
+      return applyMessage(state, event.message);
     case "compaction":
       return applyCompaction(state, event, meta);
     case "tool-call":
-      return applyToolCall(state, event.toolCall, meta?.source);
+      return applyToolCall(state, event.toolCall);
     case "command-output":
       return applyCommandOutput(state, event.chunk, event.toolCall);
     case "diff-update":
@@ -104,7 +114,7 @@ function applyCompaction(
   upsertSessionCompactionEntry(entries, entry);
   return {
     ...state,
-    entries: sortSessionTimelineEntries(entries),
+    entries,
   };
 }
 
@@ -114,7 +124,7 @@ export function createSessionUpdateRecord(input: {
   providerId: string;
   sequence: number;
   source: SessionUpdateRecord["source"];
-  event: SessionRuntimeEvent;
+  event: PersistedSessionEvent;
   receivedAt?: string;
 }): SessionUpdateRecord {
   const event = normalizeSessionUpdateEvent(input.event);
@@ -133,10 +143,9 @@ export function createSessionUpdateRecord(input: {
 function applyMessage(
   state: SessionUpdateReducerState,
   message: AgentMessage,
-  source?: SessionUpdateRecord["source"],
 ): SessionUpdateReducerState {
   const resolvedMessage = resolveMessageIdentity(state.messages, message);
-  const messages = upsertMessage(state.messages, resolvedMessage, source);
+  const messages = upsertMessage(state.messages, resolvedMessage);
   const mergedMessage = messages.find((item) =>
     item.id === resolvedMessage.id && item.role === resolvedMessage.role
   ) ?? resolvedMessage;
@@ -144,17 +153,21 @@ function applyMessage(
   return {
     ...state,
     messages,
-    entries: sortSessionTimelineEntries(entries),
+    entries,
   };
 }
 
 function resolveMessageIdentity(messages: AgentMessage[], incoming: AgentMessage) {
-  const sameRole = messages.find((message) => message.id === incoming.id && message.role === incoming.role);
-  if (sameRole) {
+  const sameIdentity = messages.find((message) =>
+    message.id === incoming.id &&
+    message.role === incoming.role &&
+    resolveMessageContentKind(message) === resolveMessageContentKind(incoming)
+  );
+  if (sameIdentity) {
     return incoming;
   }
-  const otherRole = messages.find((message) => message.id === incoming.id);
-  if (!otherRole) {
+  const conflictingMessage = messages.find((message) => message.id === incoming.id);
+  if (!conflictingMessage) {
     return incoming;
   }
   const scopedId = resolveRoleScopedMessageId(messages, incoming);
@@ -162,12 +175,23 @@ function resolveMessageIdentity(messages: AgentMessage[], incoming: AgentMessage
 }
 
 function resolveRoleScopedMessageId(messages: AgentMessage[], message: AgentMessage) {
-  const baseId = `${message.id}:${message.role}`;
+  const hasSameRoleConflict = messages.some((item) =>
+    item.id === message.id && item.role === message.role
+  );
+  const baseId = hasSameRoleConflict
+    ? `${message.id}:${resolveMessageContentKind(message)}`
+    : `${message.id}:${message.role}`;
   let candidateId = baseId;
   let suffix = 2;
   while (true) {
     const current = messages.find((item) => item.id === candidateId);
-    if (!current || current.role === message.role) {
+    if (
+      !current ||
+      (
+        current.role === message.role &&
+        resolveMessageContentKind(current) === resolveMessageContentKind(message)
+      )
+    ) {
       return candidateId;
     }
     candidateId = `${baseId}:${suffix}`;
@@ -178,15 +202,14 @@ function resolveRoleScopedMessageId(messages: AgentMessage[], message: AgentMess
 function applyToolCall(
   state: SessionUpdateReducerState,
   toolCall: AgentToolCall,
-  source?: SessionUpdateRecord["source"],
 ): SessionUpdateReducerState {
-  const toolCalls = upsertToolCall(state.toolCalls, toolCall, source);
+  const toolCalls = upsertToolCall(state.toolCalls, toolCall);
   const mergedToolCall = toolCalls.find((item) => item.id === toolCall.id) ?? toolCall;
   const entries = appendToolCallToSessionTimeline([...state.entries], mergedToolCall);
   return {
     ...state,
     toolCalls,
-    entries: sortSessionTimelineEntries(entries),
+    entries,
   };
 }
 
@@ -204,9 +227,12 @@ function applyCommandOutput(
 function upsertMessage(
   messages: AgentMessage[],
   incoming: AgentMessage,
-  source?: SessionUpdateRecord["source"],
 ) {
-  const existingIndex = messages.findIndex((message) => message.id === incoming.id && message.role === incoming.role);
+  const existingIndex = messages.findIndex((message) =>
+    message.id === incoming.id &&
+    message.role === incoming.role &&
+    resolveMessageContentKind(message) === resolveMessageContentKind(incoming)
+  );
   if (existingIndex === -1) {
     return [...messages, incoming];
   }
@@ -216,18 +242,19 @@ function upsertMessage(
     ...current,
     ...incoming,
     text: mergeMessageText(current, incoming),
-    timestamp: shouldPreferIncomingMessageTimestamp(current, incoming, source)
-      ? incoming.timestamp
-      : current.timestamp,
+    timestamp: current.timestamp,
     sequence: current.sequence ?? incoming.sequence,
   };
   return next;
 }
 
+function resolveMessageContentKind(message: AgentMessage) {
+  return message.contentKind ?? "content";
+}
+
 function upsertToolCall(
   toolCalls: AgentToolCall[],
   incoming: AgentToolCall,
-  source?: SessionUpdateRecord["source"],
 ) {
   const existingIndex = toolCalls.findIndex((toolCall) => toolCall.id === incoming.id);
   if (existingIndex === -1) {
@@ -238,15 +265,14 @@ function upsertToolCall(
   next[existingIndex] = {
     ...current,
     ...incoming,
-    kind: resolveToolCallKind(current, incoming),
+    status: resolveToolCallStatus(current.status, incoming.status),
+    // ACP mapper owns ToolCall classification. Once an entity exists, later
+    // snapshots may enrich its status/body but must never reinterpret its kind.
+    kind: current.kind,
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
     id: current.id,
-    timestamp: shouldPreferIncomingToolCallTimestamp(current, incoming, source)
-      ? incoming.timestamp
-      : current.timestamp,
-    sequence: shouldPreferIncomingToolCallSequence(current, incoming, source)
-      ? incoming.sequence
-      : (current.sequence ?? incoming.sequence),
+    timestamp: current.timestamp,
+    sequence: current.sequence ?? incoming.sequence,
     input: incoming.input ?? current.input,
     output: mergeToolCallOutput(current, incoming),
   };
@@ -259,8 +285,28 @@ function upsertOutput(outputs: CommandChunk[], incoming: CommandChunk) {
     return [...outputs, incoming];
   }
   const next = [...outputs];
-  next[existingIndex] = incoming;
+  const current = next[existingIndex]!;
+  next[existingIndex] = {
+    ...current,
+    ...incoming,
+    id: current.id,
+    timestamp: current.timestamp,
+    sequence: current.sequence ?? incoming.sequence,
+  };
   return next;
+}
+
+function resolveToolCallStatus(
+  current: AgentToolCall["status"],
+  incoming: AgentToolCall["status"],
+) {
+  return isTerminalToolCallStatus(current) && !isTerminalToolCallStatus(incoming)
+    ? current
+    : incoming;
+}
+
+function isTerminalToolCallStatus(status: AgentToolCall["status"]) {
+  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 function mergeText(current: string | undefined, incoming: string | undefined) {
@@ -326,87 +372,6 @@ function mergeTextByLineOverlap(currentText: string, incomingText: string) {
   return null;
 }
 
-function resolveToolCallKind(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-) {
-  if (shouldPreferSearchRepair(current, incoming)) {
-    return incoming.kind;
-  }
-  return isHigherConfidenceToolKind(incoming.kind, current.kind) ? incoming.kind : current.kind;
-}
-
-function isHigherConfidenceToolKind(
-  incomingKind: AgentToolCall["kind"],
-  currentKind: AgentToolCall["kind"],
-) {
-  const rank: Record<AgentToolCall["kind"], number> = {
-    unknown: 0,
-    tool: 1,
-    think: 2,
-    todo: 2,
-    fetch: 2,
-    search: 2,
-    read: 3,
-    write: 3,
-    shell: 3,
-    skill: 3,
-    subagent: 3,
-    mcp: 4,
-  };
-  return rank[incomingKind] > rank[currentKind];
-}
-
-function shouldPreferSearchRepair(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-) {
-  return current.kind === "shell" &&
-    incoming.kind === "search" &&
-    Date.parse(incoming.updatedAt) >= Date.parse(current.updatedAt);
-}
-
-function shouldPreferIncomingMessageTimestamp(
-  current: AgentMessage,
-  incoming: AgentMessage,
-  source: SessionUpdateRecord["source"] | undefined,
-) {
-  if (
-    source !== "agent_transcript_repair" &&
-    source !== "local_history_repair"
-  ) {
-    return false;
-  }
-  if (normalizeComparableText(current.text) !== normalizeComparableText(incoming.text)) {
-    return false;
-  }
-  return exceedsTimestampSkew(current.timestamp, incoming.timestamp);
-}
-
-function shouldPreferIncomingToolCallTimestamp(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-  source: SessionUpdateRecord["source"] | undefined,
-) {
-  if (source !== "agent_transcript_repair") {
-    return false;
-  }
-  if (current.kind !== incoming.kind || current.title.trim() !== incoming.title.trim()) {
-    return false;
-  }
-  return exceedsTimestampSkew(current.timestamp, incoming.timestamp);
-}
-
-function shouldPreferIncomingToolCallSequence(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-  source: SessionUpdateRecord["source"] | undefined,
-) {
-  return source === "agent_transcript_repair" &&
-    current.sequence === undefined &&
-    incoming.sequence !== undefined;
-}
-
 function resolveToolCallTitle(
   currentTitle: string,
   incomingTitle: string,
@@ -427,27 +392,18 @@ function isFallbackToolCallTitle(title: string | undefined) {
   return /^Tool call\b/u.test(title?.trim() ?? "");
 }
 
-function normalizeComparableText(text: string) {
-  return text.replace(/[*_~`]/gu, "").replace(/\s+/gu, " ").trim();
-}
-
-function exceedsTimestampSkew(left: string, right: string) {
-  const delta = Math.abs(Date.parse(left) - Date.parse(right));
-  return Number.isFinite(delta) && delta > 60_000;
-}
-
-function parseSessionRuntimeEvent(payloadJson: string): SessionRuntimeEvent | null {
+export function parsePersistedSessionEvent(payloadJson: string): PersistedSessionEvent | null {
   try {
-    const parsed = JSON.parse(payloadJson) as Partial<SessionRuntimeEvent>;
+    const parsed = JSON.parse(payloadJson) as Partial<PersistedSessionEvent>;
     return typeof parsed?.type === "string"
-      ? normalizeSessionUpdateEvent(parsed as SessionRuntimeEvent)
+      ? normalizeSessionUpdateEvent(parsed as PersistedSessionEvent)
       : null;
   } catch {
     return null;
   }
 }
 
-function normalizeSessionUpdateEvent(event: SessionRuntimeEvent): SessionRuntimeEvent {
+function normalizeSessionUpdateEvent(event: PersistedSessionEvent): PersistedSessionEvent {
   if (event.type !== "tool-call") {
     return event;
   }

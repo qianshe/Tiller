@@ -60,6 +60,7 @@ function baseProps(overrides: Record<string, unknown> = {}) {
     draftModelLoading: false,
     draftModelConfigReady: true,
     modelSettingsLocked: false,
+    sessionRestoring: false,
     draftModelBaseOptions: [],
     resolveReasoningOptionsForModel: () => [],
     draftAllModelOptions: [],
@@ -235,16 +236,18 @@ test("composer locks model settings while new-session config is loading", () => 
   assert.match(html, /模型加载中/);
 });
 
-test("composer shows model loading while an active session is restoring", () => {
+test("composer labels active session restoration separately from model loading", () => {
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
     activeSession: { id: "session-1", model: "claude-haiku-4-5" },
     draftModelLoading: false,
     draftModelConfigReady: true,
     modelSettingsLocked: true,
+    sessionRestoring: true,
   })));
 
   assert.match(html, /aria-label="打开任务设置"[^>]*disabled=""/);
-  assert.match(html, /模型加载中/);
+  assert.match(html, /会话恢复中/);
+  assert.doesNotMatch(html, /模型加载中/);
 });
 
 test("composer hides model loading for active sessions that already know the model", () => {

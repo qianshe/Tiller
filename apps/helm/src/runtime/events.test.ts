@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type {
   AgentPlan,
   AgentMessage,
   AgentToolCall,
+  CanonicalSessionState,
   CommandChunk,
   PromptTraceEvent,
   SessionSummary,
@@ -14,9 +16,12 @@ import type {
 import type { HelmHandlerContext } from "../handlers/context";
 import type { LogLevel, TillerLogger } from "../logging/logger";
 import {
+  cleanupRuntimeEventState,
   handleRuntimeEvent,
   flushRuntimeUserEchoLogSummaryForTest,
   nextLiveEventSequenceForTest,
+  publishCanonicalSessionStateEvent,
+  publishPromptQueueState,
   seedLiveEventSequenceForSession,
 } from "./events.js";
 import { createLiveMessageBuffer } from "./live-message-buffer.js";
@@ -24,16 +29,21 @@ import { createSessionTimelineDispatcher } from "./session-timeline/dispatcher.j
 import { createSessionTimelineFlushScheduler } from "./session-timeline/flush-scheduler.js";
 import { createSessionLiveStateStore } from "./session-timeline/live-state-store.js";
 import { createSessionTimelineWorkerRegistry } from "./session-timeline/worker-registry.js";
+import { createSessionRuntimeEventState } from "./session/event/runtime-state.js";
+import { createSessionApprovalStateStore } from "./session/event/approval-store.js";
 
 type TestContextCapture = {
   broadcasts: unknown[];
   detailBroadcasts: unknown[];
   persisted: AgentMessage[];
+  observedTimelineMessages?: AgentMessage[];
   summaryUpdates?: SessionSummary[];
   timelineEntries?: SessionTimelineEntry[];
   sessionUpdates?: SessionUpdateRecord[];
   traceEvents?: PromptTraceEvent[];
   structuredLogs?: CapturedLog[];
+  sessionStoreListCalls?: number;
+  sequenceInitializationCalls?: number;
 };
 
 type CapturedLog = {
@@ -43,6 +53,10 @@ type CapturedLog = {
 };
 
 type ManualTimerHarness = ReturnType<typeof createManualTimerHarness>;
+
+test("runtime keeps no second unused session sequence implementation", () => {
+  assert.equal(existsSync(new URL("./session/event/sequencer.ts", import.meta.url)), false);
+});
 
 function createManualTimerHarness() {
   let nextHandle = 1;
@@ -98,7 +112,7 @@ function createCapturedLogger(capture: TestContextCapture, legacyLogs: string[])
     getLevel: () => "debug",
     setLevel: () => undefined,
     logFile: "captured.log",
-    close: () => undefined,
+    close: async () => undefined,
   };
 }
 
@@ -108,6 +122,31 @@ function structuredLogs(capture: TestContextCapture) {
 
 function findStructuredLog(capture: TestContextCapture, event: string) {
   return structuredLogs(capture).find((log) => log.event === event);
+}
+
+function syncObservedTimelineMessages(capture: TestContextCapture) {
+  capture.observedTimelineMessages = (capture.timelineEntries ?? []).flatMap((entry) => {
+    if (entry.kind === "user_message" || entry.kind === "system_message") {
+      return [entry.message];
+    }
+    if (entry.kind !== "assistant_message") {
+      return [];
+    }
+    const text = entry.chunks
+      .filter((chunk) => chunk.kind === "content")
+      .map((chunk) => chunk.text)
+      .join("");
+    return text
+      ? [{
+          id: entry.id,
+          role: "assistant" as const,
+          text,
+          timestamp: entry.timestamp,
+          sequence: entry.sequence,
+          streaming: entry.streaming,
+        }]
+      : [];
+  });
 }
 
 function createTestContext(
@@ -145,6 +184,7 @@ function createTestContext(
     ...summaryPatch,
   };
   const logger = createCapturedLogger(capture, logs);
+  capture.sessionUpdates ??= [];
   const agentId = summaryPatch.agentId ?? "opencode";
   const sessionTimelineStore = {
     append: (_sessionId: string, entry: SessionTimelineEntry) => {
@@ -152,15 +192,18 @@ function createTestContext(
         ...(capture.timelineEntries ?? []).filter((candidate) => candidate.id !== entry.id),
         entry,
       ];
+      syncObservedTimelineMessages(capture);
       return capture.timelineEntries;
     },
     replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
       capture.timelineEntries = entries;
+      syncObservedTimelineMessages(capture);
       return entries;
     },
     applyBatch: (_sessionId: string, batch: import("@tiller/shared").SessionTimelineBatch) => {
       if (batch.replace) {
         capture.timelineEntries = batch.entries;
+        syncObservedTimelineMessages(capture);
         return batch.entries;
       }
       const byId = new Map((capture.timelineEntries ?? []).map((entry) => [entry.id, entry]));
@@ -168,6 +211,26 @@ function createTestContext(
         byId.set(entry.id, entry);
       }
       capture.timelineEntries = [...byId.values()];
+      syncObservedTimelineMessages(capture);
+      return capture.timelineEntries;
+    },
+    commitBatch: (
+      _sessionId: string,
+      batch: import("@tiller/shared").SessionTimelineBatch,
+      updates: SessionUpdateRecord[],
+    ) => {
+      capture.sessionUpdates?.push(...updates);
+      if (batch.replace) {
+        capture.timelineEntries = batch.entries;
+        syncObservedTimelineMessages(capture);
+        return batch.entries;
+      }
+      const byId = new Map((capture.timelineEntries ?? []).map((entry) => [entry.id, entry]));
+      for (const entry of batch.entries) {
+        byId.set(entry.id, entry);
+      }
+      capture.timelineEntries = [...byId.values()];
+      syncObservedTimelineMessages(capture);
       return capture.timelineEntries;
     },
     list: () => capture.timelineEntries ?? [],
@@ -177,10 +240,29 @@ function createTestContext(
     }),
     remove: () => {
       capture.timelineEntries = [];
+      syncObservedTimelineMessages(capture);
     },
   };
   const sessionTimelineWorkers = createSessionTimelineWorkerRegistry();
-  const sessionLiveStateStore = createSessionLiveStateStore();
+  const sessionRuntimeEventState = createSessionRuntimeEventState();
+  const sessionStates = new Map<string, CanonicalSessionState>();
+  const sessionLiveStateStore = createSessionLiveStateStore({
+    get: (targetSessionId) => sessionStates.get(targetSessionId),
+    getAppliedSequence: (targetSessionId) => sessionStates.get(targetSessionId)?.sequence ?? 0,
+    replace: (targetSessionId, state) => {
+      sessionStates.set(targetSessionId, state);
+      return state;
+    },
+    commitUpdate: (update, state) => {
+      capture.sessionUpdates = [...(capture.sessionUpdates ?? []), update];
+      sessionStates.set(update.sessionId, state);
+      return state;
+    },
+    remove: (targetSessionId) => {
+      sessionStates.delete(targetSessionId);
+    },
+    close: async () => undefined,
+  });
   const sessionTimelineDispatcher = createSessionTimelineDispatcher({
     store: sessionTimelineStore as unknown as import("@tiller/persistence").SessionTimelineStore,
     publish: (targetSessionId, batch) => {
@@ -202,6 +284,11 @@ function createTestContext(
     dispatcher: sessionTimelineDispatcher,
     windowMs: 0,
   });
+  const sessionApprovalStateStore = createSessionApprovalStateStore({
+    get: () => undefined,
+    commitUpdate: () => undefined,
+    remove: () => undefined,
+  } as any);
 
   const baseContext = {
     sessions: new Map([
@@ -214,7 +301,13 @@ function createTestContext(
         },
       ],
     ]),
-    sessionStore: { list: () => [summary] },
+    sessionStore: {
+      get: (id: string) => id === sessionId ? summary : undefined,
+      list: () => {
+        capture.sessionStoreListCalls = (capture.sessionStoreListCalls ?? 0) + 1;
+        return [summary];
+      },
+    },
     logInfo: logger.logInfo,
     logDebug: logger.logDebug,
     logWarn: logger.logWarn,
@@ -248,6 +341,7 @@ function createTestContext(
     sessionArtifactStore: {
       appendOutput: () => undefined,
       appendToolCall: () => undefined,
+      replaceDiffs: () => undefined,
     },
     sessionOutputBodyStore: {
       putText: () => ({
@@ -270,6 +364,11 @@ function createTestContext(
       append: (update: SessionUpdateRecord) => {
         capture.sessionUpdates = [...(capture.sessionUpdates ?? []), update];
       },
+      getMaxSequence: () => {
+        capture.sequenceInitializationCalls = (capture.sequenceInitializationCalls ?? 0) + 1;
+        return 0;
+      },
+      compactTail: () => 0,
     },
     runtimeEventThrottleConfig: {
       assistantWindowMs: 0,
@@ -284,27 +383,87 @@ function createTestContext(
     hydrateSessionSummary: (item: SessionSummary) => item,
   } as Record<string, unknown>;
 
-  if (options.useCanonicalPipeline) {
-    baseContext.sessionTimelineWorkers = sessionTimelineWorkers;
-    baseContext.sessionLiveStateStore = sessionLiveStateStore;
-    baseContext.sessionTimelineDispatcher = sessionTimelineDispatcher;
-    baseContext.sessionTimelineFlushScheduler = sessionTimelineFlushScheduler;
-  }
+  baseContext.sessionTimelineWorkers = sessionTimelineWorkers;
+  baseContext.sessionLiveStateStore = sessionLiveStateStore;
+  baseContext.sessionApprovalStateStore = sessionApprovalStateStore;
+  baseContext.sessionRuntimeEventState = sessionRuntimeEventState;
+  baseContext.sessionTimelineDispatcher = sessionTimelineDispatcher;
+  baseContext.sessionTimelineFlushScheduler = sessionTimelineFlushScheduler;
 
   return baseContext as HelmHandlerContext;
 }
 
 test("live event sequence resumes above persisted timeline sequences", () => {
-  seedLiveEventSequenceForSession("session-seed", [3, 12, undefined, 7]);
+  const context = createTestContext([], { broadcasts: [], detailBroadcasts: [], persisted: [] });
+  seedLiveEventSequenceForSession("session-seed", [3, 12, undefined, 7], context);
 
-  assert.equal(nextLiveEventSequenceForTest("session-seed"), 13);
-  assert.equal(nextLiveEventSequenceForTest("session-seed"), 14);
+  assert.equal(nextLiveEventSequenceForTest("session-seed", context), 13);
+  assert.equal(nextLiveEventSequenceForTest("session-seed", context), 14);
 });
 
 test("live event sequence ignores invalid persisted values", () => {
-  seedLiveEventSequenceForSession("session-invalid", [undefined, Number.NaN, -1, 0, 2]);
+  const context = createTestContext([], { broadcasts: [], detailBroadcasts: [], persisted: [] });
+  seedLiveEventSequenceForSession("session-invalid", [undefined, Number.NaN, -1, 0, 2], context);
 
-  assert.equal(nextLiveEventSequenceForTest("session-invalid"), 3);
+  assert.equal(nextLiveEventSequenceForTest("session-invalid", context), 3);
+});
+
+test("active runtime notifications initialize sequence once without listing sessions", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+  };
+  const context = createTestContext([], capture, "sequence-once");
+
+  handleRuntimeEvent("sequence-once", {
+    type: "plan-update",
+    plan: { entries: [], updatedAt: "2026-07-12T00:00:00.000Z" },
+  }, context);
+  handleRuntimeEvent("sequence-once", {
+    type: "usage-update",
+    usage: { used: 1, size: 1 },
+  }, context);
+
+  assert.equal(capture.sessionStoreListCalls ?? 0, 0);
+  assert.equal(capture.sequenceInitializationCalls, 1);
+});
+
+test("runtime rejects missing canonical services instead of writing legacy artifacts", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-required");
+  let artifactWrites = 0;
+  context.sessionArtifactStore.appendOutput = () => {
+    artifactWrites += 1;
+  };
+  delete (context as any).sessionTimelineWorkers;
+  delete (context as any).sessionTimelineDispatcher;
+  delete (context as any).sessionTimelineFlushScheduler;
+  delete (context as any).sessionLiveStateStore;
+
+  assert.throws(
+    () => handleRuntimeEvent(
+      "session-canonical-required",
+      {
+        type: "command-output",
+        chunk: {
+          id: "output-1",
+          commandId: "command-1",
+          stream: "stdout",
+          text: "output",
+          timestamp: "2026-07-11T00:00:00.000Z",
+        },
+      },
+      context,
+    ),
+    /Canonical runtime services are required/u,
+  );
+  assert.equal(artifactWrites, 0);
 });
 
 test("runtime message events persist source-neutral session update records", () => {
@@ -325,6 +484,7 @@ test("runtime message events persist source-neutral session update records", () 
         id: "assistant-record",
         role: "assistant",
         text: "hello",
+        streaming: false,
         timestamp: "2026-04-30T00:00:01.000Z",
       },
     } satisfies SessionRuntimeEvent,
@@ -368,9 +528,15 @@ test("runtime accepts late tool-call events when the session is errored but stil
     context,
   );
 
+  const liveToolCallUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "tool_call"
+  ) as { params?: { update?: { toolCall?: { status?: string } } } } | undefined;
+
   assert.equal(findStructuredLog(capture, "runtime.event.ignored_late"), undefined);
-  assert.equal(capture.sessionUpdates?.length, 1);
-  assert.equal(capture.timelineEntries?.[0]?.kind, "tool_call");
+  assert.ok(liveToolCallUpdate);
+  assert.equal(liveToolCallUpdate?.params?.update?.toolCall?.status, "running");
+  assert.equal(capture.sessionUpdates?.length ?? 0, 0);
+  assert.equal(capture.timelineEntries?.length ?? 0, 0);
 });
 
 test("runtime keeps ignoring late tool-call events after cancellation", () => {
@@ -447,39 +613,6 @@ test("runtime compaction started publishes a canonical timeline batch when the p
   }
 });
 
-test("runtime compaction started publishes a transcript event in fallback mode", () => {
-  const logs: string[] = [];
-  const capture: TestContextCapture = {
-    broadcasts: [],
-    detailBroadcasts: [],
-    persisted: [],
-    timelineEntries: [],
-  };
-  const context = createTestContext(logs, capture, "session-compaction-fallback");
-
-  handleRuntimeEvent(
-    "session-compaction-fallback",
-    {
-      type: "compaction",
-      phase: "started",
-      source: "provider",
-      timestamp: "2026-06-28T00:00:00.000Z",
-    } satisfies SessionRuntimeEvent,
-    context,
-  );
-
-  const transcriptUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "transcript_event"
-  ) as { params?: { update?: { entry?: SessionTimelineEntry } } } | undefined;
-
-  assert.equal(transcriptUpdate?.params?.update?.entry?.kind, "context_compaction");
-  assert.equal(capture.timelineEntries?.[0]?.kind, "context_compaction");
-  if (capture.timelineEntries?.[0]?.kind === "context_compaction") {
-    assert.equal(capture.timelineEntries[0].phase, "started");
-    assert.equal(capture.timelineEntries[0].source, "provider");
-  }
-});
-
 test("runtime infers compaction completion from the first post-compaction assistant message", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
@@ -526,7 +659,7 @@ test("runtime infers compaction completion from the first post-compaction assist
   }
 });
 
-test("runtime assistant messages publish canonical timeline batches when the pipeline is available", () => {
+test("runtime finalized assistant messages publish canonical timeline batches when the pipeline is available", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -548,7 +681,7 @@ test("runtime assistant messages publish canonical timeline batches when the pip
         role: "assistant",
         text: "hello canonical timeline",
         timestamp: "2026-06-29T00:00:01.000Z",
-        streaming: true,
+        streaming: false,
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -564,6 +697,63 @@ test("runtime assistant messages publish canonical timeline batches when the pip
   assert.ok(timelineBatchUpdate?.params?.update?.batch);
   assert.equal(agentMessageUpdate, undefined);
   assert.equal(timelineBatchUpdate?.params?.update?.batch?.entries[0]?.kind, "assistant_message");
+  assert.equal(capture.persisted.length, 0);
+  assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["message"]);
+});
+
+test("runtime event cleanup releases per-session sequence state", () => {
+  const context = createTestContext([], {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+  }, "session-cleanup-state");
+
+  assert.equal(nextLiveEventSequenceForTest("session-cleanup-state", context), 1);
+  assert.equal(nextLiveEventSequenceForTest("session-cleanup-state", context), 2);
+  cleanupRuntimeEventState("session-cleanup-state", context);
+
+  assert.equal(nextLiveEventSequenceForTest("session-cleanup-state", context), 1);
+});
+
+test("runtime assistant streaming deltas stay in live updates and do not append canonical history", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-streaming-message", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-canonical-streaming-message",
+    {
+      type: "message",
+      message: {
+        id: "assistant-stream-1",
+        role: "assistant",
+        text: "partial",
+        timestamp: "2026-06-29T00:00:01.000Z",
+        streaming: true,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  );
+  const agentMessageUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "agent_message"
+  ) as { params?: { update?: { streaming?: boolean } } } | undefined;
+
+  assert.equal(timelineBatchUpdate, undefined);
+  assert.ok(agentMessageUpdate);
+  assert.equal(agentMessageUpdate?.params?.update?.streaming, true);
+  assert.equal(capture.sessionUpdates?.length ?? 0, 0);
 });
 
 test("runtime Codex mixed compaction chunks split into a compaction entry and stripped assistant message", () => {
@@ -623,22 +813,27 @@ test("runtime Codex mixed compaction chunks split into a compaction entry and st
     assert.equal(assistantEntry.chunks[0]?.text, "我先做个完成度确认，再继续往下处理。");
   }
   assert.deepEqual(
-    capture.sessionUpdates?.map((record) => record.updateType),
+    capture.sessionUpdates?.map((update) => update.updateType),
     ["compaction", "message"],
   );
 });
 
-test("runtime tool calls publish canonical timeline batches without compatibility tool_call updates", () => {
+test("runtime terminal tool calls publish canonical timeline batches without compatibility tool_call updates", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
     detailBroadcasts: [],
     persisted: [],
     timelineEntries: [],
+    sessionUpdates: [],
   };
+  const appendedToolCalls: AgentToolCall[] = [];
   const context = createTestContext(logs, capture, "session-canonical-tool-call", {}, {
     useCanonicalPipeline: true,
   });
+  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => {
+    appendedToolCalls.push(toolCall);
+  };
 
   handleRuntimeEvent(
     "session-canonical-tool-call",
@@ -646,6 +841,49 @@ test("runtime tool calls publish canonical timeline batches without compatibilit
       type: "tool-call",
       toolCall: {
         id: "tool-1",
+        kind: "shell",
+        title: "pnpm test",
+        status: "completed",
+        commandId: "cmd-1",
+        timestamp: "2026-06-30T00:00:01.000Z",
+        updatedAt: "2026-06-30T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  );
+  const legacyToolCallUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "tool_call"
+  );
+
+  assert.ok(timelineBatchUpdate);
+  assert.equal(legacyToolCallUpdate, undefined);
+  assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["tool-call"]);
+  assert.equal(appendedToolCalls.length, 0);
+});
+
+test("runtime running tool calls stay in live updates and do not append canonical history", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-running-tool-call", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-canonical-running-tool-call",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-running-1",
         kind: "shell",
         title: "pnpm test",
         status: "running",
@@ -662,13 +900,15 @@ test("runtime tool calls publish canonical timeline batches without compatibilit
   );
   const legacyToolCallUpdate = capture.detailBroadcasts.find((item: any) =>
     item.method === "session/update" && item.params?.update?.kind === "tool_call"
-  );
+  ) as { params?: { update?: { toolCall?: { status?: string } } } } | undefined;
 
-  assert.ok(timelineBatchUpdate);
-  assert.equal(legacyToolCallUpdate, undefined);
+  assert.equal(timelineBatchUpdate, undefined);
+  assert.ok(legacyToolCallUpdate);
+  assert.equal(legacyToolCallUpdate?.params?.update?.toolCall?.status, "running");
+  assert.equal(capture.sessionUpdates?.length ?? 0, 0);
 });
 
-test("runtime persists emitted tool-call boundary snapshots, including running updates", () => {
+test("runtime persists terminal tool-call boundary snapshots only", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -714,16 +954,16 @@ test("runtime persists emitted tool-call boundary snapshots, including running u
     context,
   );
 
-  assert.deepEqual(
-    capture.sessionUpdates?.map((record) => [record.updateType, record.sequence]),
-    [
-      ["tool-call", 1],
-      ["tool-call", 2],
-    ],
-  );
+  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  ) as any;
+
+  assert.ok(timelineBatchUpdate);
+  assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["tool-call"]);
+  assert.deepEqual(capture.timelineEntries?.map((entry) => entry.kind), ["tool_call"]);
 });
 
-test("runtime running tool-call updates coalesce into the boundary snapshot inside the live window", () => {
+test("runtime running tool-call updates coalesce into one terminal historical snapshot inside the live window", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -763,7 +1003,7 @@ test("runtime running tool-call updates coalesce into the boundary snapshot insi
       type: "tool-call",
       toolCall: {
         id: "tool-window-1",
-        kind: "shell",
+        kind: "search",
         title: "rg test",
         status: "running",
         output: "AB",
@@ -798,14 +1038,85 @@ test("runtime running tool-call updates coalesce into the boundary snapshot insi
     context,
   );
 
-  const toolCallUpdates = capture.detailBroadcasts.filter(
-    (item: any) => item.params?.update?.kind === "tool_call",
-  ) as any[];
-  assert.equal(toolCallUpdates.length, 1);
-  assert.equal(toolCallUpdates[0]?.params?.update?.toolCall?.status, "completed");
-  assert.equal(toolCallUpdates[0]?.params?.update?.toolCall?.output, "ABC");
+  const timelineBatchUpdate = capture.detailBroadcasts.find(
+    (item: any) => item.params?.update?.kind === "timeline_batch",
+  ) as any;
+  const toolCallEntry = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call",
+  );
+  assert.equal(toolCallEntry?.toolCall?.kind, "shell");
+  assert.equal(toolCallEntry?.toolCall?.status, "completed");
+  assert.equal(toolCallEntry?.toolCall?.output, "ABC");
   assert.equal(capture.sessionUpdates?.length, 1);
   assert.equal(JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}").toolCall.status, "completed");
+});
+
+test("runtime terminal tool-call snapshots retain live MCP metadata when completion is opaque", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+  };
+  const timers = createManualTimerHarness();
+  const context = createTestContext(logs, capture, "session-tool-mcp-window", {}, {
+    runtimeEventThrottleConfig: {
+      toolCallWindowMs: 64,
+      toolCallMaxChars: 512,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+    },
+  });
+
+  handleRuntimeEvent(
+    "session-tool-mcp-window",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-mcp-window-1",
+        kind: "mcp",
+        title: "Tool: sanshu/zhi",
+        mcp: { serverName: "sanshu", toolName: "zhi", source: "structured-input" },
+        input: JSON.stringify({ project_root_path: "D:/project", message: "review" }),
+        status: "running",
+        timestamp: "2026-07-10T12:00:00.000Z",
+        updatedAt: "2026-07-10T12:00:00.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-tool-mcp-window",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-mcp-window-1",
+        kind: "tool",
+        title: "Tool call call_mcp…",
+        output: "选择的选项: 完成并结束（推荐）",
+        status: "completed",
+        timestamp: "2026-07-10T12:00:00.000Z",
+        updatedAt: "2026-07-10T12:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timelineBatchUpdate = capture.detailBroadcasts.find(
+    (item: any) => item.params?.update?.kind === "timeline_batch",
+  ) as any;
+  const toolCallEntry = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call",
+  );
+  assert.equal(toolCallEntry?.toolCall?.kind, "mcp");
+  assert.equal(toolCallEntry?.toolCall?.title, "Tool: sanshu/zhi");
+  assert.deepEqual(toolCallEntry?.toolCall?.mcp, {
+    serverName: "sanshu",
+    toolName: "zhi",
+    source: "structured-input",
+  });
+  assert.equal(toolCallEntry?.toolCall?.status, "completed");
 });
 
 test("runtime subagent tool-call updates bypass the live window and publish immediately", () => {
@@ -849,23 +1160,130 @@ test("runtime subagent tool-call updates bypass the live window and publish imme
   const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
     item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
   ) as any;
-  assert.ok(timelineBatchUpdate);
-  const appendedToolCall = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
-    (entry: any) => entry.kind === "tool_call",
-  )?.toolCall;
-  assert.equal(appendedToolCall?.kind, "subagent");
-  assert.equal(appendedToolCall?.title, "spawn_agent");
-  assert.equal(capture.sessionUpdates?.length, 1);
-  const persistedUpdatePayload = JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}") as {
-    type?: string;
-    toolCall?: AgentToolCall;
-  };
-  assert.equal(persistedUpdatePayload.type, "tool-call");
-  assert.equal(persistedUpdatePayload.toolCall?.kind, "subagent");
-  assert.equal(persistedUpdatePayload.toolCall?.status, "running");
+  const liveToolCallUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "tool_call"
+  ) as any;
+  assert.equal(timelineBatchUpdate, undefined);
+  assert.ok(liveToolCallUpdate);
+  assert.equal(liveToolCallUpdate?.params?.update?.toolCall?.kind, "subagent");
+  assert.equal(liveToolCallUpdate?.params?.update?.toolCall?.title, "spawn_agent");
+  assert.equal(liveToolCallUpdate?.params?.update?.toolCall?.status, "running");
+  assert.equal(capture.sessionUpdates?.length ?? 0, 0);
+  assert.equal(capture.timelineEntries?.length ?? 0, 0);
 });
 
-test("runtime canonical tool-call persistence keeps stronger artifact classifications", () => {
+test("runtime terminal subagent keeps its invocation position and terminal update sequence", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-subagent-order", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-subagent-order",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-subagent-order",
+        kind: "subagent",
+        title: "Inspect lifecycle",
+        status: "running",
+        input: JSON.stringify({ subagent_type: "general", description: "Inspect lifecycle" }),
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  const liveUpdate = capture.detailBroadcasts.find((item: any) =>
+    item.params?.update?.kind === "tool_call"
+  ) as any;
+  const invocationSequence = liveUpdate?.params?.update?.toolCall?.sequence;
+
+  handleRuntimeEvent(
+    "session-subagent-order",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-subagent-order",
+        kind: "subagent",
+        title: "Inspect lifecycle",
+        status: "completed",
+        commandId: "subagent:task-42",
+        output: JSON.stringify({ output: "SUBAGENT_OK" }),
+        timestamp: "2026-07-13T00:00:10.000Z",
+        updatedAt: "2026-07-13T00:00:10.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const terminalEntry = capture.timelineEntries?.find((entry) =>
+    entry.kind === "tool_call" && entry.toolCall.id === "tool-subagent-order"
+  );
+  assert.equal(typeof invocationSequence, "number");
+  assert.equal(
+    terminalEntry?.kind === "tool_call" ? terminalEntry.toolCall.sequence : undefined,
+    invocationSequence,
+  );
+  assert.equal(
+    terminalEntry?.kind === "tool_call" ? terminalEntry.toolCall.input : undefined,
+    JSON.stringify({ subagent_type: "general", description: "Inspect lifecycle" }),
+  );
+  assert.ok((capture.sessionUpdates?.[0]?.sequence ?? 0) > invocationSequence);
+});
+
+test("runtime terminal tool call keeps the richer running title", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext([], capture, "session-tool-title");
+
+  handleRuntimeEvent("session-tool-title", {
+    type: "tool-call",
+    toolCall: {
+      id: "tool-search-title",
+      kind: "search",
+      title: "Grep: normalizeOpenCodeToolCall",
+      status: "running",
+      input: JSON.stringify({ pattern: "normalizeOpenCodeToolCall" }),
+      timestamp: "2026-07-14T00:00:01.000Z",
+      updatedAt: "2026-07-14T00:00:01.000Z",
+    },
+  }, context);
+  handleRuntimeEvent("session-tool-title", {
+    type: "tool-call",
+    toolCall: {
+      id: "tool-search-title",
+      kind: "search",
+      title: "Search",
+      status: "completed",
+      output: "Found 1 match",
+      timestamp: "2026-07-14T00:00:02.000Z",
+      updatedAt: "2026-07-14T00:00:02.000Z",
+    },
+  }, context);
+
+  const terminalEntry = capture.timelineEntries?.find((entry) =>
+    entry.kind === "tool_call" && entry.toolCall.id === "tool-search-title"
+  );
+  assert.equal(
+    terminalEntry?.kind === "tool_call" ? terminalEntry.toolCall.title : undefined,
+    "Grep: normalizeOpenCodeToolCall",
+  );
+});
+
+test("runtime canonical tool-call persistence preserves the mapper classification", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -915,16 +1333,10 @@ test("runtime canonical tool-call persistence keeps stronger artifact classifica
   const toolCallEntry = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
     (entry: any) => entry.kind === "tool_call",
   );
-  const persistedUpdatePayload = JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}") as {
-    type?: string;
-    toolCall?: AgentToolCall;
-  };
 
-  assert.equal(toolCallEntry?.toolCall.kind, "mcp");
-  assert.equal(toolCallEntry?.toolCall.title, "Tool: sanshu/zhi");
-  assert.equal(persistedUpdatePayload.type, "tool-call");
-  assert.equal(persistedUpdatePayload.toolCall?.kind, "mcp");
-  assert.equal(persistedUpdatePayload.toolCall?.title, "Tool: sanshu/zhi");
+  assert.equal(toolCallEntry?.toolCall.kind, "tool");
+  assert.equal(toolCallEntry?.toolCall.title, "Tool call call-1");
+  assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["tool-call"]);
 });
 
 test("runtime canonical tool-call persistence compacts inline image outputs before storage", () => {
@@ -988,14 +1400,10 @@ test("runtime canonical tool-call persistence compacts inline image outputs befo
   const toolCallEntry = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
     (entry: any) => entry.kind === "tool_call",
   );
-  const persistedUpdatePayload = JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}") as {
-    type?: string;
-    toolCall?: AgentToolCall;
-  };
 
-  assert.equal(appendedToolCalls[0]?.output, expectedOutput);
+  assert.equal(appendedToolCalls.length, 0);
   assert.equal(toolCallEntry?.toolCall.output, expectedOutput);
-  assert.equal(persistedUpdatePayload.toolCall?.output, expectedOutput);
+  assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["tool-call"]);
 });
 
 test("runtime plan updates publish live_state snapshots when the pipeline is available", () => {
@@ -1028,7 +1436,17 @@ test("runtime plan updates publish live_state snapshots when the pipeline is ava
 
   const liveStateUpdate = capture.detailBroadcasts.find((item: any) =>
     item.method === "session/update" && item.params?.update?.kind === "live_state"
-  ) as { params?: { update?: { snapshot?: { plan?: AgentPlan } } } } | undefined;
+  ) as {
+    params?: {
+      update?: {
+        snapshot?: {
+          sequence?: number;
+          plan?: AgentPlan;
+          status?: { effectiveStatus?: string };
+        };
+      };
+    };
+  } | undefined;
   const legacyPlanUpdate = capture.detailBroadcasts.find((item: any) =>
     item.method === "session/update" && item.params?.update?.kind === "plan_update"
   );
@@ -1039,15 +1457,284 @@ test("runtime plan updates publish live_state snapshots when the pipeline is ava
     liveStateUpdate?.params?.update?.snapshot?.plan?.entries[0]?.content,
     "do the thing",
   );
+  assert.equal(liveStateUpdate?.params?.update?.snapshot?.sequence, 1);
+  assert.equal(
+    liveStateUpdate?.params?.update?.snapshot?.status?.effectiveStatus,
+    "starting",
+  );
 });
 
-test("runtime command outputs publish canonical timeline batches without compatibility command_output updates", () => {
+test("runtime session state variants publish canonical live_state in arrival order", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
     detailBroadcasts: [],
     persisted: [],
     timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-state", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent("session-canonical-state", {
+    type: "mode-update",
+    agentMode: "architect",
+  }, context);
+  handleRuntimeEvent("session-canonical-state", {
+    type: "session-info",
+    title: null,
+    updatedAt: "2026-07-11T12:00:00.000Z",
+  }, context);
+  handleRuntimeEvent("session-canonical-state", {
+    type: "usage-update",
+    usage: {
+      used: 100,
+      size: 200_000,
+      cost: { amount: 0.02, currency: "USD" },
+    },
+  }, context);
+
+  const snapshots = capture.detailBroadcasts
+    .filter((item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "live_state"
+    )
+    .map((item: any) => item.params.update.snapshot);
+
+  assert.deepEqual(snapshots.map((snapshot: any) => snapshot.sequence), [1, 2, 3]);
+  assert.equal(snapshots[2]?.config?.agentMode, "architect");
+  assert.deepEqual(snapshots[2]?.sessionInfo, {
+    title: null,
+    updatedAt: "2026-07-11T12:00:00.000Z",
+  });
+  assert.deepEqual(snapshots[2]?.usage, {
+    used: 100,
+    size: 200_000,
+    cost: { amount: 0.02, currency: "USD" },
+  });
+});
+
+test("canonical session state replaces competing legacy state notifications", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-state-cutover", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  const events: SessionRuntimeEvent[] = [
+    { type: "status", status: "running" },
+    {
+      type: "config-options",
+      state: { model: "gpt-5", reasoningEffort: "high" },
+      options: [
+        { id: "model", currentValue: "gpt-5" },
+        { id: "reasoning", currentValue: "high" },
+      ],
+    },
+    {
+      type: "model-options",
+      state: {
+        currentModelId: "gpt-5",
+        options: [{ id: "gpt-5", name: "GPT-5" }],
+      },
+    },
+    {
+      type: "available-commands",
+      commands: [{ name: "review", kind: "command" }],
+    },
+    {
+      type: "diff-update",
+      files: [{ path: "src/a.ts", status: "modified", additions: 2, deletions: 1 }],
+    },
+  ];
+  for (const event of events) {
+    handleRuntimeEvent("session-canonical-state-cutover", event, context);
+  }
+
+  const sessionUpdates = capture.detailBroadcasts
+    .filter((item: any) => item.method === "session/update")
+    .map((item: any) => item.params.update);
+  const liveStates = sessionUpdates.filter((update: any) => update.kind === "live_state");
+  const legacyKinds = new Set([
+    "status_change",
+    "config_options",
+    "model_options",
+    "commands_available",
+    "session_updated",
+  ]);
+
+  assert.deepEqual(liveStates.map((update: any) => update.snapshot.sequence), [1, 2, 3, 4, 5]);
+  assert.equal(sessionUpdates.some((update: any) => legacyKinds.has(update.kind)), false);
+  const finalState = liveStates.at(-1)?.snapshot;
+  assert.equal(finalState.status.effectiveStatus, "running");
+  assert.equal(finalState.config.model, "gpt-5");
+  assert.equal(finalState.config.reasoningEffort, "high");
+  assert.equal(finalState.availableCommands[0]?.name, "review");
+  assert.equal(finalState.diffs[0]?.path, "src/a.ts");
+});
+
+test("prompt queue uses the canonical persisted live-state path", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-queue", {}, {
+    useCanonicalPipeline: true,
+  });
+  const queue = {
+    sessionId: "session-canonical-queue",
+    queued: [{
+      id: "queued-1",
+      sessionId: "session-canonical-queue",
+      text: "continue",
+      clientMessageId: "client-queued-1",
+      createdAt: "2026-07-11T13:00:00.000Z",
+      updatedAt: "2026-07-11T13:00:00.000Z",
+      status: "queued" as const,
+    }],
+  };
+
+  publishPromptQueueState("session-canonical-queue", queue, context);
+
+  assert.deepEqual(
+    capture.sessionUpdates?.map((update) => [update.sequence, update.updateType]),
+    [[1, "prompt-queue"]],
+  );
+  const updates = capture.detailBroadcasts
+    .filter((item: any) => item.method === "session/update")
+    .map((item: any) => item.params.update);
+  assert.equal(updates.some((update: any) => update.kind === "prompt_queue"), false);
+  assert.equal(updates[0]?.kind, "live_state");
+  assert.equal(updates[0]?.snapshot?.sequence, 1);
+  assert.deepEqual(updates[0]?.snapshot?.promptQueue, queue);
+});
+
+test("explicit canonical state publisher persists status and emits only live_state", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-explicit-state", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  publishCanonicalSessionStateEvent(
+    "session-explicit-state",
+    { type: "status", status: "error" },
+    context,
+  );
+
+  const updates = capture.detailBroadcasts
+    .filter((item: any) => item.method === "session/update")
+    .map((item: any) => item.params.update);
+  assert.deepEqual(capture.sessionUpdates?.map((update) => [update.sequence, update.updateType]), [[1, "status"]]);
+  assert.equal(updates[0]?.kind, "live_state");
+  assert.equal(updates[0]?.snapshot?.sequence, 1);
+  assert.equal(updates[0]?.snapshot?.status?.effectiveStatus, "error");
+  assert.equal(updates.some((update: any) => update.kind === "status_change"), false);
+});
+
+test("canonical state is not published when the atomic commit fails", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-state-rollback", {}, {
+    useCanonicalPipeline: true,
+  });
+  context.sessionLiveStateStore = createSessionLiveStateStore({
+    get: () => undefined,
+    getAppliedSequence: () => 0,
+    replace: (_sessionId, state) => state,
+    commitUpdate: () => {
+      throw new Error("atomic commit failed");
+    },
+    remove: () => undefined,
+    close: async () => undefined,
+  });
+
+  handleRuntimeEvent("session-state-rollback", {
+    type: "status",
+    status: "running",
+  }, context);
+
+  assert.equal(capture.sessionUpdates?.length, 0);
+  assert.equal(
+    capture.detailBroadcasts.some((item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "live_state"
+    ),
+    false,
+  );
+  assert.equal(
+    findStructuredLog(capture, "runtime.session_state.commit_failed")?.fields?.message,
+    "atomic commit failed",
+  );
+});
+
+test("canonical conversation is not materialized or published when update persistence fails", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext([], capture, "session-conversation-rollback", {}, {
+    useCanonicalPipeline: true,
+  });
+  if (!context.sessionTimelineStore?.commitBatch) {
+    throw new Error("test requires atomic timeline store");
+  }
+  context.sessionTimelineStore.commitBatch = () => {
+    throw new Error("conversation update failed");
+  };
+
+  assert.throws(() => {
+    handleRuntimeEvent("session-conversation-rollback", {
+      type: "message",
+      message: {
+        id: "assistant-failed",
+        role: "assistant",
+        text: "must not publish",
+        timestamp: "2026-07-11T15:30:00.000Z",
+        streaming: false,
+      },
+    }, context);
+  }, /conversation update failed/u);
+
+  assert.deepEqual(capture.timelineEntries, []);
+  assert.equal(
+    capture.detailBroadcasts.some((item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+    ),
+    false,
+  );
+});
+
+test("runtime command outputs publish canonical timeline batches without compatibility command_output updates", async () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
   };
   const appendedOutputs: CommandChunk[] = [];
   const context = createTestContext(logs, capture, "session-canonical-command-output", {}, {
@@ -1056,24 +1743,6 @@ test("runtime command outputs publish canonical timeline batches without compati
   context.sessionArtifactStore.appendOutput = (_sessionId: string, chunk: CommandChunk) => {
     appendedOutputs.push(chunk);
   };
-
-  handleRuntimeEvent(
-    "session-canonical-command-output",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "tool-1",
-        kind: "shell",
-        title: "pnpm test",
-        status: "running",
-        commandId: "cmd-1",
-        timestamp: "2026-06-30T00:00:01.000Z",
-        updatedAt: "2026-06-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
-    context,
-  );
-  capture.detailBroadcasts.length = 0;
 
   handleRuntimeEvent(
     "session-canonical-command-output",
@@ -1089,6 +1758,8 @@ test("runtime command outputs publish canonical timeline batches without compati
     } satisfies SessionRuntimeEvent,
     context,
   );
+  context.sessionTimelineFlushScheduler?.flushNow("session-canonical-command-output");
+  await new Promise<void>((resolve) => setImmediate(resolve));
 
   const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
     item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
@@ -1099,59 +1770,8 @@ test("runtime command outputs publish canonical timeline batches without compati
 
   assert.ok(timelineBatchUpdate);
   assert.equal(legacyCommandOutputUpdate, undefined);
-  assert.equal(appendedOutputs.length, 1);
-});
-
-test("runtime compaction completed persists a transcript compaction event in fallback mode", () => {
-  const logs: string[] = [];
-  const capture: TestContextCapture = {
-    broadcasts: [],
-    detailBroadcasts: [],
-    persisted: [],
-    timelineEntries: [],
-  };
-  const context = createTestContext(logs, capture, "session-compaction-live");
-
-  handleRuntimeEvent(
-    "session-compaction-live",
-    {
-      type: "compaction",
-      phase: "completed",
-      source: "heuristic",
-      summaryText: "This session is being continued from a previous conversation that ran out of context.",
-      timestamp: "2026-06-28T00:00:01.000Z",
-    } satisfies SessionRuntimeEvent,
-    context,
-  );
-
-  const transcriptUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "transcript_event"
-  ) as { params?: { update?: { entry?: SessionTimelineEntry } } } | undefined;
-
-  assert.equal(transcriptUpdate?.params?.update?.entry?.kind, "context_compaction");
-  assert.equal(
-    transcriptUpdate?.params?.update?.entry?.id,
-    "compaction:session-compaction-live:compaction:2026-06-28T00:00:01.000Z",
-  );
-  assert.equal(
-    transcriptUpdate?.params?.update?.entry?.kind === "context_compaction"
-      ? transcriptUpdate.params.update.entry.summaryText
-      : undefined,
-    "This session is being continued from a previous conversation that ran out of context.",
-  );
-  assert.equal(
-    transcriptUpdate?.params?.update?.entry?.kind === "context_compaction"
-      ? transcriptUpdate.params.update.entry.detailsVisibility
-      : undefined,
-    "expandable",
-  );
-  assert.equal(capture.timelineEntries?.some((entry) => entry.id === "compaction:session-compaction-live:compaction:2026-06-28T00:00:01.000Z"), true);
-  assert.equal(
-    transcriptUpdate?.params?.update?.entry?.kind === "context_compaction"
-      ? transcriptUpdate.params.update.entry.phase
-      : undefined,
-    "completed",
-  );
+  assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["command-output"]);
+  assert.equal(appendedOutputs.length, 0);
 });
 
 test("runtime compaction completed hides summary details for codex providers", () => {
@@ -1179,13 +1799,11 @@ test("runtime compaction completed hides summary details for codex providers", (
     context,
   );
 
-  const transcriptUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "transcript_event"
-  ) as { params?: { update?: { entry?: SessionTimelineEntry } } } | undefined;
+  const compactionEntry = capture.timelineEntries?.find((entry) => entry.kind === "context_compaction");
 
   assert.equal(
-    transcriptUpdate?.params?.update?.entry?.kind === "context_compaction"
-      ? transcriptUpdate.params.update.entry.detailsVisibility
+    compactionEntry?.kind === "context_compaction"
+      ? compactionEntry.detailsVisibility
       : undefined,
     "hidden",
   );
@@ -1260,6 +1878,7 @@ test("runtime compaction starts a fresh assistant segment after the divider", ()
         role: "assistant",
         text: "压缩前说明。",
         timestamp: "2026-06-28T00:00:00.000Z",
+        streaming: false,
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -1284,6 +1903,7 @@ test("runtime compaction starts a fresh assistant segment after the divider", ()
         role: "assistant",
         text: "压缩后继续。",
         timestamp: "2026-06-28T00:00:02.000Z",
+        streaming: false,
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -1328,6 +1948,7 @@ test("runtime compaction starts a fresh assistant segment after the divider in c
         role: "assistant",
         text: "压缩前说明。",
         timestamp: "2026-06-28T00:00:00.000Z",
+        streaming: false,
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -1351,6 +1972,7 @@ test("runtime compaction starts a fresh assistant segment after the divider in c
         role: "assistant",
         text: "压缩后继续。",
         timestamp: "2026-06-28T00:00:02.000Z",
+        streaming: false,
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -1399,7 +2021,7 @@ test("runtime events emit first runtime and broadcast prompt trace markers", () 
   );
 });
 
-test("runtime session.message persists and broadcasts streaming chunks without stdout text", () => {
+test("runtime session.message finalizes canonical content without stdout text", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
@@ -1459,13 +2081,15 @@ test("runtime session.message persists and broadcasts streaming chunks without s
   assert.equal(findStructuredLog(capture, "runtime.status.changed")?.fields?.status, "idle");
   assert.doesNotMatch(JSON.stringify(structuredLogs(capture)), /preview|text|你|好|主人/u);
   assert.deepEqual(writes, []);
-  assert.equal(capture.persisted.length, 1);
+  assert.equal(capture.persisted.length, 0);
   assert.deepEqual(
-    capture.persisted.map((message) => message.text),
+    capture.observedTimelineMessages?.map((message) => message.text),
     ["你好\n主人"],
   );
-  assert.equal(capture.broadcasts.length, 1);
-  assert.equal(capture.detailBroadcasts.length, 3);
+  assert.equal(capture.broadcasts.length, 0);
+  assert.ok(capture.detailBroadcasts.some((item: any) =>
+    item.params?.update?.kind === "timeline_batch"
+  ));
 });
 
 test("runtime assistant streaming deltas coalesce inside the live window before timer flush", () => {
@@ -1526,7 +2150,7 @@ test("runtime assistant streaming deltas coalesce inside the live window before 
     item.params?.update?.kind === "agent_message" && item.params?.update?.streaming === true
   ) as any;
   assert.equal(streamingUpdate?.params?.update?.message?.text, "你好");
-  assert.equal(capture.sessionUpdates?.length, 1);
+  assert.equal(capture.sessionUpdates?.length, 0);
 });
 
 test("runtime streaming chunks defer summary persistence until flush", () => {
@@ -1578,8 +2202,8 @@ test("runtime streaming chunks defer summary persistence until flush", () => {
   );
 
   assert.equal(capture.summaryUpdates?.length, 2);
-  assert.equal(capture.persisted.length, 1);
-  assert.equal(capture.persisted[0]?.text, "你好");
+  assert.equal(capture.persisted.length, 0);
+  assert.equal(capture.observedTimelineMessages?.[0]?.text, "你好");
 });
 
 test("runtime assistant chunks reuse one ordered segment id", () => {
@@ -1622,9 +2246,9 @@ test("runtime assistant chunks reuse one ordered segment id", () => {
     context,
   );
 
-  assert.equal(capture.persisted.length, 1);
-  assert.equal(capture.persisted[0]?.text, "hello world");
-  assert.match(capture.persisted[0]?.id ?? "", /^session-stream-ordered-msg-000001-000000-/u);
+  assert.equal(capture.persisted.length, 0);
+  assert.equal(capture.observedTimelineMessages?.[0]?.text, "hello world");
+  assert.match(capture.observedTimelineMessages?.[0]?.id ?? "", /^session-stream-ordered-msg-000001-000000-/u);
 });
 
 test("repeated running status does not advance turn without an active assistant segment", () => {
@@ -1672,7 +2296,7 @@ test("repeated running status does not advance turn without an active assistant 
     context,
   );
 
-  assert.match(capture.persisted[0]?.id ?? "", /^session-no-bump-msg-000001-000000-/u);
+  assert.match(capture.observedTimelineMessages?.[0]?.id ?? "", /^session-no-bump-msg-000001-000000-/u);
 });
 
 test("runtime assistant stream closes before the next stage log", () => {
@@ -1807,24 +2431,15 @@ test("runtime user messages are persisted when no local prompt matches the provi
   );
 
   assert.deepEqual(
-    capture.persisted.map((message) => [message.id, message.role, message.text]),
+    capture.observedTimelineMessages?.map((message) => [message.id, message.role, message.text]),
     [["runtime-user-opencode-1", "user", "[build-mode]\nOpenCode processed prompt"]],
   );
   assert.deepEqual(capture.timelineEntries?.map((entry) => entry.kind), ["user_message"]);
   assert.equal(capture.summaryUpdates?.[0]?.lastMessagePreview, "[build-mode]\nOpenCode processed prompt");
-  assert.deepEqual(capture.detailBroadcasts, [
-    {
-      sessionId: "session-1",
-      method: "session/update",
-      params: {
-        sessionId: "session-1",
-        update: {
-          kind: "user_message",
-          message: capture.persisted[0],
-        },
-      },
-    },
-  ]);
+  assert.equal(
+    capture.detailBroadcasts.some((item: any) => item.params?.update?.kind === "timeline_batch"),
+    true,
+  );
 });
 
 test("runtime user echo debug logs are summarized across a replay burst", () => {
@@ -1888,10 +2503,7 @@ test("runtime user echo debug logs are summarized across a replay burst", () => 
   assert.equal(userEchoSummary?.fields?.count, 3);
   assert.equal(userEchoSummary?.fields?.uniqueMessages, 3);
   assert.equal(userEchoSummary?.fields?.totalChars, "first prompt".length + "ok".length + "third prompt".length);
-  assert.equal(
-    Number(userEchoSummary?.fields?.lastSeq) - Number(userEchoSummary?.fields?.firstSeq) + 1,
-    3,
-  );
+  assert.equal(userEchoSummary?.fields?.firstSeq, userEchoSummary?.fields?.lastSeq);
   assert.equal(userEchoSummary?.fields?.firstMessageId, "runtime-user-echo-1");
   assert.equal(userEchoSummary?.fields?.lastMessageId, "runtime-user-echo-3");
   assert.doesNotMatch(JSON.stringify(userEchoSummary), /first prompt|third prompt|text/u);
@@ -1914,8 +2526,7 @@ test("fatal ACP connection errors mark the active runtime stale", () => {
   );
 
   assert.equal(context.sessions.has("session-1"), false);
-  assert.equal(capture.persisted[0]?.role, "system");
-  assert.equal(capture.persisted[0]?.text, "ACP process exited with code=1 signal=none");
+  assert.deepEqual(capture.persisted, []);
   assert.equal(findStructuredLog(capture, "runtime.recoverable.marked")?.fields?.code, "ACP_CONNECTION_EXITED");
 });
 
@@ -2021,13 +2632,15 @@ test("runtime assistant chunks stay split when tool activity occurs between text
   );
 
   assert.deepEqual(
-    capture.persisted.map((message) => message.text),
+    capture.observedTimelineMessages?.map((message) => message.text),
     ["工具前说明", "工具后继续"],
   );
-  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
-  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
-  assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
-  assert.equal(appendedToolCalls.length, 1);
+  const messages = capture.observedTimelineMessages ?? [];
+  assert.match(messages[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.match(messages[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.notEqual(messages[0]?.id, messages[1]?.id);
+  assert.equal(capture.persisted.length, 0);
+  assert.equal(appendedToolCalls.length, 0);
 });
 
 test("runtime assistant chunks stay in one canonical segment when subagent activity occurs between cumulative text updates", () => {
@@ -2097,6 +2710,8 @@ test("runtime assistant chunks stay in one canonical segment when subagent activ
   const subagentEntries = capture.timelineEntries?.filter((entry) => entry.kind === "tool_call") ?? [];
   assert.equal(assistantEntries.length, 1);
   assert.equal(subagentEntries.length, 1);
+  assert.equal(subagentEntries[0]?.kind === "tool_call" ? subagentEntries[0].toolCall.kind : undefined, "subagent");
+  assert.equal(subagentEntries[0]?.kind === "tool_call" ? subagentEntries[0].toolCall.status : undefined, "completed");
   assert.equal(assistantEntries[0]?.kind, "assistant_message");
   if (assistantEntries[0]?.kind !== "assistant_message") {
     throw new Error("Expected assistant_message");
@@ -2148,9 +2763,9 @@ test("runtime-generated delta chunks with fresh source ids stay in one stream se
     context,
   );
 
-  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.match(capture.observedTimelineMessages?.[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.deepEqual(
-    capture.persisted.map((message) => message.text),
+    capture.observedTimelineMessages?.map((message) => message.text),
     ["当前分支是 `codex/debug-stream-tool-logs`,看起来正在调"],
   );
 });
@@ -2195,11 +2810,11 @@ test("runtime-generated independent assistant messages get distinct stream segme
     context,
   );
 
-  assert.equal(capture.persisted[0]?.text, "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata.");
-  assert.equal(capture.persisted[1]?.text, "你好主人，我会按你的项目规则继续处理。");
-  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
-  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
-  assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
+  assert.equal(capture.observedTimelineMessages?.[0]?.text, "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata.");
+  assert.equal(capture.observedTimelineMessages?.[1]?.text, "你好主人，我会按你的项目规则继续处理。");
+  assert.match(capture.observedTimelineMessages?.[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.match(capture.observedTimelineMessages?.[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.notEqual(capture.observedTimelineMessages?.[0]?.id, capture.observedTimelineMessages?.[1]?.id);
 });
 
 test("runtime config option defaults do not overwrite a stored session model selection", () => {
@@ -2258,13 +2873,11 @@ test("runtime config options omit reasoning when authoritative options omit reas
     context,
   );
 
-  const configUpdate = capture.broadcasts.find(
-    (item) => (item as { method?: string }).method === "session/update",
-  ) as { params?: { update?: { options?: Array<{ category?: string }>; state?: { reasoningEffort?: string } } } } | undefined;
+  const liveState = context.sessionLiveStateStore?.get("session-haiku");
   assert.equal(capture.summaryUpdates?.at(-1)?.reasoningEffort, undefined);
-  assert.equal(configUpdate?.params?.update?.state?.reasoningEffort, undefined);
+  assert.equal(liveState?.config.reasoningEffort, undefined);
   assert.equal(
-    configUpdate?.params?.update?.options?.some((option) => option.category === "thought_level"),
+    liveState?.config.configOptions.some((option) => option.category === "thought_level"),
     false,
   );
 });
@@ -2304,13 +2917,11 @@ test("runtime config options preserve reasoning for haiku when ACP exposes reaso
     context,
   );
 
-  const configUpdate = capture.broadcasts.find(
-    (item) => (item as { method?: string }).method === "session/update",
-  ) as { params?: { update?: { options?: Array<{ category?: string }>; state?: { reasoningEffort?: string } } } } | undefined;
+  const liveState = context.sessionLiveStateStore?.get("session-opencode-haiku");
   assert.equal(capture.summaryUpdates?.at(-1)?.reasoningEffort, "medium");
-  assert.equal(configUpdate?.params?.update?.state?.reasoningEffort, "medium");
+  assert.equal(liveState?.config.reasoningEffort, "medium");
   assert.equal(
-    configUpdate?.params?.update?.options?.some((option) => option.category === "thought_level"),
+    liveState?.config.configOptions.some((option) => option.category === "thought_level"),
     true,
   );
 });
@@ -2361,14 +2972,12 @@ test("runtime stale config option defaults do not re-add reasoning for selected 
     context,
   );
 
-  const configUpdate = capture.broadcasts.find(
-    (item) => (item as { method?: string }).method === "session/update",
-  ) as { params?: { update?: { options?: Array<{ category?: string }>; state?: { model?: string; reasoningEffort?: string } } } } | undefined;
+  const liveState = context.sessionLiveStateStore?.get("session-stale-haiku");
   assert.equal(capture.summaryUpdates?.at(-1)?.model, "claude-haiku-4-5");
   assert.equal(capture.summaryUpdates?.at(-1)?.reasoningEffort, undefined);
-  assert.equal(configUpdate?.params?.update?.state?.model, "claude-haiku-4-5");
+  assert.equal(liveState?.config.model, "claude-haiku-4-5");
   assert.equal(
-    configUpdate?.params?.update?.options?.some((option) => option.category === "thought_level"),
+    liveState?.config.configOptions.some((option) => option.category === "thought_level"),
     false,
   );
 });
@@ -2444,9 +3053,9 @@ test("runtime-generated short assistant replies split after provider diagnostics
     context,
   );
 
-  assert.equal(capture.persisted[0]?.text.startsWith("Model metadata for"), true);
-  assert.equal(capture.persisted[1]?.text, "OK");
-  assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
+  assert.equal(capture.observedTimelineMessages?.[0]?.text.startsWith("Model metadata for"), true);
+  assert.equal(capture.observedTimelineMessages?.[1]?.text, "OK");
+  assert.notEqual(capture.observedTimelineMessages?.[0]?.id, capture.observedTimelineMessages?.[1]?.id);
 });
 
 test("runtime running status starts a fresh assistant segment for the next prompt", () => {
@@ -2498,9 +3107,9 @@ test("runtime running status starts a fresh assistant segment for the next promp
     context,
   );
 
-  assert.match(capture.persisted[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
-  assert.match(capture.persisted[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
-  assert.notEqual(capture.persisted[0]?.id, capture.persisted[1]?.id);
+  assert.match(capture.observedTimelineMessages?.[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.match(capture.observedTimelineMessages?.[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
+  assert.notEqual(capture.observedTimelineMessages?.[0]?.id, capture.observedTimelineMessages?.[1]?.id);
 });
 
 test("runtime tool-call events persist and broadcast without stage log", () => {
@@ -2531,7 +3140,7 @@ test("runtime tool-call events persist and broadcast without stage log", () => {
   );
 
   assert.deepEqual(logs, []);
-  assert.equal(appendedToolCalls.length, 1);
+  assert.equal(appendedToolCalls.length, 0);
   assert.deepEqual(capture.broadcasts, []);
   const toolCallBroadcast = capture.detailBroadcasts[0] as any;
   assert.equal(typeof toolCallBroadcast.params.update.toolCall.sequence, "number");
@@ -2602,9 +3211,14 @@ test("runtime ACP thought chunks with generated ids stay in one thinking stream"
     context,
   );
 
-  assert.equal(appendedToolCalls.length, 2);
-  assert.equal(appendedToolCalls[0]?.id, appendedToolCalls[1]?.id);
-  assert.match(appendedToolCalls[0]?.id ?? "", /^session-thought-stream-msg-\d{6}-\d{6}-.+:thinking$/u);
+  const thoughtUpdates = capture.sessionUpdates?.map((update) =>
+    JSON.parse(update.payloadJson).toolCall as AgentToolCall,
+  ) ?? [];
+  assert.equal(thoughtUpdates.length, 2);
+  assert.equal(thoughtUpdates[0]?.id, thoughtUpdates[1]?.id);
+  assert.match(thoughtUpdates[0]?.id ?? "", /^session-thought-stream-msg-\d{6}-\d{6}-.+:thinking$/u);
+  assert.deepEqual(capture.sessionUpdates?.map((update) => update.sequence), [1, 2]);
+  assert.equal(appendedToolCalls.length, 0);
   assert.equal(capture.persisted.length, 0);
 });
 
@@ -2659,11 +3273,11 @@ test("runtime thinking broadcasts deltas instead of persisted cumulative output"
     context,
   );
 
-  const broadcastOutputs = capture.detailBroadcasts.map(
-    (item: any) => item.params.update.toolCall.output,
+  const thoughtOutputs = capture.sessionUpdates?.map((update) =>
+    (JSON.parse(update.payloadJson).toolCall as AgentToolCall).output,
   );
-  assert.deepEqual(broadcastOutputs, ["A", "B"]);
-  assert.deepEqual([...storedById.values()].map((toolCall) => toolCall.output), ["AB"]);
+  assert.deepEqual(thoughtOutputs, ["A", "B"]);
+  assert.deepEqual([...storedById.values()], []);
 });
 
 test("runtime status completion finalizes active thinking stream", () => {
@@ -2711,13 +3325,207 @@ test("runtime status completion finalizes active thinking stream", () => {
     context,
   );
 
-  const stored = [...storedById.values()];
-  assert.equal(stored.length, 1);
-  assert.equal(stored[0]?.status, "completed");
-  assert.equal(stored[0]?.output, "A");
-  const finalBroadcast = capture.detailBroadcasts.at(-1) as any;
-  assert.equal(finalBroadcast.method, "session/update");
-  assert.equal(finalBroadcast.params.update.toolCall.status, "completed");
+  const thinkingEntry = capture.timelineEntries?.find((entry) => entry.kind === "assistant_message");
+  const thinkingChunk = thinkingEntry?.kind === "assistant_message"
+    ? thinkingEntry.chunks.find((chunk) => chunk.kind === "thinking")
+    : undefined;
+  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.status : undefined, "completed");
+  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.text : undefined, "A");
+  assert.equal(thinkingEntry?.sequence, 1);
+  const updateSequences = capture.sessionUpdates?.map((update) => update.sequence) ?? [];
+  assert.equal(new Set(updateSequences).size, updateSequences.length, JSON.stringify(updateSequences));
+  assert.deepEqual([...storedById.values()], []);
+});
+
+test("runtime errors finalize active thinking without reusing its journal sequence", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-thinking-error");
+
+  handleRuntimeEvent(
+    "session-thinking-error",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "error-thinking:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "Inspect the failed request",
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-thinking-error",
+    {
+      type: "error",
+      code: "ACP_PROMPT_FAILED",
+      message: "Provider request failed",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const thinkingEntry = capture.timelineEntries?.find((entry) => entry.kind === "assistant_message");
+  const thinkingChunk = thinkingEntry?.kind === "assistant_message"
+    ? thinkingEntry.chunks.find((chunk) => chunk.kind === "thinking")
+    : undefined;
+  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.status : undefined, "failed");
+  assert.equal(thinkingEntry?.sequence, 1);
+  const updateSequences = capture.sessionUpdates?.map((update) => update.sequence) ?? [];
+  assert.equal(new Set(updateSequences).size, updateSequences.length, JSON.stringify(updateSequences));
+});
+
+test("runtime tool boundaries finalize active thinking before splitting the assistant segment", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-thinking-tool-boundary");
+
+  handleRuntimeEvent(
+    "session-thinking-tool-boundary",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-boundary-thinking:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "Choose the next command",
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-thinking-tool-boundary",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "shell-after-thinking",
+        kind: "shell",
+        title: "Get-Date",
+        status: "completed",
+        timestamp: "2026-07-13T00:00:02.000Z",
+        updatedAt: "2026-07-13T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const thinkingEntry = capture.timelineEntries?.find((entry) => entry.kind === "assistant_message");
+  const thinkingChunk = thinkingEntry?.kind === "assistant_message"
+    ? thinkingEntry.chunks.find((chunk) => chunk.kind === "thinking")
+    : undefined;
+  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.status : undefined, "completed");
+  assert.equal(thinkingEntry?.sequence, 1);
+  const updateSequences = capture.sessionUpdates?.map((update) => update.sequence) ?? [];
+  assert.equal(new Set(updateSequences).size, updateSequences.length, JSON.stringify(updateSequences));
+});
+
+test("runtime ignores structurally empty thinking frames", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-empty-thinking");
+
+  for (const [index, output] of ["\u200B\u2060\uFEFF", "{}", "[]", "null"].entries()) {
+    handleRuntimeEvent(
+      "session-empty-thinking",
+      {
+        type: "tool-call",
+        toolCall: {
+          id: `empty-thinking-${index}:thinking`,
+          kind: "think",
+          title: "Thinking",
+          status: "running",
+          output,
+          timestamp: "2026-07-13T00:00:01.000Z",
+          updatedAt: "2026-07-13T00:00:01.000Z",
+        },
+      } satisfies SessionRuntimeEvent,
+      context,
+    );
+  }
+  handleRuntimeEvent(
+    "session-empty-thinking",
+    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(capture.timelineEntries, []);
+});
+
+test("runtime assistant content finalizes active thinking before clearing its segment", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-thinking-before-content");
+
+  handleRuntimeEvent(
+    "session-thinking-before-content",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "reply-with-thought:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "Inspect the canonical timeline",
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-thinking-before-content",
+    {
+      type: "message",
+      message: {
+        id: "reply-with-thought",
+        role: "assistant",
+        text: "Done",
+        timestamp: "2026-07-13T00:00:02.000Z",
+        streaming: false,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const assistantEntry = capture.timelineEntries?.find(
+    (entry) => entry.kind === "assistant_message",
+  );
+  const thinkingChunk = assistantEntry?.kind === "assistant_message"
+    ? assistantEntry.chunks.find((chunk) => chunk.kind === "thinking")
+    : undefined;
+  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.status : undefined, "completed");
+  assert.equal(
+    thinkingChunk?.kind === "thinking" ? thinkingChunk.text : undefined,
+    "Inspect the canonical timeline",
+  );
 });
 
 test("runtime timeline store nests thinking and assistant content under one assistant entry", () => {
@@ -2796,30 +3604,18 @@ test("runtime timeline store nests thinking and assistant content under one assi
   );
 });
 
-test("runtime tool-call broadcasts keep stronger persisted classifications", () => {
+test("runtime tool-call batches preserve normalized classifications", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const context = createTestContext(logs, capture);
-  context.sessionArtifactStore.appendToolCall = (_sessionId: string, toolCall: AgentToolCall) => ({
-    outputs: [],
-    diffs: [],
-    toolCalls: [
-      {
-        ...toolCall,
-        kind: "mcp",
-        title: "Tool: node_repl/js",
-      },
-    ],
-  });
-
   handleRuntimeEvent(
     "session-1",
     {
       type: "tool-call",
       toolCall: {
         id: "call-1",
-        kind: "tool",
-        title: "Tool call call-1",
+        kind: "mcp",
+        title: "Tool: node_repl/js",
         status: "completed",
         timestamp: "2026-04-30T00:00:01.000Z",
         updatedAt: "2026-04-30T00:00:02.000Z",
@@ -2828,29 +3624,15 @@ test("runtime tool-call broadcasts keep stronger persisted classifications", () 
     context,
   );
 
-  const classifiedToolCallBroadcast = capture.detailBroadcasts[0] as any;
-  assert.equal(typeof classifiedToolCallBroadcast.params.update.toolCall.sequence, "number");
-  delete classifiedToolCallBroadcast.params.update.toolCall.sequence;
-  assert.deepEqual(capture.detailBroadcasts, [
-    {
-      sessionId: "session-1",
-      method: "session/update",
-      params: {
-        sessionId: "session-1",
-        update: {
-          kind: "tool_call",
-          toolCall: {
-            id: "call-1",
-            kind: "mcp",
-            title: "Tool: node_repl/js",
-            status: "completed",
-            timestamp: "2026-04-30T00:00:01.000Z",
-            updatedAt: "2026-04-30T00:00:02.000Z",
-          },
-        },
-      },
-    },
-  ]);
+  const timelineBatch = capture.detailBroadcasts.find((item: any) =>
+    item.params?.update?.kind === "timeline_batch",
+  ) as any;
+  const toolCallEntry = timelineBatch?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call",
+  );
+  assert.equal(toolCallEntry?.toolCall?.sequence, 1);
+  assert.equal(toolCallEntry?.toolCall?.kind, "mcp");
+  assert.equal(toolCallEntry?.toolCall?.title, "Tool: node_repl/js");
   const persistedUpdatePayload = JSON.parse(capture.sessionUpdates?.[0]?.payloadJson ?? "{}") as {
     type?: string;
     toolCall?: AgentToolCall;
@@ -2858,6 +3640,75 @@ test("runtime tool-call broadcasts keep stronger persisted classifications", () 
   assert.equal(persistedUpdatePayload.type, "tool-call");
   assert.equal(persistedUpdatePayload.toolCall?.kind, "mcp");
   assert.equal(persistedUpdatePayload.toolCall?.title, "Tool: node_repl/js");
+});
+
+test("runtime locks the first specific tool classification across later snapshots", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture, "session-stable-tool-kind", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-stable-tool-kind",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-stable-kind",
+        kind: "mcp",
+        title: "Tool: mcp_router/codebase_search",
+        status: "completed",
+        mcp: {
+          serverName: "mcp_router",
+          toolName: "codebase_search",
+          source: "structured-tool-name",
+        },
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-stable-tool-kind",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-stable-kind",
+        kind: "search",
+        title: "Search",
+        status: "completed",
+        output: "Found 3 matches",
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const entry = capture.timelineEntries?.find((candidate) =>
+    candidate.kind === "tool_call" && candidate.toolCall.id === "call-stable-kind"
+  );
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "mcp");
+  assert.deepEqual(
+    entry?.kind === "tool_call" ? entry.toolCall.mcp : undefined,
+    {
+      serverName: "mcp_router",
+      toolName: "codebase_search",
+      source: "structured-tool-name",
+    },
+  );
+  assert.equal(
+    entry?.kind === "tool_call" ? entry.toolCall.title : undefined,
+    "Tool: mcp_router/codebase_search",
+  );
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.output : undefined, "Found 3 matches");
 });
 
 test("handleRuntimeEvent broadcasts plan updates without storing a tool call", () => {
@@ -2882,10 +3733,7 @@ test("handleRuntimeEvent broadcasts plan updates without storing a tool call", (
     context,
   );
 
-  const planBroadcast = capture.detailBroadcasts.find(
-    (item: any) => item.method === "session/update" && item.params?.update?.kind === "plan_update",
-  ) as any;
-  assert.deepEqual(planBroadcast?.params.update.plan.entries, [
+  assert.deepEqual(context.sessionLiveStateStore?.get("session-1")?.plan?.entries, [
     { content: "Broadcast plan", priority: "medium", status: "in_progress" },
   ]);
   assert.equal(findStructuredLog(capture, "runtime.plan.updated")?.fields?.entries, 1);
@@ -2907,10 +3755,11 @@ test("empty plan updates are broadcast without debug log noise", () => {
   handleRuntimeEvent("session-1", emptyPlanUpdate, context);
   handleRuntimeEvent("session-1", emptyPlanUpdate, context);
 
-  const planBroadcasts = capture.detailBroadcasts.filter(
-    (item: any) => item.method === "session/update" && item.params?.update?.kind === "plan_update",
+  assert.equal(context.sessionLiveStateStore?.get("session-1")?.plan?.entries.length, 0);
+  assert.equal(
+    capture.detailBroadcasts.filter((item: any) => item.params?.update?.kind === "live_state").length,
+    2,
   );
-  assert.equal(planBroadcasts.length, 2);
   assert.equal(findStructuredLog(capture, "runtime.plan.updated"), undefined);
 });
 
@@ -2998,20 +3847,16 @@ test("runtime timeline events carry arrival order when timestamps collide", () =
         id: "message-final",
         role: "assistant",
         text: "最后回复",
+        streaming: false,
         timestamp,
       },
     } satisfies SessionRuntimeEvent,
     context,
   );
 
-  const timelineUpdates = capture.detailBroadcasts
-    .map((item: any) => item.params.update)
-    .filter((update: any) => update.kind === "tool_call" || update.kind === "agent_message");
   assert.deepEqual(
-    timelineUpdates.map((update: any) =>
-      update.kind === "tool_call" ? update.toolCall.sequence : update.message.sequence,
-    ),
-    [1, 2, 3],
+    capture.sessionUpdates?.map((update) => update.sequence),
+    [1, 2, 3, 4],
   );
 });
 
@@ -3096,9 +3941,12 @@ test("runtime command-output logs summary metadata without stream text", () => {
   assert.equal(commandLog?.fields?.lastSeq, 2);
   assert.equal(findStructuredLog(capture, "runtime.command_output.chunk"), undefined);
   assert.doesNotMatch(JSON.stringify(commandLog), /SECRET_STREAM_TEXT|with details|more secret output|text|preview/u);
-  assert.equal(appendedOutputs.length, 2);
-  assert.equal(capture.broadcasts.length, 1);
-  assert.equal(capture.detailBroadcasts.length, 2);
+  assert.equal(appendedOutputs.length, 0);
+  assert.equal(capture.broadcasts.length, 0);
+  assert.equal(
+    capture.detailBroadcasts.filter((item: any) => item.params?.update?.kind === "timeline_batch").length,
+    2,
+  );
 });
 
 test("runtime command-output merges consecutive same-stream chunks inside the live window", () => {
@@ -3158,13 +4006,10 @@ test("runtime command-output merges consecutive same-stream chunks inside the li
 
   timers.flushAll();
 
-  assert.equal(appendedOutputs.length, 1);
-  assert.equal(appendedOutputs[0]?.text, "hello world");
+  assert.equal(appendedOutputs.length, 0);
   assert.equal(capture.sessionUpdates?.length, 1);
-  const commandOutputUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.params?.update?.kind === "command_output"
-  ) as any;
-  assert.equal(commandOutputUpdate?.params?.update?.chunk?.text, "hello world");
+  const commandOutputEntry = capture.timelineEntries?.find((entry) => entry.kind === "command_output");
+  assert.equal(commandOutputEntry?.kind === "command_output" ? commandOutputEntry.output.text : undefined, "hello world");
 });
 
 test("runtime command-output spills oversized bodies to the output store and broadcasts a preview chunk", () => {
@@ -3212,14 +4057,14 @@ test("runtime command-output spills oversized bodies to the output store and bro
     outputId: "chunk-big",
     text: largeText,
   }]);
-  assert.equal(appendedOutputs[0]?.truncated, true);
-  assert.equal(appendedOutputs[0]?.text.length, 1024);
-  assert.equal(appendedOutputs[0]?.contentRef?.uri, "/api/sessions/session-command-output-spill/outputs/chunk-big");
-  const compatibilityUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "command_output",
-  ) as any;
-  assert.equal(compatibilityUpdate?.params?.update?.chunk?.truncated, true);
-  assert.equal(compatibilityUpdate?.params?.update?.chunk?.contentRef?.id, "chunk-big");
+  assert.equal(appendedOutputs.length, 0);
+  const commandOutputEntry = capture.timelineEntries?.find((entry) => entry.kind === "command_output");
+  assert.equal(commandOutputEntry?.kind === "command_output" ? commandOutputEntry.output.truncated : undefined, true);
+  assert.equal(commandOutputEntry?.kind === "command_output" ? commandOutputEntry.output.text.length : undefined, 1024);
+  assert.equal(
+    commandOutputEntry?.kind === "command_output" ? commandOutputEntry.output.contentRef?.uri : undefined,
+    "/api/sessions/session-command-output-spill/outputs/chunk-big",
+  );
 });
 
 test("runtime available-commands events persist commands on the session summary", () => {
@@ -3251,9 +4096,10 @@ test("runtime available-commands events persist commands on the session summary"
     ["review", "compact"],
   );
   assert.deepEqual(
-    capture.broadcasts.map((item: any) => item.params.update.kind),
-    ["commands_available", "session_updated"],
+    context.sessionLiveStateStore?.get("session-1")?.availableCommands?.map((command) => command.name),
+    ["review", "compact"],
   );
+  assert.equal(capture.broadcasts.length, 0);
 });
 
 test("permission-request emits approval/created globally and skips session-topic permission_request", () => {
@@ -3279,8 +4125,54 @@ test("permission-request emits approval/created globally and skips session-topic
   const detailMethods = capture.detailBroadcasts.map((item: any) => item.method);
 
   assert.equal(broadcastMethods.includes("approval/created"), true);
-  assert.equal(detailMethods.some((method) => method === "session/update"), false);
+  assert.equal(detailMethods.some((method) => method === "session/update"), true);
   assert.equal(context.approvalIndex.get("approval-1")?.sessionId, "session-1");
+});
+
+test("canonical permission request derives waiting status from active approval count", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-canonical-approval", {}, {
+    useCanonicalPipeline: true,
+  });
+  (context as any).approvalIndex = (context as any).permissionIndex;
+
+  handleRuntimeEvent(
+    "session-canonical-approval",
+    {
+      type: "permission-request",
+      request: {
+        id: "approval-canonical-1",
+        toolCallId: "tool-1",
+        command: "Run shell command :: {}",
+        reason: "需要审核",
+        cwd: "D:/repo",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const liveState = capture.detailBroadcasts.find((item: any) =>
+    item.method === "session/update" && item.params?.update?.kind === "live_state"
+  ) as any;
+  assert.equal(liveState?.params.update.snapshot.sequence, 1);
+  assert.equal(
+    liveState?.params.update.snapshot.status.effectiveStatus,
+    "waiting_for_permission",
+  );
+  assert.equal(
+    liveState?.params.update.snapshot.status.pendingApprovalCount,
+    1,
+  );
+  assert.equal(
+    context.approvalIndex.get("approval-canonical-1")?.request.toolCallId,
+    "tool-1",
+  );
 });
 
 test("permission-request auto-resolves matching approval policy without broadcasting approval", () => {

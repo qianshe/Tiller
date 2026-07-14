@@ -28,7 +28,7 @@ import {
   type SessionTimelinePositionedEntry,
   type SessionTimelinePageOptions,
 } from "../timeline-store";
-import { normalizePersistedAgentToolCall } from "../normalize.js";
+import { normalizeLegacyPersistedAgentToolCall } from "../normalize.js";
 import type { SessionTimelineStore } from "../session-stores";
 import { openSessionDatabase } from "./core";
 import {
@@ -622,7 +622,7 @@ function blockEntryRecords(sessionId: string, blockId: string, entries: Position
 
 function normalizeTimelineEntry(entry: SessionTimelineEntry): SessionTimelineEntry {
   if (entry.kind === "tool_call") {
-    const normalizedToolCall = normalizePersistedAgentToolCall(entry.toolCall) ?? entry.toolCall;
+    const normalizedToolCall = normalizeLegacyPersistedAgentToolCall(entry.toolCall) ?? entry.toolCall;
     return normalizedToolCall === entry.toolCall
       ? entry
       : {

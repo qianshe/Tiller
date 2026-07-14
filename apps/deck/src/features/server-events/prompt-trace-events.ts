@@ -52,13 +52,10 @@ export function createDeckSessionUpdateTraceEvent(
 function resolveSessionUpdateTraceId(params: SessionUpdateParams): string {
   const { update } = params;
   switch (update.kind) {
-    case "user_message":
     case "agent_message":
       return update.message.id;
     case "tool_call":
       return update.toolCall.id;
-    case "command_output":
-      return update.commandId;
     case "session_updated":
       return update.session.id;
     default:

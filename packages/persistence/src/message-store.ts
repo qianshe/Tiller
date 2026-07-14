@@ -121,28 +121,5 @@ function resolvePageEndIndex(messages: AgentMessage[], cursor: string | undefine
   if (exactIndex !== -1) {
     return exactIndex;
   }
-
-  const compatibleIndex = messages.findIndex(
-    (message) =>
-      compareHistoryPosition(
-        message.timestamp,
-        message.id,
-        legacyCursor.timestamp,
-        legacyCursor.id,
-      ) >= 0,
-  );
-  return compatibleIndex === -1 ? messages.length : compatibleIndex;
-}
-
-function compareHistoryPosition(
-  leftTimestamp: string,
-  leftId: string,
-  rightTimestamp: string,
-  rightId: string,
-) {
-  const timestampDelta = Date.parse(leftTimestamp) - Date.parse(rightTimestamp);
-  if (timestampDelta !== 0) {
-    return timestampDelta;
-  }
-  return leftId.localeCompare(rightId);
+  return messages.length;
 }

@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentToolCall } from "@tiller/shared";
-import { normalizePersistedAgentToolCall } from "./normalize";
+import { normalizeLegacyPersistedAgentToolCall } from "./normalize";
 
-test("normalizePersistedAgentToolCall upgrades structured MCP payloads with explicit metadata", () => {
-  const normalized = normalizePersistedAgentToolCall({
+test("normalizeLegacyPersistedAgentToolCall upgrades structured MCP payloads with explicit metadata", () => {
+  const normalized = normalizeLegacyPersistedAgentToolCall({
     id: "tool-mcp-structured",
     kind: "tool",
     title: "Tool call toolu_str…",
@@ -27,8 +27,8 @@ test("normalizePersistedAgentToolCall upgrades structured MCP payloads with expl
   assert.equal(normalized?.title, "Tool: mcp_router/find_symbol");
 });
 
-test("normalizePersistedAgentToolCall upgrades title-only MCP history with canonical names", () => {
-  const normalized = normalizePersistedAgentToolCall({
+test("normalizeLegacyPersistedAgentToolCall upgrades title-only MCP history with canonical names", () => {
+  const normalized = normalizeLegacyPersistedAgentToolCall({
     id: "tool-mcp-title-only",
     kind: "search",
     title: "mcpServers_search_context",

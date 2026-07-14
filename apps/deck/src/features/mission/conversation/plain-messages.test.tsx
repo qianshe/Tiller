@@ -89,6 +89,8 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
   assert.match(html, /plain-thinking-content[^"]*text-\[12\.5px\][^"]*leading-\[1\.5\]/);
   assert.doesNotMatch(html, /plain-thinking-content[^"]*border-l/);
   assert.match(html, /aria-label="展开 Thinking"/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium">Thinking<\/span>/);
+  assert.match(html, /class="inline-flex h-4 min-w-0 flex-1 items-center truncate leading-none text-muted-foreground\/70"/);
   assert.doesNotMatch(html, /plain-thinking[^"]*rounded-xl/);
   assert.doesNotMatch(html, /plain-thinking[^"]*bg-surface-elevated/);
 });
@@ -185,6 +187,92 @@ test("plain messages can render unified timeline entries with ordered assistant 
   assert.ok(userIndex >= 0);
   assert.ok(thinkingIndex > userIndex);
   assert.ok(answerIndex > thinkingIndex);
+});
+
+test("plain conversation groups adjacent tool calls without merging their entities", () => {
+  const items = resolvePlainConversationDisplayItems({
+    displayMessages: [],
+    timelineItems: [
+      {
+        id: "tool:shell-1",
+        kind: "tool_call",
+        toolCall: {
+          id: "shell-1",
+          commandId: "shell-1",
+          kind: "shell",
+          title: "第一步",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+          sequence: 1,
+        },
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 1,
+      },
+      {
+        id: "tool:write-2",
+        kind: "tool_call",
+        toolCall: {
+          id: "write-2",
+          commandId: "write-2",
+          kind: "write",
+          title: "第二步",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+          sequence: 2,
+        },
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        sequence: 2,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(items.length, 1);
+  assert.deepEqual(
+    items[0]?.kind === "tool-group"
+      ? items[0].group.map((tool) => ({
+          commandId: tool.commandId,
+          toolKind: tool.toolKind,
+        }))
+      : [],
+    [
+      { commandId: "shell-1", toolKind: "shell" },
+      { commandId: "write-2", toolKind: "write" },
+    ],
+  );
+});
+
+test("plain conversation renders live thought messages as collapsible thinking", () => {
+  const items = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "reply-1",
+        role: "assistant",
+        contentKind: "thought",
+        text: "internal reasoning",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        streaming: true,
+        streamMode: "delta",
+      },
+    ],
+    timelineItems: [],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.kind, "thinking");
+  assert.equal(
+    items[0]?.kind === "thinking" ? items[0].toolCall.output : undefined,
+    "internal reasoning",
+  );
 });
 
 test("plain messages preserves persisted timeline order during sequence resets", () => {
@@ -2702,13 +2790,13 @@ test("plain messages keeps tool call rows vertically centered with symmetric pad
   });
 
   assert.match(html, /plain-tool-call/);
-  assert.match(html, /<details class="plain-tool-call text-muted-foreground"/);
-  assert.match(html, /<summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5 py-0\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
+  assert.match(html, /<details class="plain-tool-call col-span-5 grid grid-cols-subgrid text-muted-foreground"/);
+  assert.match(html, /<summary class="col-span-5 grid min-w-0 cursor-pointer list-none grid-cols-subgrid items-center py-0\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
   assert.match(html, /class="grid size-3 shrink-0 place-items-center rounded-sm/);
   assert.match(html, /inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
   assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium leading-4 text-foreground">/);
-  assert.match(html, /class="ml-auto inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground\/60"/);
-  assert.match(html, /<pre class="mt-0\.5 max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground\/85"/);
+  assert.match(html, /class="col-start-5 inline-flex h-4 shrink-0 items-center justify-self-end text-2xs text-muted-foreground\/60"/);
+  assert.match(html, /<pre class="col-span-5 mt-0\.5 min-w-0 max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground\/85"/);
 });
 
 test("plain messages surfaces subagent type and task summary when available", () => {
@@ -2741,6 +2829,214 @@ test("plain messages surfaces subagent type and task summary when available", ()
   assert.match(html, /class="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground\/70"/);
   assert.match(html, /class="inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0\.5 text-2xs font-semibold leading-none/);
   assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground\/60 transition-transform duration-150 rotate-180"/);
+});
+
+test("plain messages renders subagent lifecycle status and cleans provider envelopes", () => {
+  const runningHtml = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-subagent-running",
+        kind: "subagent",
+        title: "Lifecycle check",
+        status: "running",
+        input: JSON.stringify({
+          subagent_type: "general",
+          description: "Lifecycle check",
+          prompt: "Return SUBAGENT_RUNNING_OK",
+        }),
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:01.000Z",
+      },
+    ],
+  });
+  const completedHtml = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-subagent-completed",
+        kind: "subagent",
+        title: "Lifecycle check",
+        status: "completed",
+        input: JSON.stringify({ subagent_type: "general", description: "Lifecycle check" }),
+        output: JSON.stringify({
+          output:
+            "Task completed in 7s.\n\nAgent: general\n\n---\n\nSUBAGENT_RUNNING_OK\n<!-- OMO_INTERNAL_INITIATOR -->\n\n<task_metadata>\ntask_id: task-42\n</task_metadata>\n\nto continue: task(task_id=\"task-42\")",
+          metadata: { taskId: "task-42" },
+        }),
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:08.000Z",
+      },
+    ],
+  });
+
+  assert.match(runningHtml, /运行中/);
+  assert.match(runningHtml, /Return SUBAGENT_RUNNING_OK/);
+  assert.match(completedHtml, /SUBAGENT_RUNNING_OK/);
+  assert.doesNotMatch(completedHtml, /Task completed in 7s/);
+  assert.doesNotMatch(completedHtml, /task_metadata/);
+  assert.doesNotMatch(completedHtml, /to continue/);
+});
+
+test("plain messages extracts Claude TaskOutput content from lifecycle metadata", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-claude-subagent-output",
+        kind: "subagent",
+        title: "Inspect adapter B",
+        status: "completed",
+        output: [
+          "<retrieval_status>success</retrieval_status>",
+          "<task_id>agent-b</task_id>",
+          "<task_type>local_agent</task_type>",
+          "<status>completed</status>",
+          "<output>CLAUDE_PURPOSE_B_CHILD</output>",
+        ].join("\n"),
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /CLAUDE_PURPOSE_B_CHILD/);
+  assert.doesNotMatch(html, /retrieval_status/);
+  assert.doesNotMatch(html, /task_id/);
+});
+
+test("plain messages removes Claude Agent continuation metadata from subagent output", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-claude-agent-output",
+        kind: "subagent",
+        title: "Claude transcript pending final",
+        status: "completed",
+        output: [
+          "CLAUDE_PENDING_CHILD_OK",
+          "agentId: agent-123 (use SendMessage with to: 'agent-123', summary: '<5-10 word recap>' to continue this agent)",
+          "<usage>subagent_tokens: 75114 tool_uses: 1 duration_ms: 33107</usage>",
+        ].join("\n"),
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /CLAUDE_PENDING_CHILD_OK/);
+  assert.doesNotMatch(html, /agentId/);
+  assert.doesNotMatch(html, /SendMessage/);
+  assert.doesNotMatch(html, /subagent_tokens/);
+});
+
+test("plain tool rows do not repeat the Skill category in the title", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-skill-title",
+        kind: "skill",
+        title: "Skill: superpowers:verification-before-completion",
+        status: "completed",
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, />Skill</);
+  assert.match(html, />superpowers:verification-before-completion</);
+  assert.doesNotMatch(html, /Skill: superpowers:verification-before-completion/);
+});
+
+test("plain tool rows render diagnostics as an independent category", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-diagnostics",
+        kind: "diagnostics",
+        title: "Diagnostics: packages/acp-runtime/src/adapters/opencode/tool-calls.ts",
+        status: "completed",
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /data-tool-kind="diagnostics"/);
+  assert.match(html, />Diagnostics</);
+  assert.match(html, />packages\/acp-runtime\/src\/adapters\/opencode\/tool-calls\.ts</);
+  assert.doesNotMatch(html, /Diagnostics: packages/);
+});
+
+test("plain shell rows expose the complete command through the title attribute", () => {
+  const command = "pnpm --filter @tiller/deck test -- --test-name-pattern &quot;complete shell command title&quot;";
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-shell-long-title",
+        kind: "shell",
+        title: command.replace(/&quot;/gu, '"'),
+        status: "completed",
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, new RegExp(`title="${command}"`, "u"));
+});
+
+test("plain write rows show per-call additions and deletions when evidence is available", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-write-stats",
+        kind: "write",
+        title: "src/app.ts",
+        status: "completed",
+        input: JSON.stringify({
+          path: "src/app.ts",
+          old_string: "const value = 1;",
+          new_string: "const value = 2;",
+        }),
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /tool-call-additions[^\"]*text-success[^>]*>\+1</);
+  assert.match(html, /tool-call-deletions[^\"]*text-destructive[^>]*>-1</);
+});
+
+test("plain tool rows align titles without letting expanded output resize the row", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-search-title-alignment",
+        kind: "search",
+        title: "Find command handler",
+        status: "completed",
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+      {
+        id: "tool-read-title-alignment",
+        kind: "read",
+        title: "Read handler implementation",
+        status: "completed",
+        output: '{"result":"long tool output must not resize the shared title columns"}',
+        timestamp: "2026-07-14T00:00:03.000Z",
+        updatedAt: "2026-07-14T00:00:04.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /plain-tool-group[\s\S]*?class="inline-flex size-4 shrink-0 items-center justify-center text-primary"/);
+  assert.match(html, /plain-tool-group-content grid grid-cols-\[0\.75rem_max-content_minmax\(0,1fr\)_auto_auto\] max-h-36 gap-x-1\.5 gap-y-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground/);
+  assert.equal(html.match(/plain-tool-call col-span-5 grid grid-cols-subgrid text-muted-foreground/g)?.length, 2);
+  assert.equal(html.match(/summary class="col-span-5 grid min-w-0 cursor-pointer list-none grid-cols-subgrid items-center/g)?.length, 2);
+  assert.match(html, /class="inline-flex shrink-0 items-center"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
+  assert.match(html, /<pre class="col-span-5 mt-0\.5 min-w-0 max-w-full/);
+  assert.doesNotMatch(html, /inline-flex w-20/);
 });
 
 test("plain messages removes vertical guide lines from thinking, subagent, and tool group details", () => {
@@ -2785,7 +3081,7 @@ test("plain messages removes vertical guide lines from thinking, subagent, and t
 
   assert.match(html, /class="plain-thinking-content pt-1 text-\[12\.5px\]/);
   assert.match(html, /class="plain-subagent-content pt-1 text-\[12\.5px\]/);
-  assert.match(html, /class="plain-tool-group-content grid max-h-36 gap-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground"/);
+  assert.match(html, /class="plain-tool-group-content grid grid-cols-\[0\.75rem_max-content_minmax\(0,1fr\)_auto_auto\] max-h-36 gap-x-1\.5 gap-y-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground"/);
   assert.doesNotMatch(html, /border-l border-primary\/25/);
 });
 
@@ -3737,7 +4033,7 @@ test("plain message timeline coalesces runtime assistant chunks before rendering
   ]);
 });
 
-test("plain message timeline orders mixed sequence history by timestamp across tool calls", () => {
+test("plain message fallback keeps source order when a legacy item has no sequence", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -3780,7 +4076,7 @@ test("plain message timeline orders mixed sequence history by timestamp across t
   const userIndex = html.indexOf("旧用户提问");
   const assistantIndex = html.indexOf("Provider 回复");
   const toolIndex = html.indexOf("Run tests");
-  assert.ok(assistantIndex >= 0 && toolIndex > assistantIndex && userIndex > toolIndex);
+  assert.ok(userIndex >= 0 && assistantIndex > userIndex && toolIndex > assistantIndex);
 });
 
 test("plain message timeline interleaves assistant chunks with tool entries", () => {
@@ -3863,7 +4159,7 @@ test("plain message timeline interleaves assistant chunks with tool entries", ()
   assert.ok(html.indexOf("工具调用 · 2 项") < html.indexOf("工具后继续输出。"));
 });
 
-test("plain message timeline prefers timestamps over source order when Codex subagent sequences are skewed", () => {
+test("plain message timeline keeps canonical sequence order when timestamps are skewed", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {
       id: "tool:spawn-later",
@@ -3915,7 +4211,7 @@ test("plain message timeline prefers timestamps over source order when Codex sub
     }),
   );
 
-  assert.ok(html.indexOf("earlier wait") < html.indexOf("later spawn"));
+  assert.ok(html.indexOf("later spawn") < html.indexOf("earlier wait"));
 });
 
 test("plain message timeline filters OpenCode prompt wrapper echoes", () => {

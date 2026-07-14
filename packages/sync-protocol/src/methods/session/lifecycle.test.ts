@@ -15,7 +15,6 @@ import * as sessionConfigure from "./configure";
 import * as sessionSetConfigOption from "./set-config-option";
 import * as sessionRename from "./rename";
 import * as sessionCleanup from "./cleanup";
-import * as debugReimportHistory from "../debug/reimport-history";
 
 test("session/new requires project cwd and agent", () => {
   assert.equal(sessionNew.method, "session/new");
@@ -192,20 +191,4 @@ test("session/rename requires session id and title", () => {
 test("session/cleanup carries result payload", () => {
   assert.equal(sessionCleanup.method, "session/cleanup");
   sessionCleanup.ResultSchema.parse({ result: {} });
-});
-
-test("debug/reimport_history requires session id and returns replacement history", () => {
-  assert.equal(debugReimportHistory.method, "debug/reimport_history");
-  debugReimportHistory.ParamsSchema.parse({ sessionId: "s1", limit: 50 });
-  assert.throws(() => debugReimportHistory.ParamsSchema.parse({}));
-  debugReimportHistory.ResultSchema.parse({
-    sessionId: "s1",
-    messages: [],
-    outputs: [],
-    diffs: [],
-    toolCalls: [],
-    hasMore: false,
-    activityHasMore: false,
-    message: "History reimported.",
-  });
 });

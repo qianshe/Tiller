@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   applySessionTimelineBatch,
   createEmptyAppliedTimelineState,
+  createSessionTimelineIndexCache,
 } from "./session-timeline-batches";
 
 test("Deck applies a SessionTimelineBatch by generic replace-or-append, not by semantic transcript merge", () => {
@@ -69,6 +70,25 @@ test("replace batch resets all entries", () => {
   assert.equal(next.reloadRequired, false);
 });
 
+test("authoritative replace resets a stale delivery counter after reconnect", () => {
+  const next = applySessionTimelineBatch({
+    entries: [],
+    latestDeliverySequence: 99,
+    reloadRequired: true,
+  }, {
+    replace: true,
+    deliverySequence: 0,
+    lastSequence: 8,
+    entries: [
+      { id: "snapshot", kind: "assistant_message", chunks: [], timestamp: "2026-07-11T10:00:00.000Z", updatedAt: "2026-07-11T10:00:00.000Z", sequence: 8 },
+    ],
+  });
+
+  assert.equal(next.latestDeliverySequence, 0);
+  assert.equal(next.reloadRequired, false);
+  assert.deepEqual(next.entries.map((entry) => entry.id), ["snapshot"]);
+});
+
 test("batch upserts existing entries by id", () => {
   const current = {
     entries: [
@@ -92,4 +112,52 @@ test("batch upserts existing entries by id", () => {
   if (entry?.kind === "assistant_message") {
     assert.equal(entry.chunks[0]?.text, "Hello world");
   }
+});
+
+test("canonical batches preserve notification order without timestamp sorting", () => {
+  const next = applySessionTimelineBatch(createEmptyAppliedTimelineState(), {
+    replace: false,
+    deliverySequence: 1,
+    lastSequence: 2,
+    entries: [
+      { id: "first", kind: "assistant_message", chunks: [], timestamp: "2026-07-11T10:00:10.000Z", updatedAt: "2026-07-11T10:00:10.000Z", sequence: 1 },
+      { id: "second", kind: "assistant_message", chunks: [], timestamp: "2026-07-11T09:00:00.000Z", updatedAt: "2026-07-11T09:00:00.000Z", sequence: 2 },
+    ],
+  });
+
+  assert.deepEqual(next.entries.map((entry) => entry.id), ["first", "second"]);
+});
+
+test("timeline batches reuse the per-session id index for incremental updates", () => {
+  const entries = Array.from({ length: 10_000 }, (_, index) => ({
+    id: `entry-${index}`,
+    kind: "assistant_message" as const,
+    chunks: [],
+    timestamp: "2026-07-12T00:00:00.000Z",
+    updatedAt: "2026-07-12T00:00:00.000Z",
+    sequence: index + 1,
+  }));
+  const cache = createSessionTimelineIndexCache(entries);
+  const indexById = cache.indexById;
+  const next = applySessionTimelineBatch({
+    entries,
+    latestDeliverySequence: 1,
+    reloadRequired: false,
+  }, {
+    replace: false,
+    deliverySequence: 2,
+    lastSequence: 10_001,
+    entries: [{
+      id: "entry-9999",
+      kind: "assistant_message",
+      chunks: [],
+      timestamp: "2026-07-12T00:00:01.000Z",
+      updatedAt: "2026-07-12T00:00:01.000Z",
+      sequence: 10_001,
+    }],
+  }, cache);
+
+  assert.equal(cache.indexById, indexById);
+  assert.equal(cache.entries, next.entries);
+  assert.equal(next.entries.length, 10_000);
 });

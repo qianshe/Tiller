@@ -4,16 +4,134 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
-import { buildSessionTimelineFromLegacy } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionTimelineEntry,
+  SessionUpdateRecord,
+} from "@tiller/shared";
+import {
+  appendMessageToSessionTimeline,
+  appendToolCallToSessionTimeline,
+} from "@tiller/shared";
 import { createSqliteSessionTimelineStore } from "./sqlite/timeline-store";
+import { createSqliteSessionUpdateStore } from "./sqlite/session-update-store";
 import { pageSessionTimeline } from "./timeline-store";
 
 type InternalSqliteTimelineStore = ReturnType<typeof createSqliteSessionTimelineStore> & {
   append(sessionId: string, entry: SessionTimelineEntry): SessionTimelineEntry[];
   upsertMessage(sessionId: string, message: AgentMessage): SessionTimelineEntry | undefined;
   upsertToolCall(sessionId: string, toolCall: AgentToolCall): SessionTimelineEntry | undefined;
+  commitBatch(
+    sessionId: string,
+    batch: import("@tiller/shared").SessionTimelineBatch,
+    updates: SessionUpdateRecord[],
+  ): SessionTimelineEntry[];
 };
+
+test("sqlite timeline commit rolls back materialization when an update conflicts", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
+  const updates = createSqliteSessionUpdateStore(dbPath);
+  const update: SessionUpdateRecord = {
+    sessionId: "session-1",
+    runtimeSessionId: "runtime-1",
+    providerId: "codex",
+    sequence: 1,
+    source: "acp_live",
+    updateType: "message",
+    receivedAt: at(1),
+    payloadJson: '{"type":"message"}',
+  };
+  const entry: SessionTimelineEntry = {
+    id: "assistant-1",
+    kind: "assistant_message",
+    chunks: [{
+      id: "assistant-1:content",
+      kind: "content",
+      text: "committed",
+      timestamp: at(1),
+      sequence: 1,
+    }],
+    timestamp: at(1),
+    updatedAt: at(1),
+    sequence: 1,
+  };
+
+  try {
+    updates.append(update);
+
+    assert.throws(() => {
+      store.commitBatch("session-1", {
+        replace: false,
+        deliverySequence: 1,
+        lastSequence: 1,
+        entries: [entry],
+      }, [update]);
+    });
+
+    assert.deepEqual(store.list("session-1"), []);
+    assert.equal(updates.listPage("session-1").updates.length, 1);
+
+    const successfulUpdate = { ...update, sessionId: "session-2" };
+    store.commitBatch("session-2", {
+      replace: false,
+      deliverySequence: 1,
+      lastSequence: 1,
+      entries: [{ ...entry, id: "assistant-2" }],
+    }, [successfulUpdate]);
+    assert.deepEqual(store.list("session-2").map((item) => item.id), ["assistant-2"]);
+    assert.equal(updates.listPage("session-2").updates.length, 1);
+  } finally {
+    updates.close();
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("sqlite timeline commit returns only the materialized delta while retaining prior rows", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
+  try {
+    const first: SessionTimelineEntry = {
+      id: "user-1",
+      kind: "user_message",
+      message: message({ id: "user-1", role: "user", text: "first", sequence: 1 }),
+      timestamp: at(1),
+      updatedAt: at(1),
+      sequence: 1,
+    };
+    const second: SessionTimelineEntry = {
+      id: "tool:1",
+      kind: "tool_call",
+      toolCall: toolCall({ id: "1", kind: "read", status: "completed", title: "Read", sequence: 2 }),
+      timestamp: at(2),
+      updatedAt: at(2),
+      sequence: 2,
+    };
+    store.commitBatch("session-1", {
+      replace: false,
+      deliverySequence: 1,
+      lastSequence: 1,
+      entries: [first],
+    }, []);
+
+    const committed = store.commitBatch("session-1", {
+      replace: false,
+      deliverySequence: 2,
+      lastSequence: 2,
+      entries: [second],
+    }, []);
+
+    assert.deepEqual(committed.map((entry) => entry.id), ["tool:1"]);
+    assert.deepEqual(store.list("session-1").map((entry) => entry.id), ["user-1", "tool:1"]);
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
 
 const BASE_TIME = "2026-05-30T10:00:00.000Z";
 const { DatabaseSync } = createRequire(import.meta.url)(
@@ -39,6 +157,18 @@ function toolCall(
     updatedAt: at(overrides.sequence ?? 0),
     ...overrides,
   };
+}
+
+function buildCanonicalTimeline(events: Array<AgentMessage | AgentToolCall>): SessionTimelineEntry[] {
+  const entries: SessionTimelineEntry[] = [];
+  for (const event of events) {
+    if ("role" in event) {
+      appendMessageToSessionTimeline(entries, event);
+    } else {
+      appendToolCallToSessionTimeline(entries, event);
+    }
+  }
+  return entries;
 }
 
 test("sqlite timeline append updates an existing entry without moving its persisted position", () => {
@@ -208,7 +338,43 @@ test("sqlite timeline upsertToolCall merges thinking into one assistant entry", 
   }
 });
 
-test("pageSessionTimeline drops later replay duplicates with reset-or-equal sequences", () => {
+test("sqlite timeline store round-trips canonical output entries", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
+
+  try {
+    store.replace("session-1", [{
+      id: "output:command-1:2",
+      kind: "command_output",
+      commandId: "command-1",
+      output: {
+        id: "output-1",
+        commandId: "command-1",
+        text: "stdout",
+        stream: "stdout",
+        timestamp: at(2),
+        sequence: 2,
+      },
+      timestamp: at(2),
+      updatedAt: at(2),
+      sequence: 2,
+    }]);
+
+    const persisted = store.list("session-1");
+    assert.equal(persisted[0]?.kind, "command_output");
+    if (persisted[0]?.kind !== "command_output") {
+      throw new Error("Expected canonical command_output entry");
+    }
+    assert.equal(persisted[0].commandId, "command-1");
+    assert.equal(persisted[0].output.text, "stdout");
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("pageSessionTimeline preserves legacy duplicate rows as raw stored history", () => {
   const entries: SessionTimelineEntry[] = [
     {
       id: "session-1-user-1",
@@ -274,6 +440,8 @@ test("pageSessionTimeline drops later replay duplicates with reset-or-equal sequ
     page.entries.map((entry) => [entry.kind, entry.id]),
     [
       ["user_message", "session-1-user-1"],
+      ["user_message", "provider-user-1"],
+      ["assistant_message", "provider-assistant-1"],
       ["assistant_message", "session-1-msg-000001"],
     ],
   );
@@ -429,30 +597,67 @@ test("sqlite timeline message-window paging keeps transcript boundaries with the
   }
 });
 
+test("sqlite timeline turn-window paging keeps the latest user prompt with a long assistant turn", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
+
+  try {
+    const entries = buildCanonicalTimeline([
+      message({ id: "user-previous", role: "user", text: "上一轮", sequence: 1 }),
+      message({ id: "assistant-previous", role: "assistant", text: "上一轮回复", sequence: 2 }),
+      message({ id: "user-latest", role: "user", text: "最新问题", sequence: 3 }),
+      ...Array.from({ length: 30 }, (_, index) =>
+        message({
+          id: `assistant-segment-${index}`,
+          role: "assistant" as const,
+          text: `回复段 ${index}`,
+          sequence: index + 4,
+        }),
+      ),
+    ]);
+    store.replace("session-1", entries);
+
+    const latest = store.listPage("session-1", { limit: 1, window: "turn" });
+    const older = store.listPage("session-1", {
+      limit: 1,
+      window: "turn",
+      before: latest.nextCursor,
+    });
+
+    assert.equal(latest.entries[0]?.id, "user-latest");
+    assert.equal(latest.entries.at(-1)?.id, "assistant-segment-29");
+    assert.equal(latest.hasMore, true);
+    assert.deepEqual(
+      older.entries.map((entry) => entry.id),
+      ["user-previous", "assistant-previous"],
+    );
+    assert.equal(older.hasMore, false);
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("sqlite timeline store persists ordered unified entries", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
   const store = createSqliteSessionTimelineStore(dbPath);
 
   try {
-    const entries = buildSessionTimelineFromLegacy({
-      messages: [
-        message({ id: "assistant-1", role: "assistant", text: "Done", sequence: 3 }),
-        message({ id: "user-1", role: "user", text: "Start", sequence: 1 }),
-      ],
-      toolCalls: [
-        toolCall({
-          id: "assistant-1:thinking",
-          commandId: "assistant-1:thinking",
-          kind: "think",
-          output: "Reasoning",
-          status: "completed",
-          title: "Thinking",
-          sequence: 2,
-        }),
-      ],
-      outputs: [],
-    });
+    const entries = buildCanonicalTimeline([
+      message({ id: "user-1", role: "user", text: "Start", sequence: 1 }),
+      toolCall({
+        id: "assistant-1:thinking",
+        commandId: "assistant-1:thinking",
+        kind: "think",
+        output: "Reasoning",
+        status: "completed",
+        title: "Thinking",
+        sequence: 2,
+      }),
+      message({ id: "assistant-1", role: "assistant", text: "Done", sequence: 3 }),
+    ]);
 
     store.replace("session-1", entries);
 
@@ -521,12 +726,9 @@ test("sqlite timeline store normalizes legacy tool call entries when reading", (
 });
 
 test("timeline message window pagination includes tool entries between the latest content messages", () => {
-  const entries = buildSessionTimelineFromLegacy({
-    messages: [
-      message({ id: "assistant-intro", role: "assistant", text: "intro", sequence: 1 }),
-      message({ id: "assistant-final", role: "assistant", text: "final", sequence: 6 }),
-    ],
-    toolCalls: Array.from({ length: 4 }, (_, index) =>
+  const entries = buildCanonicalTimeline([
+    message({ id: "assistant-intro", role: "assistant", text: "intro", sequence: 1 }),
+    ...Array.from({ length: 4 }, (_, index) =>
       toolCall({
         id: `tool-${index}`,
         kind: "read",
@@ -535,7 +737,8 @@ test("timeline message window pagination includes tool entries between the lates
         sequence: index + 2,
       }),
     ),
-  });
+    message({ id: "assistant-final", role: "assistant", text: "final", sequence: 6 }),
+  ]);
 
   const page = pageSessionTimeline(entries, {
     limit: 2,
@@ -557,12 +760,9 @@ test("timeline message window pagination includes tool entries between the lates
 });
 
 test("timeline message window pagination caps dense entry pages", () => {
-  const entries = buildSessionTimelineFromLegacy({
-    messages: [
-      message({ id: "assistant-intro", role: "assistant", text: "intro", sequence: 1 }),
-      message({ id: "assistant-final", role: "assistant", text: "final", sequence: 142 }),
-    ],
-    toolCalls: Array.from({ length: 140 }, (_, index) =>
+  const entries = buildCanonicalTimeline([
+    message({ id: "assistant-intro", role: "assistant", text: "intro", sequence: 1 }),
+    ...Array.from({ length: 140 }, (_, index) =>
       toolCall({
         id: `tool-${index}`,
         kind: "read",
@@ -571,7 +771,8 @@ test("timeline message window pagination caps dense entry pages", () => {
         sequence: index + 2,
       }),
     ),
-  });
+    message({ id: "assistant-final", role: "assistant", text: "final", sequence: 142 }),
+  ]);
 
   const page = pageSessionTimeline(entries, {
     entryLimit: 50,
@@ -595,10 +796,9 @@ test("timeline message window pagination caps dense entry pages", () => {
 });
 
 test("timeline message window pagination counts coalesced provider paragraphs as one message block", () => {
-  const entries = buildSessionTimelineFromLegacy({
-    messages: [
-      message({ id: "user-latest", role: "user", text: "继续", sequence: 1 }),
-      ...Array.from({ length: 30 }, (_, index) =>
+  const entries = buildCanonicalTimeline([
+    message({ id: "user-latest", role: "user", text: "继续", sequence: 1 }),
+    ...Array.from({ length: 30 }, (_, index) =>
         message({
           id: `assistant-final#p${index}`,
           role: "assistant" as const,
@@ -606,8 +806,7 @@ test("timeline message window pagination counts coalesced provider paragraphs as
           sequence: index + 2,
         }),
       ),
-    ],
-  });
+  ]);
 
   const page = pageSessionTimeline(entries, {
     limit: 20,
@@ -617,6 +816,31 @@ test("timeline message window pagination counts coalesced provider paragraphs as
   assert.equal(page.entries[0]?.id, "user-latest");
   assert.equal(page.entries.at(-1)?.id, "assistant-final#p29");
   assert.equal(page.hasMore, false);
+});
+
+test("timeline turn window includes the latest user prompt with all following assistant segments", () => {
+  const entries = buildCanonicalTimeline([
+    message({ id: "user-previous", role: "user", text: "上一轮", sequence: 1 }),
+    message({ id: "assistant-previous", role: "assistant", text: "上一轮回复", sequence: 2 }),
+    message({ id: "user-latest", role: "user", text: "最新问题", sequence: 3 }),
+    ...Array.from({ length: 30 }, (_, index) =>
+      message({
+        id: `assistant-segment-${index}`,
+        role: "assistant" as const,
+        text: `回复段 ${index}`,
+        sequence: index + 4,
+      }),
+    ),
+  ]);
+
+  const page = pageSessionTimeline(entries, {
+    limit: 1,
+    window: "turn",
+  });
+
+  assert.equal(page.entries[0]?.id, "user-latest");
+  assert.equal(page.entries.at(-1)?.id, "assistant-segment-29");
+  assert.equal(page.hasMore, true);
 });
 
 test("timeline pagination preserves persisted order with partial sequence data", () => {

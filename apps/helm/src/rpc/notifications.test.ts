@@ -5,15 +5,6 @@ import { createSessionEventPublisher } from "../runtime/session/event/publisher"
 
 const detailUpdates = [
   {
-    kind: "user_message",
-    message: {
-      id: "user-1",
-      role: "user",
-      text: "hello",
-      timestamp: "2026-05-23T00:00:00.000Z",
-    },
-  },
-  {
     kind: "agent_message",
     message: {
       id: "msg-1",
@@ -33,17 +24,12 @@ const detailUpdates = [
     },
   },
   {
-    kind: "command_output",
-    chunk: {
-      id: "cmd-1",
-      stream: "stdout",
-      text: "ok",
-      timestamp: "2026-05-23T00:00:00.000Z",
-    },
+    kind: "timeline_batch",
+    batch: { replace: false, deliverySequence: 1, lastSequence: 1, entries: [] },
   },
   {
-    kind: "diff_update",
-    diff: { path: "src/file.ts", status: "modified", additions: 1, deletions: 0 },
+    kind: "live_state",
+    snapshot: { sequence: 1, effectiveStatus: "running" },
   },
 ];
 
@@ -102,10 +88,13 @@ test("prompt trace debug events use global notification broadcast", () => {
 });
 
 test("session event publisher preserves notification payloads", () => {
-  const update = { kind: "status_change", status: "running" } as const;
+  const update = { kind: "live_state", snapshot: { sequence: 1, effectiveStatus: "running" } } as const;
   const calls: Array<{ method: string; params: unknown }> = [];
   const publisher = createSessionEventPublisher({
     broadcastNotification: (method: string, params: unknown) => {
+      calls.push({ method, params });
+    },
+    broadcastSessionTopic: (_sessionId: string, method: string, params: unknown) => {
       calls.push({ method, params });
     },
   } as any);

@@ -31,6 +31,8 @@ import {
   type SessionsSlice,
 } from "./slices/sessions-slice";
 
+export type { SessionLegacyEvidenceState } from "./slices/messages-slice";
+
 export type DeckStore = ActivitiesSlice &
   AgentsSlice &
   ApprovalsSlice &

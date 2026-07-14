@@ -5,7 +5,11 @@ import {
   resolveMissionActivityLoading,
   selectMissionDisplayTab,
 } from "../utils/session-render-state";
-import { deriveToolCallsFromTimeline } from "../utils/timeline-tool-calls";
+import {
+  deriveHistoricalActivityFromTimeline,
+  mergeHistoricalAndLiveOutputs,
+  mergeHistoricalAndLiveToolCalls,
+} from "../utils/timeline-activity";
 import {
   isSessionExecutionPending,
   resolveSessionRestoreGate,
@@ -71,10 +75,10 @@ export function buildMissionWorktreeModel(input: any) {
         resumeStartRequestsRef?.current?.has(effectiveComposerSession.id),
     ),
   });
-  const composerModelLoading = Boolean(
-    draftModelLoading ||
-      (effectiveComposerSession && !composerSessionRestoreGate.canChat),
-  );
+  const composerModelLoading = Boolean(draftModelLoading);
+  const composerSessionRestoring =
+    composerSessionRestoreGate.state === "checking" ||
+    composerSessionRestoreGate.state === "restoring";
   const canSend = Boolean(
     composerSessionRestoreGate.canChat &&
     composerSessionStatus !== "starting" &&
@@ -92,11 +96,19 @@ export function buildMissionWorktreeModel(input: any) {
     activeHelm;
   const activeMissionHelmProjectCount = missionProjects.length;
   const activeDiffs = activeSession ? (diffs[activeSession.id] ?? []) : [];
-  const activeOutputs = activeSession ? (outputs[activeSession.id] ?? []) : [];
+  const activeTimelineActivity = activeSession
+    ? deriveHistoricalActivityFromTimeline(sessionTimeline[activeSession.id])
+    : { outputs: [], toolCalls: [] };
+  const activeOutputs = activeSession
+    ? mergeHistoricalAndLiveOutputs(
+      activeTimelineActivity.outputs,
+      outputs[activeSession.id] ?? [],
+    )
+    : [];
   const activeToolCalls = activeSession
-    ? (
-      toolCalls[activeSession.id] ??
-      deriveToolCallsFromTimeline(sessionTimeline[activeSession.id])
+    ? mergeHistoricalAndLiveToolCalls(
+      activeTimelineActivity.toolCalls,
+      toolCalls[activeSession.id] ?? [],
     )
     : [];
   const pendingToolActivity =
@@ -213,6 +225,7 @@ export function buildMissionWorktreeModel(input: any) {
     visibleProjectFiles,
     sessionExecutionPending,
     composerModelLoading,
+    composerSessionRestoring,
   };
 }
 

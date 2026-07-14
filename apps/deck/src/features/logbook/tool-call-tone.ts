@@ -6,6 +6,7 @@ const TOOL_CALL_TONES: Record<string, ToolCallTone> = {
   MCP: { className: "tool-call-mcp", icon: "◇" },
   Shell: { className: "tool-call-shell", icon: "⌁" },
   Read: { className: "tool-call-read", icon: "◫" },
+  Diagnostics: { className: "tool-call-read", icon: "!" },
   Write: { className: "tool-call-write", icon: "✎" },
   Search: { className: "tool-call-mcp", icon: "⌕" },
   Fetch: { className: "tool-call-mcp", icon: "↧" },
@@ -22,6 +23,7 @@ const KIND_LABELS: Record<AgentToolCall["kind"], keyof typeof TOOL_CALL_TONES> =
   mcp: "MCP",
   skill: "Skill",
   read: "Read",
+  diagnostics: "Diagnostics",
   write: "Write",
   search: "Search",
   shell: "Shell",
@@ -58,6 +60,9 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
   const normalized = title.toLowerCase();
   if (kind === "subagent") {
     return "Subagent";
+  }
+  if (kind === "read" && /^diagnostics(?:\s*:|\s+|$)/iu.test(title.trim())) {
+    return "Diagnostics";
   }
   const labelFromKind = KIND_LABELS[kind];
   if (labelFromKind && labelFromKind !== "Tool") {

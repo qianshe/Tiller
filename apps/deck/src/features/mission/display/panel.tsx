@@ -45,6 +45,7 @@ type MissionDisplayPanelProps = {
   selectedDiffFilePath: string | null;
   diffs: FileDiffSummary[];
   noDiffSummary: string;
+  historicalDiffIncomplete?: boolean;
   onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   gitStatus?: GitStatusState;
   gitGraph?: GitGraphState;
@@ -69,6 +70,7 @@ export function MissionDisplayPanel({
   selectedDiffFilePath,
   diffs,
   noDiffSummary,
+  historicalDiffIncomplete,
   gitStatus,
   gitGraph,
   onRefreshGitStatus,
@@ -196,7 +198,7 @@ export function MissionDisplayPanel({
         {isGraphTabSelected ? (
           <GitGraphPanel gitGraph={gitGraph} />
         ) : (
-          renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary })
+          renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary, historicalDiffIncomplete })
         )}
       </section>
       
@@ -253,9 +255,15 @@ type RenderDiffDetailPageInput = {
   selectedDiffFilePath: string | null;
   diffs: FileDiffSummary[];
   noDiffSummary: string;
+  historicalDiffIncomplete?: boolean;
 };
 
-function renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary }: RenderDiffDetailPageInput) {
+function renderDiffDetailPage({
+  selectedDiffFilePath,
+  diffs,
+  noDiffSummary,
+  historicalDiffIncomplete,
+}: RenderDiffDetailPageInput) {
   const selectedFile = selectedDiffFilePath
     ? diffs.find((file) => file.path === selectedDiffFilePath)
     : null;
@@ -270,10 +278,35 @@ function renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary }: Re
     <div className="mission-panel-page mission-diff-detail grid min-h-0 overflow-hidden" aria-label="Diff 文件详情">
       <div className="mission-diff-file min-w-0 overflow-hidden bg-transparent">
         {selectedFile.patch ? (
-          renderDiffPatch(selectedFile.patch)
+          <>
+            {renderDiffPatch(selectedFile.patch)}
+            {selectedFile.patchTruncated && selectedFile.patchRef ? (
+              <div className="border-t border-border-ghost px-3 py-2 text-xs text-muted-foreground">
+                <a
+                  className="text-primary underline underline-offset-2 hover:text-foreground"
+                  href={selectedFile.patchRef.uri}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  查看完整 patch
+                </a>
+              </div>
+            ) : null}
+          </>
         ) : (
           <div className="mission-diff-patch-empty p-3 text-sm text-muted-foreground">
-            该 diff 事件没有携带 patch/hunk 内容。
+            {selectedFile.patchRef ? (
+              <a
+                className="text-primary underline underline-offset-2 hover:text-foreground"
+                href={selectedFile.patchRef.uri}
+                target="_blank"
+                rel="noreferrer"
+              >
+                查看完整 patch
+              </a>
+            ) : historicalDiffIncomplete
+              ? "历史快照不完整：该文件未保存 patch/hunk，未从当前工作区补算。"
+              : "该 diff 事件没有携带 patch/hunk 内容。"}
           </div>
         )}
       </div>

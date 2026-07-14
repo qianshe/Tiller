@@ -98,6 +98,7 @@ type MissionComposerProps = {
   draftModelLoading: boolean;
   draftModelConfigReady: boolean;
   modelSettingsLocked: boolean;
+  sessionRestoring: boolean;
   draftModelBaseOptions: string[];
   resolveReasoningOptionsForModel: (
     model: string,
@@ -196,6 +197,7 @@ export function MissionComposer({
   draftModelLoading,
   draftModelConfigReady,
   modelSettingsLocked,
+  sessionRestoring,
   draftModelBaseOptions,
   resolveReasoningOptionsForModel,
   draftAllModelOptions,
@@ -225,7 +227,7 @@ export function MissionComposer({
     ? !draftModelConfigReady
     : selectedDraftAgent?.protocol === "acp" && draftConfigOptions.length === 0;
   const modelConfigLoading = activeSession
-    ? (modelConfigMissing && !activeSessionModelKnown) || modelSettingsLocked
+    ? modelConfigMissing && !activeSessionModelKnown
     : draftModelLoading || modelConfigMissing;
   const modelSettingsDisabled = activeSession
     ? (modelConfigMissing && !activeSessionModelKnown) || modelSettingsLocked
@@ -583,6 +585,7 @@ export function MissionComposer({
           <MissionStatusBar
             className={composerStatusClassName}
             modelLoading={modelConfigLoading}
+            sessionRestoring={sessionRestoring}
             promptEnhancing={promptEnhancerBusy}
             promptEnhancerStatus={promptEnhancerStatus}
           />

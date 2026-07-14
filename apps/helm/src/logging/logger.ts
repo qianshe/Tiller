@@ -1,19 +1,19 @@
 import { mkdirSync } from "node:fs";
+import { once } from "node:events";
 import { resolve } from "node:path";
 import { Writable } from "node:stream";
 import pino, { type DestinationStream, type Logger as PinoLogger } from "pino";
-import pretty from "pino-pretty";
 import {
   resolveLoggingOptions,
   type TillerLogFormat,
   type TillerLogLevel,
 } from "./options";
 import { redactLogFields } from "./redaction";
+import { createRotatingFileDestination } from "./rotating-file-destination";
 
 export type LogLevel = "DEBUG" | "INFO" | "WARN" | "ERROR";
 export type TillerLogFields = Record<string, unknown>;
 
-const PRETTY_TIME_FORMAT = "SYS:yyyy-mm-dd HH:MM:ss";
 const PRETTY_FIELD_IGNORED_KEYS = new Set(["event", "format", "level", "message", "time"]);
 
 export type TillerLogger = {
@@ -31,7 +31,7 @@ export type TillerLogger = {
   getLevel(): TillerLogLevel;
   setLevel(level: TillerLogLevel): void;
   readonly logFile: string;
-  close(): void;
+  close(): Promise<void>;
 };
 
 export type CreateTillerLoggerOptions = {
@@ -45,6 +45,8 @@ export type CreateTillerLoggerOptions = {
   debugEnabled?: boolean;
   console?: Pick<Console, "log" | "debug" | "warn" | "error">;
   now?: () => Date;
+  maxLogFileBytes?: number;
+  retainedLogFiles?: number;
 };
 
 export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLogger {
@@ -58,6 +60,8 @@ export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLo
     consoleOutput = false,
     debugEnabled,
     console: consoleOverride,
+    maxLogFileBytes,
+    retainedLogFiles,
   } = options;
 
   const out = consoleOverride ?? console;
@@ -77,6 +81,8 @@ export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLo
     destination,
     format,
     logFile,
+    maxLogFileBytes,
+    retainedLogFiles,
   });
   const logger = pino(
     {
@@ -96,7 +102,7 @@ export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLo
     fields: TillerLogFields = {},
   ) {
     const payload = {
-      ...redactLogFields(fields) as TillerLogFields,
+      ...redactEventFields(event, fields),
       event,
       format,
     };
@@ -164,12 +170,32 @@ export function createTillerLogger(options: CreateTillerLoggerOptions): TillerLo
       logger.level = level;
     },
     logFile,
-    close() {
+    async close() {
+      logger.flush();
+      await new Promise<void>((resolveFlush) => setImmediate(resolveFlush));
       if ("end" in logDestination && typeof logDestination.end === "function") {
+        const finished = "once" in logDestination && typeof logDestination.once === "function"
+          ? once(logDestination as any, "finish").then(() => undefined).catch(() => undefined)
+          : undefined;
         logDestination.end();
+        if ("flush" in logDestination && typeof logDestination.flush === "function") {
+          await logDestination.flush();
+        }
+        await finished;
       }
     },
   };
+}
+
+function redactEventFields(event: string, fields: TillerLogFields): TillerLogFields {
+  const redacted = redactLogFields(fields) as TillerLogFields;
+  if (event === "updates.latest_available" || event === "updates.preview_available") {
+    redacted.command = fields.command;
+  }
+  if (event === "server.shutdown.started" || event === "server.shutdown.completed") {
+    redacted.reason = fields.reason;
+  }
+  return redacted;
 }
 
 function createLogDestination(options: {
@@ -178,18 +204,16 @@ function createLogDestination(options: {
   destination?: DestinationStream;
   format: TillerLogFormat;
   logFile: string;
+  maxLogFileBytes?: number;
+  retainedLogFiles?: number;
 }): DestinationStream {
+  const rotatingDestination = options.destination ?? createRotatingFileDestination({
+    filePath: options.logFile,
+    maxFileBytes: options.maxLogFileBytes,
+    retainedFiles: options.retainedLogFiles,
+  });
   if (options.format === "pretty") {
-    const fileDestination = pretty({
-      colorize: false,
-      destination: options.destination ?? options.logFile,
-      ignore: "event,format,message",
-      messageFormat: formatPrettyEvent,
-      mkdir: !options.destination,
-      singleLine: true,
-      sync: true,
-      translateTime: PRETTY_TIME_FORMAT,
-    });
+    const fileDestination = createFilePrettyDestination(rotatingDestination);
     const consoleDestination = options.consoleDestination
       ? createConsolePrettyDestination(options.consoleDestination, false)
       : (options.consoleOutput
@@ -200,7 +224,7 @@ function createLogDestination(options: {
       : fileDestination;
   }
 
-  return options.destination ?? pino.destination({ dest: options.logFile, mkdir: true });
+  return rotatingDestination;
 }
 
 function formatPrettyEvent(log: Record<string, unknown>) {
@@ -235,12 +259,76 @@ function createConsolePrettyDestination(destination: DestinationStream, colorize
     },
   });
   return Object.assign(consoleDestination, {
+    flush() {
+      if ("flush" in destination && typeof destination.flush === "function") {
+        return destination.flush();
+      }
+      return Promise.resolve();
+    },
     flushSync() {
       if ("flushSync" in destination && typeof destination.flushSync === "function") {
         destination.flushSync();
       }
     },
   });
+}
+
+function createFilePrettyDestination(destination: DestinationStream) {
+  let pending = "";
+  const fileDestination = new Writable({
+    write(chunk, _encoding, callback) {
+      pending += String(chunk);
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      for (const line of lines) {
+        writeFilePrettyLine(destination, line);
+      }
+      callback();
+    },
+    final(callback) {
+      if (pending) {
+        writeFilePrettyLine(destination, pending);
+        pending = "";
+      }
+      callback();
+    },
+  });
+  return Object.assign(fileDestination, {
+    flush() {
+      if ("flush" in destination && typeof destination.flush === "function") {
+        return destination.flush();
+      }
+      return Promise.resolve();
+    },
+    flushSync() {
+      if ("flushSync" in destination && typeof destination.flushSync === "function") {
+        destination.flushSync();
+      }
+    },
+  });
+}
+
+function writeFilePrettyLine(destination: DestinationStream, line: string) {
+  if (!line.trim()) {
+    return;
+  }
+  try {
+    const log = JSON.parse(line) as Record<string, unknown>;
+    destination.write(`${formatFilePrettyLog(log)}\n`);
+  } catch {
+    destination.write(line.endsWith("\n") ? line : `${line}\n`);
+  }
+}
+
+function formatFilePrettyLog(log: Record<string, unknown>) {
+  const time = typeof log.time === "string" ? formatLocalTimestamp(new Date(log.time)) : "";
+  const level = typeof log.level === "string" ? log.level.toUpperCase() : "INFO";
+  const event = formatPrettyEvent(log);
+  const fields = formatPrettyJsonFields(log);
+  const prefix = time ? `[${time}] ` : "";
+  return fields
+    ? `${prefix}${level}: ${event} ${fields}`
+    : `${prefix}${level}: ${event}`;
 }
 
 function writeConsolePrettyLine(
@@ -388,6 +476,7 @@ function colorizeJsonFields(fields: string) {
 function teeDestinations(destinations: DestinationStream[]): DestinationStream {
   const destination: DestinationStream & {
     end(): void;
+    flush(): Promise<void>;
     flushSync(): void;
   } = {
     write(chunk: string) {
@@ -401,6 +490,13 @@ function teeDestinations(destinations: DestinationStream[]): DestinationStream {
           destination.end();
         }
       }
+    },
+    async flush() {
+      await Promise.all(destinations.map((item) =>
+        "flush" in item && typeof item.flush === "function"
+          ? item.flush()
+          : Promise.resolve(),
+      ));
     },
     flushSync() {
       for (const destination of destinations) {

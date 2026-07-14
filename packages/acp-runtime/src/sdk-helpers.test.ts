@@ -37,6 +37,7 @@ test("mapSdkPermissionRequest exposes scoped permission options", () => {
   assert.equal(mapped.optionIds.allow_session, "allow-session");
   assert.equal(mapped.optionIds.allow_always, "allow-always");
   assert.equal(mapped.optionIds.deny, "deny-once");
+  assert.equal(mapped.request.toolCallId, "tool-1");
 });
 
 test("mapSdkPermissionRequest falls back to localized labels when SDK label is empty", () => {

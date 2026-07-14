@@ -1,10 +1,11 @@
-import type { AgentMessage, SessionSummary } from "@tiller/shared";
+import type { AgentMessage, FileDiffSummary, LegacyEvidenceSource, SessionSummary } from "@tiller/shared";
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   canGenerateAssistantHandoff,
   generateAssistantHandoffDraft,
 } from "../../prompt-enhancer";
 import { MissionChatPane } from "../conversation";
+import { useDeckStore } from "../../../store";
 import { MissionComposer } from "../composer";
 import { MissionDiffPanel, MissionDisplaySection } from "../display";
 import { MissionInspector } from "../inspector";
@@ -63,6 +64,7 @@ export function MissionWorktree(props: any) {
     selectedAgentId,
     activeSession,
     diffs,
+    historicalDiffIncompleteBySession = {},
     outputs,
     messages,
     sessionTimeline,
@@ -228,6 +230,54 @@ export function MissionWorktree(props: any) {
     openedMissionDiffFilePaths = [],
     closeMissionDiffFile,
   } = props;
+  const sessionLegacyEvidence = useDeckStore((state) => state.sessionLegacyEvidence);
+  const setSessionLegacyEvidence = useDeckStore((state) => state.setSessionLegacyEvidence);
+  const pendingLegacyEvidenceRequestsRef = useRef(new Set<string>());
+  const loadSessionLegacyEvidence = useCallback((
+    sessionId: string,
+    source: LegacyEvidenceSource,
+    after?: string,
+  ) => {
+    const requestKey = `${sessionId}:${source}:${after ?? ""}`;
+    if (pendingLegacyEvidenceRequestsRef.current.has(requestKey)) {
+      return;
+    }
+    const client = rpcClientRef.current;
+    if (!client) {
+      return;
+    }
+    pendingLegacyEvidenceRequestsRef.current.add(requestKey);
+    setSessionLegacyEvidence((current) => {
+      const existing = current[sessionId];
+      return {
+        ...current,
+        [sessionId]: {
+          availability: existing?.availability,
+          pages: existing?.pages ?? {},
+          loading: { ...existing?.loading, [source]: true },
+        },
+      };
+    });
+    void dispatch(client, "session/list_legacy_evidence", { sessionId, source, limit: 50, after })
+      .catch(() => {
+        setSessionLegacyEvidence((current) => {
+          const existing = current[sessionId];
+          if (!existing) {
+            return current;
+          }
+          return {
+            ...current,
+            [sessionId]: {
+              ...existing,
+              loading: { ...existing.loading, [source]: false },
+            },
+          };
+        });
+      })
+      .finally(() => {
+        pendingLegacyEvidenceRequestsRef.current.delete(requestKey);
+      });
+  }, [dispatch, rpcClientRef, setSessionLegacyEvidence]);
   const [selectedCommitDiffPaths, setSelectedCommitDiffPaths] = useState<Set<string>>(() => new Set());
   const [assistantHandoffBusy, setAssistantHandoffBusy] = useState(false);
   const modelPickerRefreshBySessionRef = useRef<Record<string, string | null>>({});
@@ -355,6 +405,7 @@ export function MissionWorktree(props: any) {
     visibleProjectFiles,
     sessionExecutionPending,
     composerModelLoading,
+    composerSessionRestoring,
   } = buildMissionWorktreeModel({
     ...props,
     composerSession,
@@ -362,13 +413,17 @@ export function MissionWorktree(props: any) {
   const activeGitProjectId = activeSessionProjectId ?? selectedProjectId;
   const activeGitCwd = selectedCwd ?? activeSession?.cwd;
   const currentGitStatus = activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined;
-  const diffEmptyText = currentGitStatus
+  const historicalDiffIncomplete = Boolean(
+    activeSessionId && historicalDiffIncompleteBySession[activeSessionId],
+  );
+  const diffEmptyText = historicalDiffIncomplete
+    ? "历史快照不完整：未保存 Diff patch。"
+    : currentGitStatus
     ? copy.noDiffSummary
     : "请先刷新 Git 获取当前文件树。";
-  const syncedMissionDiffs = reconcileMissionDiffs(
-    activeDiffs,
-    currentGitStatus?.files,
-  );
+  const syncedMissionDiffs: FileDiffSummary[] = historicalDiffIncomplete
+    ? activeDiffs
+    : reconcileMissionDiffs(activeDiffs, currentGitStatus?.files);
   const missionDiffCount = syncedMissionDiffs.length;
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
   const toggleMissionThinking = () => {
@@ -701,6 +756,7 @@ export function MissionWorktree(props: any) {
       selectedDiffFilePath={selectedMissionDiffFilePath}
       diffs={syncedMissionDiffs}
       noDiffSummary={diffEmptyText}
+      historicalDiffIncomplete={historicalDiffIncomplete}
       collapsedDiffDirectories={collapsedMissionDiffDirectories}
       selectedCommitDiffPaths={selectedCommitDiffPaths}
       onToggleCommitDiff={toggleCommitDiffPath}
@@ -969,6 +1025,7 @@ export function MissionWorktree(props: any) {
           activeSessionMessages={activeSessionMessages}
           sessionMessagesById={messages ?? {}}
             sessionTimelineById={sessionTimeline ?? {}}
+            sessionLegacyEvidenceById={sessionLegacyEvidence}
             activeSessionPlan={activeSessionPlan}
             sessionPlansById={sessionPlans ?? {}}
             dismissedCompletedSessionPlanKeys={dismissedCompletedSessionPlanKeys}
@@ -981,6 +1038,7 @@ export function MissionWorktree(props: any) {
           expandedMessageIds={expandedMessageIds}
           messageHistoryState={messageHistoryState}
           onLoadOlderMessages={loadOlderMessages}
+          onLoadLegacyEvidence={loadSessionLegacyEvidence}
           onToggleExpandedMessage={toggleExpandedMessage}
           activityLoading={missionActivityLoading}
           pendingToolPresent={Boolean(pendingToolActivity)}
@@ -1076,6 +1134,7 @@ export function MissionWorktree(props: any) {
               draftModelLoading={composerModelLoading}
               draftModelConfigReady={draftModelConfigReady}
               modelSettingsLocked={Boolean(composerSession && !composerSessionRestoreGate.canChat)}
+              sessionRestoring={composerSessionRestoring}
               draftModelBaseOptions={draftModelBaseOptions}
               resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
               draftAllModelOptions={draftAllModelOptions}
@@ -1122,6 +1181,7 @@ export function MissionWorktree(props: any) {
             selectedDiffFilePath={selectedMissionDiffFilePath}
             diffs={syncedMissionDiffs}
             noDiffSummary={diffEmptyText}
+            historicalDiffIncomplete={historicalDiffIncomplete}
             onReconnectRuntime={reconnectAcpRuntime}
             gitGraph={activeGitCwd ? gitGraphByWorktree[activeGitCwd] : undefined}
             onAddPage={() => {}}

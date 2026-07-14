@@ -8,9 +8,10 @@ import type { SessionRuntimeEvent } from "../runtime-types";
 import { createClaudeAcpAdapter } from "./claude/index";
 import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
+import { normalizeGenericToolCall } from "./generic/tool-calls";
 import { createOpenClawAcpAdapter } from "./openclaw/index";
 import { createOpenCodeAcpAdapter } from "./opencode/index";
-import type { AcpAgentAdapter, AcpCompactionDetailsVisibility, AcpHistoryContext, AcpLaunchContext, AcpSessionUpdateProjectionContext, AcpToolCallNormalizationContext } from "./types";
+import type { AcpAgentAdapter, AcpCompactionDetailsVisibility, AcpLaunchContext, AcpPromptObservationContext, AcpSessionUpdateProjectionContext, AcpToolCallNormalizationContext } from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createOpenCodeAcpAdapter(),
@@ -44,25 +45,71 @@ export function resolveAdapterRequestTimeout(provider: AcpRuntimeProviderConfig,
   return resolveAcpAgentAdapter(provider).resolveRequestTimeout?.({ provider, method });
 }
 
-export function mapAdapterSessionUpdate(
+export function mapAdapterMessageUpdate(
   provider: AcpRuntimeProviderConfig | undefined,
   context: AcpSessionUpdateProjectionContext,
 ) {
   return provider
-    ? resolveAcpAgentAdapter(provider).mapSessionUpdate?.(context) ?? null
+    ? resolveAcpAgentAdapter(provider).mapMessageUpdate?.(context) ?? null
     : null;
+}
+
+export function mapAdapterToolCallUpdate(
+  provider: AcpRuntimeProviderConfig | undefined,
+  context: AcpSessionUpdateProjectionContext,
+) {
+  return provider
+    ? resolveAcpAgentAdapter(provider).mapToolCallUpdate?.(context) ?? null
+    : null;
+}
+
+export function mapAdapterUnknownUpdate(
+  provider: AcpRuntimeProviderConfig | undefined,
+  context: AcpSessionUpdateProjectionContext,
+) {
+  return provider
+    ? resolveAcpAgentAdapter(provider).mapUnknownUpdate?.(context) ?? null
+    : null;
+}
+
+export function beginAdapterPromptObservation(
+  provider: AcpRuntimeProviderConfig,
+  context: AcpPromptObservationContext,
+) {
+  resolveAcpAgentAdapter(provider).beginPromptObservation?.(context);
+}
+
+export function pollAdapterPromptEvents(
+  provider: AcpRuntimeProviderConfig,
+  context: AcpPromptObservationContext,
+) {
+  return resolveAcpAgentAdapter(provider).pollPromptEvents?.(context) ?? [];
+}
+
+export function disposeAdapterSession(
+  provider: AcpRuntimeProviderConfig | undefined,
+  sessionId: string,
+) {
+  provider && resolveAcpAgentAdapter(provider).disposeSession?.(sessionId);
 }
 
 export function normalizeAdapterToolCall(
   provider: AcpRuntimeProviderConfig | undefined,
   providerId: string | undefined,
   context: AcpToolCallNormalizationContext,
-): AgentToolCall {
+): AgentToolCall | null {
   const resolvedProvider = provider ?? inferProviderFromId(providerId);
   if (!resolvedProvider) {
-    return context.toolCall;
+    return normalizeGenericToolCall(context.toolCall);
   }
-  return resolveAcpAgentAdapter(resolvedProvider).normalizeToolCall?.(context) ?? context.toolCall;
+  const adapter = resolveAcpAgentAdapter(resolvedProvider);
+  const normalized = adapter.normalizeToolCall
+    ? adapter.normalizeToolCall(context)
+    : context.toolCall;
+  if (!normalized) {
+    return null;
+  }
+  return adapter.id === "generic" ? normalized : normalizeGenericToolCall(normalized);
 }
 
 export function summarizeAdapterCompactionSignal(
@@ -95,18 +142,6 @@ export function resolveAdapterCompactionDetailsVisibility(
     return undefined;
   }
   return resolveAcpAgentAdapter(provider).resolveCompactionDetailsVisibility?.();
-}
-
-export function readAdapterTranscriptPlan(context: AcpHistoryContext) {
-  return resolveAcpAgentAdapter(context.provider).readTranscriptPlan?.(context) ?? null;
-}
-
-export function readAdapterTranscriptMessages(context: AcpHistoryContext) {
-  return resolveAcpAgentAdapter(context.provider).readTranscriptMessages?.(context) ?? [];
-}
-
-export function readAdapterTranscriptToolCalls(context: AcpHistoryContext) {
-  return resolveAcpAgentAdapter(context.provider).readTranscriptToolCalls?.(context) ?? [];
 }
 
 export function extractAdapterPlanFromToolCall(
@@ -153,4 +188,4 @@ export { createOpenCodeAcpAdapter } from "./opencode/index";
 export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode/index";
 export { resolveAdapterPluginManifest } from "./plugin-loader";
 export { SUPPRESS_SESSION_UPDATE } from "./types";
-export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpCompactionDetailsVisibility, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, AcpToolCallNormalizationContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";
+export type { AcpAgentAdapter, AcpCleanupContext, AcpCompactionDetailsVisibility, AcpLaunchContext, AcpLaunchSpec, AcpPromptObservationContext, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, AcpToolCallNormalizationContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";

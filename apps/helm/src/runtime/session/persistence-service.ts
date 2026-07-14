@@ -7,6 +7,7 @@ type SessionPersistenceServiceOptions = {
     remove(sessionId: string): void;
   };
   sessionArtifactStore: { remove(sessionId: string): void };
+  sessionDiffBodyStore: { removeSession(sessionId: string): void };
   sessionOutputBodyStore: { removeSession(sessionId: string): void };
   sessionAttachmentStore: { removeSession(sessionId: string): void };
   sessionRuntimeStore: { remove(sessionId: string): void };
@@ -20,6 +21,7 @@ export function createSessionPersistenceService(options: SessionPersistenceServi
     options.sessionStore.remove(sessionId);
     options.sessionMessageStore.remove(sessionId);
     options.sessionArtifactStore.remove(sessionId);
+    options.sessionDiffBodyStore.removeSession(sessionId);
     options.sessionOutputBodyStore.removeSession(sessionId);
     options.sessionAttachmentStore.removeSession(sessionId);
     options.sessionRuntimeStore.remove(sessionId);
