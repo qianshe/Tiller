@@ -2790,13 +2790,15 @@ test("plain messages keeps tool call rows vertically centered with symmetric pad
   });
 
   assert.match(html, /plain-tool-call/);
-  assert.match(html, /<details class="plain-tool-call col-span-5 grid grid-cols-subgrid text-muted-foreground"/);
-  assert.match(html, /<summary class="col-span-5 grid min-w-0 cursor-pointer list-none grid-cols-subgrid items-center py-0\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
+  assert.match(html, /<details class="plain-tool-call min-w-0 text-muted-foreground"/);
+  assert.match(html, /<summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5 py-0\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
   assert.match(html, /class="grid size-3 shrink-0 place-items-center rounded-sm/);
+  assert.match(html, /class="inline-flex shrink-0 items-center w-12"/);
   assert.match(html, /inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
   assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium leading-4 text-foreground">/);
-  assert.match(html, /class="col-start-5 inline-flex h-4 shrink-0 items-center justify-self-end text-2xs text-muted-foreground\/60"/);
-  assert.match(html, /<pre class="col-span-5 mt-0\.5 min-w-0 max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground\/85"/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground\/60"/);
+  assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground\/85"/);
+  assert.doesNotMatch(html, /grid-cols-subgrid|col-span-/);
 });
 
 test("plain messages surfaces subagent type and task summary when available", () => {
@@ -2961,6 +2963,7 @@ test("plain tool rows render diagnostics as an independent category", () => {
   });
 
   assert.match(html, /data-tool-kind="diagnostics"/);
+  assert.match(html, /class="inline-flex shrink-0 items-center w-20"/);
   assert.match(html, />Diagnostics</);
   assert.match(html, />packages\/acp-runtime\/src\/adapters\/opencode\/tool-calls\.ts</);
   assert.doesNotMatch(html, /Diagnostics: packages/);
@@ -3031,12 +3034,12 @@ test("plain tool rows align titles without letting expanded output resize the ro
   });
 
   assert.match(html, /plain-tool-group[\s\S]*?class="inline-flex size-4 shrink-0 items-center justify-center text-primary"/);
-  assert.match(html, /plain-tool-group-content grid grid-cols-\[0\.75rem_max-content_minmax\(0,1fr\)_auto_auto\] max-h-36 gap-x-1\.5 gap-y-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground/);
-  assert.equal(html.match(/plain-tool-call col-span-5 grid grid-cols-subgrid text-muted-foreground/g)?.length, 2);
-  assert.equal(html.match(/summary class="col-span-5 grid min-w-0 cursor-pointer list-none grid-cols-subgrid items-center/g)?.length, 2);
-  assert.match(html, /class="inline-flex shrink-0 items-center"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
-  assert.match(html, /<pre class="col-span-5 mt-0\.5 min-w-0 max-w-full/);
-  assert.doesNotMatch(html, /inline-flex w-20/);
+  assert.match(html, /plain-tool-group-content flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground/);
+  assert.equal(html.match(/plain-tool-call min-w-0 text-muted-foreground/g)?.length, 2);
+  assert.equal(html.match(/summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5/g)?.length, 2);
+  assert.match(html, /class="inline-flex shrink-0 items-center w-12"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
+  assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full/);
+  assert.doesNotMatch(html, /grid-cols-subgrid|col-span-/);
 });
 
 test("plain messages removes vertical guide lines from thinking, subagent, and tool group details", () => {

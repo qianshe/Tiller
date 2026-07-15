@@ -675,6 +675,12 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
   const groupLabels = resolveToolGroupLabels(group);
   const summaryTitle = summarizeToolGroupTitle(groupLabels);
   const groupBadgeLabel = resolveToolGroupBadgeLabel(groupLabels);
+  const maxGroupLabelLength = Math.max(...groupLabels.map((label) => label.length));
+  const categorySlotClassName = maxGroupLabelLength >= 10
+    ? "w-20"
+    : maxGroupLabelLength >= 7
+      ? "w-14"
+      : "w-12";
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -751,11 +757,15 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
         </summary>
         <div
           ref={contentRef}
-          className="plain-tool-group-content grid grid-cols-[0.75rem_max-content_minmax(0,1fr)_auto_auto] max-h-36 gap-x-1.5 gap-y-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground"
+          className="plain-tool-group-content flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground"
           data-mission-swipe-lock="true"
         >
           {group.map((item) => (
-            <PlainToolCallItem key={item.id} item={item} />
+            <PlainToolCallItem
+              key={item.id}
+              item={item}
+              categorySlotClassName={categorySlotClassName}
+            />
           ))}
         </div>
       </details>
@@ -983,7 +993,13 @@ function firstString(record: Record<string, unknown>, keys: string[]) {
   return undefined;
 }
 
-function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
+function PlainToolCallItem({
+  item,
+  categorySlotClassName,
+}: {
+  item: ConversationToolCallItem;
+  categorySlotClassName: string;
+}) {
   const tone = resolveToolCallTone(item.toolKind, item.title);
   const preview = item.text.trim() || formatToolInputPreview(item.input);
   const displayTitle = resolveToolCallDisplayTitle(tone.label, item.title);
@@ -994,14 +1010,14 @@ function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
   );
   return (
     <details
-      className="plain-tool-call col-span-5 grid grid-cols-subgrid text-muted-foreground"
+      className="plain-tool-call min-w-0 text-muted-foreground"
       data-tool-kind={tone.label.toLowerCase()}
     >
-      <summary className="col-span-5 grid min-w-0 cursor-pointer list-none grid-cols-subgrid items-center py-0.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
+      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-1.5 py-0.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
         <span aria-hidden="true" className={cn("grid size-3 shrink-0 place-items-center rounded-sm", tone.className)}>
           <Icon name={resolveToolCallIconName(tone.label)} size={9} />
         </span>
-        <span className="inline-flex shrink-0 items-center">
+        <span className={cn("inline-flex shrink-0 items-center", categorySlotClassName)}>
           <Badge
             variant="secondary"
             className={cn("inline-flex h-4 shrink-0 items-center rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
@@ -1018,19 +1034,19 @@ function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
         {changeStats ? (
           <span
             aria-label={`修改统计：新增 ${changeStats.additions} 行，删除 ${changeStats.deletions} 行`}
-            className="col-start-4 inline-flex shrink-0 items-center gap-1 font-mono text-2xs tabular-nums"
+            className="inline-flex shrink-0 items-center gap-1 font-mono text-2xs tabular-nums"
           >
             <span className={cn("tool-call-additions", resolveToolCallStatClass(changeStats.additions, "additions"))}>+{changeStats.additions}</span>
             <span className="text-muted-foreground/50">/</span>
             <span className={cn("tool-call-deletions", resolveToolCallStatClass(changeStats.deletions, "deletions"))}>-{changeStats.deletions}</span>
           </span>
         ) : null}
-        <span className="col-start-5 inline-flex h-4 shrink-0 items-center justify-self-end text-2xs text-muted-foreground/60">
+        <span className="inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground/60">
           {resolveToolStatusLabel(item.status)}
         </span>
       </summary>
       {preview ? (
-        <pre className="col-span-5 mt-0.5 min-w-0 max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
+        <pre className="mt-0.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
           {preview}
         </pre>
       ) : null}

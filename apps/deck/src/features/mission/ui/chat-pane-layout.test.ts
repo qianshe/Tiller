@@ -718,9 +718,12 @@ test("mission tool call rows stay compact", () => {
   assert.match(plainMessagesSource, /plain-assistant-segment-dot size-1\.5 rounded-full ring-2/);
   assert.match(plainMessagesSource, /plain-thinking[^\n]+rounded-\[8px\][^\n]+bg-surface-sunken\/55/);
   assert.match(plainMessagesSource, /plain-tool-group[^\n]+rounded-\[8px\][^\n]+bg-surface-sunken\/55/);
-  assert.match(plainMessagesSource, /plain-tool-call col-span-5 grid grid-cols-subgrid text-muted-foreground/);
-  assert.match(plainMessagesSource, /<summary className=\"col-span-5 grid min-w-0 cursor-pointer list-none grid-cols-subgrid items-center/);
-  assert.match(plainMessagesSource, /<pre className=\"col-span-5 mt-0\.5 min-w-0 max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground\/85\"/);
+  assert.match(plainMessagesSource, /plain-tool-call min-w-0 text-muted-foreground/);
+  assert.match(plainMessagesSource, /<summary className=\"flex min-w-0 cursor-pointer list-none items-center gap-1\.5/);
+  assert.match(plainMessagesSource, /maxGroupLabelLength >= 10[\s\S]*?\"w-20\"[\s\S]*?maxGroupLabelLength >= 7[\s\S]*?\"w-14\"[\s\S]*?\"w-12\"/);
+  assert.match(plainMessagesSource, /cn\(\"inline-flex shrink-0 items-center\", categorySlotClassName\)/);
+  assert.match(plainMessagesSource, /<pre className=\"mt-0\.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground\/85\"/);
+  assert.doesNotMatch(plainMessagesSource, /grid-cols-subgrid|col-span-/);
   assert.match(plainMessagesSource, /resolveToolCallIconName/);
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+max-h-36/);
   assert.doesNotMatch(plainMessagesSource, />混合</);
