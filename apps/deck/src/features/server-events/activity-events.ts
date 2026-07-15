@@ -9,7 +9,10 @@ export type ActivityServerEventContext = {
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
   mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => void;
   appendSystemMessage: (sessionId: string, text: string) => void;
+  scheduleSubagentSettlement?: (callback: () => void) => void;
 };
+
+const SUBAGENT_RUNNING_MIN_VISIBLE_MS = 400;
 
 type ErrorRaisedParams = {
   sessionId?: string;
@@ -60,11 +63,19 @@ export function applyActivityUpdate(
     }
     case "tool_call": {
       const toolCall = update.toolCall;
-      const isAlreadySettled = toolCall.status === "completed" || toolCall.status === "failed";
+      const isAlreadySettled =
+        toolCall.status === "completed"
+        || toolCall.status === "failed"
+        || (toolCall.kind === "subagent" && toolCall.status === "cancelled");
       if (isAlreadySettled) {
-        const runningSnapshot = { ...toolCall, status: "running" as const };
+        const runningSnapshot = toolCall.kind === "subagent"
+          ? { ...toolCall, status: "running" as const, output: undefined }
+          : { ...toolCall, status: "running" as const };
         mergeSessionToolCalls(sessionId, [runningSnapshot]);
-        requestAnimationFrame(() => {
+        const scheduleSettlement = toolCall.kind === "subagent"
+          ? context.scheduleSubagentSettlement ?? scheduleVisibleSubagentSettlement
+          : requestAnimationFrame;
+        scheduleSettlement(() => {
           mergeSessionToolCalls(sessionId, [toolCall]);
         });
       } else {
@@ -75,6 +86,10 @@ export function applyActivityUpdate(
     default:
       return false;
   }
+}
+
+function scheduleVisibleSubagentSettlement(callback: () => void): void {
+  globalThis.setTimeout(callback, SUBAGENT_RUNNING_MIN_VISIBLE_MS);
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;

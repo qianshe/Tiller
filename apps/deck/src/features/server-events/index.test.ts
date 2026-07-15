@@ -194,6 +194,48 @@ test("live thinking tool calls update the chat tool-call store immediately", () 
   assert.deepEqual(toolCallsRef.current.s1, [thinkingToolCall]);
 });
 
+test("settled subagent activity exposes a visible running state before its result", () => {
+  resetStore();
+  const snapshots: AgentToolCall[] = [];
+  let settleSubagent: (() => void) | undefined;
+  const subagentToolCall: AgentToolCall = {
+    id: "subagent-live",
+    kind: "subagent",
+    title: "Explore repository",
+    status: "completed",
+    output: "探索完成",
+    timestamp: "2026-05-04T01:00:00.000Z",
+    updatedAt: "2026-05-04T01:00:01.000Z",
+  };
+
+  const handled = applyActivityUpdate(
+    { sessionId: "s1", update: { kind: "tool_call", toolCall: subagentToolCall } },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: (_sessionId, incoming) => snapshots.push(...incoming),
+      appendSystemMessage: () => undefined,
+      scheduleSubagentSettlement: (callback) => {
+        settleSubagent = callback;
+      },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    snapshots.map((toolCall) => toolCall.status),
+    ["running"],
+  );
+  assert.equal(snapshots[0]?.output, undefined);
+
+  assert.ok(settleSubagent);
+  settleSubagent();
+  assert.deepEqual(
+    snapshots.map((toolCall) => toolCall.status),
+    ["running", "completed"],
+  );
+  assert.equal(snapshots[1]?.output, "探索完成");
+});
+
 test("activity tool overlays keep canonical timeline untouched", () => {
   resetStore();
   const existingTimeline: SessionTimelineEntry[] = [
