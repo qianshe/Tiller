@@ -75,6 +75,31 @@ export function shouldAutoScrollSessionBody({
     (!previousHistoryLoading || allowAfterInitialHistoryLoad);
 }
 
+export function resolveSessionBodyStickToBottom({
+  current,
+  previous,
+  previousStickToBottom,
+  threshold,
+}: {
+  current: { scrollTop: number; scrollHeight: number; clientHeight: number };
+  previous?: { scrollTop: number; scrollHeight: number };
+  previousStickToBottom?: boolean;
+  threshold: number;
+}) {
+  // A growing stream can fire a scroll event before the follow-to-bottom write.
+  // Preserve the existing sticky intent so layout growth is not mistaken for a
+  // user-initiated upward scroll. A later real scroll event (without growth)
+  // still disables auto-follow when the user moves away from the bottom.
+  if (
+    previousStickToBottom !== false &&
+    previous &&
+    current.scrollHeight > previous.scrollHeight
+  ) {
+    return true;
+  }
+  return current.scrollHeight - current.scrollTop - current.clientHeight <= threshold;
+}
+
 export function pruneSessionCardScrollState<T>(
   state: Record<string, T>,
   openSessionIds: ReadonlyArray<string>,

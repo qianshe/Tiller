@@ -8,6 +8,8 @@ const CLAUDE_TITLE_ONLY_MCP_TOOL =
   /^mcpServers_(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)$/u;
 const OPENCODE_TITLE_ONLY_MCP_TOOL =
   /^(?<server>mcp[-_][A-Za-z0-9-]+)_(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)(?::|\b)/u;
+const OPENCODE_CONTEXT7_TITLE_ONLY_MCP_TOOL =
+  /^(?<server>context7)_(?<tool>[A-Za-z0-9][A-Za-z0-9_.-]*)(?::|\b|$)/u;
 
 export function formatAgentToolCallMcpName(mcp: Pick<AgentToolCallMcp, "serverName" | "toolName">) {
   return mcp.serverName ? `${mcp.serverName}/${mcp.toolName}` : mcp.toolName;
@@ -182,6 +184,15 @@ function parseProviderTitleMcp(title: string | undefined) {
     return createAgentToolCallMcp(
       normalizeProviderTitleServerName(openCodeTitleOnly.groups.server),
       openCodeTitleOnly.groups.tool,
+      "provider-title",
+    );
+  }
+
+  const openCodeContext7TitleOnly = title.match(OPENCODE_CONTEXT7_TITLE_ONLY_MCP_TOOL);
+  if (openCodeContext7TitleOnly?.groups?.server && openCodeContext7TitleOnly.groups.tool) {
+    return createAgentToolCallMcp(
+      normalizeProviderTitleServerName(openCodeContext7TitleOnly.groups.server),
+      openCodeContext7TitleOnly.groups.tool,
       "provider-title",
     );
   }

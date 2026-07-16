@@ -28,6 +28,10 @@ function baseInput(overrides: Record<string, unknown> = {}) {
     diffs: {},
     outputs: {},
     toolCalls: {},
+    sessionTimeline: { "session-1": [] },
+    messageHistoryState: {
+      "session-1": { hasMore: false, loading: false },
+    },
     statuses: {},
     copy: {
       status: {
@@ -101,6 +105,24 @@ test("worktree model allows sending once restored to same-process runtime", () =
   assert.equal(model.activeSessionRestoreGate.canChat, true);
 });
 
+test("worktree model blocks sending until the focused session timeline is loaded", () => {
+  const missingTimeline = buildMissionWorktreeModel(baseInput({
+    sessionTimeline: {},
+    messageHistoryState: {},
+  }));
+  const loadingTimeline = buildMissionWorktreeModel(baseInput({
+    sessionTimeline: { "session-1": [] },
+    messageHistoryState: {
+      "session-1": { hasMore: false, loading: true },
+    },
+  }));
+
+  assert.equal(missingTimeline.canSend, false);
+  assert.equal(missingTimeline.composerConversationLoaded, false);
+  assert.equal(loadingTimeline.canSend, false);
+  assert.equal(loadingTimeline.composerConversationLoaded, false);
+});
+
 test("worktree model keeps composer send enabled for a focused idle session even if another session is restoring", () => {
   const active = {
     ...baseInput().activeSession,
@@ -129,6 +151,14 @@ test("worktree model keeps composer send enabled for a focused idle session even
     statuses: {
       [active.id]: "idle",
       [focused.id]: "idle",
+    },
+    sessionTimeline: {
+      [active.id]: [],
+      [focused.id]: [],
+    },
+    messageHistoryState: {
+      [active.id]: { hasMore: false, loading: false },
+      [focused.id]: { hasMore: false, loading: false },
     },
     resumeStartRequestsRef: { current: new Set([active.id]) },
   }));

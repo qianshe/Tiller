@@ -20,7 +20,7 @@ function createDependencies(overrides: Record<string, unknown> = {}) {
     createClientUserMessageId: (sessionId: string) => `client-${sessionId}`,
     dispatch: (_client: unknown, method: string, params: unknown) => {
       dispatched.push({ method, params });
-      return Promise.resolve({});
+      return Promise.resolve({ accepted: "sent" });
     },
     appendExistingSessionPrompt: (
       sessionId: string,
@@ -56,9 +56,7 @@ test("submitPromptRequest dispatches existing-session prompts with a matching tr
     },
   ]);
   assert.deepEqual(cleared, ["notice:", "prompt:", "images:0"]);
-  assert.deepEqual(appended, [
-    { sessionId: "session-1", text: "hello", id: "client-session-1", images: [] },
-  ]);
+  assert.deepEqual(appended, []);
 
   await flushPromises();
 
@@ -107,7 +105,7 @@ test("submitPromptRequest prepares an existing image session before dispatching 
     dispatch: (_client: unknown, method: string, params: unknown) => {
       calls.push(`dispatch:${method}`);
       dispatched.push({ method, params });
-      return Promise.resolve({});
+      return Promise.resolve({ accepted: "sent" });
     },
   });
 
@@ -121,20 +119,17 @@ test("submitPromptRequest prepares an existing image session before dispatching 
   );
 
   assert.equal(submitted, true);
-  assert.deepEqual(calls, [
-    "append:session-1:看这张图:client-session-1:1",
-    "prepare:session-1",
-  ]);
+  assert.deepEqual(calls, ["prepare:session-1"]);
   assert.deepEqual(dispatched, []);
 
   releasePrepare();
   await flushPromises();
 
   assert.deepEqual(calls, [
-    "append:session-1:看这张图:client-session-1:1",
     "prepare:session-1",
     "prepared:session-1",
     "dispatch:session/prompt",
+    "append:session-1:看这张图:client-session-1:1",
   ]);
   assert.deepEqual(dispatched, [
     {
@@ -174,7 +169,7 @@ test("submitPromptRequest preserves the no-session create path", () => {
   assert.deepEqual(cleared, ["notice:", "prompt:", "images:0"]);
 });
 
-test("submitPromptRequest keeps the optimistic user message when prompt is later queued", async () => {
+test("submitPromptRequest does not add queued prompts to the conversation", async () => {
   const { dependencies, appended } = createDependencies({
     dispatch: () => Promise.resolve({ accepted: "queued" }),
   });
@@ -189,13 +184,9 @@ test("submitPromptRequest keeps the optimistic user message when prompt is later
   );
 
   assert.equal(submitted, true);
-  assert.deepEqual(appended, [
-    { sessionId: "session-1", text: "queued message", id: "client-session-1", images: [] },
-  ]);
+  assert.deepEqual(appended, []);
   await flushPromises();
-  assert.deepEqual(appended, [
-    { sessionId: "session-1", text: "queued message", id: "client-session-1", images: [] },
-  ]);
+  assert.deepEqual(appended, []);
 });
 
 test("submitPromptRequest does not dispatch when chat is restore-gated", () => {

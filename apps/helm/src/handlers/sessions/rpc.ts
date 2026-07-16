@@ -23,6 +23,7 @@ import type { HelmHandlerContext } from "../context";
 import { createSessionDraft, discardSessionDraft } from "./draft-rpc";
 import { createSession } from "./session-create-rpc";
 import { promptSession } from "./prompt-rpc";
+import { repairTimeline } from "./timeline-repair-rpc";
 import {
   checkResume,
   getArtifacts,
@@ -52,6 +53,11 @@ export async function handleSessionRpcRequest(
     case "session/list_timeline":
       return listTimeline(
         params as { sessionId: string; limit?: number; before?: string },
+        context,
+      );
+    case "session/repair_timeline":
+      return repairTimeline(
+        params as { sessionId: string; apply?: boolean },
         context,
       );
     case "session/list_legacy_evidence":

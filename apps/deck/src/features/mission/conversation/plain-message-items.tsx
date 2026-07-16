@@ -1054,9 +1054,12 @@ function PlainToolCallItem({
   );
 }
 
-function resolveToolCallDisplayTitle(label: string, title: string) {
+export function resolveToolCallDisplayTitle(label: string, title: string) {
   if (label === "Skill") {
     return title.replace(/^Skill:\s*/iu, "").trim() || "Skill";
+  }
+  if (label === "MCP") {
+    return title.replace(/^Tool:\s*/iu, "").trim() || "MCP";
   }
   if (label === "Diagnostics") {
     return title.replace(/^Diagnostics(?:\s*:)?\s*/iu, "").trim() || "Diagnostics";

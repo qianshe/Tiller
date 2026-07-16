@@ -5,7 +5,7 @@ import {
   resolveOpenCodeSessionEnv,
 } from "../session-config";
 import { extractOpenCodePlanFromToolCall, isOpenCodePlanToolCall, mapOpenCodePlanUpdate } from "./plan-events";
-import { normalizeOpenCodeToolCall } from "./tool-calls";
+import { collectOpenCodeToolEvidence } from "./evidence";
 
 export const OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS = 120_000;
 
@@ -41,7 +41,7 @@ export function createOpenCodeAcpAdapter(): AcpAgentAdapter {
     mapToolCallUpdate: mapOpenCodePlanUpdate,
     extractPlanFromToolCall: extractOpenCodePlanFromToolCall,
     isPlanToolCall: isOpenCodePlanToolCall,
-    normalizeToolCall: ({ toolCall, update }) => normalizeOpenCodeToolCall(toolCall, update),
+    collectToolEvidence: collectOpenCodeToolEvidence,
   };
 }
 

@@ -29,7 +29,11 @@ import type {
   SessionPlanStore,
   StoredSessionRuntimeDescriptor,
 } from "../sessions/facade";
-import type { SessionLegacyEvidenceStore } from "@tiller/persistence";
+import type {
+  SessionLegacyEvidenceStore,
+  SessionTimelineStore,
+  SessionUpdateStore,
+} from "@tiller/persistence";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 import type { SessionPromptQueueManager } from "../runtime/session/prompt-queue";
 import type { SessionTimelineDispatcher } from "../runtime/session-timeline/dispatcher";
@@ -136,7 +140,7 @@ export type HelmHandlerContext = {
   sessionOutputBodyStore: SessionOutputBodyStore;
   sessionRuntimeStore: any;
   sessionPlanStore: SessionPlanStore;
-  sessionTimelineStore: any;
+  sessionTimelineStore: SessionTimelineStore;
   sessionTimelineWorkers?: SessionTimelineWorkerRegistry;
   sessionTimelineDispatcher?: SessionTimelineDispatcher;
   sessionTimelineFlushScheduler?: SessionTimelineFlushScheduler;
@@ -144,7 +148,7 @@ export type HelmHandlerContext = {
   sessionApprovalStateStore?: SessionApprovalStateStore;
   sessionRuntimeEventState?: SessionRuntimeEventState;
   runtimeMetrics?: RuntimeMetrics;
-  sessionUpdateStore: any;
+  sessionUpdateStore: SessionUpdateStore;
   liveMessageBuffer: LiveMessageBuffer;
   runtimeEventThrottleConfig?: RuntimeEventThrottleConfig;
   promptQueue: SessionPromptQueueManager;

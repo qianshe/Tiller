@@ -132,3 +132,47 @@ test("submitPromptFromKeyboard leaves mobile Enter to the textarea", () => {
   assert.equal(prevented, false);
   assert.equal(submitted, false);
 });
+
+test("submitPrompt refuses an existing session until its timeline is loaded", () => {
+  const activeSession = {
+    id: "session-1",
+    status: "idle",
+    resume: {
+      state: "resume-available",
+      mode: "same-process",
+      restoreMethod: "client-reconnect",
+    },
+  };
+  const { actions, dispatched } = createActions({
+    prompt: "hello",
+    activeSessionId: activeSession.id,
+    activeSession,
+    statuses: { [activeSession.id]: "idle" },
+    messageHistoryState: {},
+    sessionTimeline: {},
+  });
+  let prevented = false;
+
+  actions.submitPrompt({
+    preventDefault: () => {
+      prevented = true;
+    },
+  } as any);
+
+  assert.equal(prevented, true);
+  assert.deepEqual(dispatched, []);
+});
+
+test("submitPrompt refuses a selected session id before its summary and timeline load", () => {
+  const { actions, dispatched } = createActions({
+    prompt: "hello",
+    activeSessionId: "session-loading",
+    activeSession: null,
+    messageHistoryState: {},
+    sessionTimeline: {},
+  });
+
+  actions.submitPrompt({ preventDefault: () => undefined } as any);
+
+  assert.deepEqual(dispatched, []);
+});

@@ -5,13 +5,17 @@ import type {
   AgentToolCall,
 } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "../runtime-types";
+import {
+  createToolObservation,
+  disposeToolRecognitionSession,
+  recognizeToolObservation,
+} from "../tool-recognition";
 import { createClaudeAcpAdapter } from "./claude/index";
 import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
-import { normalizeGenericToolCall } from "./generic/tool-calls";
 import { createOpenClawAcpAdapter } from "./openclaw/index";
 import { createOpenCodeAcpAdapter } from "./opencode/index";
-import type { AcpAgentAdapter, AcpCompactionDetailsVisibility, AcpLaunchContext, AcpPromptObservationContext, AcpSessionUpdateProjectionContext, AcpToolCallNormalizationContext } from "./types";
+import type { AcpAgentAdapter, AcpCompactionDetailsVisibility, AcpLaunchContext, AcpPromptObservationContext, AcpSessionUpdateProjectionContext, AcpToolEvidenceContext } from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createOpenCodeAcpAdapter(),
@@ -83,33 +87,55 @@ export function pollAdapterPromptEvents(
   provider: AcpRuntimeProviderConfig,
   context: AcpPromptObservationContext,
 ) {
-  return resolveAcpAgentAdapter(provider).pollPromptEvents?.(context) ?? [];
+  const adapter = resolveAcpAgentAdapter(provider);
+  const observations = adapter.pollPromptToolObservations?.(context) ?? [];
+  return observations.flatMap((sourceObservation) => {
+    const observation = { ...sourceObservation, providerId: provider.id };
+    const evidence = adapter.collectToolEvidence?.({ observation }) ?? [];
+    return recognizeToolObservation(observation, evidence).toolCalls.map((toolCall) => ({
+      type: "tool-call" as const,
+      toolCall,
+    }));
+  });
 }
 
 export function disposeAdapterSession(
   provider: AcpRuntimeProviderConfig | undefined,
   sessionId: string,
 ) {
-  provider && resolveAcpAgentAdapter(provider).disposeSession?.(sessionId);
+  if (provider) {
+    resolveAcpAgentAdapter(provider).disposeSession?.(sessionId);
+    disposeToolRecognitionSession(provider.id, sessionId);
+  } else {
+    disposeToolRecognitionSession(undefined, sessionId);
+  }
 }
 
+export function recognizeAdapterToolCalls(
+  provider: AcpRuntimeProviderConfig | undefined,
+  providerId: string | undefined,
+  context: { toolCall: AgentToolCall; update: unknown; sessionId?: string; cwd?: string },
+): AgentToolCall[] {
+  const resolvedProvider = provider ?? inferProviderFromId(providerId);
+  const observation = createToolObservation({
+    providerId: resolvedProvider?.id ?? providerId,
+    sessionId: context.sessionId,
+    cwd: context.cwd,
+    toolCall: context.toolCall,
+    update: context.update,
+  });
+  const adapter = resolvedProvider ? resolveAcpAgentAdapter(resolvedProvider) : undefined;
+  const evidence = adapter?.collectToolEvidence?.({ observation }) ?? [];
+  return recognizeToolObservation(observation, evidence).toolCalls;
+}
+
+/** @internal Compatibility helper for package-level characterization tests. */
 export function normalizeAdapterToolCall(
   provider: AcpRuntimeProviderConfig | undefined,
   providerId: string | undefined,
-  context: AcpToolCallNormalizationContext,
+  context: { toolCall: AgentToolCall; update: unknown; sessionId?: string; cwd?: string },
 ): AgentToolCall | null {
-  const resolvedProvider = provider ?? inferProviderFromId(providerId);
-  if (!resolvedProvider) {
-    return normalizeGenericToolCall(context.toolCall);
-  }
-  const adapter = resolveAcpAgentAdapter(resolvedProvider);
-  const normalized = adapter.normalizeToolCall
-    ? adapter.normalizeToolCall(context)
-    : context.toolCall;
-  if (!normalized) {
-    return null;
-  }
-  return adapter.id === "generic" ? normalized : normalizeGenericToolCall(normalized);
+  return recognizeAdapterToolCalls(provider, providerId, context)[0] ?? null;
 }
 
 export function summarizeAdapterCompactionSignal(
@@ -188,4 +214,4 @@ export { createOpenCodeAcpAdapter } from "./opencode/index";
 export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode/index";
 export { resolveAdapterPluginManifest } from "./plugin-loader";
 export { SUPPRESS_SESSION_UPDATE } from "./types";
-export type { AcpAgentAdapter, AcpCleanupContext, AcpCompactionDetailsVisibility, AcpLaunchContext, AcpLaunchSpec, AcpPromptObservationContext, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, AcpToolCallNormalizationContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";
+export type { AcpAgentAdapter, AcpCleanupContext, AcpCompactionDetailsVisibility, AcpLaunchContext, AcpLaunchSpec, AcpPromptObservationContext, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, AcpToolEvidenceContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";

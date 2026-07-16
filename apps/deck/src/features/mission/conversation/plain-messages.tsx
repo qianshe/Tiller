@@ -806,7 +806,7 @@ export function resolvePlainConversationDisplayItems({
   );
   return mergeAdjacentToolItems(
     mergeAdjacentThinkingItems(
-      [...canonicalItems, ...optimisticItems].sort(comparePlainConversationItems),
+      [...canonicalItems, ...optimisticItems],
     ),
   );
 }

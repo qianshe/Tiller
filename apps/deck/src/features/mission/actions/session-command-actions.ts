@@ -7,6 +7,7 @@ import type {
   ProjectSummary,
   SessionReasoningEffort,
   SessionSummary,
+  SessionTimelineEntry,
   WorktreeSummary,
 } from "@tiller/shared";
 import type {
@@ -27,7 +28,10 @@ import {
   startResume as startResumeImpl,
   submitPrompt as submitPromptImpl,
 } from "./session-actions";
-import { resolveSessionRestoreGate } from "../utils/session-state";
+import {
+  isSessionConversationLoaded,
+  resolveSessionRestoreGate,
+} from "../utils/session-state";
 
 type MutableRef<T> = { current: T };
 
@@ -40,6 +44,8 @@ type UseSessionCommandActionsOptions = {
   activeSessionId: string | null;
   activeSession?: SessionSummary | null;
   statuses: Record<string, SessionSummary["status"]>;
+  messageHistoryState?: Record<string, { loading: boolean } | undefined>;
+  sessionTimeline?: Record<string, SessionTimelineEntry[] | undefined>;
   selectedProjectId?: string | null;
   projects: ProjectSummary[];
   selectedWorktree?: WorktreeSummary | null;
@@ -92,6 +98,8 @@ export function useSessionCommandActions({
   activeSessionId,
   activeSession,
   statuses,
+  messageHistoryState = {},
+  sessionTimeline = {},
   selectedProjectId,
   projects,
   selectedWorktree,
@@ -184,13 +192,20 @@ export function useSessionCommandActions({
         promptSession && resumeStartRequestsRef.current.has(promptSession.id),
       ),
     });
+    const promptSessionConversationLoaded = !promptSessionId ||
+      isSessionConversationLoaded(
+        promptSessionId,
+        messageHistoryState,
+        sessionTimeline,
+      );
     submitPromptImpl(event, {
       prompt,
       promptImages,
       rpcClientRef,
       setImagePasteNotice,
       activeSessionId: promptSessionId,
-      activeSessionCanChat: promptSessionRestoreGate.canChat,
+      activeSessionCanChat:
+        promptSessionRestoreGate.canChat && promptSessionConversationLoaded,
       createSession,
       setPrompt,
       setPromptImages,

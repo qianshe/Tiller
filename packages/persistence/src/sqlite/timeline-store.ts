@@ -606,6 +606,7 @@ function insertSessionTimelineEntry(
   entry: SessionTimelineEntry,
   position: number,
 ) {
+  const resolvedEntry = mergeExistingTimelineToolCall(db, sessionId, entry);
   db.prepare(`
     INSERT OR REPLACE INTO session_timeline_entries(
       session_id,
@@ -620,14 +621,32 @@ function insertSessionTimelineEntry(
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     sessionId,
-    entry.id,
+    resolvedEntry.id,
     position,
-    entry.kind,
-    entry.timestamp,
-    resolveEntryUpdatedAt(entry),
-    isTranscriptEventEntry(entry) ? null : (entry.sequence ?? null),
-    JSON.stringify(entry),
+    resolvedEntry.kind,
+    resolvedEntry.timestamp,
+    resolveEntryUpdatedAt(resolvedEntry),
+    isTranscriptEventEntry(resolvedEntry) ? null : (resolvedEntry.sequence ?? null),
+    JSON.stringify(resolvedEntry),
   );
+}
+
+function mergeExistingTimelineToolCall(
+  db: DatabaseSync,
+  sessionId: string,
+  incoming: SessionTimelineEntry,
+) {
+  if (incoming.kind !== "tool_call") return incoming;
+  const row = db.prepare(
+    "SELECT payload_json FROM session_timeline_entries WHERE session_id = ? AND id = ?",
+  ).get(sessionId, incoming.id) as { payload_json: string } | undefined;
+  const current = row
+    ? parseJson<SessionTimelineEntry>(row.payload_json)
+    : null;
+  if (current?.kind !== "tool_call") return incoming;
+  const entries: SessionTimelineEntry[] = [normalizePersistedTimelineEntry(current)];
+  appendToolCallToSessionTimeline(entries, incoming.toolCall);
+  return entries.find((entry) => entry.kind === "tool_call" && entry.id === current.id) ?? incoming;
 }
 
 function replaceSessionTimelineMessageAnchors(db: DatabaseSync, sessionId: string) {

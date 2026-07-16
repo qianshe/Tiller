@@ -43,6 +43,26 @@ export function mergeStreamingText(
   return collapseRepeatedStreamingText(charOverlapMerged);
 }
 
+export function isAssistantSnapshotContinuation(
+  currentText: string | undefined,
+  incomingText: string | undefined,
+) {
+  if (!currentText || !incomingText) {
+    return false;
+  }
+  return incomingText.startsWith(currentText) ||
+    currentText.startsWith(incomingText);
+}
+
+export function shouldStartNewAssistantOccurrenceAfterBoundary(
+  currentText: string | undefined,
+  incomingText: string | undefined,
+  boundaryPresent: boolean,
+) {
+  return boundaryPresent &&
+    !isAssistantSnapshotContinuation(currentText, incomingText);
+}
+
 export function collapseRepeatedStreamingText(text: string) {
   const minUnitLength = 8;
   const maxUnitLength = Math.floor(text.length / 2);

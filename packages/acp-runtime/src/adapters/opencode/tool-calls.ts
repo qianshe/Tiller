@@ -421,7 +421,7 @@ function looksLikeOpenCodeLiveSubagentInput(
   title: string,
   input: Record<string, unknown> | null,
 ) {
-  if (!/^task$/iu.test(title.trim()) || !input) {
+  if (!input) {
     return false;
   }
   const prompt = firstString(input.prompt, input.description, input.message);
@@ -430,6 +430,12 @@ function looksLikeOpenCodeLiveSubagentInput(
   const hasBackgroundFlag =
     typeof input.run_in_background === "boolean" ||
     typeof input.runInBackground === "boolean";
+  if (prompt && hasBackgroundFlag) {
+    return true;
+  }
+  if (!/^task$/iu.test(title.trim())) {
+    return false;
+  }
   return Boolean(prompt && (category || hasLoadSkills || hasBackgroundFlag));
 }
 
@@ -452,6 +458,12 @@ function looksLikeOpenCodeCompletedSubagent(
     const hasSpawnDepth =
       typeof metadata.spawnDepth === "number" ||
       typeof metadata.spawn_depth === "number";
+    const hasBackgroundFlag =
+      typeof metadata.run_in_background === "boolean" ||
+      typeof metadata.runInBackground === "boolean";
+    if (prompt && (taskId || sessionId) && hasBackgroundFlag) {
+      return true;
+    }
     if (prompt && (taskId || sessionId) && (agent || requestedType || hasSpawnDepth)) {
       return true;
     }

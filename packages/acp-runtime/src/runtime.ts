@@ -68,7 +68,6 @@ export type {
 } from "./runtime-types";
 
 export {
-  mapSessionUpdateNotification,
   mapSessionUpdateNotificationBatch,
   normalizeProviderCleanupResult,
   summarizeSessionUpdateNotification,

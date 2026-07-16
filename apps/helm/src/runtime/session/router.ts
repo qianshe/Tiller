@@ -107,6 +107,24 @@ async function resolvePromptRuntime(
   return record;
 }
 
+type PromptRuntimeRecord = NonNullable<ReturnType<HelmHandlerContext["sessions"]["get"]>>;
+
+async function promptWithRuntimeRecovery(
+  sessionId: string,
+  record: PromptRuntimeRecord,
+  prompt: () => Promise<void>,
+  context: HelmHandlerContext,
+) {
+  try {
+    await prompt();
+  } catch (error) {
+    if (context.sessions.get(sessionId) === record) {
+      context.sessions.delete(sessionId);
+    }
+    throw error;
+  }
+}
+
 function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
   publishPromptQueueState(sessionId, context.promptQueue.snapshot(sessionId), context);
 }
@@ -169,13 +187,18 @@ export async function sendPromptImmediately(
     meta: { queued: true, chars: item.text.length, images: imageAttachments.length },
   });
 
-  await record.runtime.prompt(
-    item.text,
-    hydratePromptImageAttachments({
-      sessionId: item.sessionId,
-      content: item.content,
-      attachments: context.sessionAttachmentStore,
-    }),
+  await promptWithRuntimeRecovery(
+    item.sessionId,
+    record,
+    () => record.runtime.prompt(
+      item.text,
+      hydratePromptImageAttachments({
+        sessionId: item.sessionId,
+        content: item.content,
+        attachments: context.sessionAttachmentStore,
+      }),
+    ),
+    context,
   );
   emitHelmPromptTrace(context, {
     traceId: item.clientMessageId,
@@ -391,13 +414,18 @@ export async function sendPromptToSession(
             images: promptContent?.filter((content) => content.type === "image").length ?? 0,
           },
         });
-        await activeRecord.runtime.prompt(
-          input.text,
-          hydratePromptImageAttachments({
-            sessionId: input.sessionId,
-            content: promptContent,
-            attachments: context.sessionAttachmentStore,
-          }),
+        await promptWithRuntimeRecovery(
+          input.sessionId,
+          activeRecord,
+          () => activeRecord.runtime.prompt(
+            input.text,
+            hydratePromptImageAttachments({
+              sessionId: input.sessionId,
+              content: promptContent,
+              attachments: context.sessionAttachmentStore,
+            }),
+          ),
+          context,
         );
         emitHelmPromptTrace(context, {
           traceId: input.clientMessageId,

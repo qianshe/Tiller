@@ -273,6 +273,39 @@ test("shouldAutoScrollSessionBody suppresses auto-follow during history restore 
   );
 });
 
+test("resolveSessionBodyStickToBottom preserves sticky intent while streamed content grows", async () => {
+  const model = await import("./chat-pane-model.js");
+  assert.equal(typeof model.resolveSessionBodyStickToBottom, "function");
+
+  assert.equal(
+    model.resolveSessionBodyStickToBottom({
+      current: { scrollTop: 400, scrollHeight: 1200, clientHeight: 500 },
+      previous: { scrollTop: 400, scrollHeight: 900 },
+      previousStickToBottom: true,
+      threshold: 80,
+    }),
+    true,
+  );
+  assert.equal(
+    model.resolveSessionBodyStickToBottom({
+      current: { scrollTop: 300, scrollHeight: 1200, clientHeight: 500 },
+      previous: { scrollTop: 400, scrollHeight: 1200 },
+      previousStickToBottom: true,
+      threshold: 80,
+    }),
+    false,
+  );
+  assert.equal(
+    model.resolveSessionBodyStickToBottom({
+      current: { scrollTop: 680, scrollHeight: 1200, clientHeight: 500 },
+      previous: { scrollTop: 600, scrollHeight: 1200 },
+      previousStickToBottom: false,
+      threshold: 80,
+    }),
+    true,
+  );
+});
+
 test("pruneSessionCardScrollState drops closed session snapshots", async () => {
   const model = await import("./chat-pane-model.js") as Record<string, unknown>;
   assert.equal(typeof model.pruneSessionCardScrollState, "function");

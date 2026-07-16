@@ -3,8 +3,9 @@ import { isCommandNamed, resolveDefaultLaunch } from "../shared";
 import { applyCodexSessionLaunchArgs } from "../session-config";
 import { expandCodexRuntimeEvent, mapCodexCompactionUpdate, summarizeCodexCompactionSignal } from "./compaction-events";
 import { extractCodexPlanFromToolCall, isCodexPlanToolCall, mapCodexPlanUpdate } from "./plan-events";
-import { normalizeCodexToolCall } from "./tool-calls";
 import { createCodexPromptToolCallObserver } from "./prompt-tool-calls";
+import { collectCodexToolEvidence } from "./evidence";
+import { promptEventsToToolObservations } from "../../tool-recognition";
 
 export function createCodexAcpAdapter(): AcpAgentAdapter {
   const promptToolCalls = createCodexPromptToolCallObserver();
@@ -27,10 +28,13 @@ export function createCodexAcpAdapter(): AcpAgentAdapter {
     mapMessageUpdate: mapCodexCompactionUpdate,
     mapToolCallUpdate: mapCodexPlanUpdate,
     beginPromptObservation: (context) => promptToolCalls.begin(context),
-    pollPromptEvents: (context) => promptToolCalls.poll(context),
+    pollPromptToolObservations: (context) => promptEventsToToolObservations(
+      promptToolCalls.poll(context),
+      { providerId: "codex", sessionId: context.runtimeSessionId, cwd: context.cwd },
+    ),
     disposeSession: (sessionId) => promptToolCalls.dispose(sessionId),
     expandRuntimeEvent: expandCodexRuntimeEvent,
-    normalizeToolCall: ({ toolCall, update }) => normalizeCodexToolCall(toolCall, update),
+    collectToolEvidence: collectCodexToolEvidence,
     extractPlanFromToolCall: extractCodexPlanFromToolCall,
     isPlanToolCall: isCodexPlanToolCall,
     summarizeCompactionSignal: summarizeCodexCompactionSignal,

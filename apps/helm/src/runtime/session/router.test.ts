@@ -572,6 +572,41 @@ test("sendPromptToSession accepts new runtime status after a previous error", as
   assert.equal(sessions.get("session-1")?.summary.status, "running");
 });
 
+test("sendPromptToSession evicts a failed runtime so the next prompt restores it", async () => {
+  const restoredPrompts: string[] = [];
+  const { context, sessions } = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        throw new Error("provider stalled");
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+    restoreOk: true,
+    restoreRuntime: {
+      prompt: async (text) => {
+        restoredPrompts.push(text);
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "first", clientMessageId: "client-failed" },
+    context,
+  );
+  await waitForPromptSettled(context, "session-1");
+  assert.equal(sessions.has("session-1"), false);
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "second", clientMessageId: "client-restored" },
+    context,
+  );
+  await waitForPromptSettled(context, "session-1");
+
+  assert.deepEqual(restoredPrompts, ["second"]);
+  assert.equal(sessions.has("session-1"), true);
+});
+
 test("sendPromptToSession rejects unsupported slash commands before ACP prompt", async () => {
   const prompted: string[] = [];
   const { context, timelineEntries } = createContext({

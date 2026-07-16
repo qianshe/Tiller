@@ -653,6 +653,44 @@ test("appendToolCallToSessionTimeline keeps subagent classification when a later
   );
 });
 
+test("sortSessionTimelineEntries preserves an independent assistant suffix after a subagent boundary", () => {
+  const entries: SessionTimelineEntry[] = [];
+  appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "检查完成",
+    timestamp: "2026-06-10T10:19:40.000Z",
+    sequence: 1,
+  });
+  appendToolCallToSessionTimeline(entries, {
+    id: "call-subagent",
+    kind: "subagent",
+    title: "spawn_agent",
+    status: "running",
+    timestamp: "2026-06-10T10:19:41.000Z",
+    updatedAt: "2026-06-10T10:19:41.000Z",
+    sequence: 2,
+  });
+  const timeline = sortSessionTimelineEntries(appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "完成",
+    timestamp: "2026-06-10T10:19:42.000Z",
+    sequence: 3,
+  }));
+
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "assistant-1"],
+      ["tool_call", "tool:call-subagent"],
+      ["assistant_message", "assistant-1#p1"],
+    ],
+  );
+  const assistantEntries = timeline.filter((entry) => entry.kind === "assistant_message");
+  assert.equal(assistantEntries[1]?.chunks[0]?.text, "完成");
+});
+
 test("appendToolCallToSessionTimeline updates a subagent result onto its launched entry by command id", () => {
   const entries: SessionTimelineEntry[] = [];
 

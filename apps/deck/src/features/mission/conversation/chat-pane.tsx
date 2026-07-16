@@ -29,6 +29,7 @@ import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
 import {
   pruneSessionCardScrollState,
+  resolveSessionBodyStickToBottom,
   resolveSessionConversationDisplayMode,
   resolveSessionStreamContentLength,
   shouldAutoScrollSessionBody,
@@ -422,12 +423,17 @@ export function MissionChatPane({
     if (isPlainHistoryRevealLocked(body)) {
       return;
     }
+    const previous = sessionBodyScrollPositionRef.current[sessionId];
     sessionBodyScrollPositionRef.current[sessionId] = {
       scrollTop: body.scrollTop,
       scrollHeight: body.scrollHeight,
     };
-    sessionBodyStickToBottomRef.current[sessionId] =
-      body.scrollHeight - body.scrollTop - body.clientHeight <= STICK_TO_BOTTOM_THRESHOLD;
+    sessionBodyStickToBottomRef.current[sessionId] = resolveSessionBodyStickToBottom({
+      current: body,
+      previous,
+      previousStickToBottom: sessionBodyStickToBottomRef.current[sessionId],
+      threshold: STICK_TO_BOTTOM_THRESHOLD,
+    });
   }, []);
   const scrollSessionBodiesToBottom = useCallback((
     sessionIds: readonly string[],
@@ -645,52 +651,81 @@ export function MissionChatPane({
   useEffect(() => {
     const chatMain = chatMainRef.current;
     const ResizeObserverCtor = window.ResizeObserver;
-    if (!chatMain || !ResizeObserverCtor || isPaneResizing) {
+    const MutationObserverCtor = window.MutationObserver;
+    if (!chatMain || (!ResizeObserverCtor && !MutationObserverCtor) || isPaneResizing) {
       return;
     }
-    const observer = new ResizeObserverCtor((entries) => {
+    const followSessionBody = (sessionId: string) => {
       if (isPaneResizing) {
         return;
       }
-      for (const entry of entries) {
-        const content = entry.target;
-        if (!(content instanceof HTMLElement)) {
-          continue;
-        }
-        const sessionId = content.dataset.sessionCardContent;
-        if (!sessionId) {
-          continue;
-        }
-        const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
-        if (!body) {
-          continue;
-        }
-        const historyLoading = Boolean(messageHistoryStateRef.current[sessionId]?.loading);
-        if (!shouldAutoScrollSessionBody({
-          stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
-          historyLoading,
-          historyRevealLocked: isPlainHistoryRevealLocked(body),
-        })) {
-          continue;
-        }
-        body.scrollTop = body.scrollHeight;
-        sessionBodyScrollPositionRef.current[sessionId] = {
-          scrollTop: body.scrollTop,
-          scrollHeight: body.scrollHeight,
-        };
-        sessionBodyStickToBottomRef.current[sessionId] = true;
+      const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
+      if (!body) {
+        return;
       }
-    });
+      const historyLoading = Boolean(messageHistoryStateRef.current[sessionId]?.loading);
+      if (!shouldAutoScrollSessionBody({
+        stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
+        historyLoading,
+        historyRevealLocked: isPlainHistoryRevealLocked(body),
+      })) {
+        return;
+      }
+      body.scrollTop = body.scrollHeight;
+      sessionBodyScrollPositionRef.current[sessionId] = {
+        scrollTop: body.scrollTop,
+        scrollHeight: body.scrollHeight,
+      };
+      sessionBodyStickToBottomRef.current[sessionId] = true;
+    };
+    const resizeObserver = ResizeObserverCtor
+      ? new ResizeObserverCtor((entries) => {
+          for (const entry of entries) {
+            const content = entry.target;
+            if (!(content instanceof HTMLElement)) {
+              continue;
+            }
+            const sessionId = content.dataset.sessionCardContent;
+            if (sessionId) {
+              followSessionBody(sessionId);
+            }
+          }
+        })
+      : null;
+    const mutationObserver = MutationObserverCtor
+      ? new MutationObserverCtor((records) => {
+          const changedSessionIds = new Set<string>();
+          for (const record of records) {
+            const target = record.target instanceof HTMLElement
+              ? record.target
+              : record.target.parentElement;
+            const content = target?.closest<HTMLElement>("[data-session-card-content]");
+            const sessionId = content?.dataset.sessionCardContent;
+            if (sessionId) {
+              changedSessionIds.add(sessionId);
+            }
+          }
+          changedSessionIds.forEach(followSessionBody);
+        })
+      : null;
     const observedSessionIds = observedSessionIdsKey
       ? observedSessionIdsKey.split("\u0000")
       : [];
     observedSessionIds.forEach((sessionId) => {
       const content = chatMain.querySelector<HTMLElement>(`[data-session-card-content="${CSS.escape(sessionId)}"]`);
       if (content) {
-        observer.observe(content);
+        resizeObserver?.observe(content);
+        mutationObserver?.observe(content, {
+          characterData: true,
+          childList: true,
+          subtree: true,
+        });
       }
     });
-    return () => observer.disconnect();
+    return () => {
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+    };
   }, [chatMainRef, isPaneResizing, observedSessionIdsKey, paneResizeVersion]);
 
   return (

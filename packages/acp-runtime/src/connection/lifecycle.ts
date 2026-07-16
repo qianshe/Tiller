@@ -12,13 +12,18 @@ import {
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
 import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotificationBatch, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
 import { createProtocolLogSink, writeChunkLog, writeLogLine, type AcpProtocolLoggingOptions, type ProtocolLogSink } from "../protocol-logging";
-import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcess, terminateChildProcessAndWait } from "../process";
+import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcessAndWait } from "../process";
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
 import { resolveRuntimeSessionId } from "../requests";
 import type { AcpSessionConfigOption, ProviderCleanupResult, SessionRuntimeEvent } from "../runtime-types";
 import { resolveAcpConnectionKey } from "./key";
 import { createConnectionClientMethods } from "./client-methods";
 import { readConnectionTextFile, writeConnectionTextFile } from "./file-client";
+import {
+  ACP_PROMPT_STALLED_CODE,
+  createAcpPromptStartGuard,
+  isAcpPromptProgressEvent,
+} from "./prompt-liveness";
 import { withConnectionRequest } from "./request";
 import {
   resolveRequestedRuntimeSessionId,
@@ -90,6 +95,7 @@ type AcpSessionEntry = {
   refCount: number;
   configOptions: AcpSessionConfigOption[];
   modelState: ReturnType<typeof extractAcpModelState>;
+  markPromptProgress?: () => void;
 };
 
 export class AcpConnection {
@@ -219,6 +225,11 @@ export class AcpConnection {
     const pending = this.pendingSessions.get(request.tillerSessionId);
     if (pending) {
       pending.refCount += 1;
+      const entry = this.sessions.get(request.tillerSessionId);
+      if (entry) {
+        entry.worktree = request.worktree;
+        entry.onEvent = request.onEvent;
+      }
       return pending.promise;
     }
 
@@ -459,17 +470,28 @@ export class AcpConnection {
     };
     const publishPromptEvents = () => {
       for (const event of pollAdapterPromptEvents(this.state.provider, promptObservation)) {
+        if (isAcpPromptProgressEvent(event)) {
+          session.markPromptProgress?.();
+        }
         session.onEvent(event);
       }
     };
     beginAdapterPromptObservation(this.state.provider, promptObservation);
     const promptObservationTimer = setInterval(publishPromptEvents, 500);
     promptObservationTimer.unref();
+    const promptStartGuard = createAcpPromptStartGuard(this.state.provider);
+    session.markPromptProgress = promptStartGuard.markProgress;
     session.onEvent({ type: "status", status: "running", message: "ACP agent is responding" });
     try {
       await withConnectionRequest(
         "session/prompt",
-        this.state.agent.prompt({ sessionId: session.runtimeSessionId, prompt: mapPromptContentToSdkBlocks(promptContent) }),
+        Promise.race([
+          this.state.agent.prompt({
+            sessionId: session.runtimeSessionId,
+            prompt: mapPromptContentToSdkBlocks(promptContent),
+          }),
+          promptStartGuard.timeout,
+        ]),
         this.state.child,
         "",
         this.state.logFile,
@@ -481,8 +503,11 @@ export class AcpConnection {
     } catch (error) {
       publishPromptEvents();
       const message = error instanceof Error ? error.message : "Failed to send ACP prompt.";
-    writeLogLine(this.state.logFile, "sdk-error", message);
-      if (/ACP connection closed/iu.test(message)) {
+      const errorCode = (error as { code?: string })?.code;
+      const connectionMustReset = errorCode === ACP_PROMPT_STALLED_CODE ||
+        /ACP connection closed|ACP process exited|Timed out waiting for ACP response/iu.test(message);
+      writeLogLine(this.state.logFile, "sdk-error", message);
+      if (connectionMustReset) {
         this.status = "error";
         this.lastError = message;
       }
@@ -492,7 +517,16 @@ export class AcpConnection {
         message,
       });
       session.onEvent({ type: "status", status: "error", message: "ACP prompt failed" });
+      if (connectionMustReset) {
+        this.suppressExitError = true;
+        await terminateChildProcessAndWait(this.state.child);
+      }
+      throw error;
     } finally {
+      if (session.markPromptProgress === promptStartGuard.markProgress) {
+        session.markPromptProgress = undefined;
+      }
+      promptStartGuard.dispose();
       clearInterval(promptObservationTimer);
     }
   }
@@ -728,6 +762,9 @@ export class AcpConnection {
     }
     for (const session of this.sessions.values()) {
       if (session.runtimeSessionId === mapped.sessionId) {
+        if (mapped.events.some(isAcpPromptProgressEvent)) {
+          session.markPromptProgress?.();
+        }
         for (const event of mapped.events) {
           session.onEvent(event);
         }

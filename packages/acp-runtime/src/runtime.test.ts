@@ -146,7 +146,7 @@ test("Codex adapter exposes bounded prompt observation for missing multi-agent n
     protocol: "acp",
   });
   assert.equal(typeof adapter.beginPromptObservation, "function");
-  assert.equal(typeof adapter.pollPromptEvents, "function");
+  assert.equal(typeof adapter.pollPromptToolObservations, "function");
 });
 
 test("tool-call plan repair stays behind provider adapters", () => {

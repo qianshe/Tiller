@@ -1,14 +1,15 @@
 import type { AcpAgentAdapter } from "../types";
 import { isCommandNamed, resolveDefaultLaunch, resolveUnsupportedCleanup } from "../shared";
-import { createClaudeToolCallNormalizer } from "./tool-calls";
 import { createClaudePlanUpdateProjector } from "./plan-events";
 import { createClaudePromptToolCallObserver } from "./prompt-tool-calls";
+import { createClaudeToolEvidenceCollector } from "./evidence";
+import { promptEventsToToolObservations } from "../../tool-recognition";
 
 const CLAUDE_ACP_COMMANDS = ["claude-acp", "claude-agent-acp", "claude-code-acp"];
 
 export function createClaudeAcpAdapter(): AcpAgentAdapter {
   const planProjector = createClaudePlanUpdateProjector();
-  const toolCallNormalizer = createClaudeToolCallNormalizer();
+  const toolEvidence = createClaudeToolEvidenceCollector();
   const promptToolCalls = createClaudePromptToolCallObserver();
   return {
     id: "claude",
@@ -33,14 +34,16 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
     resolveCapabilities: (_provider, _initializeResult, detected) => detected,
     resolveCleanup: ({ provider }) => resolveUnsupportedCleanup(provider),
     beginPromptObservation: (context) => promptToolCalls.begin(context),
-    pollPromptEvents: (context) => promptToolCalls.poll(context),
+    pollPromptToolObservations: (context) => promptEventsToToolObservations(
+      promptToolCalls.poll(context),
+      { providerId: "claude", sessionId: context.runtimeSessionId, cwd: context.cwd },
+    ),
     mapToolCallUpdate: planProjector.mapUpdate,
     disposeSession: (sessionId) => {
       planProjector.disposeSession(sessionId);
-      toolCallNormalizer.disposeSession(sessionId);
+      toolEvidence.disposeSession(sessionId);
       promptToolCalls.dispose(sessionId);
     },
-    normalizeToolCall: ({ toolCall, update, sessionId, cwd }) =>
-      toolCallNormalizer.normalize(toolCall, update, sessionId, cwd),
+    collectToolEvidence: toolEvidence.collect,
   };
 }

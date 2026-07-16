@@ -371,6 +371,11 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /bodyScrollSnapshot\.scrollTop/);
   assert.doesNotMatch(chatPaneSource, /scrollBottom/);
   assert.match(chatPaneSource, /ResizeObserverCtor/);
+  assert.match(chatPaneSource, /MutationObserverCtor/);
+  assert.match(chatPaneSource, /characterData: true/);
+  assert.match(chatPaneSource, /childList: true/);
+  assert.match(chatPaneSource, /subtree: true/);
+  assert.match(chatPaneSource, /changedSessionIds\.forEach\(followSessionBody\)/);
   assert.match(chatPaneSource, /messageHistoryStateRef\.current = messageHistoryState/);
   assert.match(chatPaneSource, /const observedSessionIdsKey = openSessions\.map\(\(session\) => session\.id\)\.join/);
   assert.match(chatPaneSource, /const historyLoading = Boolean\(messageHistoryStateRef\.current\[sessionId\]\?\.loading\)/);

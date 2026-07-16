@@ -86,8 +86,8 @@ function notifyCurrentSocketCanonicalSnapshot(
   });
   if (page) {
     const lastSequence = page.entries.reduce(
-      (maximum: number, entry: { sequence?: number }) =>
-        Math.max(maximum, entry.sequence ?? 0),
+      (maximum, entry) =>
+        Math.max(maximum, "sequence" in entry ? entry.sequence ?? 0 : 0),
       0,
     );
     context.notify(socketRecord.socket, "session/update", {

@@ -35,6 +35,12 @@ test("resolveAgentToolCallMcp derives canonical MCP metadata from provider title
   const openCodeTool = resolveAgentToolCallMcp({
     rawTitle: "mcp-router_search_for_pattern: tool_call|toolCall|tool_name|toolName",
   });
+  const openCodeContext7Resolve = resolveAgentToolCallMcp({
+    rawTitle: "context7_resolve-library-id",
+  });
+  const openCodeContext7Query = resolveAgentToolCallMcp({
+    rawTitle: "context7_query-docs",
+  });
   const claudeTitleOnlyTool = resolveAgentToolCallMcp({
     rawTitle: "mcpServers_search_context",
   });
@@ -50,6 +56,18 @@ test("resolveAgentToolCallMcp derives canonical MCP metadata from provider title
     toolName: "search_for_pattern",
     source: "provider-title",
     rawTitle: "mcp-router_search_for_pattern: tool_call|toolCall|tool_name|toolName",
+  });
+  assert.deepEqual(openCodeContext7Resolve, {
+    serverName: "context7",
+    toolName: "resolve-library-id",
+    source: "provider-title",
+    rawTitle: "context7_resolve-library-id",
+  });
+  assert.deepEqual(openCodeContext7Query, {
+    serverName: "context7",
+    toolName: "query-docs",
+    source: "provider-title",
+    rawTitle: "context7_query-docs",
   });
   assert.deepEqual(claudeTitleOnlyTool, {
     toolName: "search_context",

@@ -7,11 +7,12 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import type { AcpAgentProvider, WorktreeSummary } from "@tiller/shared";
 import { AcpConnection } from "./lifecycle";
+import type { SessionRuntimeEvent } from "../runtime-types";
 
 const require = createRequire(import.meta.url);
 const sdkImportUrl = pathToFileURL(require.resolve("@agentclientprotocol/sdk")).href;
 
-function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number; exitOnPrompt?: boolean; fireAndForgetPromptUpdate?: boolean } = {}) {
+function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number; exitOnPrompt?: boolean; fireAndForgetPromptUpdate?: boolean; hangOnPrompt?: boolean } = {}) {
   const initializeCountPath = join(tempDir, "initialize-count.txt");
   const newSessionCountPath = join(tempDir, "new-session-count.txt");
   const newSessionCwdPath = join(tempDir, "new-session-cwd.txt");
@@ -43,6 +44,7 @@ const pidPath = ${JSON.stringify(pidPath)};
 const exitAfterMs = ${JSON.stringify(options.exitAfterMs ?? null)};
 const exitOnPrompt = ${JSON.stringify(options.exitOnPrompt ?? false)};
 const fireAndForgetPromptUpdate = ${JSON.stringify(options.fireAndForgetPromptUpdate ?? false)};
+const hangOnPrompt = ${JSON.stringify(options.hangOnPrompt ?? false)};
 const newSessionDelayMs = ${JSON.stringify(options.newSessionDelayMs ?? 50)};
 writeFileSync(launchArgsPath, JSON.stringify(process.argv.slice(2)), "utf8");
 writeFileSync(pidPath, String(process.pid), "utf8");
@@ -93,6 +95,9 @@ const agent = {
   async prompt(params) {
     if (exitOnPrompt) {
       process.exit(0);
+    }
+    if (hangOnPrompt) {
+      await new Promise(() => {});
     }
     const result = await client.readTextFile({ sessionId: params.sessionId, path: "marker.txt" });
     const update = client.sessionUpdate({
@@ -261,6 +266,53 @@ test("openOrCreateSession reuses the same pending new-session request", async ()
     assert.equal(first.runtimeSessionId, "runtime-session-1");
     assert.equal(second.runtimeSessionId, first.runtimeSessionId);
     assert.equal(connection.inventory().activeSessionCount, 1);
+
+    await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("pending session reuse routes prompt events to the latest listener", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-session-listener-"));
+  try {
+    const { agentPath } = writeInitializeOnlyAgent(tempDir, { newSessionDelayMs: 100 });
+    writeFileSync(join(tempDir, "marker.txt"), "latest listener reply", "utf8");
+    const connection = await AcpConnection.open({
+      provider: createProvider("node", [agentPath]),
+      worktree: { ...worktree, path: tempDir },
+    });
+    const firstEvents: SessionRuntimeEvent[] = [];
+    const secondEvents: SessionRuntimeEvent[] = [];
+
+    const [first, second] = await Promise.all([
+      connection.openOrCreateSession({
+        tillerSessionId: "session-1",
+        worktree: { ...worktree, path: tempDir },
+        kind: "new",
+        onEvent: (event) => firstEvents.push(event),
+      }),
+      connection.openOrCreateSession({
+        tillerSessionId: "session-1",
+        worktree: { ...worktree, path: tempDir },
+        kind: "new",
+        onEvent: (event) => secondEvents.push(event),
+      }),
+    ]);
+
+    assert.equal(first.runtimeSessionId, second.runtimeSessionId);
+    await second.prompt("reply through the active listener");
+
+    assert.equal(
+      firstEvents.some((event) => event.type === "message" && event.message.text === "latest listener reply"),
+      false,
+    );
+    assert.equal(
+      secondEvents.some((event) => event.type === "message" && event.message.text === "latest listener reply"),
+      true,
+    );
 
     await connection.dispose();
   } finally {
@@ -557,7 +609,7 @@ test("prompt emits idle after fire-and-forget assistant updates are delivered", 
   }
 });
 
-test("prompt transport close marks the connection as errored", async () => {
+test("prompt transport close marks the connection as unusable", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-prompt-close-"));
   try {
     const { agentPath } = writeInitializeOnlyAgent(tempDir, { exitOnPrompt: true });
@@ -573,14 +625,49 @@ test("prompt transport close marks the connection as errored", async () => {
       onEvent: (event) => events.push(event as { type: string; message?: string }),
     });
 
-    await handle.prompt("close now");
+    await assert.rejects(handle.prompt("close now"), /ACP connection closed|ACP process exited/u);
 
-    assert.equal(connection.inventory().status, "error");
+    assert.equal(["closed", "error"].includes(connection.inventory().status), true);
     assert.match(connection.inventory().lastError ?? "", /ACP connection closed/u);
     assert.equal(
       events.some((event) => event.type === "error" && event.message?.includes("ACP connection closed")),
       true,
     );
+
+    await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("prompt timeout terminates a provider that produces no events", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-prompt-stalled-"));
+  try {
+    const { agentPath, pidPath } = writeInitializeOnlyAgent(tempDir, { hangOnPrompt: true });
+    const connection = await AcpConnection.open({
+      provider: { ...createProvider("node", [agentPath]), promptTimeoutMs: 75 },
+      worktree: { ...worktree, path: tempDir },
+    });
+    const events: Array<{ type: string; status?: string; message?: string }> = [];
+    const handle = await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event as { type: string; status?: string; message?: string }),
+    });
+    const pid = Number(readFileSync(pidPath, "utf8"));
+
+    await assert.rejects(
+      handle.prompt("hang forever"),
+      /produced no prompt progress|Timed out waiting for ACP response/u,
+    );
+
+    assert.equal(await waitForProcessExit(pid), true);
+    assert.equal(["closed", "error"].includes(connection.inventory().status), true);
+    assert.equal(events.some((event) => event.type === "error"), true);
+    assert.equal(events.some((event) => event.type === "status" && event.status === "error"), true);
 
     await connection.dispose();
   } finally {

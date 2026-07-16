@@ -1,0 +1,52 @@
+import type { AgentToolCall, AgentToolCallMcp } from "@tiller/shared";
+
+export type ToolEvidenceSource =
+  | "acp-explicit"
+  | "provider-structured"
+  | "generic-structured"
+  | "provider-output"
+  | "text-heuristic";
+
+export type ToolEvidenceStrength = 100 | 200 | 300 | 400 | 500;
+
+export type SubagentAction = "spawn" | "message" | "wait" | "status" | "cancel" | "result";
+
+export type ToolEvidence = {
+  source: ToolEvidenceSource;
+  strength: ToolEvidenceStrength;
+  kind?: AgentToolCall["kind"];
+  title?: string;
+  status?: AgentToolCall["status"];
+  mcp?: AgentToolCallMcp;
+  commandId?: string;
+  input?: string;
+  output?: string;
+  stream?: AgentToolCall["stream"];
+  suppress?: boolean;
+  subagent?: {
+    action: SubagentAction;
+    batch: boolean;
+    entityIds: string[];
+    background: boolean;
+    terminal: boolean;
+  };
+};
+
+export type ToolObservation = {
+  providerId?: string;
+  sessionId?: string;
+  cwd?: string;
+  toolCall: AgentToolCall;
+  update: unknown;
+  toolName?: string;
+  namespace?: string;
+  descriptor: string;
+  input: unknown;
+  output: unknown;
+  inputText?: string;
+  outputText?: string;
+};
+
+export type ToolRecognitionResult = {
+  toolCalls: AgentToolCall[];
+};

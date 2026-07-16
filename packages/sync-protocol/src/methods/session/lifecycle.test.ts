@@ -5,6 +5,7 @@ import * as sessionDiscardDraft from "./discard-draft";
 import * as sessionNew from "./new";
 import * as sessionList from "./list";
 import * as sessionListTimeline from "./list-timeline";
+import * as sessionRepairTimeline from "./repair-timeline";
 import * as sessionGetArtifacts from "./get-artifacts";
 import * as sessionCheckResume from "./check-resume";
 import * as sessionResume from "./resume";
@@ -99,6 +100,29 @@ test("session/list_timeline returns paginated canonical timeline entries", () =>
   assert.equal(result.entries.length, 1);
   assert.equal(result.hasMore, true);
   assert.equal(result.liveState?.promptQueue?.sessionId, "s1");
+});
+
+test("session/repair_timeline defaults to dry-run and validates bounded results", () => {
+  assert.equal(sessionRepairTimeline.method, "session/repair_timeline");
+  assert.deepEqual(
+    sessionRepairTimeline.ParamsSchema.parse({ sessionId: "s1" }),
+    { sessionId: "s1" },
+  );
+  sessionRepairTimeline.ParamsSchema.parse({ sessionId: "s1", apply: true });
+  const result = sessionRepairTimeline.ResultSchema.parse({
+    sessionId: "s1",
+    repairable: true,
+    applied: false,
+    updateCount: 4,
+    beforeEntryCount: 2,
+    afterEntryCount: 3,
+    changedEntryCount: 3,
+  });
+  assert.equal(result.applied, false);
+  assert.throws(() => sessionRepairTimeline.ResultSchema.parse({
+    ...result,
+    reason: "unknown_reason",
+  }));
 });
 
 test("session/get_artifacts returns outputs/diffs/toolCalls arrays", () => {

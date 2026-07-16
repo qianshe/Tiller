@@ -99,6 +99,41 @@ test("session update reducer updates a tool entry without moving it after later 
   assert.equal(toolEntry?.kind === "tool_call" ? toolEntry.toolCall.output : undefined, "ok");
 });
 
+test("session update reducer keeps later chunks in the post-subagent assistant occurrence", () => {
+  const finalState = [
+    { type: "message" as const, message: assistant("assistant-shared", "第一段", 1) },
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "subagent-1",
+        kind: "subagent" as const,
+        title: "Run child task",
+        status: "running" as const,
+        timestamp: at(2),
+        updatedAt: at(2),
+        sequence: 2,
+      },
+    },
+    {
+      type: "message" as const,
+      message: { ...assistant("assistant-shared", "第二", 3), streaming: true },
+    },
+    {
+      type: "message" as const,
+      message: { ...assistant("assistant-shared", "第二段", 4), streaming: false },
+    },
+  ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
+
+  assert.deepEqual(finalState.entries.map((entry) => entry.id), [
+    "assistant-shared",
+    "tool:subagent-1",
+    "assistant-shared:occ-2",
+  ]);
+  assert.equal(finalState.messages.length, 2);
+  assert.equal(finalState.messages[1]?.id, "assistant-shared:occ-2");
+  assert.equal(finalState.messages[1]?.text, "第二段");
+});
+
 test("session update reducer backfills missing tool-call sequences from update records", () => {
   const records: SessionUpdateRecord[] = [
     {

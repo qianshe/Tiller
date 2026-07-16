@@ -338,6 +338,62 @@ test("sqlite timeline upsertToolCall merges thinking into one assistant entry", 
   }
 });
 
+test("sqlite timeline upsertToolCall preserves the first occurrence anchor and terminal status", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
+
+  try {
+    store.upsertToolCall("session-1", toolCall({
+      id: "subagent-1",
+      commandId: "child-1",
+      kind: "subagent",
+      status: "running",
+      title: "Run child",
+      sequence: 1,
+      timestamp: at(1),
+    }));
+    store.upsertToolCall("session-1", toolCall({
+      id: "subagent-1",
+      commandId: "child-1",
+      kind: "subagent",
+      status: "completed",
+      title: "Run child",
+      output: "done",
+      sequence: 4,
+      timestamp: at(4),
+      updatedAt: at(4),
+    }));
+    store.upsertToolCall("session-1", toolCall({
+      id: "subagent-1",
+      commandId: "child-1",
+      kind: "subagent",
+      status: "running",
+      title: "Run child",
+      sequence: 5,
+      timestamp: at(5),
+      updatedAt: at(5),
+    }));
+
+    const persisted = store.list("session-1");
+    assert.equal(persisted.length, 1);
+    const entry = persisted[0];
+    assert.equal(entry?.kind, "tool_call");
+    if (entry?.kind !== "tool_call") {
+      throw new Error("Expected tool_call entry");
+    }
+    assert.equal(entry.sequence, 1);
+    assert.equal(entry.timestamp, at(1));
+    assert.equal(entry.toolCall.sequence, 1);
+    assert.equal(entry.toolCall.timestamp, at(1));
+    assert.equal(entry.toolCall.status, "completed");
+    assert.equal(entry.toolCall.output, "done");
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("sqlite timeline store round-trips canonical output entries", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");

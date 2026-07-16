@@ -11,6 +11,7 @@ import {
   mergeHistoricalAndLiveToolCalls,
 } from "../utils/timeline-activity";
 import {
+  isSessionConversationLoaded,
   isSessionExecutionPending,
   resolveSessionRestoreGate,
 } from "../utils/session-state";
@@ -31,6 +32,7 @@ export function buildMissionWorktreeModel(input: any) {
     outputs = {},
     toolCalls = {},
     sessionTimeline = {},
+    messageHistoryState = {},
     statuses = {},
     copy,
     selectedMissionDisplayTabId,
@@ -76,11 +78,18 @@ export function buildMissionWorktreeModel(input: any) {
     ),
   });
   const composerModelLoading = Boolean(draftModelLoading);
+  const composerConversationLoaded = !effectiveComposerSessionId ||
+    isSessionConversationLoaded(
+      effectiveComposerSessionId,
+      messageHistoryState,
+      sessionTimeline,
+    );
   const composerSessionRestoring =
     composerSessionRestoreGate.state === "checking" ||
     composerSessionRestoreGate.state === "restoring";
   const canSend = Boolean(
     composerSessionRestoreGate.canChat &&
+    composerConversationLoaded &&
     composerSessionStatus !== "starting" &&
     (prompt.trim() || promptImages.length) &&
     socketRef.current &&
@@ -226,6 +235,7 @@ export function buildMissionWorktreeModel(input: any) {
     sessionExecutionPending,
     composerModelLoading,
     composerSessionRestoring,
+    composerConversationLoaded,
   };
 }
 

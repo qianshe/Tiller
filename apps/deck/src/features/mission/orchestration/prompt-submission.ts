@@ -49,6 +49,15 @@ export function buildPromptContent(
   return [...(text ? [{ type: "text" as const, text }] : []), ...images];
 }
 
+function isSentPromptResult(result: unknown): result is { accepted: "sent" } {
+  return Boolean(
+    result &&
+    typeof result === "object" &&
+    "accepted" in result &&
+    result.accepted === "sent",
+  );
+}
+
 export function submitPromptRequest(
   input: PromptSubmissionInput,
   dependencies: PromptSubmissionDependencies,
@@ -86,18 +95,22 @@ export function submitPromptRequest(
   dependencies.setPrompt("");
   dependencies.setPromptImages([]);
   const images = [...input.promptImages];
-  dependencies.appendExistingSessionPrompt(
-    activeSessionId,
-    messageText,
-    clientMessageId,
-    images,
-  );
-  const dispatchPrompt = () => dependencies.dispatch(dependencies.client, "session/prompt", {
-    sessionId: activeSessionId,
-    text: messageText,
-    content,
-    clientMessageId,
-  });
+  const dispatchPrompt = async () => {
+    const result = await dependencies.dispatch(dependencies.client, "session/prompt", {
+      sessionId: activeSessionId,
+      text: messageText,
+      content,
+      clientMessageId,
+    });
+    if (isSentPromptResult(result)) {
+      dependencies.appendExistingSessionPrompt(
+        activeSessionId,
+        messageText,
+        clientMessageId,
+        images,
+      );
+    }
+  };
   if (dependencies.prepareExistingSessionPrompt) {
     void (async () => {
       try {

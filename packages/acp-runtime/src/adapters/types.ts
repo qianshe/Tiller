@@ -6,6 +6,7 @@ import type {
   SessionReasoningEffort,
 } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "../runtime-types";
+import type { ToolEvidence, ToolObservation } from "../tool-recognition";
 
 export type AcpLaunchContext = {
   fallbackCwd: string;
@@ -44,11 +45,8 @@ export type AcpSessionUpdateProjectionContext = {
   now?: string;
 };
 
-export type AcpToolCallNormalizationContext = {
-  toolCall: AgentToolCall;
-  update: unknown;
-  sessionId?: string;
-  cwd?: string;
+export type AcpToolEvidenceContext = {
+  observation: ToolObservation;
 };
 
 export type AcpPromptObservationContext = {
@@ -84,10 +82,10 @@ export type AcpAgentAdapter = {
   mapToolCallUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
   mapUnknownUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
   beginPromptObservation?(context: AcpPromptObservationContext): void;
-  pollPromptEvents?(context: AcpPromptObservationContext): SessionRuntimeEvent[];
+  pollPromptToolObservations?(context: AcpPromptObservationContext): ToolObservation[];
   disposeSession?(sessionId: string): void;
   expandRuntimeEvent?(event: SessionRuntimeEvent): SessionRuntimeEvent[] | null;
-  normalizeToolCall?(context: AcpToolCallNormalizationContext): AgentToolCall | null;
+  collectToolEvidence?(context: AcpToolEvidenceContext): ToolEvidence[];
   summarizeCompactionSignal?(text: string): AcpCompactionSignalSummary | null;
   resolveCompactionDetailsVisibility?(): AcpCompactionDetailsVisibility | undefined;
   extractPlanFromToolCall?(toolCall: AgentToolCall): AgentPlan | null;

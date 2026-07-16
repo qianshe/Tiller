@@ -2,9 +2,21 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   isThinkingScrollNearBottom,
+  resolveToolCallDisplayTitle,
   resolveThinkingContentClassName,
   writeClipboardText,
 } from "./plain-message-items.js";
+
+test("resolveToolCallDisplayTitle removes the redundant Tool prefix after the MCP badge", () => {
+  assert.equal(
+    resolveToolCallDisplayTitle("MCP", "Tool: context7/resolve-library-id"),
+    "context7/resolve-library-id",
+  );
+  assert.equal(
+    resolveToolCallDisplayTitle("MCP", "Tool: context7/query-docs"),
+    "context7/query-docs",
+  );
+});
 
 test("writeClipboardText writes the original text to clipboard", async () => {
   let copiedText = "";

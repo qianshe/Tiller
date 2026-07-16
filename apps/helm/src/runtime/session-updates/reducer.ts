@@ -13,6 +13,7 @@ import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
   compactBinaryToolCallOutput,
+  shouldStartNewAssistantOccurrenceAfterBoundary,
 } from "@tiller/shared";
 import {
   buildSessionCompactionEntryFromProvider,
@@ -26,6 +27,7 @@ export type SessionUpdateReducerState = {
   outputs: CommandChunk[];
   diffs: FileDiffSummary[];
   plan?: AgentPlan;
+  assistantBoundarySequence?: number;
 };
 
 export type PersistedSessionEvent =
@@ -72,17 +74,22 @@ export function applySessionRuntimeEventToState(
 function applySessionRuntimeEventToStateWithMeta(
   state: SessionUpdateReducerState,
   event: SessionRuntimeEvent,
-  meta?: Pick<SessionUpdateRecord, "providerId" | "sessionId">,
+  meta?: Pick<SessionUpdateRecord, "providerId" | "sessionId" | "sequence">,
 ): SessionUpdateReducerState {
   switch (event.type) {
     case "message":
-      return applyMessage(state, event.message);
+      return applyMessage(state, event.message, meta?.sequence);
     case "compaction":
       return applyCompaction(state, event, meta);
     case "tool-call":
-      return applyToolCall(state, event.toolCall);
+      return applyToolCall(state, event.toolCall, meta?.sequence ?? event.toolCall.sequence);
     case "command-output":
-      return applyCommandOutput(state, event.chunk, event.toolCall);
+      return applyCommandOutput(
+        state,
+        event.chunk,
+        event.toolCall,
+        meta?.sequence ?? event.chunk.sequence,
+      );
     case "diff-update":
       return { ...state, diffs: event.files };
     case "plan-update":
@@ -143,8 +150,9 @@ export function createSessionUpdateRecord(input: {
 function applyMessage(
   state: SessionUpdateReducerState,
   message: AgentMessage,
+  observationSequence?: number,
 ): SessionUpdateReducerState {
-  const resolvedMessage = resolveMessageIdentity(state.messages, message);
+  const resolvedMessage = resolveMessageIdentity(state, message, observationSequence);
   const messages = upsertMessage(state.messages, resolvedMessage);
   const mergedMessage = messages.find((item) =>
     item.id === resolvedMessage.id && item.role === resolvedMessage.role
@@ -157,21 +165,100 @@ function applyMessage(
   };
 }
 
-function resolveMessageIdentity(messages: AgentMessage[], incoming: AgentMessage) {
-  const sameIdentity = messages.find((message) =>
-    message.id === incoming.id &&
-    message.role === incoming.role &&
-    resolveMessageContentKind(message) === resolveMessageContentKind(incoming)
-  );
+function resolveMessageIdentity(
+  state: SessionUpdateReducerState,
+  incoming: AgentMessage,
+  observationSequence?: number,
+) {
+  const sameIdentity = findLatestCompatibleMessageOccurrence(state.messages, incoming);
   if (sameIdentity) {
-    return incoming;
+    if (
+      shouldStartNewAssistantOccurrence(
+        state,
+        sameIdentity,
+        incoming,
+        observationSequence,
+      )
+    ) {
+      return {
+        ...incoming,
+        sequence: observationSequence ?? incoming.sequence,
+        id: resolveOccurrenceScopedMessageId(
+          state.messages,
+          incoming,
+          state.assistantBoundarySequence!,
+        ),
+      };
+    }
+    return sameIdentity.id === incoming.id
+      ? incoming
+      : { ...incoming, id: sameIdentity.id };
   }
-  const conflictingMessage = messages.find((message) => message.id === incoming.id);
+  const conflictingMessage = state.messages.find((message) => message.id === incoming.id);
   if (!conflictingMessage) {
     return incoming;
   }
-  const scopedId = resolveRoleScopedMessageId(messages, incoming);
+  const scopedId = resolveRoleScopedMessageId(state.messages, incoming);
   return { ...incoming, id: scopedId };
+}
+
+function findLatestCompatibleMessageOccurrence(
+  messages: AgentMessage[],
+  incoming: AgentMessage,
+): AgentMessage | undefined {
+  const occurrencePrefix = `${incoming.id}:occ-`;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (
+      (message.id === incoming.id ||
+        (incoming.role === "assistant" && message.id.startsWith(occurrencePrefix))) &&
+      message.role === incoming.role &&
+      resolveMessageContentKind(message) === resolveMessageContentKind(incoming)
+    ) {
+      return message;
+    }
+  }
+  return undefined;
+}
+
+function shouldStartNewAssistantOccurrence(
+  state: SessionUpdateReducerState,
+  current: AgentMessage,
+  incoming: AgentMessage,
+  observationSequence?: number,
+) {
+  if (incoming.role !== "assistant") return false;
+  const boundary = state.assistantBoundarySequence;
+  const incomingSequence = observationSequence ?? incoming.sequence;
+  if (
+    boundary === undefined ||
+    current.sequence === undefined ||
+    incomingSequence === undefined ||
+    boundary <= current.sequence ||
+    boundary >= incomingSequence
+  ) {
+    return false;
+  }
+  return shouldStartNewAssistantOccurrenceAfterBoundary(
+    current.text,
+    incoming.text,
+    true,
+  );
+}
+
+function resolveOccurrenceScopedMessageId(
+  messages: AgentMessage[],
+  message: AgentMessage,
+  boundarySequence: number,
+) {
+  const baseId = `${message.id}:occ-${boundarySequence}`;
+  let candidateId = baseId;
+  let suffix = 2;
+  while (messages.some((item) => item.id === candidateId)) {
+    candidateId = `${baseId}:${suffix}`;
+    suffix += 1;
+  }
+  return candidateId;
 }
 
 function resolveRoleScopedMessageId(messages: AgentMessage[], message: AgentMessage) {
@@ -202,6 +289,7 @@ function resolveRoleScopedMessageId(messages: AgentMessage[], message: AgentMess
 function applyToolCall(
   state: SessionUpdateReducerState,
   toolCall: AgentToolCall,
+  observationSequence?: number,
 ): SessionUpdateReducerState {
   const toolCalls = upsertToolCall(state.toolCalls, toolCall);
   const mergedToolCall = toolCalls.find((item) => item.id === toolCall.id) ?? toolCall;
@@ -210,6 +298,10 @@ function applyToolCall(
     ...state,
     toolCalls,
     entries,
+    assistantBoundarySequence: maxSequence(
+      state.assistantBoundarySequence,
+      observationSequence,
+    ),
   };
 }
 
@@ -217,11 +309,24 @@ function applyCommandOutput(
   state: SessionUpdateReducerState,
   chunk: CommandChunk,
   toolCall?: AgentToolCall,
+  observationSequence?: number,
 ): SessionUpdateReducerState {
   const outputs = upsertOutput(state.outputs, chunk);
   return toolCall
-    ? { ...applyToolCall(state, toolCall), outputs }
-    : { ...state, outputs };
+    ? { ...applyToolCall(state, toolCall, observationSequence), outputs }
+    : {
+      ...state,
+      outputs,
+      assistantBoundarySequence: maxSequence(
+        state.assistantBoundarySequence,
+        observationSequence,
+      ),
+    };
+}
+
+function maxSequence(current: number | undefined, incoming: number | undefined) {
+  if (incoming === undefined) return current;
+  return current === undefined ? incoming : Math.max(current, incoming);
 }
 
 function upsertMessage(

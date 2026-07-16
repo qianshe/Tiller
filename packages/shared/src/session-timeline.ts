@@ -4,7 +4,7 @@ import type {
   SessionTimelineHistoryGapEntry,
 } from "./session-transcript";
 import { isTranscriptEventEntry } from "./session-transcript";
-import { mergeStreamingText } from "./stream-text";
+import { isAssistantSnapshotContinuation, mergeStreamingText } from "./stream-text";
 
 export type SessionTimelineContentChunk = {
   id: string;
@@ -169,6 +169,7 @@ function upsertAssistantContent(
     assistantEntryId: message.id,
     baseChunkId: `${message.id}:content`,
     kind: "content",
+    incomingText: message.text,
     sequence: message.sequence,
   });
   const entry = findOrCreateAssistantEntry(entries, message.id, message.timestamp, message.sequence);
@@ -241,6 +242,7 @@ function resolveAssistantChunkId(input: {
   assistantEntryId: string;
   baseChunkId: string;
   kind: SessionAssistantTimelineChunk["kind"];
+  incomingText?: string;
   sequence?: number;
 }) {
   const entry = input.entries.find((candidate): candidate is SessionTimelineAssistantEntry =>
@@ -251,6 +253,17 @@ function resolveAssistantChunkId(input: {
   ) ?? [];
   if (!matchingChunks.length) {
     return input.baseChunkId;
+  }
+  if (
+    matchingChunks.length === 1 &&
+    isAssistantSnapshotContinuation(matchingChunks[0]?.text, input.incomingText) &&
+    hasOnlySubagentBoundariesBetween(
+      input.entries,
+      matchingChunks[0]?.sequence,
+      input.sequence,
+    )
+  ) {
+    return matchingChunks[0]?.id ?? input.baseChunkId;
   }
   const reusable = [...matchingChunks].reverse().find((chunk) =>
     !hasTimelineBoundaryBetween(input.entries, chunk.sequence, input.sequence),
@@ -283,6 +296,34 @@ function hasTimelineBoundaryBetween(
       entry.sequence > start &&
       entry.sequence < end;
   });
+}
+
+function hasOnlySubagentBoundariesBetween(
+  entries: SessionTimelineEntry[],
+  leftSequence: number | undefined,
+  rightSequence: number | undefined,
+) {
+  if (leftSequence === undefined || rightSequence === undefined) {
+    return false;
+  }
+  const start = Math.min(leftSequence, rightSequence);
+  const end = Math.max(leftSequence, rightSequence);
+  let hasSubagentBoundary = false;
+  for (const entry of entries) {
+    if (
+      !isAssistantTimelineBoundaryEntry(entry) ||
+      typeof entry.sequence !== "number" ||
+      entry.sequence <= start ||
+      entry.sequence >= end
+    ) {
+      continue;
+    }
+    if (entry.kind !== "tool_call" || entry.toolCall.kind !== "subagent") {
+      return false;
+    }
+    hasSubagentBoundary = true;
+  }
+  return hasSubagentBoundary;
 }
 
 function splitAssistantEntriesAtTimelineBoundaries(
@@ -345,7 +386,7 @@ function isAssistantTimelineBoundaryEntry(
   return entry.kind === "user_message" ||
     entry.kind === "system_message" ||
     entry.kind === "command_output" ||
-    (entry.kind === "tool_call" && entry.toolCall.kind !== "subagent");
+    entry.kind === "tool_call";
 }
 
 function isTimelineItemBetween(
@@ -633,8 +674,11 @@ function resolveMergedToolCallStatus(
 }
 
 function shouldKeepTerminalToolStatus(current: AgentToolCall, incoming: AgentToolCall) {
-  return (current.status === "completed" || current.status === "failed") &&
-    incoming.status === "running";
+  return (
+    current.status === "completed" ||
+    current.status === "failed" ||
+    current.status === "cancelled"
+  ) && (incoming.status === "running" || incoming.status === "pending");
 }
 
 function isWeakMergedToolCallTitle(title: string, toolCall: AgentToolCall) {
