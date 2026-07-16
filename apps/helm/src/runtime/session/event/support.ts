@@ -49,6 +49,7 @@ export type PendingCommandOutput = {
 export type PendingRunningToolCall = {
   toolCall: AgentToolCall;
   bufferedChars: number;
+  hasUnflushedChanges: boolean;
   timer?: TimerHandle;
 };
 

@@ -146,6 +146,17 @@ test("resolveToolCallTone renders explicit diagnostics and keeps legacy read com
       icon: "!",
     },
   );
+  assert.deepEqual(
+    resolveToolCallTone(
+      "tool",
+      "Diagnostics: packages/shared/src/types.ts",
+    ),
+    {
+      label: "Diagnostics",
+      className: "tool-call-read",
+      icon: "!",
+    },
+  );
 });
 
 test("groupToolCalls preserves long shell commands for the row tooltip", () => {

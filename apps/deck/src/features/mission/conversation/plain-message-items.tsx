@@ -26,6 +26,7 @@ const THINKING_SCROLL_CHAR_THRESHOLD = 640;
 const ASSISTANT_MESSAGE_FRAME_CLASS = "mr-auto w-[calc(100%-0.625rem)] max-w-[calc(100%-0.625rem)]";
 const ASSISTANT_MESSAGE_RAIL_CLASS = "grid-cols-[0.375rem_minmax(0,1fr)] gap-x-1";
 const USER_MESSAGE_RAIL_CLASS = "w-fit max-w-[min(56rem,76%)]";
+const TOOL_CATEGORY_SLOT_CLASS_NAME = "w-20";
 
 type MessageImageSourceEnvironment = {
   location?: Pick<Location, "protocol" | "hostname" | "port">;
@@ -675,12 +676,6 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
   const groupLabels = resolveToolGroupLabels(group);
   const summaryTitle = summarizeToolGroupTitle(groupLabels);
   const groupBadgeLabel = resolveToolGroupBadgeLabel(groupLabels);
-  const maxGroupLabelLength = Math.max(...groupLabels.map((label) => label.length));
-  const categorySlotClassName = maxGroupLabelLength >= 10
-    ? "w-20"
-    : maxGroupLabelLength >= 7
-      ? "w-14"
-      : "w-12";
   const contentRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -764,7 +759,6 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
             <PlainToolCallItem
               key={item.id}
               item={item}
-              categorySlotClassName={categorySlotClassName}
             />
           ))}
         </div>
@@ -993,13 +987,13 @@ function firstString(record: Record<string, unknown>, keys: string[]) {
   return undefined;
 }
 
-function PlainToolCallItem({
-  item,
-  categorySlotClassName,
-}: {
+type PlainToolCallItemProps = {
   item: ConversationToolCallItem;
-  categorySlotClassName: string;
-}) {
+};
+
+const PlainToolCallItem = memo(function PlainToolCallItem({
+  item,
+}: PlainToolCallItemProps) {
   const tone = resolveToolCallTone(item.toolKind, item.title);
   const preview = item.text.trim() || formatToolInputPreview(item.input);
   const displayTitle = resolveToolCallDisplayTitle(tone.label, item.title);
@@ -1017,7 +1011,7 @@ function PlainToolCallItem({
         <span aria-hidden="true" className={cn("grid size-3 shrink-0 place-items-center rounded-sm", tone.className)}>
           <Icon name={resolveToolCallIconName(tone.label)} size={9} />
         </span>
-        <span className={cn("inline-flex shrink-0 items-center", categorySlotClassName)}>
+        <span className={cn("inline-flex shrink-0 items-center", TOOL_CATEGORY_SLOT_CLASS_NAME)}>
           <Badge
             variant="secondary"
             className={cn("inline-flex h-4 shrink-0 items-center rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
@@ -1052,6 +1046,22 @@ function PlainToolCallItem({
       ) : null}
     </details>
   );
+}, arePlainToolCallItemPropsEqual);
+
+function arePlainToolCallItemPropsEqual(
+  previous: PlainToolCallItemProps,
+  next: PlainToolCallItemProps,
+) {
+  const previousItem = previous.item;
+  const nextItem = next.item;
+  return previousItem.id === nextItem.id &&
+    previousItem.title === nextItem.title &&
+    previousItem.status === nextItem.status &&
+    previousItem.toolKind === nextItem.toolKind &&
+    previousItem.text === nextItem.text &&
+    previousItem.input === nextItem.input &&
+    previousItem.streams.length === nextItem.streams.length &&
+    previousItem.streams.every((stream, index) => stream === nextItem.streams[index]);
 }
 
 export function resolveToolCallDisplayTitle(label: string, title: string) {

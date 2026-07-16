@@ -57,11 +57,16 @@ export function resolveToolCallTone(
 }
 
 function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
-  const normalized = title.toLowerCase();
+  const normalizedTitle = title.trim();
+  const normalized = normalizedTitle.toLowerCase();
   if (kind === "subagent") {
     return "Subagent";
   }
-  if (kind === "read" && /^diagnostics(?:\s*:|\s+|$)/iu.test(title.trim())) {
+  // Provider completion snapshots can fall back to the generic `tool` kind
+  // while retaining the descriptive Diagnostics title. Keep the visible
+  // category anchored to that explicit title instead of regressing to Tool.
+  const hasWeakKind = kind === "tool" || kind === "unknown" || kind === "read";
+  if (hasWeakKind && /^diagnostics(?:\s*:|\s+|$)/iu.test(normalizedTitle)) {
     return "Diagnostics";
   }
   const labelFromKind = KIND_LABELS[kind];

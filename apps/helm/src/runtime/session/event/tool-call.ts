@@ -97,11 +97,21 @@ export function flushPendingRunningToolCall(
   sessionId: string,
   context: HelmHandlerContext,
 ) {
-  const pending = consumePendingRunningToolCall(sessionId, context);
+  const pending = runtimeEventState(context).get<PendingRunningToolCall>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall,
+  );
   if (!pending) {
     return false;
   }
+  clearRuntimeEventTimer(context, pending.timer);
+  pending.timer = undefined;
+  if (!pending.hasUnflushedChanges) {
+    return false;
+  }
   emitRuntimeToolCallSnapshot(sessionId, pending.toolCall, context);
+  pending.bufferedChars = 0;
+  pending.hasUnflushedChanges = false;
   return true;
 }
 
@@ -160,18 +170,20 @@ function bufferRunningToolCall(
     };
     pending.bufferedChars += estimateToolCallGrowth(pending.toolCall, mergedToolCall);
     pending.toolCall = mergedToolCall;
+    pending.hasUnflushedChanges = true;
     scheduleRunningToolCallFlush(sessionId, context);
     return;
   }
   const previous = consumePendingRunningToolCall(sessionId, context);
-  if (previous) {
+  if (previous?.hasUnflushedChanges) {
     emitRuntimeToolCallSnapshot(sessionId, previous.toolCall, context);
   }
+  emitRuntimeToolCallSnapshot(sessionId, toolCall, context);
   state.set(sessionId, RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall, {
     toolCall,
-    bufferedChars: estimateToolCallGrowth(undefined, toolCall),
+    bufferedChars: 0,
+    hasUnflushedChanges: false,
   });
-  scheduleRunningToolCallFlush(sessionId, context);
 }
 
 function mergeToolCallOutput(
@@ -587,7 +599,10 @@ export function handleRuntimeToolCallEvent(
     return;
   }
   const pendingRunningToolCall = consumePendingRunningToolCall(sessionId, context);
-  if (pendingRunningToolCall && pendingRunningToolCall.toolCall.id !== resolvedPlaceholder.id) {
+  if (
+    pendingRunningToolCall?.hasUnflushedChanges &&
+    pendingRunningToolCall.toolCall.id !== resolvedPlaceholder.id
+  ) {
     emitRuntimeToolCallSnapshot(sessionId, pendingRunningToolCall.toolCall, context);
   }
   const resolvedToolCall = pendingRunningToolCall?.toolCall.id === resolvedPlaceholder.id

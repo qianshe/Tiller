@@ -175,7 +175,7 @@ test("runtime persists terminal tool-call boundary snapshots only", () => {
   assert.deepEqual(capture.timelineEntries?.map((entry) => entry.kind), ["tool_call"]);
 });
 
-test("runtime running tool-call updates coalesce into one terminal historical snapshot inside the live window", () => {
+test("runtime publishes the first running tool-call immediately and coalesces later updates", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -228,10 +228,13 @@ test("runtime running tool-call updates coalesce into one terminal historical sn
 
   assert.equal(timers.size(), 1);
   assert.equal(capture.sessionUpdates?.length ?? 0, 0);
-  assert.equal(
-    capture.detailBroadcasts.filter((item: any) => item.params?.update?.kind === "tool_call").length,
-    0,
-  );
+  const liveToolCallUpdates = capture.detailBroadcasts.filter(
+    (item: any) => item.params?.update?.kind === "tool_call",
+  ) as any[];
+  assert.equal(liveToolCallUpdates.length, 1);
+  assert.equal(liveToolCallUpdates[0]?.params?.update?.toolCall?.status, "running");
+  assert.equal(liveToolCallUpdates[0]?.params?.update?.toolCall?.title, "rg test");
+  assert.equal(liveToolCallUpdates[0]?.params?.update?.toolCall?.output, "A");
 
   handleRuntimeEvent(
     "session-tool-window",
@@ -554,8 +557,7 @@ test("runtime hides an empty search pending snapshot until the descriptive runni
     },
   }, context);
 
-  assert.equal(timers.size(), 1);
-  timers.flushAll();
+  assert.equal(timers.size(), 0);
 
   const liveUpdate = capture.detailBroadcasts.find((item: any) =>
     item.params?.update?.kind === "tool_call" &&
