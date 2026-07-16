@@ -3972,6 +3972,41 @@ test("plain message display stops merging fallback messages once canonical timel
   );
 });
 
+test("plain message display supplements canonical history with live running tools", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "canonical-user-entry",
+        kind: "user_message",
+        message: {
+          id: "canonical-user",
+          role: "user",
+          text: "运行一个工具",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          sequence: 1,
+        },
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        sequence: 1,
+      },
+    ],
+    toolCalls: [
+      {
+        id: "live-shell",
+        kind: "shell",
+        title: "node slow-tool.js",
+        status: "running",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 2,
+      },
+    ],
+  });
+
+  assert.match(html, /node slow-tool\.js/);
+  assert.match(html, /运行中/);
+});
+
 test("plain message display keeps optimistic user prompts visible alongside canonical timeline", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {

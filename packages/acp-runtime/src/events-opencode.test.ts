@@ -3,6 +3,34 @@ import test from "node:test";
 import { mapSessionUpdateNotificationBatch } from "./runtime";
 import { mapSessionUpdateNotification } from "./events";
 
+test("mapSessionUpdateNotification preserves OpenCode pending tool starts", () => {
+  const mapped = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-pending",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-opencode-pending",
+          title: "bash",
+          kind: "execute",
+          status: "pending",
+          locations: [],
+          rawInput: {},
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.events[0]?.type, "tool-call");
+  if (mapped?.events[0]?.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.events[0].toolCall.status, "pending");
+});
+
 test("mapSessionUpdateNotification applies OpenCode provider live tool classification", () => {
   const mapped = mapSessionUpdateNotification(
     {

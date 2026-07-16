@@ -790,12 +790,37 @@ export function resolvePlainConversationDisplayItems({
   }
 
   const canonicalItems = buildPlainConversationItemsFromTimeline(timelineItems, showThinking);
+  const canonicalToolCallIds = new Set(
+    timelineItems.flatMap((entry) => {
+      if (entry.kind === "tool_call") {
+        return [entry.toolCall.id];
+      }
+      if (entry.kind === "assistant_message") {
+        return entry.chunks.flatMap((chunk) => chunk.kind === "thinking" ? [chunk.id] : []);
+      }
+      return [];
+    }),
+  );
+  const liveToolItems = groupToolCalls(
+    toolCalls.filter((toolCall) =>
+      toolCall.kind !== "think" && !canonicalToolCallIds.has(toolCall.id)
+    ),
+  ).map((toolCall, index) =>
+    toPlainToolConversationItem(toolCall, canonicalItems.length + index)
+  );
+  const canonicalAndLiveItems = liveToolItems.length
+    ? mergeAdjacentToolItems(
+        mergeAdjacentThinkingItems(
+          [...canonicalItems, ...liveToolItems].sort(comparePlainConversationItems),
+        ),
+      )
+    : canonicalItems;
   const optimisticMessages = resolveOptimisticTimelineSupplementMessages(
     displayMessages,
     timelineItems,
   );
   if (!optimisticMessages.length) {
-    return canonicalItems;
+    return canonicalAndLiveItems;
   }
 
   const optimisticItems = buildPlainConversationItems(
@@ -806,7 +831,7 @@ export function resolvePlainConversationDisplayItems({
   );
   return mergeAdjacentToolItems(
     mergeAdjacentThinkingItems(
-      [...canonicalItems, ...optimisticItems],
+      [...canonicalAndLiveItems, ...optimisticItems],
     ),
   );
 }

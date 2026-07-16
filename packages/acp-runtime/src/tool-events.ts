@@ -368,23 +368,34 @@ function kindAsTitle(kind: AgentToolCall["kind"] | undefined): string | undefine
 }
 
 function inferToolCallStatus(updateType: string, status: unknown): AgentToolCall["status"] {
-  const raw = String(status ?? updateType).toLowerCase();
-  if (/fail|error|reject/u.test(raw)) {
+  const rawStatus = status && typeof status === "object"
+    ? (status as { status?: unknown; state?: unknown }).status ??
+      (status as { state?: unknown }).state ??
+      status
+    : status;
+  const tokens = new Set(
+    String(rawStatus ?? updateType).toLowerCase().split(/[^a-z]+/u).filter(Boolean),
+  );
+  if (hasAnyStatusToken(tokens, "fail", "failed", "failure", "error", "errored", "reject", "rejected")) {
     return "failed";
   }
-  if (/cancel/u.test(raw)) {
+  if (hasAnyStatusToken(tokens, "cancel", "canceled", "cancelled")) {
     return "cancelled";
   }
-  if (/wait|permission|confirm/u.test(raw)) {
+  if (hasAnyStatusToken(tokens, "wait", "waiting", "permission", "confirm", "confirmation")) {
     return "waiting_for_permission";
   }
-  if (/complete|done|success|finished|end/u.test(raw)) {
+  if (hasAnyStatusToken(tokens, "complete", "completed", "done", "success", "successful", "succeeded", "finished", "end", "ended")) {
     return "completed";
   }
-  if (/pending|start/u.test(raw)) {
+  if (hasAnyStatusToken(tokens, "pending", "queued", "start", "started")) {
     return "pending";
   }
   return "running";
+}
+
+function hasAnyStatusToken(tokens: Set<string>, ...candidates: string[]) {
+  return candidates.some((candidate) => tokens.has(candidate));
 }
 
 function stringFrom(value: unknown): string | undefined {
