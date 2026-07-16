@@ -143,6 +143,15 @@ function normalizeOpenCodeStructuredBuiltinRule({
     };
   }
 
+  const url = firstString(input.url);
+  if (url) {
+    return {
+      ...toolCall,
+      kind: "fetch" as const,
+      title: url,
+    };
+  }
+
   const query = firstString(
     input.pattern,
     input.query,

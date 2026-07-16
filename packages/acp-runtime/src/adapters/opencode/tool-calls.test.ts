@@ -117,6 +117,23 @@ test("normalizeOpenCodeToolCall classifies structured built-ins and derives usef
   assert.equal(diagnostics.title, "Diagnostics: packages/acp-runtime/src/events.ts");
 });
 
+test("normalizeOpenCodeToolCall uses the requested URL as the web fetch title", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({
+      kind: "fetch",
+      title: "webfetch",
+      input: JSON.stringify({
+        url: "https://jsonplaceholder.typicode.com/todos/1",
+        format: "text",
+      }),
+    }),
+    {},
+  );
+
+  assert.equal(normalized.kind, "fetch");
+  assert.equal(normalized.title, "https://jsonplaceholder.typicode.com/todos/1");
+});
+
 test("normalizeOpenCodeToolCall recognizes todowrite from the OpenCode tool field", () => {
   const normalized = normalizeOpenCodeToolCall(
     baseToolCall({ kind: "write", title: "0 todos" }),
