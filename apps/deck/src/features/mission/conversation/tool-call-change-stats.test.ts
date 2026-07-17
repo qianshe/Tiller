@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveToolCallChangeStats } from "./tool-call-change-stats.js";
+import {
+  resolveToolCallChangeStats,
+  resolveToolCallDiff,
+} from "./tool-call-change-stats.js";
 
 test("resolveToolCallChangeStats uses explicit per-call counts", () => {
   assert.deepEqual(
@@ -29,18 +32,24 @@ test("resolveToolCallChangeStats counts a structured replacement", () => {
 });
 
 test("resolveToolCallChangeStats reads unified patches from nested provider metadata", () => {
+  const output = JSON.stringify({
+    metadata: {
+      path: "src/app.ts",
+      diff: "--- a/src/app.ts\n+++ b/src/app.ts\n-old\n+new\n+next",
+    },
+  });
   assert.deepEqual(
     resolveToolCallChangeStats(
       "write",
       "",
-      JSON.stringify({
-        metadata: {
-          diff: "--- a/src/app.ts\n+++ b/src/app.ts\n-old\n+new\n+next",
-        },
-      }),
+      output,
     ),
     { additions: 2, deletions: 1 },
   );
+  assert.deepEqual(resolveToolCallDiff("write", "", output), {
+    path: "src/app.ts",
+    patch: "--- a/src/app.ts\n+++ b/src/app.ts\n-old\n+new\n+next",
+  });
 });
 
 test("resolveToolCallChangeStats counts successful Codex ACP apply_patch lines", () => {
@@ -93,6 +102,60 @@ test("resolveToolCallChangeStats ignores failed or uncountable Codex ACP patches
   );
 });
 
+test("resolveToolCallDiff builds display patches for supported Write inputs", () => {
+  assert.deepEqual(
+    resolveToolCallDiff(
+      "write",
+      JSON.stringify({
+        path: "src/app.ts",
+        old_string: "const value = 1;",
+        new_string: "const value = 2;",
+      }),
+      "",
+    ),
+    {
+      path: "src/app.ts",
+      patch: "@@ -1,1 +1,1 @@\n-const value = 1;\n+const value = 2;",
+    },
+  );
+
+  const command = "$patch = \"*** Begin Patch`n*** Update File: src/app.ts`n@@`n-old`n+new`n*** End Patch\"; & 'F:\\devData\\codex-acp.exe' --codex-run-as-apply-patch $patch";
+  assert.deepEqual(
+    resolveToolCallDiff(
+      "write",
+      JSON.stringify({ parsed_cmd: [{ cmd: command }] }),
+      JSON.stringify({
+        stdout: "Success. Updated the following files:\nM src/app.ts\n",
+      }),
+    ),
+    {
+      path: "src/app.ts",
+      patch: "@@\n-old\n+new",
+    },
+  );
+});
+
+test("resolveToolCallDiff does not invent content from counts or failed writes", () => {
+  assert.equal(
+    resolveToolCallDiff(
+      "write",
+      JSON.stringify({ path: "src/app.ts", additions: 4, deletions: 2 }),
+      "",
+    ),
+    undefined,
+  );
+
+  const command = "$patch = \"*** Begin Patch`n*** Update File: src/app.ts`n@@`n-old`n+new`n*** End Patch\"; apply_patch $patch";
+  assert.equal(
+    resolveToolCallDiff(
+      "write",
+      JSON.stringify({ parsed_cmd: [{ cmd: command }] }),
+      JSON.stringify({ stderr: "Invalid patch", status: "failed" }),
+    ),
+    undefined,
+  );
+});
+
 test("resolveToolCallChangeStats counts a provider-confirmed file creation", () => {
   const content = [
     "# Native tool test",
@@ -102,19 +165,32 @@ test("resolveToolCallChangeStats counts a provider-confirmed file creation", () 
     "- marker: native-test-marker",
   ].join("\n");
 
+  const input = JSON.stringify({ file_path: "native_test_file.md", content });
+  const output = `[]${JSON.stringify([{
+    type: "diff",
+    path: "native_test_file.md",
+    oldText: null,
+    newText: content,
+  }])}File created successfully`;
+
   assert.deepEqual(
     resolveToolCallChangeStats(
       "write",
-      JSON.stringify({ file_path: "native_test_file.md", content }),
-      `[]${JSON.stringify([{
-        type: "diff",
-        path: "native_test_file.md",
-        oldText: null,
-        newText: content,
-      }])}File created successfully`,
+      input,
+      output,
     ),
     { additions: 5, deletions: 0 },
   );
+  assert.deepEqual(resolveToolCallDiff("write", input, output), {
+    path: "native_test_file.md",
+    patch: [
+      "+# Native tool test",
+      "+",
+      "+Created by Claude.",
+      "+",
+      "+- marker: native-test-marker",
+    ].join("\n"),
+  });
 });
 
 test("resolveToolCallChangeStats does not guess from cumulative state or non-write calls", () => {

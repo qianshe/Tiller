@@ -3242,6 +3242,36 @@ test("plain write rows show per-call additions and deletions when evidence is av
 
   assert.match(html, /tool-call-additions[^\"]*text-success[^>]*>\+1</);
   assert.match(html, /tool-call-deletions[^\"]*text-destructive[^>]*>-1</);
+  assert.match(html, /tool-call-diff-preview/);
+  assert.match(html, /diff-line-deleted/);
+  assert.match(html, /diff-line-added/);
+  assert.doesNotMatch(html, /old_string/);
+  assert.equal(html.match(/src\/app\.ts/gu)?.length, 2);
+});
+
+test("plain write rows keep the Diff shell when only counts are available", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-write-counts-only",
+        kind: "write",
+        title: "src/counts-only.ts",
+        status: "completed",
+        input: JSON.stringify({
+          path: "src/counts-only.ts",
+          additions: 4,
+          deletions: 2,
+        }),
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /tool-call-diff-preview/);
+  assert.match(html, /tool-call-diff-empty/);
+  assert.match(html, /只提供了变更统计/);
+  assert.doesNotMatch(html, /counts-only&quot;.*additions/su);
 });
 
 test("plain tool rows align titles without letting expanded output resize the row", () => {
@@ -3268,10 +3298,10 @@ test("plain tool rows align titles without letting expanded output resize the ro
   });
 
   assert.match(html, /plain-tool-group[\s\S]*?class="inline-flex size-4 shrink-0 items-center justify-center text-primary"/);
-  assert.match(html, /plain-tool-group-content flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground/);
+  assert.match(html, /plain-tool-group-content flex max-h-\[min\(22rem,55vh\)\] min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground/);
   assert.equal(html.match(/plain-tool-call min-w-0 text-muted-foreground/g)?.length, 2);
   assert.equal(html.match(/summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5/g)?.length, 2);
-  assert.match(html, /class="inline-flex shrink-0 items-center w-12"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
+  assert.match(html, /class="inline-flex shrink-0 items-center w-20"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
   assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full/);
   assert.doesNotMatch(html, /grid-cols-subgrid|col-span-/);
 });

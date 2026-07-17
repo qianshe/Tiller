@@ -5,6 +5,11 @@ export type ToolCallChangeStats = {
   deletions: number;
 };
 
+export type ToolCallDiff = {
+  path?: string;
+  patch: string;
+};
+
 const MAX_NESTED_RECORDS = 16;
 const MAX_STATS_SOURCE_CHARS = 512 * 1024;
 
@@ -46,10 +51,62 @@ export function resolveToolCallChangeStats(
   return undefined;
 }
 
+export function resolveToolCallDiff(
+  kind: AgentToolCall["kind"],
+  input: string,
+  output: string,
+): ToolCallDiff | undefined {
+  if (kind !== "write") {
+    return undefined;
+  }
+
+  const codexPatch = readCodexApplyPatch(input, output);
+  if (codexPatch) {
+    const patch = formatCodexApplyPatch(codexPatch);
+    return patch
+      ? { path: extractApplyPatchPath(codexPatch), patch }
+      : undefined;
+  }
+
+  for (const source of [input, output]) {
+    const root = parseRecord(source);
+    if (!root) {
+      continue;
+    }
+    const rootPath = readFilePath(root);
+    for (const record of collectNestedRecords(root)) {
+      const patch = readPatch(record);
+      if (patch) {
+        return {
+          path: readFilePath(record) ?? rootPath ?? extractUnifiedPatchPath(patch),
+          patch,
+        };
+      }
+      const replacement = buildReplacementPatch(record);
+      if (replacement) {
+        return {
+          path: readFilePath(record) ?? rootPath,
+          patch: replacement,
+        };
+      }
+    }
+  }
+
+  return readCreationDiff(input, output);
+}
+
 function readCodexApplyPatchStats(
   input: string,
   output: string,
 ): ToolCallChangeStats | undefined {
+  const patch = readCodexApplyPatch(input, output);
+  return patch ? countApplyPatchLines(patch) : undefined;
+}
+
+function readCodexApplyPatch(
+  input: string,
+  output: string,
+): string | undefined {
   if (!hasSuccessfulCodexApplyPatchOutput(output)) {
     return undefined;
   }
@@ -69,7 +126,19 @@ function readCodexApplyPatchStats(
     return undefined;
   }
 
-  return countApplyPatchLines(normalized.slice(patchStart, patchEnd));
+  return normalized.slice(patchStart, patchEnd);
+}
+
+function formatCodexApplyPatch(patch: string) {
+  return patch
+    .split(/\r?\n/u)
+    .filter((line) => !/^\*\*\* (?:Begin Patch|Add File:|Update File:|Delete File:|Move to:)/u.test(line))
+    .join("\n")
+    .replace(/\n+$/u, "");
+}
+
+function extractApplyPatchPath(patch: string) {
+  return patch.match(/^\*\*\* (?:Add|Update|Delete) File:\s*(.+?)\s*$/mu)?.[1]?.trim();
 }
 
 function hasSuccessfulCodexApplyPatchOutput(output: string) {
@@ -119,6 +188,22 @@ function countApplyPatchLines(
     }
   }
   return additions > 0 || deletions > 0 ? { additions, deletions } : undefined;
+}
+
+function readCreationDiff(
+  input: string,
+  output: string,
+): ToolCallDiff | undefined {
+  if (!hasFileCreationEvidence(output)) {
+    return undefined;
+  }
+  const record = parseRecord(input);
+  const content = record?.content ?? record?.newText ?? record?.new_text;
+  if (typeof content !== "string") {
+    return undefined;
+  }
+  const patch = splitContentLines(content).map((line) => `+${line}`).join("\n");
+  return patch ? { path: record ? readFilePath(record) : undefined, patch } : undefined;
 }
 
 function readCreationStats(
@@ -186,14 +271,15 @@ function readExplicitStats(
 function readPatchStats(
   record: Record<string, unknown>,
 ): ToolCallChangeStats | undefined {
+  const patch = readPatch(record);
+  return patch ? countPatchLines(patch) : undefined;
+}
+
+function readPatch(record: Record<string, unknown>) {
   for (const key of ["patch", "diff", "hunk", "code_edit"]) {
     const value = record[key];
-    if (typeof value !== "string") {
-      continue;
-    }
-    const stats = countPatchLines(value);
-    if (stats) {
-      return stats;
+    if (typeof value === "string" && value.trim()) {
+      return value;
     }
   }
   return undefined;
@@ -215,6 +301,37 @@ function countPatchLines(patch: string): ToolCallChangeStats | undefined {
 function readReplacementStats(
   record: Record<string, unknown>,
 ): ToolCallChangeStats | undefined {
+  const change = readReplacementChange(record);
+  if (!change) {
+    return undefined;
+  }
+  const stats = {
+    additions: change.newLines.length - change.prefix - change.suffix,
+    deletions: change.oldLines.length - change.prefix - change.suffix,
+  };
+  return stats.additions > 0 || stats.deletions > 0 ? stats : undefined;
+}
+
+function buildReplacementPatch(record: Record<string, unknown>) {
+  const change = readReplacementChange(record);
+  if (!change) {
+    return undefined;
+  }
+  const oldEnd = change.oldLines.length - change.suffix;
+  const newEnd = change.newLines.length - change.suffix;
+  const oldChanged = change.oldLines.slice(change.prefix, oldEnd);
+  const newChanged = change.newLines.slice(change.prefix, newEnd);
+  if (oldChanged.length === 0 && newChanged.length === 0) {
+    return undefined;
+  }
+  return [
+    `@@ -${change.prefix + 1},${oldChanged.length} +${change.prefix + 1},${newChanged.length} @@`,
+    ...oldChanged.map((line) => `-${line}`),
+    ...newChanged.map((line) => `+${line}`),
+  ].join("\n");
+}
+
+function readReplacementChange(record: Record<string, unknown>) {
   const oldText = record.old_string ?? record.oldString;
   const newText = record.new_string ?? record.newString;
   if (typeof oldText !== "string" || typeof newText !== "string") {
@@ -241,11 +358,25 @@ function readReplacementStats(
     suffix += 1;
   }
 
-  const stats = {
-    additions: newLines.length - prefix - suffix,
-    deletions: oldLines.length - prefix - suffix,
-  };
-  return stats.additions > 0 || stats.deletions > 0 ? stats : undefined;
+  return { oldLines, newLines, prefix, suffix };
+}
+
+function readFilePath(record: Record<string, unknown>) {
+  const value = record.file_path ??
+    record.filePath ??
+    record.path ??
+    record.relative_path ??
+    record.relativePath ??
+    record.notebook_path ??
+    record.notebookPath;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function extractUnifiedPatchPath(patch: string) {
+  const match = patch.match(/^\+\+\+\s+(?:b\/)?(.+?)\s*$/mu) ??
+    patch.match(/^---\s+(?:a\/)?(.+?)\s*$/mu);
+  const path = match?.[1]?.trim();
+  return path && path !== "/dev/null" ? path : undefined;
 }
 
 function splitContentLines(value: string) {

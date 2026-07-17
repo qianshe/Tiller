@@ -143,19 +143,21 @@ export function renderDiffPatch(patch: string) {
   const visibleLines = patch.split(/\r?\n/u).filter((line) => !isDiffHeaderLine(line));
 
   return (
-    <pre className="mission-diff-patch grid max-w-full min-w-0 grid-cols-[max-content] overflow-x-auto bg-transparent font-mono text-xs leading-5 text-foreground">
-      {visibleLines.map((line, index) => (
-        <span
-          key={`${index}-${line.slice(0, 12)}`}
-          className={`mission-diff-line grid min-w-full grid-cols-[2.5rem_max-content] whitespace-pre px-3 ${resolveDiffLineStyleClass(resolveDiffLineClass(line))}`}
-          style={{ display: "grid" }}
-        >
-          <span className="select-none text-right text-muted-foreground/70">
-            {index + 1}
+    <pre className="mission-diff-patch block w-full max-w-full min-w-0 overflow-x-auto bg-transparent font-mono text-xs leading-5 text-foreground">
+      <code className="mission-diff-content grid w-max min-w-full">
+        {visibleLines.map((line, index) => (
+          <span
+            key={`${index}-${line.slice(0, 12)}`}
+            className={`mission-diff-line grid w-full grid-cols-[2.5rem_max-content] whitespace-pre px-3 ${resolveDiffLineStyleClass(resolveDiffLineClass(line))}`}
+            style={{ display: "grid" }}
+          >
+            <span className="select-none text-right text-muted-foreground/70">
+              {index + 1}
+            </span>
+            <span className="pl-3">{line || " "}</span>
           </span>
-          <span className="pl-3">{line || " "}</span>
-        </span>
-      ))}
+        ))}
+      </code>
     </pre>
   );
 }

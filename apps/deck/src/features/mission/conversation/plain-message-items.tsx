@@ -14,7 +14,11 @@ import {
   resolveToolStatusLabel,
 } from "./plain-tool-model";
 import { splitStreamingMarkdown } from "./streaming-markdown";
-import { resolveToolCallChangeStats } from "./tool-call-change-stats";
+import {
+  resolveToolCallChangeStats,
+  resolveToolCallDiff,
+} from "./tool-call-change-stats";
+import { ToolCallDiffPreview } from "./tool-call-diff-preview";
 import { resolveCodexSubagentPresentation } from "./codex-subagent-presentation";
 
 const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
@@ -753,7 +757,7 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
         </summary>
         <div
           ref={contentRef}
-          className="plain-tool-group-content flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground [&::-webkit-scrollbar-button]:hidden"
+          className="plain-tool-group-content flex max-h-[min(22rem,55vh)] min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground [&::-webkit-scrollbar-button]:hidden"
           data-mission-swipe-lock="true"
         >
           {group.map((item) => (
@@ -1011,6 +1015,9 @@ const PlainToolCallItem = memo(function PlainToolCallItem({
     item.input,
     item.text,
   );
+  const diff = changeStats
+    ? resolveToolCallDiff(item.toolKind, item.input, item.text)
+    : undefined;
   return (
     <details
       className="plain-tool-call min-w-0 text-muted-foreground"
@@ -1048,7 +1055,11 @@ const PlainToolCallItem = memo(function PlainToolCallItem({
           {resolveToolStatusLabel(item.status)}
         </span>
       </summary>
-      {preview ? (
+      {changeStats ? (
+        <ToolCallDiffPreview
+          diff={diff}
+        />
+      ) : preview ? (
         <pre className="mt-0.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
           {preview}
         </pre>
