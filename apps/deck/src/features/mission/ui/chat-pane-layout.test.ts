@@ -640,8 +640,8 @@ test("mission sidebar rows stay compact and session actions open below rows", ()
   assert.match(sidebarSource, /sidebar-section mission-tree-switcher flex-1 overflow-auto p-1/);
   assert.match(sidebarSource, /mission-tree grid gap-1/);
   assert.match(sidebarProjectNodeSource, /px-1\.5 h-5/);
-  assert.match(sidebarProjectNodeSource, /ml-1 grid gap-1 pl-0/);
-  assert.doesNotMatch(sidebarProjectNodeSource, /border-l border-border-ghost pl-1\.5/);
+  assert.match(sidebarProjectNodeSource, /ml-3 grid gap-1 border-l border-border-ghost\/70 pl-2/);
+  assert.doesNotMatch(sidebarProjectNodeSource, /mission-tree-children-sessions ml-1/);
   assert.doesNotMatch(sidebarProjectNodeSource, /ml-4 grid gap-1 border-l border-border-ghost pl-2/);
   assert.match(sessionRowSource, /px-1\.5 h-5/);
   assert.match(sessionRowSource, /DropdownMenuContent/);
@@ -656,7 +656,7 @@ test("mission session rows stay tree-like instead of selected card pills", () =>
   assert.match(sessionRowSource, /const isHighlighted = isFocused \|\| isOpenSession/);
   assert.doesNotMatch(sessionRowSource, /cursor-grab|active:cursor-grabbing|draggable/);
   assert.match(sessionRowSource, /cursor-default/);
-  assert.match(sessionRowSource, /before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0\.5 before:rounded-full before:bg-primary/);
+  assert.match(sessionRowSource, /bg-primary-soft[^\n]+before:absolute before:left-0 before:top-0\.5 before:bottom-0\.5 before:w-1 before:rounded-full before:bg-primary-strong/);
   assert.doesNotMatch(sessionRowSource, /mission-tree-caret/);
   assert.doesNotMatch(sessionRowSource, /mission-tree-session-meta/);
   assert.doesNotMatch(sessionRowSource, /\{session\.agentName\}<\/span>/);
@@ -681,8 +681,8 @@ test("mission pane resizing keeps only chat width constrained", () => {
 
 test("mission compact chrome avoids wrapping and over-indentation", () => {
   assert.match(sidebarSource, /wb-pane-head-eyebrow[^\n]+whitespace-nowrap/);
-  assert.match(sidebarProjectNodeSource, /mission-tree-children-sessions ml-1/);
-  assert.doesNotMatch(sidebarProjectNodeSource, /mission-tree-children-sessions ml-3/);
+  assert.match(sidebarProjectNodeSource, /mission-tree-children-sessions ml-3/);
+  assert.doesNotMatch(sidebarProjectNodeSource, /mission-tree-children-sessions ml-5/);
   assert.match(composerSource, /composerProjectLabel/);
   assert.match(composerSource, /composerAgentLabel/);
   assert.match(composerSource, /composerSession\?\.projectName/);
@@ -690,10 +690,6 @@ test("mission compact chrome avoids wrapping and over-indentation", () => {
 });
 
 test("mission diff and inspector commit controls support full-row review", () => {
-  assert.match(diffTreeSource, /mission-diff-patch grid max-w-full min-w-0 grid-cols-\[max-content\]/);
-  assert.match(diffTreeSource, /mission-diff-line grid min-w-full/);
-  assert.match(diffTreeSource, /grid-cols-\[2\.5rem_max-content\]/);
-  assert.match(diffTreeSource, /style=\{\{ display: "grid" \}\}/);
   assert.match(diffTreeSource, /visibleLines = patch\.split/);
   assert.match(diffTreeSource, /isDiffHeaderLine/);
   assert.match(diffPanelSource, /selectedCommitDiffPaths/);

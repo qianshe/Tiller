@@ -6,6 +6,7 @@ import { extractCodexPlanFromToolCall, isCodexPlanToolCall, mapCodexPlanUpdate }
 import { createCodexPromptToolCallObserver } from "./prompt-tool-calls";
 import { collectCodexToolEvidence } from "./evidence";
 import { promptEventsToToolObservations } from "../../tool-recognition";
+import { readCodexTranscriptCompactionSummaryFromDisk } from "./transcript/history";
 
 export function createCodexAcpAdapter(): AcpAgentAdapter {
   const promptToolCalls = createCodexPromptToolCallObserver();
@@ -38,6 +39,7 @@ export function createCodexAcpAdapter(): AcpAgentAdapter {
     extractPlanFromToolCall: extractCodexPlanFromToolCall,
     isPlanToolCall: isCodexPlanToolCall,
     summarizeCompactionSignal: summarizeCodexCompactionSignal,
-    resolveCompactionDetailsVisibility: () => "hidden",
+    resolveCompactionSummary: (context) =>
+      readCodexTranscriptCompactionSummaryFromDisk(context),
   };
 }

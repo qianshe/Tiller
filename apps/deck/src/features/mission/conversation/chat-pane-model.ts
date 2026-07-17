@@ -58,21 +58,43 @@ export function splitMissionToolCalls(
 
 export function shouldAutoScrollSessionBody({
   stickToBottom,
+  forceInitialScroll = false,
   historyLoading = false,
   historyRevealLocked = false,
   previousHistoryLoading = false,
   allowAfterInitialHistoryLoad = false,
 }: {
   stickToBottom?: boolean;
+  forceInitialScroll?: boolean;
   historyLoading?: boolean;
   historyRevealLocked?: boolean;
   previousHistoryLoading?: boolean;
   allowAfterInitialHistoryLoad?: boolean;
 }) {
-  return stickToBottom !== false &&
+  return (forceInitialScroll || stickToBottom !== false) &&
     !historyLoading &&
     !historyRevealLocked &&
-    (!previousHistoryLoading || allowAfterInitialHistoryLoad);
+    (!previousHistoryLoading || allowAfterInitialHistoryLoad || forceInitialScroll);
+}
+
+export function hasSessionBodyScrollSnapshotChanged(
+  previous: {
+    messageCount: number;
+    toolCallCount: number;
+    contentLength: number;
+    historyLoading: boolean;
+  },
+  current: {
+    messageCount: number;
+    toolCallCount: number;
+    contentLength: number;
+    historyLoading: boolean;
+  },
+) {
+  return previous.messageCount !== current.messageCount ||
+    previous.toolCallCount !== current.toolCallCount ||
+    previous.contentLength !== current.contentLength ||
+    previous.historyLoading !== current.historyLoading;
 }
 
 export function resolveSessionBodyStickToBottom({

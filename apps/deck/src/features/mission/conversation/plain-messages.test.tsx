@@ -4055,6 +4055,17 @@ test("plain message history primes another older-page load when the session open
   );
 });
 
+test("plain message history waits one frame before treating the initial top position as intentional", () => {
+  assert.match(
+    plainMessagesSource,
+    /const primeFrame = window\.requestAnimationFrame\(\(\) => \{\s+if \(shouldPrimeOlderHistoryLoad/,
+  );
+  assert.match(
+    plainMessagesSource,
+    /window\.cancelAnimationFrame\(primeFrame\);/,
+  );
+});
+
 test("plain message history uses the session card body as the scroll container", () => {
   const wrapper = {} as HTMLDivElement;
   const scrollContainer = {} as HTMLDivElement;

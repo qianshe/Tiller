@@ -82,12 +82,12 @@ export function upsertSessionCompactionEntry(
     }
   }
 
-  const mergeIndex = findCompactionSummaryMergeIndex(entries, incoming);
-  if (mergeIndex !== -1) {
-    const current = entries[mergeIndex];
+  const identityMergeIndex = findCompactionIdentityMergeIndex(entries, incoming);
+  if (identityMergeIndex !== -1) {
+    const current = entries[identityMergeIndex];
     if (current?.kind === "context_compaction") {
       const merged = mergeCompactionEntry(current, incoming);
-      entries[mergeIndex] = merged;
+      entries[identityMergeIndex] = merged;
       return merged;
     }
   }
@@ -96,12 +96,34 @@ export function upsertSessionCompactionEntry(
   return incoming;
 }
 
+function findCompactionIdentityMergeIndex(
+  entries: SessionTimelineEntry[],
+  incoming: SessionTimelineContextCompactionEntry,
+) {
+  const summaryMessageId = incoming.summaryMessageId?.trim();
+  if (!summaryMessageId) {
+    return -1;
+  }
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (
+      entry?.kind === "context_compaction" &&
+      entry.summaryMessageId?.trim() === summaryMessageId
+    ) {
+      return index;
+    }
+  }
+  return -1;
+}
+
 function contextProviderId(sessionId: string, context: HelmHandlerContext) {
   const record = context.sessions?.get?.(sessionId);
   const storedSessions = context.sessionStore?.list?.() ?? [];
-  return record?.agent?.id ??
+  return (
+    record?.agent?.id ??
     record?.summary?.agentId ??
-    storedSessions.find((item: SessionSummary) => item.id === sessionId)?.agentId;
+    storedSessions.find((item: SessionSummary) => item.id === sessionId)?.agentId
+  );
 }
 
 function resolveCompactionDetailsVisibility(
@@ -118,25 +140,6 @@ function resolveCompactionDetailsVisibility(
   return undefined;
 }
 
-function findCompactionSummaryMergeIndex(
-  entries: SessionTimelineEntry[],
-  incoming: SessionTimelineContextCompactionEntry,
-) {
-  if (!incoming.summaryText) {
-    return -1;
-  }
-  for (let index = entries.length - 1; index >= 0; index -= 1) {
-    const current = entries[index];
-    if (current?.kind !== "context_compaction" || current.summaryText?.trim()) {
-      continue;
-    }
-    if (isCompactionSummaryMergeCandidate(current, incoming)) {
-      return index;
-    }
-  }
-  return -1;
-}
-
 function findCompactionLifecycleMergeIndex(
   entries: SessionTimelineEntry[],
   incoming: SessionTimelineContextCompactionEntry,
@@ -149,14 +152,14 @@ function findCompactionLifecycleMergeIndex(
     if (current?.kind !== "context_compaction" || current.phase !== "started") {
       continue;
     }
-    if (isCompactionSummaryMergeCandidate(current, incoming)) {
+    if (isCompactionLifecycleMergeCandidate(current, incoming)) {
       return index;
     }
   }
   return -1;
 }
 
-function isCompactionSummaryMergeCandidate(
+function isCompactionLifecycleMergeCandidate(
   current: SessionTimelineContextCompactionEntry,
   incoming: SessionTimelineContextCompactionEntry,
 ) {
@@ -180,7 +183,10 @@ function mergeCompactionEntry(
     timestamp: current.timestamp,
     updatedAt: incoming.updatedAt ?? incoming.timestamp ?? current.updatedAt,
     phase: incoming.phase ?? current.phase,
-    source: incoming.source ?? current.source,
+    source:
+      current.source === "provider" || incoming.source === "provider"
+        ? "provider"
+        : (incoming.source ?? current.source),
     summaryMessageId: incoming.summaryMessageId ?? current.summaryMessageId,
     summaryText: incoming.summaryText ?? current.summaryText,
     detailsVisibility: incoming.detailsVisibility ?? current.detailsVisibility,

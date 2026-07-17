@@ -64,7 +64,9 @@ test("SessionRow keeps the action trigger inside the active row frame", () => {
   const rowClass = html.match(/<div class="([^"]*mission-tree-session-row[^"]*)"/u)?.[1] ?? "";
 
   assert.match(rowClass, /active/u);
-  assert.match(rowClass, /bg-surface-emphasis/u);
+  assert.match(rowClass, /bg-primary-soft/u);
+  assert.match(rowClass, /before:w-1/u);
+  assert.match(rowClass, /before:bg-primary-strong/u);
   assert.match(html, /mission-tree-actions-trigger/u);
   assert.match(html, /title="最后更新：4m"/u);
 });

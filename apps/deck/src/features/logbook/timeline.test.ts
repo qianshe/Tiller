@@ -466,7 +466,7 @@ test("mergeToolCallHistory preserves strong metadata when sparse updates arrive"
   assert.equal(merged[0]?.status, "completed");
   assert.equal(merged[0]?.output, "found");
   assert.equal(grouped[0]?.toolKind, "search");
-  assert.equal(grouped[0]?.title, "Search: composer");
+  assert.equal(grouped[0]?.title, "Grep: composer");
 });
 
 test("mergeToolCallHistory repairs an early shell classification for structured Grep payloads", () => {

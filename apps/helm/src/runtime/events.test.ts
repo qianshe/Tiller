@@ -59,14 +59,22 @@ test("active runtime notifications initialize sequence once without listing sess
   };
   const context = createTestContext([], capture, "sequence-once");
 
-  handleRuntimeEvent("sequence-once", {
-    type: "plan-update",
-    plan: { entries: [], updatedAt: "2026-07-12T00:00:00.000Z" },
-  }, context);
-  handleRuntimeEvent("sequence-once", {
-    type: "usage-update",
-    usage: { used: 1, size: 1 },
-  }, context);
+  handleRuntimeEvent(
+    "sequence-once",
+    {
+      type: "plan-update",
+      plan: { entries: [], updatedAt: "2026-07-12T00:00:00.000Z" },
+    },
+    context,
+  );
+  handleRuntimeEvent(
+    "sequence-once",
+    {
+      type: "usage-update",
+      usage: { used: 1, size: 1 },
+    },
+    context,
+  );
 
   assert.equal(capture.sessionStoreListCalls ?? 0, 0);
   assert.equal(capture.sequenceInitializationCalls, 1);
@@ -90,20 +98,21 @@ test("runtime rejects missing canonical services instead of writing legacy artif
   delete (context as any).sessionLiveStateStore;
 
   assert.throws(
-    () => handleRuntimeEvent(
-      "session-canonical-required",
-      {
-        type: "command-output",
-        chunk: {
-          id: "output-1",
-          commandId: "command-1",
-          stream: "stdout",
-          text: "output",
-          timestamp: "2026-07-11T00:00:00.000Z",
+    () =>
+      handleRuntimeEvent(
+        "session-canonical-required",
+        {
+          type: "command-output",
+          chunk: {
+            id: "output-1",
+            commandId: "command-1",
+            stream: "stdout",
+            text: "output",
+            timestamp: "2026-07-11T00:00:00.000Z",
+          },
         },
-      },
-      context,
-    ),
+        context,
+      ),
     /Canonical runtime services are required/u,
   );
   assert.equal(artifactWrites, 0);
@@ -171,8 +180,8 @@ test("runtime accepts late tool-call events when the session is errored but stil
     context,
   );
 
-  const liveToolCallUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "tool_call"
+  const liveToolCallUpdate = capture.detailBroadcasts.find(
+    (item: any) => item.method === "session/update" && item.params?.update?.kind === "tool_call",
   ) as { params?: { update?: { toolCall?: { status?: string } } } } | undefined;
 
   assert.equal(findStructuredLog(capture, "runtime.event.ignored_late"), undefined);
@@ -224,9 +233,15 @@ test("runtime compaction started publishes a canonical timeline batch when the p
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-compaction-live", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-compaction-live",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     "session-compaction-live",
@@ -239,11 +254,15 @@ test("runtime compaction started publishes a canonical timeline batch when the p
     context,
   );
 
-  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
-  ) as { params?: { update?: { batch?: import("@tiller/shared").SessionTimelineBatch } } } | undefined;
-  const compactionStateUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "compaction_state"
+  const timelineBatchUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "timeline_batch",
+  ) as
+    | { params?: { update?: { batch?: import("@tiller/shared").SessionTimelineBatch } } }
+    | undefined;
+  const compactionStateUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "compaction_state",
   ) as { params?: { update?: { phase?: string; source?: string } } } | undefined;
 
   assert.ok(timelineBatchUpdate?.params?.update?.batch);
@@ -264,9 +283,15 @@ test("runtime infers compaction completion from the first post-compaction assist
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-compaction-inferred", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-compaction-inferred",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     "session-compaction-inferred",
@@ -294,7 +319,9 @@ test("runtime infers compaction completion from the first post-compaction assist
     context,
   );
 
-  const compactionEntry = capture.timelineEntries?.find((entry) => entry.kind === "context_compaction");
+  const compactionEntry = capture.timelineEntries?.find(
+    (entry) => entry.kind === "context_compaction",
+  );
   assert.equal(compactionEntry?.kind, "context_compaction");
   if (compactionEntry?.kind === "context_compaction") {
     assert.equal(compactionEntry.phase, "completed");
@@ -311,9 +338,15 @@ test("runtime finalized assistant messages publish canonical timeline batches wh
     timelineEntries: [],
     sessionUpdates: [],
   };
-  const context = createTestContext(logs, capture, "session-canonical-message", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-canonical-message",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     "session-canonical-message",
@@ -330,26 +363,37 @@ test("runtime finalized assistant messages publish canonical timeline batches wh
     context,
   );
 
-  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
-  ) as { params?: { update?: { batch?: import("@tiller/shared").SessionTimelineBatch } } } | undefined;
-  const agentMessageUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "agent_message"
+  const timelineBatchUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "timeline_batch",
+  ) as
+    | { params?: { update?: { batch?: import("@tiller/shared").SessionTimelineBatch } } }
+    | undefined;
+  const agentMessageUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "agent_message",
   );
 
   assert.ok(timelineBatchUpdate?.params?.update?.batch);
   assert.equal(agentMessageUpdate, undefined);
   assert.equal(timelineBatchUpdate?.params?.update?.batch?.entries[0]?.kind, "assistant_message");
   assert.equal(capture.persisted.length, 0);
-  assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["message"]);
+  assert.deepEqual(
+    capture.sessionUpdates?.map((update) => update.updateType),
+    ["message"],
+  );
 });
 
 test("runtime event cleanup releases per-session sequence state", () => {
-  const context = createTestContext([], {
-    broadcasts: [],
-    detailBroadcasts: [],
-    persisted: [],
-  }, "session-cleanup-state");
+  const context = createTestContext(
+    [],
+    {
+      broadcasts: [],
+      detailBroadcasts: [],
+      persisted: [],
+    },
+    "session-cleanup-state",
+  );
 
   assert.equal(nextLiveEventSequenceForTest("session-cleanup-state", context), 1);
   assert.equal(nextLiveEventSequenceForTest("session-cleanup-state", context), 2);
@@ -367,9 +411,15 @@ test("runtime assistant streaming deltas stay in live updates and do not append 
     timelineEntries: [],
     sessionUpdates: [],
   };
-  const context = createTestContext(logs, capture, "session-canonical-streaming-message", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-canonical-streaming-message",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     "session-canonical-streaming-message",
@@ -386,11 +436,13 @@ test("runtime assistant streaming deltas stay in live updates and do not append 
     context,
   );
 
-  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  const timelineBatchUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "timeline_batch",
   );
-  const agentMessageUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "agent_message"
+  const agentMessageUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "agent_message",
   ) as { params?: { update?: { streaming?: boolean } } } | undefined;
 
   assert.equal(timelineBatchUpdate, undefined);
@@ -439,7 +491,9 @@ test("runtime Codex mixed compaction chunks split into a compaction entry and st
     capture.timelineEntries?.map((entry) => entry.kind),
     ["context_compaction", "assistant_message"],
   );
-  const compactionEntry = capture.timelineEntries?.find((entry) => entry.kind === "context_compaction");
+  const compactionEntry = capture.timelineEntries?.find(
+    (entry) => entry.kind === "context_compaction",
+  );
   assert.equal(compactionEntry?.kind, "context_compaction");
   if (compactionEntry?.kind === "context_compaction") {
     assert.equal(
@@ -448,9 +502,11 @@ test("runtime Codex mixed compaction chunks split into a compaction entry and st
     );
     assert.equal(compactionEntry.phase, "completed");
     assert.equal(compactionEntry.summaryText, undefined);
-    assert.equal(compactionEntry.detailsVisibility, "hidden");
+    assert.equal(compactionEntry.detailsVisibility, undefined);
   }
-  const assistantEntry = capture.timelineEntries?.find((entry) => entry.kind === "assistant_message");
+  const assistantEntry = capture.timelineEntries?.find(
+    (entry) => entry.kind === "assistant_message",
+  );
   assert.equal(assistantEntry?.kind, "assistant_message");
   if (assistantEntry?.kind === "assistant_message") {
     assert.equal(assistantEntry.chunks[0]?.text, "我先做个完成度确认，再继续往下处理。");
@@ -469,9 +525,15 @@ test("runtime plan updates publish live_state snapshots when the pipeline is ava
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-canonical-plan", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-canonical-plan",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     "session-canonical-plan",
@@ -479,31 +541,35 @@ test("runtime plan updates publish live_state snapshots when the pipeline is ava
       type: "plan-update",
       plan: {
         updatedAt: "2026-06-29T00:00:02.000Z",
-        entries: [{
-          content: "do the thing",
-          priority: "high",
-          status: "in_progress",
-        }],
+        entries: [
+          {
+            content: "do the thing",
+            priority: "high",
+            status: "in_progress",
+          },
+        ],
       },
     } satisfies SessionRuntimeEvent,
     context,
   );
 
-  const liveStateUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "live_state"
-  ) as {
-    params?: {
-      update?: {
-        snapshot?: {
-          sequence?: number;
-          plan?: AgentPlan;
-          status?: { effectiveStatus?: string };
+  const liveStateUpdate = capture.detailBroadcasts.find(
+    (item: any) => item.method === "session/update" && item.params?.update?.kind === "live_state",
+  ) as
+    | {
+        params?: {
+          update?: {
+            snapshot?: {
+              sequence?: number;
+              plan?: AgentPlan;
+              status?: { effectiveStatus?: string };
+            };
+          };
         };
-      };
-    };
-  } | undefined;
-  const legacyPlanUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "plan_update"
+      }
+    | undefined;
+  const legacyPlanUpdate = capture.detailBroadcasts.find(
+    (item: any) => item.method === "session/update" && item.params?.update?.kind === "plan_update",
   );
 
   assert.ok(liveStateUpdate?.params?.update?.snapshot?.plan);
@@ -513,10 +579,7 @@ test("runtime plan updates publish live_state snapshots when the pipeline is ava
     "do the thing",
   );
   assert.equal(liveStateUpdate?.params?.update?.snapshot?.sequence, 1);
-  assert.equal(
-    liveStateUpdate?.params?.update?.snapshot?.status?.effectiveStatus,
-    "starting",
-  );
+  assert.equal(liveStateUpdate?.params?.update?.snapshot?.status?.effectiveStatus, "starting");
 });
 
 test("runtime session state variants publish canonical live_state in arrival order", () => {
@@ -527,35 +590,56 @@ test("runtime session state variants publish canonical live_state in arrival ord
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-canonical-state", {}, {
-    useCanonicalPipeline: true,
-  });
-
-  handleRuntimeEvent("session-canonical-state", {
-    type: "mode-update",
-    agentMode: "architect",
-  }, context);
-  handleRuntimeEvent("session-canonical-state", {
-    type: "session-info",
-    title: null,
-    updatedAt: "2026-07-11T12:00:00.000Z",
-  }, context);
-  handleRuntimeEvent("session-canonical-state", {
-    type: "usage-update",
-    usage: {
-      used: 100,
-      size: 200_000,
-      cost: { amount: 0.02, currency: "USD" },
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-canonical-state",
+    {},
+    {
+      useCanonicalPipeline: true,
     },
-  }, context);
+  );
+
+  handleRuntimeEvent(
+    "session-canonical-state",
+    {
+      type: "mode-update",
+      agentMode: "architect",
+    },
+    context,
+  );
+  handleRuntimeEvent(
+    "session-canonical-state",
+    {
+      type: "session-info",
+      title: null,
+      updatedAt: "2026-07-11T12:00:00.000Z",
+    },
+    context,
+  );
+  handleRuntimeEvent(
+    "session-canonical-state",
+    {
+      type: "usage-update",
+      usage: {
+        used: 100,
+        size: 200_000,
+        cost: { amount: 0.02, currency: "USD" },
+      },
+    },
+    context,
+  );
 
   const snapshots = capture.detailBroadcasts
-    .filter((item: any) =>
-      item.method === "session/update" && item.params?.update?.kind === "live_state"
+    .filter(
+      (item: any) => item.method === "session/update" && item.params?.update?.kind === "live_state",
     )
     .map((item: any) => item.params.update.snapshot);
 
-  assert.deepEqual(snapshots.map((snapshot: any) => snapshot.sequence), [1, 2, 3]);
+  assert.deepEqual(
+    snapshots.map((snapshot: any) => snapshot.sequence),
+    [1, 2, 3],
+  );
   assert.equal(snapshots[2]?.config?.agentMode, "architect");
   assert.deepEqual(snapshots[2]?.sessionInfo, {
     title: null,
@@ -576,9 +660,15 @@ test("canonical session state replaces competing legacy state notifications", ()
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-canonical-state-cutover", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-canonical-state-cutover",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   const events: SessionRuntimeEvent[] = [
     { type: "status", status: "running" },
@@ -622,8 +712,14 @@ test("canonical session state replaces competing legacy state notifications", ()
     "session_updated",
   ]);
 
-  assert.deepEqual(liveStates.map((update: any) => update.snapshot.sequence), [1, 2, 3, 4, 5]);
-  assert.equal(sessionUpdates.some((update: any) => legacyKinds.has(update.kind)), false);
+  assert.deepEqual(
+    liveStates.map((update: any) => update.snapshot.sequence),
+    [1, 2, 3, 4, 5],
+  );
+  assert.equal(
+    sessionUpdates.some((update: any) => legacyKinds.has(update.kind)),
+    false,
+  );
   const finalState = liveStates.at(-1)?.snapshot;
   assert.equal(finalState.status.effectiveStatus, "running");
   assert.equal(finalState.config.model, "gpt-5");
@@ -641,20 +737,28 @@ test("prompt queue uses the canonical persisted live-state path", () => {
     timelineEntries: [],
     sessionUpdates: [],
   };
-  const context = createTestContext(logs, capture, "session-canonical-queue", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-canonical-queue",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
   const queue = {
     sessionId: "session-canonical-queue",
-    queued: [{
-      id: "queued-1",
-      sessionId: "session-canonical-queue",
-      text: "continue",
-      clientMessageId: "client-queued-1",
-      createdAt: "2026-07-11T13:00:00.000Z",
-      updatedAt: "2026-07-11T13:00:00.000Z",
-      status: "queued" as const,
-    }],
+    queued: [
+      {
+        id: "queued-1",
+        sessionId: "session-canonical-queue",
+        text: "continue",
+        clientMessageId: "client-queued-1",
+        createdAt: "2026-07-11T13:00:00.000Z",
+        updatedAt: "2026-07-11T13:00:00.000Z",
+        status: "queued" as const,
+      },
+    ],
   };
 
   publishPromptQueueState("session-canonical-queue", queue, context);
@@ -666,7 +770,10 @@ test("prompt queue uses the canonical persisted live-state path", () => {
   const updates = capture.detailBroadcasts
     .filter((item: any) => item.method === "session/update")
     .map((item: any) => item.params.update);
-  assert.equal(updates.some((update: any) => update.kind === "prompt_queue"), false);
+  assert.equal(
+    updates.some((update: any) => update.kind === "prompt_queue"),
+    false,
+  );
   assert.equal(updates[0]?.kind, "live_state");
   assert.equal(updates[0]?.snapshot?.sequence, 1);
   assert.deepEqual(updates[0]?.snapshot?.promptQueue, queue);
@@ -681,9 +788,15 @@ test("explicit canonical state publisher persists status and emits only live_sta
     timelineEntries: [],
     sessionUpdates: [],
   };
-  const context = createTestContext(logs, capture, "session-explicit-state", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-explicit-state",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   publishCanonicalSessionStateEvent(
     "session-explicit-state",
@@ -694,11 +807,17 @@ test("explicit canonical state publisher persists status and emits only live_sta
   const updates = capture.detailBroadcasts
     .filter((item: any) => item.method === "session/update")
     .map((item: any) => item.params.update);
-  assert.deepEqual(capture.sessionUpdates?.map((update) => [update.sequence, update.updateType]), [[1, "status"]]);
+  assert.deepEqual(
+    capture.sessionUpdates?.map((update) => [update.sequence, update.updateType]),
+    [[1, "status"]],
+  );
   assert.equal(updates[0]?.kind, "live_state");
   assert.equal(updates[0]?.snapshot?.sequence, 1);
   assert.equal(updates[0]?.snapshot?.status?.effectiveStatus, "error");
-  assert.equal(updates.some((update: any) => update.kind === "status_change"), false);
+  assert.equal(
+    updates.some((update: any) => update.kind === "status_change"),
+    false,
+  );
 });
 
 test("canonical state is not published when the atomic commit fails", () => {
@@ -710,9 +829,15 @@ test("canonical state is not published when the atomic commit fails", () => {
     timelineEntries: [],
     sessionUpdates: [],
   };
-  const context = createTestContext(logs, capture, "session-state-rollback", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-state-rollback",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
   context.sessionLiveStateStore = createSessionLiveStateStore({
     get: () => undefined,
     getAppliedSequence: () => 0,
@@ -724,15 +849,19 @@ test("canonical state is not published when the atomic commit fails", () => {
     close: async () => undefined,
   });
 
-  handleRuntimeEvent("session-state-rollback", {
-    type: "status",
-    status: "running",
-  }, context);
+  handleRuntimeEvent(
+    "session-state-rollback",
+    {
+      type: "status",
+      status: "running",
+    },
+    context,
+  );
 
   assert.equal(capture.sessionUpdates?.length, 0);
   assert.equal(
-    capture.detailBroadcasts.some((item: any) =>
-      item.method === "session/update" && item.params?.update?.kind === "live_state"
+    capture.detailBroadcasts.some(
+      (item: any) => item.method === "session/update" && item.params?.update?.kind === "live_state",
     ),
     false,
   );
@@ -750,9 +879,15 @@ test("canonical conversation is not materialized or published when update persis
     timelineEntries: [],
     sessionUpdates: [],
   };
-  const context = createTestContext([], capture, "session-conversation-rollback", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    [],
+    capture,
+    "session-conversation-rollback",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
   if (!context.sessionTimelineStore?.commitBatch) {
     throw new Error("test requires atomic timeline store");
   }
@@ -761,22 +896,27 @@ test("canonical conversation is not materialized or published when update persis
   };
 
   assert.throws(() => {
-    handleRuntimeEvent("session-conversation-rollback", {
-      type: "message",
-      message: {
-        id: "assistant-failed",
-        role: "assistant",
-        text: "must not publish",
-        timestamp: "2026-07-11T15:30:00.000Z",
-        streaming: false,
+    handleRuntimeEvent(
+      "session-conversation-rollback",
+      {
+        type: "message",
+        message: {
+          id: "assistant-failed",
+          role: "assistant",
+          text: "must not publish",
+          timestamp: "2026-07-11T15:30:00.000Z",
+          streaming: false,
+        },
       },
-    }, context);
+      context,
+    );
   }, /conversation update failed/u);
 
   assert.deepEqual(capture.timelineEntries, []);
   assert.equal(
-    capture.detailBroadcasts.some((item: any) =>
-      item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+    capture.detailBroadcasts.some(
+      (item: any) =>
+        item.method === "session/update" && item.params?.update?.kind === "timeline_batch",
     ),
     false,
   );
@@ -792,9 +932,15 @@ test("runtime command outputs publish canonical timeline batches without compati
     sessionUpdates: [],
   };
   const appendedOutputs: CommandChunk[] = [];
-  const context = createTestContext(logs, capture, "session-canonical-command-output", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-canonical-command-output",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
   context.sessionArtifactStore.appendOutput = (_sessionId: string, chunk: CommandChunk) => {
     appendedOutputs.push(chunk);
   };
@@ -816,20 +962,25 @@ test("runtime command outputs publish canonical timeline batches without compati
   context.sessionTimelineFlushScheduler?.flushNow("session-canonical-command-output");
   await new Promise<void>((resolve) => setImmediate(resolve));
 
-  const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
+  const timelineBatchUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "timeline_batch",
   );
-  const legacyCommandOutputUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.method === "session/update" && item.params?.update?.kind === "command_output"
+  const legacyCommandOutputUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "command_output",
   );
 
   assert.ok(timelineBatchUpdate);
   assert.equal(legacyCommandOutputUpdate, undefined);
-  assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["command-output"]);
+  assert.deepEqual(
+    capture.sessionUpdates?.map((update) => update.updateType),
+    ["command-output"],
+  );
   assert.equal(appendedOutputs.length, 0);
 });
 
-test("runtime compaction completed hides summary details for codex providers", () => {
+test("runtime compaction completed exposes summary details for codex providers", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -848,19 +999,20 @@ test("runtime compaction completed hides summary details for codex providers", (
       type: "compaction",
       phase: "completed",
       source: "heuristic",
-      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      summaryText:
+        "This session is being continued from a previous conversation that ran out of context.",
       timestamp: "2026-06-28T00:00:02.000Z",
     } satisfies SessionRuntimeEvent,
     context,
   );
 
-  const compactionEntry = capture.timelineEntries?.find((entry) => entry.kind === "context_compaction");
+  const compactionEntry = capture.timelineEntries?.find(
+    (entry) => entry.kind === "context_compaction",
+  );
 
   assert.equal(
-    compactionEntry?.kind === "context_compaction"
-      ? compactionEntry.detailsVisibility
-      : undefined,
-    "hidden",
+    compactionEntry?.kind === "context_compaction" ? compactionEntry.detailsVisibility : undefined,
+    "expandable",
   );
 });
 
@@ -884,7 +1036,7 @@ test("runtime compaction summary enrichment updates the existing compaction row 
       phase: "completed",
       source: "provider",
       timestamp: "2026-06-28T00:00:01.000Z",
-      messageId: "compaction-completed",
+      messageId: "compaction-summary",
     } satisfies SessionRuntimeEvent,
     context,
   );
@@ -896,20 +1048,26 @@ test("runtime compaction summary enrichment updates the existing compaction row 
       source: "heuristic",
       timestamp: "2026-06-28T00:00:02.000Z",
       messageId: "compaction-summary",
-      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      summaryText:
+        "This session is being continued from a previous conversation that ran out of context.",
     } satisfies SessionRuntimeEvent,
     context,
   );
 
-  const compactionEntries = capture.timelineEntries?.filter((entry) => entry.kind === "context_compaction") ?? [];
+  const compactionEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "context_compaction") ?? [];
   assert.equal(compactionEntries.length, 1);
-  assert.equal(compactionEntries[0]?.id, "compaction:session-compaction-merge:compaction-completed");
+  assert.equal(compactionEntries[0]?.id, "compaction:session-compaction-merge:compaction-summary");
   assert.equal(
-    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].summaryText : undefined,
+    compactionEntries[0]?.kind === "context_compaction"
+      ? compactionEntries[0].summaryText
+      : undefined,
     "This session is being continued from a previous conversation that ran out of context.",
   );
   assert.equal(
-    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].detailsVisibility : undefined,
+    compactionEntries[0]?.kind === "context_compaction"
+      ? compactionEntries[0].detailsVisibility
+      : undefined,
     "expandable",
   );
 });
@@ -977,7 +1135,8 @@ test("runtime compaction starts a fresh assistant segment after the divider", ()
     capture.timelineEntries?.map((entry) => entry.kind),
     ["assistant_message", "context_compaction", "assistant_message"],
   );
-  const assistantEntries = capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
+  const assistantEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
   assert.equal(assistantEntries.length, 2);
   assert.notEqual(assistantEntries[0]?.id, assistantEntries[1]?.id);
 });
@@ -990,9 +1149,15 @@ test("runtime compaction starts a fresh assistant segment after the divider in c
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-compaction-boundary-canonical", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-compaction-boundary-canonical",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     "session-compaction-boundary-canonical",
@@ -1037,7 +1202,8 @@ test("runtime compaction starts a fresh assistant segment after the divider in c
     capture.timelineEntries?.map((entry) => entry.kind),
     ["assistant_message", "context_compaction", "assistant_message"],
   );
-  const assistantEntries = capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
+  const assistantEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
   assert.equal(assistantEntries.length, 2);
   assert.notEqual(assistantEntries[0]?.id, assistantEntries[1]?.id);
 });

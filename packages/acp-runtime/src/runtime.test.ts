@@ -319,7 +319,7 @@ test("resolveAdapterCleanupPlan delegates provider-native cleanup to adapters", 
 });
 
 test("resolveAdapterCompactionDetailsVisibility keeps provider-specific compaction UI policy behind adapters", () => {
-  assert.equal(resolveAdapterCompactionDetailsVisibility("codex"), "hidden");
+  assert.equal(resolveAdapterCompactionDetailsVisibility("codex"), undefined);
   assert.equal(resolveAdapterCompactionDetailsVisibility("claude-acp"), undefined);
   assert.equal(resolveAdapterCompactionDetailsVisibility(undefined), undefined);
 });

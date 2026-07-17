@@ -1,11 +1,20 @@
 import type { AcpAgentAdapter } from "../types";
-import { isCommandNamed, resolveDefaultLaunch, resolveUnsupportedCleanup } from "../shared";
+import {
+  isCommandNamed,
+  resolveDefaultLaunch,
+  resolveUnsupportedCleanup,
+} from "../shared";
 import { createClaudePlanUpdateProjector } from "./plan-events";
 import { createClaudePromptToolCallObserver } from "./prompt-tool-calls";
 import { createClaudeToolEvidenceCollector } from "./evidence";
 import { promptEventsToToolObservations } from "../../tool-recognition";
+import { readClaudeTranscriptCompactionFromDisk } from "./transcript/history";
 
-const CLAUDE_ACP_COMMANDS = ["claude-acp", "claude-agent-acp", "claude-code-acp"];
+const CLAUDE_ACP_COMMANDS = [
+  "claude-acp",
+  "claude-agent-acp",
+  "claude-code-acp",
+];
 
 export function createClaudeAcpAdapter(): AcpAgentAdapter {
   const planProjector = createClaudePlanUpdateProjector();
@@ -18,7 +27,9 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
       provider.id === "claudecode" ||
       provider.id === "claude-acp" ||
       provider.id === "claude-agent-acp" ||
-      CLAUDE_ACP_COMMANDS.some((command) => isCommandNamed(provider.command, command)),
+      CLAUDE_ACP_COMMANDS.some((command) =>
+        isCommandNamed(provider.command, command),
+      ),
     resolveLaunch: (provider, context) => {
       const launch = resolveDefaultLaunch(provider, context);
       return {
@@ -34,10 +45,12 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
     resolveCapabilities: (_provider, _initializeResult, detected) => detected,
     resolveCleanup: ({ provider }) => resolveUnsupportedCleanup(provider),
     beginPromptObservation: (context) => promptToolCalls.begin(context),
-    pollPromptToolObservations: (context) => promptEventsToToolObservations(
-      promptToolCalls.poll(context),
-      { providerId: "claude", sessionId: context.runtimeSessionId, cwd: context.cwd },
-    ),
+    pollPromptToolObservations: (context) =>
+      promptEventsToToolObservations(promptToolCalls.poll(context), {
+        providerId: "claude",
+        sessionId: context.runtimeSessionId,
+        cwd: context.cwd,
+      }),
     mapToolCallUpdate: planProjector.mapUpdate,
     disposeSession: (sessionId) => {
       planProjector.disposeSession(sessionId);
@@ -45,5 +58,7 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
       promptToolCalls.dispose(sessionId);
     },
     collectToolEvidence: toolEvidence.collect,
+    resolveCompactionSummary: (context) =>
+      readClaudeTranscriptCompactionFromDisk(context),
   };
 }

@@ -3,12 +3,34 @@ import test from "node:test";
 import type { SessionTimelineEntry } from "@tiller/shared";
 import {
   formatSessionPreviewTime,
+  hasSessionBodyScrollSnapshotChanged,
   resolveSessionConversationDisplayMode,
   resolveSessionStatusLabel,
   resolveSessionStatusTone,
   resolveSessionStreamContentLength,
   splitMissionToolCalls,
 } from "./chat-pane-model";
+
+test("session body snapshot changes when initial history loading completes", () => {
+  const loadingSnapshot = {
+    messageCount: 12,
+    toolCallCount: 3,
+    contentLength: 240,
+    historyLoading: true,
+  };
+
+  assert.equal(
+    hasSessionBodyScrollSnapshotChanged(loadingSnapshot, {
+      ...loadingSnapshot,
+      historyLoading: false,
+    }),
+    true,
+  );
+  assert.equal(
+    hasSessionBodyScrollSnapshotChanged(loadingSnapshot, loadingSnapshot),
+    false,
+  );
+});
 
 test("splitMissionToolCalls separates thinking calls from timeline calls", () => {
   const split = splitMissionToolCalls([
@@ -236,6 +258,7 @@ test("shouldAutoScrollSessionBody suppresses auto-follow during history restore 
   assert.equal(typeof model.shouldAutoScrollSessionBody, "function");
   const shouldAutoScrollSessionBody = model.shouldAutoScrollSessionBody as (input: {
     stickToBottom?: boolean;
+    forceInitialScroll?: boolean;
     historyLoading?: boolean;
     historyRevealLocked?: boolean;
     previousHistoryLoading?: boolean;
@@ -244,6 +267,24 @@ test("shouldAutoScrollSessionBody suppresses auto-follow during history restore 
 
   assert.equal(
     shouldAutoScrollSessionBody({ stickToBottom: false, historyLoading: false }),
+    false,
+  );
+  assert.equal(
+    shouldAutoScrollSessionBody({
+      stickToBottom: false,
+      forceInitialScroll: true,
+      previousHistoryLoading: true,
+      historyLoading: false,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldAutoScrollSessionBody({
+      stickToBottom: false,
+      forceInitialScroll: true,
+      historyLoading: false,
+      historyRevealLocked: true,
+    }),
     false,
   );
   assert.equal(

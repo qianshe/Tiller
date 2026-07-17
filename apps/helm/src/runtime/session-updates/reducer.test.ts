@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { AgentMessage, AgentToolCall, CommandChunk, SessionUpdateRecord } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  CommandChunk,
+  SessionUpdateRecord,
+} from "@tiller/shared";
 import {
   applySessionUpdateRecordToState,
   applySessionRuntimeEventToState,
@@ -88,14 +93,16 @@ test("session update reducer updates a tool entry without moving it after later 
     { type: "tool-call" as const, toolCall: toolCall("tool-1", "completed", 2, "ok") },
   ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
 
-  assert.deepEqual(finalState.entries.map((entry) => entry.id), [
-    "assistant-1",
-    "tool:tool-1",
-    "assistant-2",
-  ]);
+  assert.deepEqual(
+    finalState.entries.map((entry) => entry.id),
+    ["assistant-1", "tool:tool-1", "assistant-2"],
+  );
   const toolEntry = finalState.entries.find((entry) => entry.id === "tool:tool-1");
   assert.equal(toolEntry?.kind, "tool_call");
-  assert.equal(toolEntry?.kind === "tool_call" ? toolEntry.toolCall.status : undefined, "completed");
+  assert.equal(
+    toolEntry?.kind === "tool_call" ? toolEntry.toolCall.status : undefined,
+    "completed",
+  );
   assert.equal(toolEntry?.kind === "tool_call" ? toolEntry.toolCall.output : undefined, "ok");
 });
 
@@ -124,11 +131,10 @@ test("session update reducer keeps later chunks in the post-subagent assistant o
     },
   ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
 
-  assert.deepEqual(finalState.entries.map((entry) => entry.id), [
-    "assistant-shared",
-    "tool:subagent-1",
-    "assistant-shared:occ-2",
-  ]);
+  assert.deepEqual(
+    finalState.entries.map((entry) => entry.id),
+    ["assistant-shared", "tool:subagent-1", "assistant-shared:occ-2"],
+  );
   assert.equal(finalState.messages.length, 2);
   assert.equal(finalState.messages[1]?.id, "assistant-shared:occ-2");
   assert.equal(finalState.messages[1]?.text, "第二段");
@@ -199,11 +205,10 @@ test("session update reducer backfills missing tool-call sequences from update r
     createEmptySessionUpdateReducerState(),
   );
 
-  assert.deepEqual(finalState.entries.map((entry) => entry.id), [
-    "assistant-before",
-    "tool:call-subagent-sequence-backfill",
-    "assistant-after",
-  ]);
+  assert.deepEqual(
+    finalState.entries.map((entry) => entry.id),
+    ["assistant-before", "tool:call-subagent-sequence-backfill", "assistant-after"],
+  );
   assert.equal(finalState.toolCalls[0]?.sequence, 2);
   assert.equal(
     finalState.entries[1]?.kind === "tool_call"
@@ -341,14 +346,20 @@ test("session update reducer keeps colliding user and assistant message ids dist
     { type: "message" as const, message: assistant("msg-1", "answer", 2) },
   ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
 
-  assert.deepEqual(finalState.messages.map((message) => [message.id, message.role, message.text]), [
-    ["msg-1", "user", "prompt"],
-    ["msg-1:assistant", "assistant", "answer"],
-  ]);
-  assert.deepEqual(finalState.entries.map((entry) => [entry.kind, entry.id, (entry as any).sequence]), [
-    ["user_message", "msg-1", 1],
-    ["assistant_message", "msg-1:assistant", 2],
-  ]);
+  assert.deepEqual(
+    finalState.messages.map((message) => [message.id, message.role, message.text]),
+    [
+      ["msg-1", "user", "prompt"],
+      ["msg-1:assistant", "assistant", "answer"],
+    ],
+  );
+  assert.deepEqual(
+    finalState.entries.map((entry) => [entry.kind, entry.id, (entry as any).sequence]),
+    [
+      ["user_message", "msg-1", 1],
+      ["assistant_message", "msg-1:assistant", 2],
+    ],
+  );
 });
 
 test("session update reducer replaces accumulated streaming assistant fragments with the final full assistant message", () => {
@@ -497,10 +508,10 @@ test("session update reducer replaces repeated tool input snapshots instead of c
       toolCall: {
         id: "toolu_input_merge",
         kind: "shell" as const,
-        title: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+        title: 'grep -n "tool_call" apps/helm/src/runtime/events.ts',
         status: "completed" as const,
         input: JSON.stringify({
-          command: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+          command: 'grep -n "tool_call" apps/helm/src/runtime/events.ts',
           description: "查找 runtime tool call",
         }),
         timestamp: at(1),
@@ -513,7 +524,7 @@ test("session update reducer replaces repeated tool input snapshots instead of c
   assert.equal(
     finalState.toolCalls[0]?.input,
     JSON.stringify({
-      command: "grep -n \"tool_call\" apps/helm/src/runtime/events.ts",
+      command: 'grep -n "tool_call" apps/helm/src/runtime/events.ts',
       description: "查找 runtime tool call",
     }),
   );
@@ -526,9 +537,9 @@ test("session update reducer repairs a completed shell classification with struc
       toolCall: {
         id: "toolu_search_repair",
         kind: "shell" as const,
-        title: "grep -l \"tool-call-repair\"",
+        title: 'grep -l "tool-call-repair"',
         status: "completed" as const,
-        input: "{\"output_mode\":\"files_with_matches\",\"pattern\":\"tool-call-repair\"}",
+        input: '{"output_mode":"files_with_matches","pattern":"tool-call-repair"}',
         timestamp: at(1),
         updatedAt: at(1),
         sequence: 1,
@@ -541,7 +552,7 @@ test("session update reducer repairs a completed shell classification with struc
         kind: "search" as const,
         title: "Grep",
         status: "completed" as const,
-        input: "{\"output_mode\":\"files_with_matches\",\"pattern\":\"tool-call-repair\"}",
+        input: '{"output_mode":"files_with_matches","pattern":"tool-call-repair"}',
         timestamp: at(1),
         updatedAt: at(2),
         sequence: 1,
@@ -623,7 +634,7 @@ test("session update reducer rebuilds one merged compaction row from started lif
         phase: "completed",
         source: "provider",
         timestamp: at(2),
-        messageId: "compaction-completed",
+        messageId: "compaction-summary",
       }),
     },
     {
@@ -640,13 +651,19 @@ test("session update reducer rebuilds one merged compaction row from started lif
         source: "heuristic",
         timestamp: at(3),
         messageId: "compaction-summary",
-        summaryText: "This session is being continued from a previous conversation that ran out of context.",
+        summaryText:
+          "This session is being continued from a previous conversation that ran out of context.",
       }),
     },
   ];
-  const finalState = records.reduce(applySessionUpdateRecordToState, createEmptySessionUpdateReducerState());
+  const finalState = records.reduce(
+    applySessionUpdateRecordToState,
+    createEmptySessionUpdateReducerState(),
+  );
 
-  const compactionEntries = finalState.entries.filter((entry) => entry.kind === "context_compaction");
+  const compactionEntries = finalState.entries.filter(
+    (entry) => entry.kind === "context_compaction",
+  );
   assert.equal(compactionEntries.length, 1);
   assert.equal(compactionEntries[0]?.id, `compaction:session-compaction:compaction:${at(1)}`);
   assert.equal(
@@ -654,11 +671,67 @@ test("session update reducer rebuilds one merged compaction row from started lif
     "completed",
   );
   assert.equal(
-    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].summaryText : undefined,
+    compactionEntries[0]?.kind === "context_compaction"
+      ? compactionEntries[0].summaryText
+      : undefined,
     "This session is being continued from a previous conversation that ran out of context.",
   );
   assert.equal(
-    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].detailsVisibility : undefined,
+    compactionEntries[0]?.kind === "context_compaction"
+      ? compactionEntries[0].detailsVisibility
+      : undefined,
     "expandable",
+  );
+});
+
+test("session update reducer preserves two independent completed compactions", () => {
+  const records: SessionUpdateRecord[] = [
+    {
+      sessionId: "session-compaction",
+      runtimeSessionId: "runtime-1",
+      providerId: "claude",
+      sequence: 1,
+      source: "acp_live",
+      updateType: "compaction",
+      receivedAt: at(1),
+      payloadJson: JSON.stringify({
+        type: "compaction",
+        phase: "completed",
+        source: "provider",
+        timestamp: at(1),
+        messageId: "compaction-summary-1",
+        summaryText: "First compacted summary",
+      }),
+    },
+    {
+      sessionId: "session-compaction",
+      runtimeSessionId: "runtime-1",
+      providerId: "claude",
+      sequence: 2,
+      source: "acp_live",
+      updateType: "compaction",
+      receivedAt: at(2),
+      payloadJson: JSON.stringify({
+        type: "compaction",
+        phase: "completed",
+        source: "provider",
+        timestamp: at(2),
+        messageId: "compaction-summary-2",
+        summaryText: "Second compacted summary",
+      }),
+    },
+  ];
+  const finalState = records.reduce(
+    applySessionUpdateRecordToState,
+    createEmptySessionUpdateReducerState(),
+  );
+
+  const compactionEntries = finalState.entries.filter(
+    (entry) => entry.kind === "context_compaction",
+  );
+  assert.equal(compactionEntries.length, 2);
+  assert.deepEqual(
+    compactionEntries.map((entry) => entry.summaryMessageId),
+    ["compaction-summary-1", "compaction-summary-2"],
   );
 });

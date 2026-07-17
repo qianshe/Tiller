@@ -1,20 +1,31 @@
 import type { AcpAgentProvider } from "@tiller/shared";
 
-export { connectAcpConnection, createAcpRuntime, disposeAcpConnections, listAcpConnectionInventory, reconnectAcpConnection } from "./runtime-session";
+export {
+  connectAcpConnection,
+  createAcpRuntime,
+  disposeAcpConnections,
+  listAcpConnectionInventory,
+  reconnectAcpConnection,
+} from "./runtime-session";
 export { AcpConnection } from "./connection/lifecycle";
 export { createAcpConnectionManager } from "./connection/manager";
 export type { AcpConnectionLifecycleEvent } from "./connection/manager";
 export { resolveAcpConnectionKey } from "./connection/key";
 export type { AcpConnectionInventoryItem } from "./connection/types";
 export { testAcpConnection } from "./connection-test";
-export { listAcpAgentSessions, normalizeAcpAgentSessionListResult } from "./session-list";
+export {
+  listAcpAgentSessions,
+  normalizeAcpAgentSessionListResult,
+} from "./session-list";
 export {
   DEFAULT_ACP_PROMPT_TIMEOUT_MS,
   DEFAULT_ACP_REQUEST_TIMEOUT_MS,
   resolveAcpRequestTimeout,
 } from "./constants";
 
-export function resolvePreferredAgentId(provider: Pick<AcpAgentProvider, "defaultAgent">) {
+export function resolvePreferredAgentId(
+  provider: Pick<AcpAgentProvider, "defaultAgent">,
+) {
   return normalizePreferredAgentId(provider.defaultAgent);
 }
 
@@ -54,7 +65,10 @@ function normalizePreferredAgentId(agent: string | undefined) {
 }
 
 export { resolveRuntimeSessionId } from "./requests";
-export { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "./capabilities";
+export {
+  resolveSessionCapabilities,
+  type DetectedAcpSessionCapabilities,
+} from "./capabilities";
 export type {
   AcpAgentSessionListResult,
   AcpRuntimeOptions,
@@ -93,9 +107,12 @@ export {
   resolveAcpLaunchConfig,
   resolveAdapterCleanupPlan,
   resolveAdapterCompactionDetailsVisibility,
+  resolveAdapterCompactionSummary,
   resolveAdapterRequestTimeout,
   resolveAdapterPluginManifest,
   type AcpAgentAdapter,
+  type AcpCompactionSummary,
+  type AcpCompactionSummaryContext,
   type AcpLaunchContext,
   type AcpLaunchSpec,
   type ProviderAdapterPluginManifest,

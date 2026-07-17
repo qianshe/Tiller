@@ -3,6 +3,7 @@ import type { FileDiffSummary, SessionResumeInfo } from "@tiller/shared";
 import { materializeDiffPayloads } from "../../runtime/session/diff-payload";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
+import { hydrateSessionCompactionEntries } from "../../sessions/compaction-summary";
 
 function logSessionDebug(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
   if (context.logger) {
@@ -85,7 +86,8 @@ function notifyCurrentSocketCanonicalSnapshot(
     window: "message",
   });
   if (page) {
-    const lastSequence = page.entries.reduce(
+    const entries = hydrateSessionCompactionEntries(sessionId, page.entries, context);
+    const lastSequence = entries.reduce(
       (maximum, entry) =>
         Math.max(maximum, "sequence" in entry ? entry.sequence ?? 0 : 0),
       0,
@@ -98,7 +100,7 @@ function notifyCurrentSocketCanonicalSnapshot(
           replace: true,
           deliverySequence: 0,
           lastSequence,
-          entries: page.entries,
+          entries,
         },
       },
     });
@@ -168,10 +170,11 @@ export async function listTimeline(
   const effectiveLiveState = storedPlan && !liveState?.plan
     ? { ...(liveState ?? {}), plan: storedPlan }
     : liveState;
+  const entries = hydrateSessionCompactionEntries(params.sessionId, page.entries, context);
   return {
     sessionId: params.sessionId,
     before: params.before,
-    entries: page.entries,
+    entries,
     nextCursor: page.nextCursor,
     hasMore: page.hasMore,
     ...(legacyEvidence?.available

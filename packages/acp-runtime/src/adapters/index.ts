@@ -15,7 +15,15 @@ import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
 import { createOpenClawAcpAdapter } from "./openclaw/index";
 import { createOpenCodeAcpAdapter } from "./opencode/index";
-import type { AcpAgentAdapter, AcpCompactionDetailsVisibility, AcpLaunchContext, AcpPromptObservationContext, AcpSessionUpdateProjectionContext, AcpToolEvidenceContext } from "./types";
+import type {
+  AcpAgentAdapter,
+  AcpCompactionDetailsVisibility,
+  AcpCompactionSummaryContext,
+  AcpLaunchContext,
+  AcpPromptObservationContext,
+  AcpSessionUpdateProjectionContext,
+  AcpToolEvidenceContext,
+} from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createOpenCodeAcpAdapter(),
@@ -26,10 +34,16 @@ const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
 ];
 
 export function resolveAcpAgentAdapter(provider: AcpRuntimeProviderConfig) {
-  return ACP_AGENT_ADAPTERS.find((adapter) => adapter.isMatch(provider)) ?? ACP_AGENT_ADAPTERS[ACP_AGENT_ADAPTERS.length - 1]!;
+  return (
+    ACP_AGENT_ADAPTERS.find((adapter) => adapter.isMatch(provider)) ??
+    ACP_AGENT_ADAPTERS[ACP_AGENT_ADAPTERS.length - 1]!
+  );
 }
 
-export function resolveAcpLaunchConfig(provider: AcpRuntimeProviderConfig, context: AcpLaunchContext) {
+export function resolveAcpLaunchConfig(
+  provider: AcpRuntimeProviderConfig,
+  context: AcpLaunchContext,
+) {
   return resolveAcpAgentAdapter(provider).resolveLaunch(provider, context);
 }
 
@@ -38,15 +52,31 @@ export function resolveAdapterCapabilities(
   initializeResult: unknown,
   detected: AgentCapabilities,
 ) {
-  return resolveAcpAgentAdapter(provider).resolveCapabilities(provider, initializeResult, detected);
+  return resolveAcpAgentAdapter(provider).resolveCapabilities(
+    provider,
+    initializeResult,
+    detected,
+  );
 }
 
-export function resolveAdapterCleanupPlan(provider: AcpRuntimeProviderConfig, runtimeSessionId: string) {
-  return resolveAcpAgentAdapter(provider).resolveCleanup({ provider, runtimeSessionId });
+export function resolveAdapterCleanupPlan(
+  provider: AcpRuntimeProviderConfig,
+  runtimeSessionId: string,
+) {
+  return resolveAcpAgentAdapter(provider).resolveCleanup({
+    provider,
+    runtimeSessionId,
+  });
 }
 
-export function resolveAdapterRequestTimeout(provider: AcpRuntimeProviderConfig, method: string) {
-  return resolveAcpAgentAdapter(provider).resolveRequestTimeout?.({ provider, method });
+export function resolveAdapterRequestTimeout(
+  provider: AcpRuntimeProviderConfig,
+  method: string,
+) {
+  return resolveAcpAgentAdapter(provider).resolveRequestTimeout?.({
+    provider,
+    method,
+  });
 }
 
 export function mapAdapterMessageUpdate(
@@ -54,7 +84,7 @@ export function mapAdapterMessageUpdate(
   context: AcpSessionUpdateProjectionContext,
 ) {
   return provider
-    ? resolveAcpAgentAdapter(provider).mapMessageUpdate?.(context) ?? null
+    ? (resolveAcpAgentAdapter(provider).mapMessageUpdate?.(context) ?? null)
     : null;
 }
 
@@ -63,7 +93,7 @@ export function mapAdapterToolCallUpdate(
   context: AcpSessionUpdateProjectionContext,
 ) {
   return provider
-    ? resolveAcpAgentAdapter(provider).mapToolCallUpdate?.(context) ?? null
+    ? (resolveAcpAgentAdapter(provider).mapToolCallUpdate?.(context) ?? null)
     : null;
 }
 
@@ -72,7 +102,7 @@ export function mapAdapterUnknownUpdate(
   context: AcpSessionUpdateProjectionContext,
 ) {
   return provider
-    ? resolveAcpAgentAdapter(provider).mapUnknownUpdate?.(context) ?? null
+    ? (resolveAcpAgentAdapter(provider).mapUnknownUpdate?.(context) ?? null)
     : null;
 }
 
@@ -92,10 +122,12 @@ export function pollAdapterPromptEvents(
   return observations.flatMap((sourceObservation) => {
     const observation = { ...sourceObservation, providerId: provider.id };
     const evidence = adapter.collectToolEvidence?.({ observation }) ?? [];
-    return recognizeToolObservation(observation, evidence).toolCalls.map((toolCall) => ({
-      type: "tool-call" as const,
-      toolCall,
-    }));
+    return recognizeToolObservation(observation, evidence).toolCalls.map(
+      (toolCall) => ({
+        type: "tool-call" as const,
+        toolCall,
+      }),
+    );
   });
 }
 
@@ -114,7 +146,12 @@ export function disposeAdapterSession(
 export function recognizeAdapterToolCalls(
   provider: AcpRuntimeProviderConfig | undefined,
   providerId: string | undefined,
-  context: { toolCall: AgentToolCall; update: unknown; sessionId?: string; cwd?: string },
+  context: {
+    toolCall: AgentToolCall;
+    update: unknown;
+    sessionId?: string;
+    cwd?: string;
+  },
 ): AgentToolCall[] {
   const resolvedProvider = provider ?? inferProviderFromId(providerId);
   const observation = createToolObservation({
@@ -124,7 +161,9 @@ export function recognizeAdapterToolCalls(
     toolCall: context.toolCall,
     update: context.update,
   });
-  const adapter = resolvedProvider ? resolveAcpAgentAdapter(resolvedProvider) : undefined;
+  const adapter = resolvedProvider
+    ? resolveAcpAgentAdapter(resolvedProvider)
+    : undefined;
   const evidence = adapter?.collectToolEvidence?.({ observation }) ?? [];
   return recognizeToolObservation(observation, evidence).toolCalls;
 }
@@ -133,7 +172,12 @@ export function recognizeAdapterToolCalls(
 export function normalizeAdapterToolCall(
   provider: AcpRuntimeProviderConfig | undefined,
   providerId: string | undefined,
-  context: { toolCall: AgentToolCall; update: unknown; sessionId?: string; cwd?: string },
+  context: {
+    toolCall: AgentToolCall;
+    update: unknown;
+    sessionId?: string;
+    cwd?: string;
+  },
 ): AgentToolCall | null {
   return recognizeAdapterToolCalls(provider, providerId, context)[0] ?? null;
 }
@@ -146,7 +190,9 @@ export function summarizeAdapterCompactionSignal(
   if (!provider) {
     return null;
   }
-  return resolveAcpAgentAdapter(provider).summarizeCompactionSignal?.(text) ?? null;
+  return (
+    resolveAcpAgentAdapter(provider).summarizeCompactionSignal?.(text) ?? null
+  );
 }
 
 export function expandAdapterRuntimeEvent(
@@ -167,7 +213,20 @@ export function resolveAdapterCompactionDetailsVisibility(
   if (!provider) {
     return undefined;
   }
-  return resolveAcpAgentAdapter(provider).resolveCompactionDetailsVisibility?.();
+  return resolveAcpAgentAdapter(
+    provider,
+  ).resolveCompactionDetailsVisibility?.();
+}
+
+export function resolveAdapterCompactionSummary(
+  providerId: string | undefined,
+  context: AcpCompactionSummaryContext,
+) {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return undefined;
+  }
+  return resolveAcpAgentAdapter(provider).resolveCompactionSummary?.(context);
 }
 
 export function extractAdapterPlanFromToolCall(
@@ -178,7 +237,9 @@ export function extractAdapterPlanFromToolCall(
   if (!provider) {
     return null;
   }
-  return resolveAcpAgentAdapter(provider).extractPlanFromToolCall?.(toolCall) ?? null;
+  return (
+    resolveAcpAgentAdapter(provider).extractPlanFromToolCall?.(toolCall) ?? null
+  );
 }
 
 export function isAdapterPlanToolCall(
@@ -192,7 +253,9 @@ export function isAdapterPlanToolCall(
   return resolveAcpAgentAdapter(provider).isPlanToolCall?.(toolCall) ?? false;
 }
 
-function inferProviderFromId(providerId: string | undefined): AcpRuntimeProviderConfig | undefined {
+function inferProviderFromId(
+  providerId: string | undefined,
+): AcpRuntimeProviderConfig | undefined {
   const id = providerId?.trim();
   if (!id) {
     return undefined;
@@ -214,4 +277,19 @@ export { createOpenCodeAcpAdapter } from "./opencode/index";
 export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode/index";
 export { resolveAdapterPluginManifest } from "./plugin-loader";
 export { SUPPRESS_SESSION_UPDATE } from "./types";
-export type { AcpAgentAdapter, AcpCleanupContext, AcpCompactionDetailsVisibility, AcpLaunchContext, AcpLaunchSpec, AcpPromptObservationContext, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, AcpToolEvidenceContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";
+export type {
+  AcpAgentAdapter,
+  AcpCleanupContext,
+  AcpCompactionDetailsVisibility,
+  AcpCompactionSummary,
+  AcpCompactionSummaryContext,
+  AcpLaunchContext,
+  AcpLaunchSpec,
+  AcpPromptObservationContext,
+  AcpRequestTimeoutContext,
+  AcpSessionUpdateProjection,
+  AcpSessionUpdateProjectionContext,
+  AcpToolEvidenceContext,
+  ProviderAdapterPluginManifest,
+  ProviderCleanupPlan,
+} from "./types";

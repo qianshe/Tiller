@@ -24,7 +24,13 @@ export type AcpLaunchSpec = {
 };
 
 export type ProviderCleanupPlan =
-  | { kind: "remote-delete"; command: string; args: string[]; providerId: string; runtimeSessionId: string }
+  | {
+      kind: "remote-delete";
+      command: string;
+      args: string[];
+      providerId: string;
+      runtimeSessionId: string;
+    }
   | { kind: "unsupported"; providerId: string; message: string };
 
 export type AcpCleanupContext = {
@@ -54,12 +60,30 @@ export type AcpPromptObservationContext = {
   cwd: string;
 };
 
+export type AcpCompactionSummaryContext = {
+  runtimeSessionId: string;
+  cwd: string;
+  completedAt?: string;
+};
+
+export type AcpCompactionSummary = {
+  summaryText: string;
+  summaryMessageId?: string;
+};
+
 export type AcpCompactionDetailsVisibility = "hidden";
 
-export const SUPPRESS_SESSION_UPDATE = { kind: "suppress-session-update" } as const;
+export const SUPPRESS_SESSION_UPDATE = {
+  kind: "suppress-session-update",
+} as const;
 
-export type AcpSessionUpdateProjection = SessionRuntimeEvent | typeof SUPPRESS_SESSION_UPDATE;
-export type AcpCompactionSignalSummary = { kind: string } & Record<string, unknown>;
+export type AcpSessionUpdateProjection =
+  | SessionRuntimeEvent
+  | typeof SUPPRESS_SESSION_UPDATE;
+export type AcpCompactionSignalSummary = { kind: string } & Record<
+  string,
+  unknown
+>;
 
 export type ProviderAdapterPluginManifest = {
   kind: "provider-adapter-plugin-placeholder";
@@ -70,7 +94,10 @@ export type ProviderAdapterPluginManifest = {
 export type AcpAgentAdapter = {
   id: string;
   isMatch(provider: AcpRuntimeProviderConfig): boolean;
-  resolveLaunch(provider: AcpRuntimeProviderConfig, context: AcpLaunchContext): AcpLaunchSpec;
+  resolveLaunch(
+    provider: AcpRuntimeProviderConfig,
+    context: AcpLaunchContext,
+  ): AcpLaunchSpec;
   resolveCapabilities(
     provider: AcpRuntimeProviderConfig,
     initializeResult: unknown,
@@ -78,16 +105,29 @@ export type AcpAgentAdapter = {
   ): AgentCapabilities;
   resolveCleanup(context: AcpCleanupContext): ProviderCleanupPlan;
   resolveRequestTimeout?(context: AcpRequestTimeoutContext): number | undefined;
-  mapMessageUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
-  mapToolCallUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
-  mapUnknownUpdate?(context: AcpSessionUpdateProjectionContext): AcpSessionUpdateProjection | null;
+  mapMessageUpdate?(
+    context: AcpSessionUpdateProjectionContext,
+  ): AcpSessionUpdateProjection | null;
+  mapToolCallUpdate?(
+    context: AcpSessionUpdateProjectionContext,
+  ): AcpSessionUpdateProjection | null;
+  mapUnknownUpdate?(
+    context: AcpSessionUpdateProjectionContext,
+  ): AcpSessionUpdateProjection | null;
   beginPromptObservation?(context: AcpPromptObservationContext): void;
-  pollPromptToolObservations?(context: AcpPromptObservationContext): ToolObservation[];
+  pollPromptToolObservations?(
+    context: AcpPromptObservationContext,
+  ): ToolObservation[];
   disposeSession?(sessionId: string): void;
   expandRuntimeEvent?(event: SessionRuntimeEvent): SessionRuntimeEvent[] | null;
   collectToolEvidence?(context: AcpToolEvidenceContext): ToolEvidence[];
   summarizeCompactionSignal?(text: string): AcpCompactionSignalSummary | null;
-  resolveCompactionDetailsVisibility?(): AcpCompactionDetailsVisibility | undefined;
+  resolveCompactionSummary?(
+    context: AcpCompactionSummaryContext,
+  ): string | AcpCompactionSummary | undefined;
+  resolveCompactionDetailsVisibility?():
+    | AcpCompactionDetailsVisibility
+    | undefined;
   extractPlanFromToolCall?(toolCall: AgentToolCall): AgentPlan | null;
   isPlanToolCall?(toolCall: AgentToolCall): boolean;
 };

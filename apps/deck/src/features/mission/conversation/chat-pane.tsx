@@ -28,6 +28,7 @@ import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
 import {
+  hasSessionBodyScrollSnapshotChanged,
   pruneSessionCardScrollState,
   resolveSessionBodyStickToBottom,
   resolveSessionConversationDisplayMode,
@@ -404,6 +405,7 @@ export function MissionChatPane({
   const sessionBodyScrollSnapshotRef = useRef<Record<string, SessionBodyScrollSnapshot>>({});
   const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
   const sessionBodyStickToBottomRef = useRef<Record<string, boolean>>({});
+  const sessionBodyInitialScrollRef = useRef<Record<string, boolean>>({});
   useEffect(() => {
     const openSessionIds = openSessions.map((session) => session.id);
     sessionBodyScrollSnapshotRef.current = pruneSessionCardScrollState(
@@ -416,6 +418,10 @@ export function MissionChatPane({
     );
     sessionBodyStickToBottomRef.current = pruneSessionCardScrollState(
       sessionBodyStickToBottomRef.current,
+      openSessionIds,
+    );
+    sessionBodyInitialScrollRef.current = pruneSessionCardScrollState(
+      sessionBodyInitialScrollRef.current,
       openSessionIds,
     );
   }, [openSessions]);
@@ -463,8 +469,18 @@ export function MissionChatPane({
           (current?.contentLength ?? 0) > 0
         ),
       );
+      const forceInitialScroll = Boolean(
+        !sessionBodyInitialScrollRef.current[sessionId] &&
+        !current?.historyLoading &&
+        (
+          (current?.messageCount ?? 0) > 0 ||
+          (current?.toolCallCount ?? 0) > 0 ||
+          (current?.contentLength ?? 0) > 0
+        ),
+      );
       if (!shouldAutoScrollSessionBody({
         stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
+        forceInitialScroll,
         historyLoading: current?.historyLoading,
         historyRevealLocked: isPlainHistoryRevealLocked(body),
         previousHistoryLoading: previous?.historyLoading,
@@ -478,6 +494,9 @@ export function MissionChatPane({
         scrollHeight: body.scrollHeight,
       };
       sessionBodyStickToBottomRef.current[sessionId] = true;
+      if (forceInitialScroll) {
+        sessionBodyInitialScrollRef.current[sessionId] = true;
+      }
     });
   }, [chatMainRef]);
   const draftCard = draftWindow ? (
@@ -556,23 +575,20 @@ export function MissionChatPane({
         toolCalls: sessionToolCalls,
       });
       const previous = previousSnapshot[session.id];
-      nextSnapshot[session.id] = {
+      const current: SessionBodyScrollSnapshot = {
         messageCount: Math.max(messageCount, timelineCount),
         toolCallCount,
         contentLength,
         historyLoading,
       };
+      nextSnapshot[session.id] = current;
       if (!previous) {
         if (messageCount > 0 || timelineCount > 0 || toolCallCount > 0) {
           changedSessionIds.push(session.id);
         }
         return;
       }
-      if (
-        previous.messageCount !== Math.max(messageCount, timelineCount) ||
-        previous.toolCallCount !== toolCallCount ||
-        previous.contentLength !== contentLength
-      ) {
+      if (hasSessionBodyScrollSnapshotChanged(previous, current)) {
         changedSessionIds.push(session.id);
       }
     });

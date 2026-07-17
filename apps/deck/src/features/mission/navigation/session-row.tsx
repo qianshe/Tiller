@@ -60,7 +60,7 @@ export function SessionRow({
     <div
       className={cn(
         "mission-tree-session-row group/session relative grid grid-cols-[minmax(0,1fr)_24px] items-center gap-0.5 overflow-visible rounded-sm text-foreground transition hover:bg-surface-emphasis/60",
-        isHighlighted && "active bg-surface-emphasis/70 text-foreground before:absolute before:left-0 before:top-1 before:bottom-1 before:w-0.5 before:rounded-full before:bg-primary",
+        isHighlighted && "active bg-primary-soft text-foreground before:absolute before:left-0 before:top-0.5 before:bottom-0.5 before:w-1 before:rounded-full before:bg-primary-strong",
         isOpenSession && !isFocused && "bg-surface-emphasis/35 text-foreground",
         sessionPending && "is-running",
       )}

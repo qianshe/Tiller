@@ -11,6 +11,7 @@ import {
   routeCanonicalTimelineEvent,
 } from "./canonical";
 import { flushLiveAssistantMessage } from "./message-stream";
+import { hydrateRuntimeCompactionEventSummary } from "../../../sessions/compaction-summary";
 
 export function hasPendingTimelineCompaction(
   sessionId: string,
@@ -80,12 +81,12 @@ export function inferPendingCompactionCompletion(
     return false;
   }
   assertCanonicalTimelinePipeline(context);
-  const completionEvent = {
+  const completionEvent = hydrateRuntimeCompactionEventSummary(sessionId, {
     type: "compaction",
     phase: "completed",
     source: pending.source,
     timestamp: resolveCompactionCompletionTimestamp(event, pending),
-  } as const;
+  }, context);
   const prepared = prepareRuntimeSessionUpdate(sessionId, completionEvent, context);
   routeCanonicalTimelineEvent(
     sessionId,
@@ -105,13 +106,14 @@ export function handleRuntimeCompactionEvent(
   assertCanonicalTimelinePipeline(context);
   flushLiveAssistantMessage(sessionId, context);
   const shouldStartNewAssistantTurn = !hasPendingTimelineCompaction(sessionId, context);
-  const prepared = prepareRuntimeSessionUpdate(sessionId, event, context);
+  const hydratedEvent = hydrateRuntimeCompactionEventSummary(sessionId, event, context);
+  const prepared = prepareRuntimeSessionUpdate(sessionId, hydratedEvent, context);
   if (shouldStartNewAssistantTurn) {
     startNextAssistantResponseSegment(sessionId);
   }
   routeCanonicalTimelineEvent(
     sessionId,
-    event,
+    hydratedEvent,
     context,
     prepared.resolvedSequence,
     prepared.update,

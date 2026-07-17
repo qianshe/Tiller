@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractCodexVisibleMessagesFromTranscriptText } from "./history.js";
+import {
+  extractCodexCompactionSummaryFromTranscriptText,
+  extractCodexVisibleMessagesFromTranscriptText,
+} from "./history.js";
 
 test("extractCodexVisibleMessagesFromTranscriptText restores visible Codex user and assistant messages", () => {
   const transcript = [
@@ -43,3 +46,37 @@ test("extractCodexVisibleMessagesFromTranscriptText restores visible Codex user 
     ],
   );
 });
+
+test("extractCodexCompactionSummaryFromTranscriptText restores the matching compacted summary", () => {
+  const transcript = [
+    codexCompaction("2026-07-17T13:25:03.338Z", "## First summary\n\nEarlier state"),
+    codexCompaction("2026-07-17T14:25:03.338Z", "## Second summary\n\nLater state"),
+  ].join("\n");
+
+  assert.equal(
+    extractCodexCompactionSummaryFromTranscriptText(transcript, {
+      completedAt: "2026-07-17T13:25:03.348Z",
+    }),
+    "## First summary\n\nEarlier state",
+  );
+  assert.equal(
+    extractCodexCompactionSummaryFromTranscriptText(transcript),
+    "## Second summary\n\nLater state",
+  );
+});
+
+function codexCompaction(timestamp: string, summary: string): string {
+  return JSON.stringify({
+    timestamp,
+    type: "compacted",
+    payload: {
+      message: [
+        "Another language model started to solve this problem and produced a summary of its thinking process.",
+        "Use this to build on the work that has already been done and avoid duplicating work.",
+        "Here is the summary produced by the other language model, use the information in this summary to assist with your own analysis:",
+        summary,
+      ].join("\n"),
+      replacement_history: [],
+    },
+  });
+}

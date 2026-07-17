@@ -98,7 +98,7 @@ export function SidebarProjectNode({
       </div>
       {projectExpanded ? (
         <div
-          className="mission-tree-children mission-tree-children-sessions ml-1 grid gap-1 pl-0"
+          className="mission-tree-children mission-tree-children-sessions ml-3 grid gap-1 border-l border-border-ghost/70 pl-2"
           role="group"
         >
           {projectNodeSessions.length ? (

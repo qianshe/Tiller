@@ -253,15 +253,20 @@ export function PlainMessages({
     }
 
     container.addEventListener("scroll", loadOlderWhenScrolledToTop, { passive: true });
-    if (shouldPrimeOlderHistoryLoad({
-      scrollTop: container.scrollTop,
-      scrollHeight: container.scrollHeight,
-      clientHeight: container.clientHeight,
-      canLoadMore: hasHiddenLoadedItems || Boolean(historyState?.canLoadMore ?? historyState?.hasMore),
-    })) {
-      loadOlderWhenScrolledToTop();
-    }
-    return () => container.removeEventListener("scroll", loadOlderWhenScrolledToTop);
+    const primeFrame = window.requestAnimationFrame(() => {
+      if (shouldPrimeOlderHistoryLoad({
+        scrollTop: container.scrollTop,
+        scrollHeight: container.scrollHeight,
+        clientHeight: container.clientHeight,
+        canLoadMore: hasHiddenLoadedItems || Boolean(historyState?.canLoadMore ?? historyState?.hasMore),
+      })) {
+        loadOlderWhenScrolledToTop();
+      }
+    });
+    return () => {
+      window.cancelAnimationFrame(primeFrame);
+      container.removeEventListener("scroll", loadOlderWhenScrolledToTop);
+    };
   }, [displayItems.length, hasHiddenLoadedItems, historyState?.canLoadMore, historyState?.hasMore, historyState?.loading, onLoadOlderMessages, visibleRenderSignature]);
 
   useLayoutEffect(() => {
