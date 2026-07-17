@@ -4,6 +4,7 @@ import {
   type AgentToolCall,
 } from "@tiller/shared";
 import {
+  inferClaudeTranscriptToolKind,
   readClaudeTranscriptToolUseFromDisk,
   type ClaudeTranscriptToolCallOptions,
   type ClaudeTranscriptToolUse,
@@ -77,31 +78,44 @@ export function createClaudeToolCallNormalizer(
       projectionsBySession.set(sessionId, sessionProjections);
       const projections = sessionProjections.byToolCallId;
       let recoveredTranscriptDetails = false;
-      if (
-        cwd &&
-        normalized.kind === "shell" &&
-        isGenericSubagentTitle(normalized.title)
-      ) {
+      if (cwd && shouldRecoverClaudeTranscriptDetails(normalized)) {
         const transcriptToolUse = readTranscriptToolUse({
           runtimeSessionId: sessionId,
           cwd,
           toolCallId: toolCall.id,
         });
         const transcriptInput = objectFromUnknown(transcriptToolUse?.input);
-        const command = commandValueToString(
-          transcriptInput?.command ??
-            transcriptInput?.cmd ??
-            transcriptInput?.script ??
-            transcriptInput?.shell ??
-            transcriptInput?.args,
-        )?.trim();
-        if (command) {
+        const transcriptKind = transcriptToolUse
+          ? inferClaudeTranscriptToolKind(transcriptToolUse.name)
+          : undefined;
+        if (transcriptToolUse && transcriptKind === "search") {
           recoveredTranscriptDetails = true;
           normalized = {
             ...normalized,
-            title: command,
-            input: JSON.stringify(transcriptInput),
+            kind: "search",
+            title: isClaudeInputStreaming(normalized.status)
+              ? "Search"
+              : transcriptToolUse.name,
+            ...(transcriptInput
+              ? { input: JSON.stringify(transcriptInput) }
+              : {}),
           };
+        } else {
+          const command = commandValueToString(
+            transcriptInput?.command ??
+              transcriptInput?.cmd ??
+              transcriptInput?.script ??
+              transcriptInput?.shell ??
+              transcriptInput?.args,
+          )?.trim();
+          if (command) {
+            recoveredTranscriptDetails = true;
+            normalized = {
+              ...normalized,
+              title: isClaudeInputStreaming(normalized.status) ? "Shell" : command,
+              input: JSON.stringify(transcriptInput),
+            };
+          }
         }
       }
       if (weakPlaceholder && !recoveredTranscriptDetails) {
@@ -119,7 +133,11 @@ export function createClaudeToolCallNormalizer(
           ...normalized,
           id: previous.id,
           kind: previous.kind,
-          title: previous.title,
+          title: normalized.kind === "shell"
+            ? resolveClaudeShellProjectionTitle(previous.title, normalized)
+            : normalized.kind === "search"
+              ? resolveClaudeSearchProjectionTitle(previous.title, normalized)
+              : previous.title,
           input: normalized.input ?? previous.input,
         };
       }
@@ -379,15 +397,80 @@ function normalizeClaudeShellSearchToolCall({
     shellCommand &&
     !structuredSearchPayload
   ) {
-    return { ...toolCall, kind: "shell" as const, title: shellCommand };
+    return {
+      ...toolCall,
+      kind: "shell" as const,
+      title: isClaudeInputStreaming(toolCall.status) ? "Shell" : shellCommand,
+    };
   }
   if (toolCall.kind === "shell" && structuredSearchPayload) {
-    return { ...toolCall, kind: "search" as const };
+    return {
+      ...toolCall,
+      kind: "search" as const,
+      ...(isClaudeInputStreaming(toolCall.status) ? { title: "Search" } : {}),
+    };
+  }
+  if (
+    toolCall.kind === "search" &&
+    structuredSearchPayload &&
+    isClaudeInputStreaming(toolCall.status)
+  ) {
+    return { ...toolCall, title: "Search" };
   }
   if (toolCall.kind === "shell" && shellCommand) {
-    return { ...toolCall, title: shellCommand };
+    return {
+      ...toolCall,
+      title: isClaudeInputStreaming(toolCall.status) ? "Shell" : shellCommand,
+    };
   }
   return null;
+}
+
+function resolveClaudeShellProjectionTitle(
+  previousTitle: string,
+  normalized: AgentToolCall,
+) {
+  if (
+    isClaudeInputStreaming(normalized.status) ||
+    isGenericClaudeShellTitle(normalized.title)
+  ) {
+    return previousTitle;
+  }
+  return normalized.title;
+}
+
+function resolveClaudeSearchProjectionTitle(
+  previousTitle: string,
+  normalized: AgentToolCall,
+) {
+  if (
+    isClaudeInputStreaming(normalized.status) ||
+    isGenericClaudeSearchTitle(normalized.title)
+  ) {
+    return previousTitle;
+  }
+  return normalized.title;
+}
+
+function isClaudeInputStreaming(status: AgentToolCall["status"]) {
+  return status === "pending" || status === "running";
+}
+
+function isGenericClaudeShellTitle(title: string) {
+  return /^(?:Bash|Shell|Tool call\b)/iu.test(title.trim());
+}
+
+function isGenericClaudeSearchTitle(title: string) {
+  return /^(?:Search|Tool call\b)/iu.test(title.trim());
+}
+
+function shouldRecoverClaudeTranscriptDetails(toolCall: AgentToolCall) {
+  return (
+    toolCall.kind === "shell" && isGenericClaudeShellTitle(toolCall.title)
+  ) || (
+    (toolCall.kind === "search" || toolCall.kind === "shell") &&
+    isGenericClaudeSearchTitle(toolCall.title)
+  );
 }
 
 function isSubagentPayload(toolCall: AgentToolCall, update: any): boolean {

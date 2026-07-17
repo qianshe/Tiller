@@ -240,7 +240,7 @@ function readFileTail(path: string, byteLimit: number) {
   }
 }
 
-function inferClaudeTranscriptToolKind(name: string): AgentToolCall["kind"] {
+export function inferClaudeTranscriptToolKind(name: string): AgentToolCall["kind"] {
   const normalized = name.trim().toLowerCase();
   if (normalized === "read") return "read";
   if (

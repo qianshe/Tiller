@@ -1,8 +1,14 @@
-import type { AgentMessage, AgentToolCall, CommandChunk } from "@tiller/shared";
+import {
+  resolveMergedAgentToolCallKind,
+  type AgentMessage,
+  type AgentToolCall,
+  type CommandChunk,
+} from "@tiller/shared";
 
 import { coalesceDisplayMessages } from "./message-history";
 import {
   resolveDisplayToolTitle,
+  resolveDisplayToolKind,
   resolveMergedToolTitle,
 } from "./tool-title";
 
@@ -30,6 +36,7 @@ export type ConversationToolCallItem = {
   title: string;
   status: AgentToolCall["status"];
   toolKind: AgentToolCall["kind"];
+  subagentOperation?: AgentToolCall["subagentOperation"];
   timestamp: string;
   sequence?: number;
   text: string;
@@ -87,6 +94,10 @@ export function groupToolCalls(
 ): ConversationToolCallItem[] {
   const groups = new Map<string, ConversationToolCallItem>();
   for (const call of calls) {
+    const displayKind = resolveDisplayToolKind(call);
+    const displayCall = displayKind === call.kind
+      ? call
+      : { ...call, kind: displayKind };
     const key = call.commandId ?? call.id;
     const current = groups.get(key);
     if (!current) {
@@ -94,9 +105,10 @@ export function groupToolCalls(
         kind: "tool",
         id: call.id,
         commandId: key,
-        title: resolveDisplayToolTitle(call, key),
+        title: resolveDisplayToolTitle(displayCall, key),
         status: call.status,
-        toolKind: call.kind,
+        toolKind: displayKind,
+        subagentOperation: call.subagentOperation,
         timestamp: call.timestamp,
         sequence: call.sequence,
         text: call.output ?? "",
@@ -110,10 +122,11 @@ export function groupToolCalls(
     current.input = current.input || call.input || "";
     current.sequence = firstTimelineSequence(current.sequence, call.sequence);
     current.status = call.status;
-    if (call.kind === current.toolKind) {
+    current.subagentOperation = call.subagentOperation ?? current.subagentOperation;
+    if (displayKind === current.toolKind) {
       current.title = resolveMergedToolTitle(
         current.title,
-        resolveDisplayToolTitle(call, key),
+        resolveDisplayToolTitle(displayCall, key),
         call.id,
       );
     }
@@ -159,7 +172,7 @@ export function mergeToolCallHistory(
     merged[index] = {
       ...existing,
       ...next,
-      kind: existing.kind,
+      kind: resolveMergedAgentToolCallKind(existing, next),
       title: resolveMergedToolTitle(existing.title, next.title, next.id),
       output: mergeToolCallHistoryOutput(existing, next),
       input: next.input ?? existing.input,

@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentToolCall } from "@tiller/shared";
 import { groupToolCalls } from "./timeline.js";
 import { resolveToolCallTone } from "./tool-call-tone.js";
 
@@ -180,6 +179,164 @@ test("groupToolCalls preserves long shell commands for the row tooltip", () => {
   assert.equal(grouped[0]?.title, command);
 });
 
+test("groupToolCalls prefers the parsed Codex command over the PowerShell wrapper", () => {
+  const command = "$target = Get-ChildItem -LiteralPath 'apps\\helm\\src' -Recurse -File -Filter '*.ts' | Select-Object -First 1 -ExpandProperty FullName; Write-Output \"FOUND=$target\"; Get-Content -LiteralPath $target -TotalCount 5";
+  const grouped = groupToolCalls([
+    {
+      id: "call-codex-pwsh-wrapper",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({
+        command: [
+          "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.3.0_x64__8wekyb3d8bbwe\\pwsh.exe",
+          "-Command",
+          command,
+        ],
+        parsed_cmd: [{ type: "unknown", cmd: command }],
+      }),
+      timestamp: "2026-07-17T11:53:02.385Z",
+      updatedAt: "2026-07-17T11:53:04.635Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "shell");
+  assert.equal(grouped[0]?.title, command);
+});
+
+test("groupToolCalls presents Codex apply_patch shell commands as file writes", () => {
+  const command = "$patch = \"*** Begin Patch`n*** Update File: .codex-native-edit-test.txt`n@@`n-phase=create`n+phase=edited`n*** End Patch\"; & 'F:\\devData\\codex-acp.exe' --codex-run-as-apply-patch $patch";
+  const grouped = groupToolCalls([
+    {
+      id: "call-codex-apply-patch",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({
+        command: [
+          "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.3.0_x64__8wekyb3d8bbwe\\pwsh.exe",
+          "-Command",
+          command,
+        ],
+        parsed_cmd: [{ type: "unknown", cmd: command }],
+      }),
+      timestamp: "2026-07-17T12:04:39.728Z",
+      updatedAt: "2026-07-17T12:04:40.822Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "write");
+  assert.equal(grouped[0]?.title, ".codex-native-edit-test.txt");
+});
+
+test("groupToolCalls recognizes direct apply_patch add and delete commands", () => {
+  const commands = [
+    {
+      id: "call-direct-apply-patch-add",
+      command: "@'\n*** Begin Patch\n*** Add File: docs/new-note.md\n+hello\n*** End Patch\n'@ | apply_patch",
+      path: "docs/new-note.md",
+    },
+    {
+      id: "call-direct-apply-patch-delete",
+      command: "$patch = \"*** Begin Patch`n*** Delete File: docs/old-note.md`n*** End Patch\"; apply_patch $patch",
+      path: "docs/old-note.md",
+    },
+  ];
+
+  for (const item of commands) {
+    const grouped = groupToolCalls([
+      {
+        id: item.id,
+        kind: "shell",
+        title: "Shell",
+        status: "completed",
+        input: JSON.stringify({
+          command: ["pwsh.exe", "-Command", item.command],
+          parsed_cmd: [{ type: "unknown", cmd: item.command }],
+        }),
+        timestamp: "2026-07-17T12:05:00.000Z",
+        updatedAt: "2026-07-17T12:05:01.000Z",
+      },
+    ]);
+
+    assert.equal(grouped[0]?.toolKind, "write");
+    assert.equal(grouped[0]?.title, item.path);
+  }
+});
+
+test("groupToolCalls repairs persisted Claude search calls classified as shell", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-native-grep",
+      kind: "shell",
+      title: "Search",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "toolTitle|tool-title",
+        path: "apps/deck/src/features/logbook",
+        glob: "**/*.ts",
+      }),
+      timestamp: "2026-07-17T00:00:00.000Z",
+      updatedAt: "2026-07-17T00:00:01.000Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "search");
+  assert.equal(grouped[0]?.title, "Grep: toolTitle|tool-title");
+});
+
+test("groupToolCalls never renders structured JSON as a shell command", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-without-command",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({ path: "D:/repo", output_mode: "files" }),
+      timestamp: "2026-07-17T00:00:00.000Z",
+      updatedAt: "2026-07-17T00:00:01.000Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Shell");
+});
+
+test("groupToolCalls does not render partial structured input as a changing running title", () => {
+  const running = groupToolCalls([
+    {
+      id: "call-running-shell",
+      kind: "shell",
+      title: "Shell",
+      status: "running",
+      input: JSON.stringify({ command: "pnpm --filter @tiller/de" }),
+      timestamp: "2026-07-14T00:00:00.000Z",
+      updatedAt: "2026-07-14T00:00:01.000Z",
+    },
+    {
+      id: "call-running-search",
+      kind: "search",
+      title: "Search",
+      status: "running",
+      input: JSON.stringify({ pattern: "normalizeOpenCode" }),
+      timestamp: "2026-07-14T00:00:02.000Z",
+      updatedAt: "2026-07-14T00:00:03.000Z",
+    },
+    {
+      id: "call-running-read",
+      kind: "read",
+      title: "Read",
+      status: "running",
+      input: JSON.stringify({ filePath: "packages/acp-runtime/src/even" }),
+      timestamp: "2026-07-14T00:00:04.000Z",
+      updatedAt: "2026-07-14T00:00:05.000Z",
+    },
+  ]);
+
+  assert.equal(running[0]?.title, "Shell");
+  assert.equal(running[1]?.title, "Search");
+  assert.equal(running[2]?.title, "Read");
+});
+
 
 test("groupToolCalls uses structured file paths for read and write titles", () => {
   const grouped = groupToolCalls([
@@ -232,6 +389,41 @@ test("groupToolCalls summarizes search tools from structured query inputs", () =
 
   assert.equal(grouped[0]?.title, "Grep: 航行日志");
   assert.equal(grouped[1]?.title, "Glob: apps/deck/**/*.tsx");
+});
+
+test("groupToolCalls restores Grep and Glob prefixes from generic Search titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-generic-grep",
+      kind: "search",
+      title: "Search",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "toolTitle|tool-title",
+        output_mode: "content",
+      }),
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+    {
+      id: "call-generic-glob",
+      kind: "search",
+      title: "Search",
+      status: "completed",
+      input: JSON.stringify({
+        path: "D:/repo",
+        pattern: "apps/deck/src/features/logbook/tool-title*",
+      }),
+      timestamp: "2026-04-30T13:22:47.627Z",
+      updatedAt: "2026-04-30T13:22:47.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Grep: toolTitle|tool-title");
+  assert.equal(
+    grouped[1]?.title,
+    "Glob: apps/deck/src/features/logbook/tool-title*",
+  );
 });
 
 test("groupToolCalls uses structured file paths for diagnostics titles", () => {

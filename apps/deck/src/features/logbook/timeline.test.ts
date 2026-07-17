@@ -469,7 +469,7 @@ test("mergeToolCallHistory preserves strong metadata when sparse updates arrive"
   assert.equal(grouped[0]?.title, "Search: composer");
 });
 
-test("mergeToolCallHistory preserves the first server-assigned kind for structured Grep payloads", () => {
+test("mergeToolCallHistory repairs an early shell classification for structured Grep payloads", () => {
   const current: AgentToolCall[] = [
     {
       id: "toolu_01Grep",
@@ -497,7 +497,7 @@ test("mergeToolCallHistory preserves the first server-assigned kind for structur
 
   const merged = mergeToolCallHistory(current, incoming);
 
-  assert.equal(merged[0]?.kind, "shell");
+  assert.equal(merged[0]?.kind, "search");
   assert.equal(merged[0]?.title, "Grep");
 });
 

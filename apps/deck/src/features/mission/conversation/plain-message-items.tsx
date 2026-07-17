@@ -15,6 +15,7 @@ import {
 } from "./plain-tool-model";
 import { splitStreamingMarkdown } from "./streaming-markdown";
 import { resolveToolCallChangeStats } from "./tool-call-change-stats";
+import { resolveCodexSubagentPresentation } from "./codex-subagent-presentation";
 
 const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
@@ -752,7 +753,7 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
         </summary>
         <div
           ref={contentRef}
-          className="plain-tool-group-content flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground"
+          className="plain-tool-group-content flex max-h-36 min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground [&::-webkit-scrollbar-button]:hidden"
           data-mission-swipe-lock="true"
         >
           {group.map((item) => (
@@ -774,15 +775,17 @@ export function PlainSubagentItem({
   item: ConversationToolCallItem;
   hasNewerContent?: boolean;
 }) {
+  const codexPresentation = resolveCodexSubagentPresentation(item);
   const isRunning = isActiveToolStatus(item.status);
   const shouldAutoOpen = isRunning && !hasNewerContent;
   const [open, setOpen] = useState(shouldAutoOpen);
-  const text = resolveSubagentOutput(item.text) ||
+  const text = codexPresentation?.text ||
+    resolveSubagentOutput(item.text) ||
     formatToolInputPreview(item.input) ||
     "暂无 Subagent 内容";
-  const summary = resolveSubagentSummary(item);
-  const label = resolveSubagentLabel(item);
-  const statusBadge = resolveSubagentStatusBadge(item);
+  const summary = codexPresentation?.summary ?? resolveSubagentSummary(item);
+  const label = codexPresentation?.label ?? resolveSubagentLabel(item);
+  const statusBadge = codexPresentation?.statusBadge ?? resolveSubagentStatusBadge(item);
 
   useEffect(() => {
     setOpen(shouldAutoOpen);
@@ -877,6 +880,12 @@ function resolveSubagentStatusBadge(item: ConversationToolCallItem) {
     return {
       className: "bg-surface-sunken text-muted-foreground",
       label: "已取消",
+    };
+  }
+  if (item.status === "completed") {
+    return {
+      className: "bg-success/10 text-success",
+      label: "已完成",
     };
   }
   if (isActiveToolStatus(item.status)) {

@@ -25,6 +25,7 @@ export function evidenceFromProjectedToolCall(args: {
     input: projected.input,
     output: projected.output,
     stream: projected.stream,
+    subagentOperation: projected.subagentOperation,
   };
   if (projected.kind === "subagent" && args.subagentAction) {
     const identity = collectSubagentIdentity(args.observation, projected);

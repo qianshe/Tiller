@@ -18,6 +18,7 @@ export function projectRecognizedToolCall(
     if (item.input !== undefined) projected.input = item.input;
     if (item.output !== undefined) projected.output = item.output;
     if (item.stream) projected.stream = item.stream;
+    if (item.subagentOperation) projected.subagentOperation = item.subagentOperation;
   }
   return projected;
 }

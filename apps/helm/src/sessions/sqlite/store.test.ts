@@ -416,7 +416,7 @@ test("sqlite artifact store preserves strong tool metadata when sparse updates a
   }
 });
 
-test("sqlite artifact store keeps the first mapped classification while accepting later details", () => {
+test("sqlite artifact store repairs shell placeholders with structured search details", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-search-repair-"));
   try {
     const dbPath = join(tempRoot, "sessions.sqlite");
@@ -444,7 +444,7 @@ test("sqlite artifact store keeps the first mapped classification while acceptin
       );
 
       const [toolCall] = store.get("session-1").toolCalls;
-      assert.equal(toolCall?.kind, "shell");
+      assert.equal(toolCall?.kind, "search");
       assert.equal(toolCall?.title, "Grep");
     } finally {
       store.close();

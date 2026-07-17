@@ -2,6 +2,7 @@ import {
   compactBinaryToolCallOutput,
   collapseRepeatedStreamingText,
   mergeStreamingText,
+  resolveMergedAgentToolCallKind,
   type AgentMessage,
   type AgentToolCall,
   type AgentToolCallKind,
@@ -44,9 +45,7 @@ export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): 
   return compactBinaryToolCallOutput({
     ...current,
     ...incoming,
-    // Live ACP mapper classification is immutable; this merge only updates
-    // payload/status for an already identified entity.
-    kind: current.kind,
+    kind: resolveMergedAgentToolCallKind(current, incoming),
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
     mcp: incoming.mcp ?? current.mcp,
     output: mergeToolCallOutput(current.output, incoming.output),

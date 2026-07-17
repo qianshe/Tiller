@@ -5,6 +5,7 @@ import type {
 } from "./session-transcript";
 import { isTranscriptEventEntry } from "./session-transcript";
 import { isAssistantSnapshotContinuation, mergeStreamingText } from "./stream-text";
+import { resolveMergedAgentToolCallKind } from "./utils/tool-call-classification";
 
 export type SessionTimelineContentChunk = {
   id: string;
@@ -623,9 +624,10 @@ function mergeToolCallEntry(
       ...current.toolCall,
       ...incoming.toolCall,
       id: current.toolCall.id,
-      // The ACP mapper classifies a ToolCall once. Timeline updates may enrich
-      // its body/status but cannot reinterpret the original category.
-      kind: current.toolCall.kind,
+      kind: resolveMergedAgentToolCallKind(
+        current.toolCall,
+        incoming.toolCall,
+      ),
       title: resolveMergedToolCallTitle(current.toolCall, incoming.toolCall),
       status: resolveMergedToolCallStatus(current.toolCall, incoming.toolCall),
       input: incoming.toolCall.input ?? current.toolCall.input,

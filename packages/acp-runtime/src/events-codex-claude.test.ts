@@ -525,7 +525,7 @@ test("mapSessionUpdateNotification classifies wrapped Codex web calls as fetch",
           sessionUpdate: "tool_call",
           toolCallId: "call-codex-web-wrapped",
           title: "call-codex-web-wrapped",
-          status: "in_progress",
+          status: "completed",
           rawInput: {
             namespace: "web",
             name: "run",

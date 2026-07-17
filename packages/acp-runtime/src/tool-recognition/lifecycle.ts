@@ -23,6 +23,9 @@ export function createToolLifecycleCorrelator() {
       evidence: ToolEvidence[],
     ): AgentToolCall[] {
       const semantic = strongestSubagentEvidence(evidence);
+      if (toolCall.subagentOperation) {
+        return [toolCall];
+      }
       if (toolCall.kind !== "subagent" || !semantic?.subagent || !observation.sessionId) {
         return [toolCall];
       }

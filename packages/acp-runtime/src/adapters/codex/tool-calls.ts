@@ -28,10 +28,21 @@ const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
     normalize: ({ toolCall, input, descriptor }) => {
       const toolName = descriptor?.name ?? extractCodexMultiAgentToolName(input);
       const identity = resolveCodexSubagentIdentity(input);
+      const operation = resolveCodexSubagentOperation(toolName, input, toolCall.id);
       return {
         ...toolCall,
         kind: "subagent" as const,
-        ...(identity && isCodexSubagentLifecycleTool(toolName)
+        ...(operation
+          ? {
+              commandId: toolCall.id,
+              subagentOperation: operation,
+              ...(identity
+                ? { title: `Subagent: ${identity}` }
+                : isOpaqueCodexToolTitle(toolCall.title) && toolName
+                  ? { title: toolName }
+                  : {}),
+            }
+          : identity && isCodexSubagentLifecycleTool(toolName)
           ? {
               commandId: `subagent:${identity}`,
               title: `Subagent: ${identity}`,
@@ -39,9 +50,6 @@ const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
           : isOpaqueCodexToolTitle(toolCall.title) && toolName
             ? { title: toolName }
             : {}),
-        ...(toolName === "spawn_agent" && toolCall.status === "completed"
-          ? { status: "running" as const }
-          : {}),
       };
     },
   },
@@ -79,13 +87,21 @@ const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
       ...toolCall,
       kind: "fetch" as const,
       ...(descriptor && isGenericCodexWebTitle(toolCall.title)
-        ? { title: resolveCodexWebToolTitle(descriptor) }
+        ? {
+            title: isCodexInputStreaming(toolCall.status)
+              ? "Searching the Web"
+              : resolveCodexWebToolTitle(descriptor),
+          }
         : {}),
     }),
   },
   {
     match: ({ input }) => looksLikeCodexShellPayload(input),
-    normalize: ({ toolCall }) => ({ ...toolCall, kind: "shell" as const }),
+    normalize: ({ toolCall }) => ({
+      ...toolCall,
+      kind: "shell" as const,
+      ...(isCodexInputStreaming(toolCall.status) ? { title: "Shell" } : {}),
+    }),
   },
 ];
 
@@ -115,6 +131,10 @@ function resolveCodexWebToolTitle(descriptor: CodexToolDescriptor) {
     descriptor.arguments?.searchQuery,
   );
   return query ? `Searching for: ${query}` : "Searching the Web";
+}
+
+function isCodexInputStreaming(status: AgentToolCall["status"]) {
+  return status === "pending" || status === "running";
 }
 
 function looksLikeCodexSubagentToolCall(
@@ -311,6 +331,47 @@ function resolveCodexSubagentIdentity(input: Record<string, unknown> | null) {
   return Array.isArray(normalized.targets)
     ? firstString(...normalized.targets)
     : undefined;
+}
+
+function resolveCodexSubagentOperation(
+  toolName: string | undefined,
+  input: Record<string, unknown> | null,
+  toolCallId: string,
+): AgentToolCall["subagentOperation"] | undefined {
+  if (toolName !== "spawn_agent" && toolName !== "wait_agent" && toolName !== "close_agent") {
+    return undefined;
+  }
+  const normalized = mergeCodexToolArguments(input);
+  const action = toolName === "spawn_agent"
+    ? "spawn"
+    : toolName === "wait_agent"
+      ? "wait"
+      : "close";
+  if (action === "spawn") {
+    const label = firstString(
+      normalized?.task_name,
+      normalized?.taskName,
+      normalized?.agent_name,
+      normalized?.agentName,
+      normalized?.nickname,
+    );
+    const id = firstString(normalized?.agent_id, normalized?.agentId, label) ?? toolCallId;
+    return {
+      action,
+      targets: [{ id, ...(label ? { label } : {}) }],
+    };
+  }
+  const targets = [
+    firstString(normalized?.target, normalized?.agent_id, normalized?.agentId),
+    ...(Array.isArray(normalized?.targets)
+      ? normalized.targets.map((target) => firstString(target))
+      : []),
+  ].filter((target): target is string => Boolean(target));
+  const uniqueTargets = [...new Set(targets)];
+  return {
+    action,
+    targets: uniqueTargets.map((id) => ({ id, label: id })),
+  };
 }
 
 function isOpaqueCodexToolTitle(title: string) {

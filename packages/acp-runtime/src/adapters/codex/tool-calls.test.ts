@@ -59,8 +59,53 @@ test("normalizeCodexToolCall classifies wrapped multi-agent payloads from update
 
   assert.equal(normalized.kind, "subagent");
   assert.equal(normalized.title, "spawn_agent");
-  assert.equal(normalized.commandId, undefined);
+  assert.equal(normalized.commandId, "call_codextest");
   assert.equal(normalized.status, "running");
+  assert.deepEqual(normalized.subagentOperation, {
+    action: "spawn",
+    targets: [{ id: "call_codextest" }],
+  });
+});
+
+test("normalizeCodexToolCall waits for a complete web query before using it as the title", () => {
+  const running = normalizeCodexToolCall(
+    baseToolCall({ title: "web.run" }),
+    {
+      rawInput: {
+        namespace: "web",
+        name: "run",
+        arguments: { query: "latest TypeScr" },
+      },
+    },
+  );
+  const completed = normalizeCodexToolCall(
+    baseToolCall({ title: "web.run", status: "completed" }),
+    {
+      rawInput: {
+        namespace: "web",
+        name: "run",
+        arguments: { query: "latest TypeScript release" },
+      },
+    },
+  );
+
+  assert.equal(running.kind, "fetch");
+  assert.equal(running.title, "Searching the Web");
+  assert.equal(completed.title, "Searching for: latest TypeScript release");
+});
+
+test("normalizeCodexToolCall keeps a streaming shell command out of the title", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall(),
+    {
+      rawInput: {
+        command: "pnpm --filter @tiller/de",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "shell");
+  assert.equal(normalized.title, "Shell");
 });
 
 test("normalizeCodexToolCall prioritizes Codex skill commands over an incidental MCP descriptor", () => {
@@ -146,11 +191,15 @@ test("normalizeCodexToolCall classifies completed multi-agent payloads from outp
 
   assert.equal(normalized.kind, "subagent");
   assert.equal(normalized.title, "Subagent: inspect_tools");
-  assert.equal(normalized.commandId, "subagent:inspect_tools");
-  assert.equal(normalized.status, "running");
+  assert.equal(normalized.commandId, normalized.id);
+  assert.equal(normalized.status, "completed");
+  assert.deepEqual(normalized.subagentOperation, {
+    action: "spawn",
+    targets: [{ id: "inspect_tools", label: "inspect_tools" }],
+  });
 });
 
-test("normalizeCodexToolCall keeps a spawned agent running under a stable task identity", () => {
+test("normalizeCodexToolCall keeps a completed spawn as a completed operation", () => {
   const normalized = normalizeCodexToolCall(
     baseToolCall({
       title: "Tool call call_spawn…",
@@ -166,11 +215,15 @@ test("normalizeCodexToolCall keeps a spawned agent running under a stable task i
 
   assert.equal(normalized.kind, "subagent");
   assert.equal(normalized.title, "Subagent: Cicero");
-  assert.equal(normalized.commandId, "subagent:Cicero");
-  assert.equal(normalized.status, "running");
+  assert.equal(normalized.commandId, normalized.id);
+  assert.equal(normalized.status, "completed");
+  assert.deepEqual(normalized.subagentOperation, {
+    action: "spawn",
+    targets: [{ id: "Cicero", label: "Cicero" }],
+  });
 });
 
-test("normalizeCodexToolCall joins wait_agent completion to its spawned agent", () => {
+test("normalizeCodexToolCall keeps wait_agent as an independent operation", () => {
   const normalized = normalizeCodexToolCall(
     baseToolCall({
       title: "Tool call call_wait…",
@@ -186,6 +239,34 @@ test("normalizeCodexToolCall joins wait_agent completion to its spawned agent", 
 
   assert.equal(normalized.kind, "subagent");
   assert.equal(normalized.title, "Subagent: Cicero");
-  assert.equal(normalized.commandId, "subagent:Cicero");
+  assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
+  assert.deepEqual(normalized.subagentOperation, {
+    action: "wait",
+    targets: [{ id: "Cicero", label: "Cicero" }],
+  });
+});
+
+test("normalizeCodexToolCall keeps close_agent completion distinct from cancellation", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      title: "Tool call call_close…",
+      status: "completed",
+      output: JSON.stringify({
+        namespace: "multi_agent_v1",
+        name: "close_agent",
+        arguments: { target: "Cicero" },
+        previous_status: { completed: "done" },
+      }),
+    }),
+    {},
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.commandId, normalized.id);
+  assert.equal(normalized.status, "completed");
+  assert.deepEqual(normalized.subagentOperation, {
+    action: "close",
+    targets: [{ id: "Cicero", label: "Cicero" }],
+  });
 });

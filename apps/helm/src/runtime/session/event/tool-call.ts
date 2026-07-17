@@ -1,5 +1,9 @@
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import { compactBinaryToolCallOutput, type AgentToolCall } from "@tiller/shared";
+import {
+  compactBinaryToolCallOutput,
+  resolveMergedAgentToolCallKind,
+  type AgentToolCall,
+} from "@tiller/shared";
 import type { HelmHandlerContext } from "../../../handlers/context";
 import { emitFirstHelmPromptTrace } from "../../prompt-trace";
 import {
@@ -209,7 +213,7 @@ function mergeBufferedToolCallSnapshot(
   return compactBinaryToolCallOutput({
     ...current,
     ...incoming,
-    kind: current.kind,
+    kind: resolveMergedAgentToolCallKind(current, incoming),
     title: resolveBufferedToolCallTitle(current, incoming),
     mcp: incoming.mcp ?? current.mcp,
     input: incoming.input ?? current.input,
@@ -329,9 +333,21 @@ function stabilizeRuntimeToolCallClassification(
   ) ?? new Map<string, StableToolCallClassification>();
   state.set(sessionId, RUNTIME_EVENT_STATE_KEY.toolCallClassifications, classifications);
   const current = classifications.get(toolCall.id);
-  if (!current || (isWeakToolCallKind(current.kind) && !isWeakToolCallKind(toolCall.kind))) {
+  const shouldUpgradeWeakKind = Boolean(
+    current &&
+    isWeakToolCallKind(current.kind) &&
+    !isWeakToolCallKind(toolCall.kind),
+  );
+  const resolvedKind = !current || shouldUpgradeWeakKind
+    ? toolCall.kind
+    : resolveMergedAgentToolCallKind(current, toolCall);
+  if (
+    !current ||
+    resolvedKind !== current.kind ||
+    shouldUpgradeWeakKind
+  ) {
     classifications.set(toolCall.id, {
-      kind: toolCall.kind,
+      kind: resolvedKind,
       ...(toolCall.mcp ? { mcp: toolCall.mcp } : {}),
       ...(toolCall.kind === "mcp" ? { title: toolCall.title } : {}),
     });
@@ -342,7 +358,9 @@ function stabilizeRuntimeToolCallClassification(
       }
       classifications.delete(oldestId);
     }
-    return toolCall;
+    return resolvedKind === toolCall.kind
+      ? toolCall
+      : { ...toolCall, kind: resolvedKind };
   }
   return {
     ...toolCall,

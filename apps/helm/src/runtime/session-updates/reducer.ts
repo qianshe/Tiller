@@ -13,6 +13,7 @@ import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
   compactBinaryToolCallOutput,
+  resolveMergedAgentToolCallKind,
   shouldStartNewAssistantOccurrenceAfterBoundary,
 } from "@tiller/shared";
 import {
@@ -371,9 +372,7 @@ function upsertToolCall(
     ...current,
     ...incoming,
     status: resolveToolCallStatus(current.status, incoming.status),
-    // ACP mapper owns ToolCall classification. Once an entity exists, later
-    // snapshots may enrich its status/body but must never reinterpret its kind.
-    kind: current.kind,
+    kind: resolveMergedAgentToolCallKind(current, incoming),
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
     id: current.id,
     timestamp: current.timestamp,

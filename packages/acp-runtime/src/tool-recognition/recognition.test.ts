@@ -28,6 +28,7 @@ function subagentEvidence(args: {
   terminal?: boolean;
   background?: boolean;
   title?: string;
+  operationEvent?: AgentToolCall["subagentOperation"];
 }): ToolEvidence[] {
   return [{
     source: "provider-structured",
@@ -35,6 +36,7 @@ function subagentEvidence(args: {
     kind: "subagent",
     title: args.title ?? "Delegate task",
     status: args.terminal ? "completed" : "running",
+    subagentOperation: args.operationEvent,
     subagent: {
       action: args.action,
       entityIds: args.entityIds ?? [],
@@ -44,6 +46,72 @@ function subagentEvidence(args: {
     },
   }];
 }
+
+test("Codex operation events bypass common subagent lifecycle folding", () => {
+  const sessionId = "recognition-codex-operations";
+  const spawn = recognizeToolObservation(
+    createToolObservation({
+      providerId: "codex",
+      sessionId,
+      toolCall: toolCall({ id: "spawn-call", status: "completed" }),
+    }),
+    subagentEvidence({
+      action: "spawn",
+      entityIds: ["agent-1"],
+      terminal: true,
+      operationEvent: {
+        action: "spawn",
+        targets: [{ id: "agent-1", label: "Cicero" }],
+      },
+    }),
+  ).toolCalls;
+  const wait = recognizeToolObservation(
+    createToolObservation({
+      providerId: "codex",
+      sessionId,
+      toolCall: toolCall({ id: "wait-call", status: "completed", output: "done" }),
+    }),
+    subagentEvidence({
+      action: "wait",
+      entityIds: ["agent-1"],
+      terminal: true,
+      operationEvent: {
+        action: "wait",
+        targets: [{ id: "agent-1", label: "Cicero" }],
+      },
+    }),
+  ).toolCalls;
+  const close = recognizeToolObservation(
+    createToolObservation({
+      providerId: "codex",
+      sessionId,
+      toolCall: toolCall({ id: "close-call", status: "completed" }),
+    }),
+    subagentEvidence({
+      action: "cancel",
+      entityIds: ["agent-1"],
+      terminal: true,
+      operationEvent: {
+        action: "close",
+        targets: [{ id: "agent-1", label: "Cicero" }],
+      },
+    }),
+  ).toolCalls;
+
+  assert.deepEqual(
+    [...spawn, ...wait, ...close].map((call) => [
+      call.id,
+      call.status,
+      call.subagentOperation?.action,
+    ]),
+    [
+      ["spawn-call", "completed", "spawn"],
+      ["wait-call", "completed", "wait"],
+      ["close-call", "completed", "close"],
+    ],
+  );
+  disposeToolRecognitionSession("codex", sessionId);
+});
 
 test("common lifecycle keeps spawned entities running and reuses their identity", () => {
   const sessionId = "recognition-lifecycle";

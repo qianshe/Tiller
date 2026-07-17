@@ -189,6 +189,84 @@ test("plain messages can render unified timeline entries with ordered assistant 
   assert.ok(answerIndex > thinkingIndex);
 });
 
+test("plain conversation omits whitespace-only assistant content between thinking and tools", () => {
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [],
+    timelineItems: [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-1:thinking",
+            kind: "thinking",
+            text: "先思考",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:00:01.000Z",
+            updatedAt: "2026-05-17T10:00:01.000Z",
+            sequence: 1,
+          },
+          {
+            id: "assistant-1:content",
+            kind: "content",
+            text: "\n\n",
+            timestamp: "2026-05-17T10:00:02.000Z",
+            sequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        sequence: 1,
+      },
+      {
+        id: "tool:skill-1",
+        kind: "tool_call",
+        toolCall: {
+          id: "skill-1",
+          commandId: "skill-1",
+          kind: "mcp",
+          title: "Skill",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:03.000Z",
+          updatedAt: "2026-05-17T10:00:03.000Z",
+          sequence: 3,
+        },
+        timestamp: "2026-05-17T10:00:03.000Z",
+        updatedAt: "2026-05-17T10:00:03.000Z",
+        sequence: 3,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.deepEqual(displayItems.map((item) => item.kind), ["thinking", "tool-group"]);
+});
+
+test("plain conversation preserves surrounding whitespace on renderable message text", () => {
+  const text = "  最终回答\n";
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        text,
+        timestamp: "2026-05-17T10:00:00.000Z",
+        streaming: true,
+      },
+    ],
+    timelineItems: [],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(displayItems.length, 1);
+  assert.equal(displayItems[0]?.kind === "message" ? displayItems[0].message.text : "", text);
+});
+
 test("plain conversation groups adjacent tool calls without merging their entities", () => {
   const items = resolvePlainConversationDisplayItems({
     displayMessages: [],
@@ -1771,6 +1849,99 @@ test("plain messages drop optimistic assistant content once canonical timeline c
   );
 });
 
+test("plain messages keep streaming assistant content while canonical timeline only has thinking", () => {
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "assistant-live",
+        role: "assistant",
+        text: "正在流式输出的正文",
+        timestamp: "2026-05-17T10:10:01.000Z",
+        streaming: true,
+      },
+    ],
+    timelineItems: [
+      {
+        id: "assistant-live",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-live:thinking",
+            kind: "thinking",
+            text: "先分析问题",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:10:00.000Z",
+            updatedAt: "2026-05-17T10:10:00.000Z",
+            sequence: 1,
+          },
+        ],
+        timestamp: "2026-05-17T10:10:00.000Z",
+        updatedAt: "2026-05-17T10:10:00.000Z",
+        sequence: 1,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "thinking" && item.toolCall.output === "先分析问题",
+    ),
+    true,
+  );
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "message" && item.message.text === "正在流式输出的正文",
+    ),
+    true,
+  );
+});
+
+test("plain messages drop same-id streaming assistant content once canonical content arrives", () => {
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "assistant-live",
+        role: "assistant",
+        text: "最终回答",
+        timestamp: "2026-05-17T10:10:01.000Z",
+        streaming: true,
+      },
+    ],
+    timelineItems: [
+      {
+        id: "assistant-live",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-live:content",
+            kind: "content",
+            text: "最终回答",
+            timestamp: "2026-05-17T10:10:02.000Z",
+            sequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:10:02.000Z",
+        updatedAt: "2026-05-17T10:10:02.000Z",
+        sequence: 2,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(
+    displayItems.filter(
+      (item) => item.kind === "message" && item.message.text === "最终回答",
+    ).length,
+    1,
+  );
+});
+
 test("plain messages append live prompts after restored timeline history", () => {
   const html = renderPlainMessages({
     timelineItems: [
@@ -2833,6 +3004,68 @@ test("plain messages surfaces subagent type and task summary when available", ()
   assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground\/60 transition-transform duration-150 rotate-180"/);
 });
 
+test("plain messages renders Codex spawn, wait, and close as separate operation rows", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "spawn-call",
+        commandId: "spawn-call",
+        kind: "subagent",
+        title: "Cicero",
+        status: "completed",
+        input: JSON.stringify({ task_name: "Cicero", message: "Inspect the adapter" }),
+        subagentOperation: {
+          action: "spawn",
+          targets: [{ id: "agent-1", label: "Cicero" }],
+        },
+        timestamp: "2026-07-17T09:00:01.000Z",
+        updatedAt: "2026-07-17T09:00:02.000Z",
+      },
+      {
+        id: "wait-call",
+        commandId: "wait-call",
+        kind: "subagent",
+        title: "Cicero",
+        status: "completed",
+        input: JSON.stringify({ targets: ["agent-1"] }),
+        output: "All tests passed.",
+        subagentOperation: {
+          action: "wait",
+          targets: [{ id: "agent-1", label: "Cicero" }],
+        },
+        timestamp: "2026-07-17T09:00:03.000Z",
+        updatedAt: "2026-07-17T09:00:04.000Z",
+      },
+      {
+        id: "close-call",
+        commandId: "close-call",
+        kind: "subagent",
+        title: "Cicero",
+        status: "completed",
+        input: JSON.stringify({ target: "agent-1" }),
+        output: JSON.stringify({ previous_status: { completed: "All tests passed." } }),
+        subagentOperation: {
+          action: "close",
+          targets: [{ id: "agent-1", label: "Cicero" }],
+        },
+        timestamp: "2026-07-17T09:00:05.000Z",
+        updatedAt: "2026-07-17T09:00:06.000Z",
+      },
+    ],
+  });
+
+  assert.equal(html.match(/data-subagent-call/g)?.length, 3);
+  assert.match(html, /创建 Subagent · Cicero/);
+  assert.match(html, /等待 Subagent · Cicero/);
+  assert.match(html, /关闭 Subagent · Cicero/);
+  assert.match(html, /Inspect the adapter/);
+  assert.match(html, /All tests passed\./);
+  assert.match(html, /关闭前已完成/);
+  assert.match(html, /已创建/);
+  assert.match(html, /已返回/);
+  assert.match(html, /已关闭/);
+});
+
 test("plain messages renders subagent lifecycle status and cleans provider envelopes", () => {
   const runningHtml = renderPlainMessages({
     toolCalls: [
@@ -2872,6 +3105,7 @@ test("plain messages renders subagent lifecycle status and cleans provider envel
 
   assert.match(runningHtml, /运行中/);
   assert.match(runningHtml, /Return SUBAGENT_RUNNING_OK/);
+  assert.match(completedHtml, /已完成/);
   assert.match(completedHtml, /SUBAGENT_RUNNING_OK/);
   assert.doesNotMatch(completedHtml, /Task completed in 7s/);
   assert.doesNotMatch(completedHtml, /task_metadata/);

@@ -440,12 +440,21 @@ export type AgentToolCallMcp = {
   rawTitle?: string;
 };
 
+export type AgentSubagentOperation = {
+  action: "spawn" | "wait" | "close";
+  targets: Array<{
+    id: string;
+    label?: string;
+  }>;
+};
+
 export type AgentToolCall = {
   id: string;
   kind: AgentToolCallKind;
   title: string;
   status: AgentToolCallStatus;
   mcp?: AgentToolCallMcp;
+  subagentOperation?: AgentSubagentOperation;
   commandId?: string;
   input?: string;
   output?: string;

@@ -519,7 +519,7 @@ test("session update reducer replaces repeated tool input snapshots instead of c
   );
 });
 
-test("session update reducer preserves the first mapper-assigned ToolCall kind", () => {
+test("session update reducer repairs a completed shell classification with structured search evidence", () => {
   const finalState = [
     {
       type: "tool-call" as const,
@@ -549,8 +549,48 @@ test("session update reducer preserves the first mapper-assigned ToolCall kind",
     },
   ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
 
-  assert.equal(finalState.toolCalls[0]?.kind, "shell");
+  assert.equal(finalState.toolCalls[0]?.kind, "search");
   assert.equal(finalState.toolCalls[0]?.title, "Grep");
+});
+
+test("session update reducer repairs shell placeholders with structured search evidence", () => {
+  const input = JSON.stringify({
+    pattern: "toolTitle|tool-title",
+    glob: "**/*.ts",
+  });
+  const finalState = [
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "call-native-grep",
+        kind: "shell" as const,
+        title: "Search",
+        status: "running" as const,
+        input: "{}",
+        timestamp: at(1),
+        updatedAt: at(1),
+        sequence: 1,
+      },
+    },
+    {
+      type: "tool-call" as const,
+      toolCall: {
+        id: "call-native-grep",
+        kind: "search" as const,
+        title: "Grep",
+        status: "completed" as const,
+        input,
+        output: "found",
+        timestamp: at(1),
+        updatedAt: at(2),
+        sequence: 1,
+      },
+    },
+  ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
+
+  assert.equal(finalState.toolCalls[0]?.kind, "search");
+  assert.equal(finalState.toolCalls[0]?.title, "Grep");
+  assert.equal(finalState.toolCalls[0]?.input, input);
 });
 
 test("session update reducer rebuilds one merged compaction row from started lifecycle plus summary enrichment", () => {

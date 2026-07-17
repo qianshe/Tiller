@@ -120,6 +120,61 @@ test("runtime running tool calls stay in live updates and do not append canonica
   assert.equal(capture.sessionUpdates?.length ?? 0, 0);
 });
 
+test("runtime repairs a shell placeholder when native search input arrives", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const timers = createManualTimerHarness();
+  const context = createTestContext([], capture, "session-native-search-repair", {}, {
+    useCanonicalPipeline: true,
+    runtimeEventThrottleConfig: {
+      toolCallWindowMs: 64,
+      toolCallMaxChars: 512,
+      setTimeoutFn: timers.setTimeoutFn,
+      clearTimeoutFn: timers.clearTimeoutFn,
+    },
+  });
+
+  handleRuntimeEvent("session-native-search-repair", {
+    type: "tool-call",
+    toolCall: {
+      id: "call-native-grep",
+      kind: "shell",
+      title: "Search",
+      status: "running",
+      input: "{}",
+      timestamp: "2026-07-17T00:00:00.000Z",
+      updatedAt: "2026-07-17T00:00:00.000Z",
+    },
+  }, context);
+  assert.equal(timers.size(), 1);
+
+  handleRuntimeEvent("session-native-search-repair", {
+    type: "tool-call",
+    toolCall: {
+      id: "call-native-grep",
+      kind: "search",
+      title: "Grep",
+      status: "completed",
+      input: JSON.stringify({ pattern: "tool-title", glob: "**/*.ts" }),
+      output: "Found 1 file",
+      timestamp: "2026-07-17T00:00:00.000Z",
+      updatedAt: "2026-07-17T00:00:01.000Z",
+    },
+  }, context);
+
+  assert.equal(timers.size(), 0);
+  const entry = capture.timelineEntries?.find((candidate) =>
+    candidate.kind === "tool_call" && candidate.toolCall.id === "call-native-grep"
+  );
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "search");
+  cleanupRuntimeEventState("session-native-search-repair", context);
+});
+
 test("runtime persists terminal tool-call boundary snapshots only", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

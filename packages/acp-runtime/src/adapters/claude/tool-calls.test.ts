@@ -64,6 +64,7 @@ test("normalizeClaudeToolCall derives Claude shell titles from raw input", () =>
     baseToolCall({
       kind: "shell",
       title: "Tool call call_shell",
+      status: "completed",
       input: "{}",
     }),
     {
@@ -78,6 +79,38 @@ test("normalizeClaudeToolCall derives Claude shell titles from raw input", () =>
     normalized.title,
     "node -e \"setTimeout(()=>console.log('waited'),3000)\"",
   );
+});
+
+test("normalizeClaudeToolCall waits for a complete shell command before using it as the title", () => {
+  const normalized = normalizeClaudeToolCall(
+    baseToolCall({
+      kind: "shell",
+      title: "Tool call call_shell",
+      input: "{}",
+    }),
+    {
+      rawInput: {
+        command: "pnpm --filter @tiller/de",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "shell");
+  assert.equal(normalized.title, "Shell");
+});
+
+test("normalizeClaudeToolCall keeps a streaming structured search title stable", () => {
+  const normalized = normalizeClaudeToolCall(
+    baseToolCall({
+      kind: "search",
+      title: "Grep",
+      input: JSON.stringify({ pattern: "normalizeClaude" }),
+    }),
+    {},
+  );
+
+  assert.equal(normalized.kind, "search");
+  assert.equal(normalized.title, "Search");
 });
 
 test("Claude lifecycle normalization preserves a running shell command on completion", () => {
@@ -101,10 +134,39 @@ test("Claude lifecycle normalization preserves a running shell command on comple
     output: "shell-title",
   }), {}, sessionId, "D:/repo");
 
-  assert.equal(running?.title, command);
+  assert.equal(running?.title, "Shell");
   assert.equal(completed?.title, command);
   assert.equal(completed?.input, JSON.stringify({ command }));
   assert.equal(completed?.status, "completed");
+});
+
+test("Claude lifecycle normalization restores native search names from transcript", () => {
+  const input = { path: "D:/repo", pattern: "**/*.ts" };
+  const normalizer = createClaudeToolCallNormalizer(() => ({
+    name: "Glob",
+    input,
+  }));
+  const sessionId = "claude-search-session";
+
+  const running = normalizer.normalize(baseToolCall({
+    id: "search-call",
+    kind: "search",
+    title: "Search",
+    input: JSON.stringify(input),
+  }), {}, sessionId, "D:/repo");
+  const completed = normalizer.normalize(baseToolCall({
+    id: "search-call",
+    kind: "search",
+    title: "Search",
+    status: "completed",
+    output: "apps/deck/src/features/logbook/tool-title.ts",
+  }), {}, sessionId, "D:/repo");
+
+  assert.equal(running?.kind, "search");
+  assert.equal(running?.title, "Search");
+  assert.equal(completed?.kind, "search");
+  assert.equal(completed?.title, "Glob");
+  assert.equal(completed?.input, JSON.stringify(input));
 });
 
 test("normalizeClaudeToolCall derives the skill title from structured input", () => {

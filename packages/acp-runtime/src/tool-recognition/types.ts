@@ -22,6 +22,7 @@ export type ToolEvidence = {
   input?: string;
   output?: string;
   stream?: AgentToolCall["stream"];
+  subagentOperation?: AgentToolCall["subagentOperation"];
   suppress?: boolean;
   subagent?: {
     action: SubagentAction;

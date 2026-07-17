@@ -847,12 +847,13 @@ test("SessionTimelineEntry uses sequence field (not sequence) as canonical seque
   assert.equal(entry.kind, "assistant_message");
 });
 
-test("timeline ToolCall updates retain the first mapper-assigned kind", () => {
+test("timeline ToolCall updates repair shell placeholders with structured search evidence", () => {
   const entries = appendToolCallToSessionTimeline([], {
     id: "tool-1",
     kind: "shell",
     title: "Shell",
     status: "running",
+    input: JSON.stringify({ pattern: "tool-title", glob: "**/*.ts" }),
     timestamp: at(1),
     updatedAt: at(1),
     sequence: 1,
@@ -862,6 +863,7 @@ test("timeline ToolCall updates retain the first mapper-assigned kind", () => {
     kind: "search",
     title: "Search",
     status: "completed",
+    input: JSON.stringify({ pattern: "tool-title", glob: "**/*.ts" }),
     timestamp: at(1),
     updatedAt: at(2),
     sequence: 1,
@@ -869,5 +871,5 @@ test("timeline ToolCall updates retain the first mapper-assigned kind", () => {
 
   const entry = entries[0];
   assert.equal(entry?.kind, "tool_call");
-  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "shell");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "search");
 });

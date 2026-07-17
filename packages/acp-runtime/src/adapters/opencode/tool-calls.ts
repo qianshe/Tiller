@@ -109,10 +109,13 @@ function normalizeOpenCodeStructuredBuiltinRule({
   const todos = Array.isArray(input?.todos) ? input.todos : null;
   if (todos || /^todo[_-]?write$/iu.test(descriptor)) {
     const count = todos?.length;
+    const finalTitle = typeof count === "number"
+      ? `Update ${count} ${count === 1 ? "todo" : "todos"}`
+      : "Update todos";
     return {
       ...toolCall,
       kind: "todo" as const,
-      title: typeof count === "number" ? `Update ${count} ${count === 1 ? "todo" : "todos"}` : "Update todos",
+      title: resolveOpenCodeStructuredTitle(toolCall, "Update todos", finalTitle),
     };
   }
   if (!input) {
@@ -130,7 +133,11 @@ function normalizeOpenCodeStructuredBuiltinRule({
     return {
       ...toolCall,
       kind: "diagnostics" as const,
-      title: `Diagnostics: ${compactOpenCodePath(path)}`,
+      title: resolveOpenCodeStructuredTitle(
+        toolCall,
+        "Diagnostics",
+        `Diagnostics: ${compactOpenCodePath(path)}`,
+      ),
     };
   }
 
@@ -139,7 +146,11 @@ function normalizeOpenCodeStructuredBuiltinRule({
     return {
       ...toolCall,
       kind: "shell" as const,
-      title: compactOpenCodeTitle(command),
+      title: resolveOpenCodeStructuredTitle(
+        toolCall,
+        "Shell",
+        compactOpenCodeTitle(command),
+      ),
     };
   }
 
@@ -148,7 +159,7 @@ function normalizeOpenCodeStructuredBuiltinRule({
     return {
       ...toolCall,
       kind: "fetch" as const,
-      title: url,
+      title: resolveOpenCodeStructuredTitle(toolCall, "Fetch", url),
     };
   }
 
@@ -161,10 +172,15 @@ function normalizeOpenCodeStructuredBuiltinRule({
     input.substringPattern,
   );
   if (query) {
+    const label = resolveOpenCodeSearchLabel(descriptor);
     return {
       ...toolCall,
       kind: "search" as const,
-      title: `${resolveOpenCodeSearchLabel(descriptor)}: ${truncateOpenCodeTitle(query, 56)}`,
+      title: resolveOpenCodeStructuredTitle(
+        toolCall,
+        "Search",
+        `${label}: ${truncateOpenCodeTitle(query, 56)}`,
+      ),
     };
   }
 
@@ -174,7 +190,11 @@ function normalizeOpenCodeStructuredBuiltinRule({
     return {
       ...toolCall,
       kind: isWrite ? "write" as const : "read" as const,
-      title: resolveOpenCodePathTitle(toolCall.title, path),
+      title: resolveOpenCodeStructuredTitle(
+        toolCall,
+        isWrite ? "Write" : "Read",
+        resolveOpenCodePathTitle(toolCall.title, path),
+      ),
     };
   }
   return null;
@@ -404,6 +424,18 @@ function resolveOpenCodeSearchLabel(descriptor: string) {
     return "AST search";
   }
   return "Search";
+}
+
+function resolveOpenCodeStructuredTitle(
+  toolCall: AgentToolCall,
+  streamingTitle: string,
+  finalTitle: string,
+) {
+  return isOpenCodeInputStreaming(toolCall.status) ? streamingTitle : finalTitle;
+}
+
+function isOpenCodeInputStreaming(status: AgentToolCall["status"]) {
+  return status === "pending" || status === "running";
 }
 
 function compactOpenCodePath(path: string) {

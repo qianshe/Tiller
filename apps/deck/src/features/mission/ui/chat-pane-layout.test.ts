@@ -732,6 +732,7 @@ test("mission tool call rows stay compact", () => {
   assert.doesNotMatch(plainMessagesSource, /grid-cols-subgrid|col-span-/);
   assert.match(plainMessagesSource, /resolveToolCallIconName/);
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+max-h-36/);
+  assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+\[&::-webkit-scrollbar-button\]:hidden/);
   assert.doesNotMatch(plainMessagesSource, />混合</);
   assert.doesNotMatch(plainMessagesSource, /BUILT-IN/);
   assert.match(plainMessagesSource, /mission-message-attachments ml-auto flex w-fit max-w-full flex-wrap justify-end gap-2 justify-self-end/);

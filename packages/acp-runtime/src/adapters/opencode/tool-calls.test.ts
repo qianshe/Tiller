@@ -81,6 +81,7 @@ test("normalizeOpenCodeToolCall classifies structured built-ins and derives usef
     baseToolCall({
       kind: "write",
       title: "todowrite",
+      status: "completed",
       input: JSON.stringify({
         todos: [
           { content: "Inspect adapter", status: "in_progress" },
@@ -94,6 +95,7 @@ test("normalizeOpenCodeToolCall classifies structured built-ins and derives usef
     baseToolCall({
       kind: "write",
       title: "Tool call call_search",
+      status: "completed",
       input: JSON.stringify({ pattern: "normalizeOpenCodeToolCall" }),
     }),
     {},
@@ -102,6 +104,7 @@ test("normalizeOpenCodeToolCall classifies structured built-ins and derives usef
     baseToolCall({
       kind: "write",
       title: "lsp_diagnostics",
+      status: "completed",
       input: JSON.stringify({
         filePath: "D:/repo/packages/acp-runtime/src/events.ts",
       }),
@@ -122,6 +125,7 @@ test("normalizeOpenCodeToolCall uses the requested URL as the web fetch title", 
     baseToolCall({
       kind: "fetch",
       title: "webfetch",
+      status: "completed",
       input: JSON.stringify({
         url: "https://jsonplaceholder.typicode.com/todos/1",
         format: "text",
@@ -156,12 +160,82 @@ test("normalizeOpenCodeToolCall preserves full shell commands as canonical title
     '"normalizes a deliberately long shell command without losing its arguments"',
   ].join(" ");
   const normalized = normalizeOpenCodeToolCall(
-    baseToolCall({ kind: "shell", title: "Shell" }),
+    baseToolCall({ kind: "shell", title: "Shell", status: "completed" }),
     { toolCall: { tool: "bash", input: { command } } },
   );
 
   assert.equal(normalized.kind, "shell");
   assert.equal(normalized.title, command);
+});
+
+test("normalizeOpenCodeToolCall keeps input-derived titles stable until input streaming ends", () => {
+  const cases: Array<{
+    title: string;
+    input: Record<string, unknown>;
+    expectedKind: AgentToolCall["kind"];
+    expectedTitle: string;
+  }> = [
+    {
+      title: "todowrite",
+      input: { todos: [{ content: "Inspect", status: "pending" }] },
+      expectedKind: "todo",
+      expectedTitle: "Update todos",
+    },
+    {
+      title: "lsp_diagnostics",
+      input: { filePath: "D:/repo/packages/acp-runtime/src/events.ts" },
+      expectedKind: "diagnostics",
+      expectedTitle: "Diagnostics",
+    },
+    {
+      title: "bash",
+      input: { command: "pnpm --filter @tiller/acp-runtime" },
+      expectedKind: "shell",
+      expectedTitle: "Shell",
+    },
+    {
+      title: "webfetch",
+      input: { url: "https://jsonplaceholder.typicode.c" },
+      expectedKind: "fetch",
+      expectedTitle: "Fetch",
+    },
+    {
+      title: "ast_grep_search",
+      input: { pattern: "normalizeOpenCode" },
+      expectedKind: "search",
+      expectedTitle: "Search",
+    },
+    {
+      title: "read",
+      input: { filePath: "packages/acp-runtime/src/even" },
+      expectedKind: "read",
+      expectedTitle: "Read",
+    },
+    {
+      title: "edit",
+      input: {
+        filePath: "packages/acp-runtime/src/even",
+        old_string: "before",
+        new_string: "after",
+      },
+      expectedKind: "write",
+      expectedTitle: "Write",
+    },
+  ];
+
+  for (const entry of cases) {
+    const normalized = normalizeOpenCodeToolCall(
+      baseToolCall({
+        kind: "tool",
+        title: entry.title,
+        input: JSON.stringify(entry.input),
+      }),
+      {},
+    );
+
+    assert.equal(normalized.kind, entry.expectedKind, entry.title);
+    assert.equal(normalized.title, entry.expectedTitle, entry.title);
+  }
 });
 
 test("normalizeOpenCodeToolCall upgrades MCP payloads from raw input", () => {

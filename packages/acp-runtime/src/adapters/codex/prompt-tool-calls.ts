@@ -19,7 +19,7 @@ type CodexSubagentLaunch = {
   title: string;
   input?: string;
   timestamp: string;
-  commandId?: string;
+  agentId?: string;
 };
 
 type CodexPromptObservationState = {
@@ -36,13 +36,17 @@ export function createCodexPromptToolCallObserver(
   return {
     begin(context: AcpPromptObservationContext) {
       const toolCalls = safelyReadPromptToolCalls(readTranscript, context);
-      states.set(context.runtimeSessionId, {
+      const state: CodexPromptObservationState = {
         fingerprints: new Map(
           toolCalls.map((toolCall) => [toolCall.id, fingerprintPromptToolCall(toolCall)]),
         ),
         launchesByCallId: new Map(),
         launchesByAgentId: new Map(),
-      });
+      };
+      for (const toolCall of toolCalls) {
+        rememberCodexSubagentLaunch(toolCall, state);
+      }
+      states.set(context.runtimeSessionId, state);
     },
     poll(context: AcpPromptObservationContext): SessionRuntimeEvent[] {
       const state = states.get(context.runtimeSessionId);
@@ -125,48 +129,42 @@ function projectCodexSubagentToolCall(
 
   if (toolName === "spawn_agent") {
     const {
-      output: _output,
       sequence: _sequence,
-      ...toolCallWithoutOutput
+      ...toolCallWithoutSequence
     } = toolCall;
-    const launch = state.launchesByCallId.get(toolCall.id) ?? {
-      id: toolCall.id,
-      title: firstString(input?.task_name, input?.taskName) ?? "Subagent",
-      ...(toolCall.input ? { input: toolCall.input } : {}),
-      timestamp: toolCall.timestamp,
-    };
-    state.launchesByCallId.set(toolCall.id, launch);
-    const agentId = firstString(output?.agent_id, output?.agentId);
-    if (agentId) {
-      launch.commandId = `subagent:${agentId}`;
-      state.launchesByAgentId.set(agentId, launch);
-    }
+    const launch = rememberCodexSubagentLaunch(toolCall, state)!;
+    const targetId = launch.agentId ?? toolCall.id;
     return {
-      ...toolCallWithoutOutput,
+      ...toolCallWithoutSequence,
       id: launch.id,
+      commandId: toolCall.id,
       kind: "subagent",
       title: launch.title,
-      status: toolCall.status === "failed" ? "failed" : "running",
+      status: toolCall.status,
       ...(launch.input ? { input: launch.input } : {}),
-      ...(launch.commandId ? { commandId: launch.commandId } : {}),
-      ...(toolCall.status === "failed" && toolCall.output
-        ? { output: toolCall.output }
-        : {}),
+      subagentOperation: {
+        action: "spawn",
+        targets: [{ id: targetId, label: launch.title }],
+      },
     };
   }
 
-  if (toolName !== "wait_agent") {
+  if (toolName !== "wait_agent" && toolName !== "close_agent") {
     return null;
   }
-  const target = firstString(
-    input?.target,
-    Array.isArray(input?.targets) ? input.targets[0] : undefined,
-  );
-  const launch = target ? state.launchesByAgentId.get(target) : undefined;
-  const completion = target
-    ? extractCodexWaitCompletion(output, target)
+  const targetIds = collectCodexSubagentTargets(input);
+  const targets = targetIds.map((id) => {
+    const launch = state.launchesByAgentId.get(id);
+    return { id, ...(launch ? { label: launch.title } : {}) };
+  });
+  const title = targets.length === 1
+    ? targets[0]?.label ?? targets[0]?.id ?? "Subagent"
+    : targets.length > 1
+      ? `${targets.length} 个 Subagent`
+      : "Subagent";
+  const waitOutput = toolName === "wait_agent"
+    ? formatCodexWaitOutput(output, targets) ?? toolCall.output
     : undefined;
-  const timedOut = output?.timed_out === true || output?.timedOut === true;
   const {
     output: _output,
     sequence: _sequence,
@@ -174,23 +172,83 @@ function projectCodexSubagentToolCall(
   } = toolCall;
   return {
     ...toolCallWithoutOutput,
-    id: launch?.id ?? toolCall.id,
+    id: toolCall.id,
+    commandId: toolCall.id,
     kind: "subagent",
-    title: launch?.title ?? "Subagent",
-    status: toolCall.status === "failed"
-      ? "failed"
-      : completion !== undefined
-        ? "completed"
-        : timedOut
-          ? "running"
-          : toolCall.status,
-    ...(launch?.input ? { input: launch.input } : {}),
-    ...(target ? { commandId: `subagent:${target}` } : {}),
-    ...(completion !== undefined
-      ? { output: completion }
-      : {}),
-    timestamp: launch?.timestamp ?? toolCall.timestamp,
+    title,
+    status: toolCall.status,
+    ...(toolCall.input ? { input: toolCall.input } : {}),
+    ...(toolName === "wait_agent"
+      ? {
+          ...(waitOutput ? { output: waitOutput } : {}),
+          subagentOperation: { action: "wait" as const, targets },
+        }
+      : {
+          ...(toolCall.output ? { output: toolCall.output } : {}),
+          subagentOperation: { action: "close" as const, targets },
+        }),
   };
+}
+
+function rememberCodexSubagentLaunch(
+  toolCall: AgentToolCall,
+  state: CodexPromptObservationState,
+) {
+  if (toolCall.kind !== "subagent" || toolCall.title.trim() !== "spawn_agent") {
+    return undefined;
+  }
+  const input = parseRecord(toolCall.input);
+  const output = parseRecord(toolCall.output);
+  const existing = state.launchesByCallId.get(toolCall.id);
+  const title = firstString(
+    input?.task_name,
+    input?.taskName,
+    output?.nickname,
+    output?.name,
+    existing?.title,
+  ) ?? "Subagent";
+  const launch: CodexSubagentLaunch = existing ?? {
+    id: toolCall.id,
+    title,
+    ...(toolCall.input ? { input: toolCall.input } : {}),
+    timestamp: toolCall.timestamp,
+  };
+  launch.title = title;
+  launch.agentId = firstString(output?.agent_id, output?.agentId) ?? launch.agentId;
+  state.launchesByCallId.set(toolCall.id, launch);
+  if (launch.agentId) {
+    state.launchesByAgentId.set(launch.agentId, launch);
+  }
+  return launch;
+}
+
+function collectCodexSubagentTargets(input: Record<string, unknown> | null) {
+  const targets = [
+    firstString(input?.target, input?.agent_id, input?.agentId),
+    ...(Array.isArray(input?.targets)
+      ? input.targets.map((target) => firstString(target))
+      : []),
+  ].filter((target): target is string => Boolean(target));
+  return [...new Set(targets)];
+}
+
+function formatCodexWaitOutput(
+  output: Record<string, unknown> | null,
+  targets: Array<{ id: string; label?: string }>,
+) {
+  const completions = targets.flatMap((target) => {
+    const completion = extractCodexWaitCompletion(output, target.id);
+    return completion === undefined ? [] : [{ ...target, completion }];
+  });
+  if (completions.length === 1) {
+    return completions[0]?.completion;
+  }
+  if (completions.length > 1) {
+    return completions
+      .map(({ id, label, completion }) => `### ${label ?? id}\n\n${completion}`)
+      .join("\n\n");
+  }
+  return undefined;
 }
 
 function extractCodexWaitCompletion(
@@ -199,7 +257,7 @@ function extractCodexWaitCompletion(
 ) {
   const status = recordFrom(output?.status);
   const targetStatus = recordFrom(status?.[target]);
-  return firstString(targetStatus?.completed);
+  return firstString(targetStatus?.completed, targetStatus?.failed, targetStatus?.cancelled);
 }
 
 function parseRecord(value: string | undefined) {

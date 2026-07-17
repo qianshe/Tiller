@@ -17,6 +17,16 @@ export function resolveToolCallChangeStats(
     return undefined;
   }
 
+  const creationStats = readCreationStats(input, output);
+  if (creationStats) {
+    return creationStats;
+  }
+
+  const codexApplyPatchStats = readCodexApplyPatchStats(input, output);
+  if (codexApplyPatchStats) {
+    return codexApplyPatchStats;
+  }
+
   for (const source of [input, output]) {
     const root = parseRecord(source);
     if (!root) {
@@ -34,6 +44,102 @@ export function resolveToolCallChangeStats(
   }
 
   return undefined;
+}
+
+function readCodexApplyPatchStats(
+  input: string,
+  output: string,
+): ToolCallChangeStats | undefined {
+  if (!hasSuccessfulCodexApplyPatchOutput(output)) {
+    return undefined;
+  }
+  const record = parseRecord(input);
+  const command = record ? extractCommand(record) : input;
+  if (
+    !command ||
+    !/(?:^|[\s;&|])apply_patch(?:\.bat)?\b|--codex-run-as-apply-patch\b/iu.test(command)
+  ) {
+    return undefined;
+  }
+
+  const normalized = command.replace(/`r`n|`n|`r/gu, "\n");
+  const patchStart = normalized.indexOf("*** Begin Patch");
+  const patchEnd = normalized.indexOf("*** End Patch", patchStart);
+  if (patchStart < 0 || patchEnd < 0) {
+    return undefined;
+  }
+
+  return countApplyPatchLines(normalized.slice(patchStart, patchEnd));
+}
+
+function hasSuccessfulCodexApplyPatchOutput(output: string) {
+  const record = parseRecord(output);
+  if (!record) {
+    return /Success\. Updated the following files:/u.test(output);
+  }
+  return [
+    record.stdout,
+    record.aggregated_output,
+    record.formatted_output,
+    record.output,
+  ].some((value) =>
+    typeof value === "string" &&
+    /Success\. Updated the following files:/u.test(value)
+  );
+}
+
+function extractCommand(record: Record<string, unknown>) {
+  const parsedCommand = Array.isArray(record.parsed_cmd)
+    ? record.parsed_cmd.find((value) =>
+      typeof asRecord(value)?.cmd === "string"
+    )
+    : undefined;
+  const command = asRecord(parsedCommand)?.cmd ??
+    record.command ??
+    record.cmd ??
+    record.script ??
+    record.shell ??
+    record.args;
+  if (Array.isArray(command)) {
+    return command.map((value) => String(value)).join(" ");
+  }
+  return typeof command === "string" ? command : undefined;
+}
+
+function countApplyPatchLines(
+  patch: string,
+): ToolCallChangeStats | undefined {
+  let additions = 0;
+  let deletions = 0;
+  for (const line of patch.split(/\r?\n/u)) {
+    if (line.startsWith("+")) {
+      additions += 1;
+    } else if (line.startsWith("-")) {
+      deletions += 1;
+    }
+  }
+  return additions > 0 || deletions > 0 ? { additions, deletions } : undefined;
+}
+
+function readCreationStats(
+  input: string,
+  output: string,
+): ToolCallChangeStats | undefined {
+  if (!hasFileCreationEvidence(output)) {
+    return undefined;
+  }
+  const record = parseRecord(input);
+  const content = record?.content ?? record?.newText ?? record?.new_text;
+  if (typeof content !== "string") {
+    return undefined;
+  }
+  const additions = splitContentLines(content).length;
+  return additions > 0 ? { additions, deletions: 0 } : undefined;
+}
+
+function hasFileCreationEvidence(output: string) {
+  return /"(?:oldText|old_text|originalFile|original_file)"\s*:\s*null/iu.test(output) ||
+    /"(?:type|operation)"\s*:\s*"create"/iu.test(output);
 }
 
 function parseRecord(value: string): Record<string, unknown> | undefined {

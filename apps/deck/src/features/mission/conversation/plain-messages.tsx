@@ -840,13 +840,17 @@ function resolveOptimisticTimelineSupplementMessages(
   displayMessages: AgentMessage[],
   timelineItems: SessionTimelineEntry[],
 ) {
-  const canonicalMessageIds = new Set(
+  const canonicalRepresentedMessageIds = new Set(
     timelineItems.flatMap((entry) => {
       if (entry.kind === "user_message" || entry.kind === "system_message") {
         return [entry.message.id];
       }
       if (entry.kind === "assistant_message") {
-        return [entry.id];
+        return entry.chunks.some(
+          (chunk) => chunk.kind === "content" && Boolean(chunk.text.trim()),
+        )
+          ? [entry.id]
+          : [];
       }
       return [];
     }),
@@ -871,7 +875,7 @@ function resolveOptimisticTimelineSupplementMessages(
   });
 
   return displayMessages.filter((message) => {
-    if (canonicalMessageIds.has(message.id)) {
+    if (canonicalRepresentedMessageIds.has(message.id)) {
       return false;
     }
     if (message.role === "user") {
@@ -959,7 +963,7 @@ function normalizePlainMessageRenderSource(
   item: PlainMessageRenderSource,
 ): PlainConversationItem | null {
   if ("role" in item) {
-    const text = normalizeLocalCommandMessageText(item.text);
+    const text = normalizePlainMessageText(item.text);
     if (!text) {
       return null;
     }
@@ -971,7 +975,7 @@ function normalizePlainMessageRenderSource(
     };
   }
   if (item.kind === "message") {
-    const text = normalizeLocalCommandMessageText(item.message.text);
+    const text = normalizePlainMessageText(item.message.text);
     if (!text) {
       return null;
     }
@@ -981,6 +985,11 @@ function normalizePlainMessageRenderSource(
     };
   }
   return item;
+}
+
+function normalizePlainMessageText(text: string): string {
+  const normalizedText = normalizeLocalCommandMessageText(text);
+  return normalizedText.trim() ? normalizedText : "";
 }
 
 function buildPlainConversationItems(
@@ -1011,7 +1020,7 @@ function buildPlainConversationItems(
           }]
         : [];
     }
-    const text = normalizeLocalCommandMessageText(message.text);
+    const text = normalizePlainMessageText(message.text);
     return text
       ? [{ kind: "message" as const, sourceIndex: index, timestamp: message.timestamp, sequence: message.sequence, message: text === message.text ? message : { ...message, text } }]
       : [];
@@ -1065,7 +1074,7 @@ function buildPlainConversationItemsFromTimeline(
       ) {
         continue;
       }
-      const text = normalizeLocalCommandMessageText(entry.message.text);
+      const text = normalizePlainMessageText(entry.message.text);
       if (text) {
         items.push({
           kind: "message",
@@ -1110,7 +1119,7 @@ function buildPlainConversationItemsFromTimeline(
         ) {
           continue;
         }
-        const text = normalizeLocalCommandMessageText(chunk.text);
+        const text = normalizePlainMessageText(chunk.text);
         if (text) {
           items.push({
             kind: "message",

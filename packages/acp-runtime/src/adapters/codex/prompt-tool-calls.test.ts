@@ -30,7 +30,7 @@ function call(
   };
 }
 
-test("Codex prompt observer emits a running placeholder and updates that entity with wait output", () => {
+test("Codex prompt observer keeps spawn and wait as independent operations", () => {
   let snapshot: AgentToolCall[] = [];
   const observer = createCodexPromptToolCallObserver(() => snapshot);
 
@@ -51,10 +51,15 @@ test("Codex prompt observer emits a running placeholder and updates that entity 
       kind: "subagent",
       title: "Subagent",
       status: "running",
+      commandId: "call-spawn",
       input: JSON.stringify({
         message: "Inspect the adapter and return CHILD_OK",
         fork_context: false,
       }),
+      subagentOperation: {
+        action: "spawn",
+        targets: [{ id: "call-spawn", label: "Subagent" }],
+      },
       timestamp: "2026-07-14T11:17:27.959Z",
       updatedAt: "2026-07-14T11:17:27.959Z",
     },
@@ -79,23 +84,44 @@ test("Codex prompt observer emits a running placeholder and updates that entity 
 
   const completed = observer.poll(context);
   assert.equal(completed.length, 2);
-  assert.equal(completed[0]?.type, "tool-call");
-  assert.equal(completed[0]?.type === "tool-call" ? completed[0].toolCall.id : "", "call-spawn");
-  assert.equal(completed[0]?.type === "tool-call" ? completed[0].toolCall.status : "", "running");
-  assert.equal(completed[0]?.type === "tool-call" ? completed[0].toolCall.commandId : "", "subagent:agent-1");
-  assert.deepEqual(completed[1], {
+  assert.deepEqual(completed[0], {
     type: "tool-call",
     toolCall: {
       id: "call-spawn",
-      commandId: "subagent:agent-1",
+      commandId: "call-spawn",
       kind: "subagent",
-      title: "Subagent",
+      title: "Sagan",
       status: "completed",
       input: JSON.stringify({
         message: "Inspect the adapter and return CHILD_OK",
         fork_context: false,
       }),
+      output: JSON.stringify({ agent_id: "agent-1", nickname: "Sagan" }),
+      subagentOperation: {
+        action: "spawn",
+        targets: [{ id: "agent-1", label: "Sagan" }],
+      },
+      timestamp: "2026-07-14T11:17:27.959Z",
+      updatedAt: "2026-07-14T11:17:53.962Z",
+    },
+  });
+  assert.deepEqual(completed[1], {
+    type: "tool-call",
+    toolCall: {
+      id: "call-wait",
+      commandId: "call-wait",
+      kind: "subagent",
+      title: "Sagan",
+      status: "completed",
+      input: JSON.stringify({
+        targets: ["agent-1"],
+        timeout_ms: 30_000,
+      }),
       output: "CHILD_OK",
+      subagentOperation: {
+        action: "wait",
+        targets: [{ id: "agent-1", label: "Sagan" }],
+      },
       timestamp: "2026-07-14T11:17:27.959Z",
       updatedAt: "2026-07-14T11:17:53.962Z",
     },
@@ -120,11 +146,60 @@ test("Codex prompt observer baselines history and keeps concurrent launches inde
   assert.equal(events.length, 2);
   assert.deepEqual(
     events.map((event) => event.type === "tool-call"
-      ? [event.toolCall.id, event.toolCall.title, event.toolCall.status]
+      ? [
+          event.toolCall.id,
+          event.toolCall.title,
+          event.toolCall.status,
+          event.toolCall.subagentOperation?.action,
+        ]
       : []),
     [
-      ["spawn-a", "alpha", "running"],
-      ["spawn-b", "beta", "running"],
+      ["spawn-a", "alpha", "running", "spawn"],
+      ["spawn-b", "beta", "running", "spawn"],
     ],
   );
+});
+
+test("Codex prompt observer restores spawn identity before a later close operation", () => {
+  let snapshot: AgentToolCall[] = [
+    call(
+      "old-spawn",
+      "spawn_agent",
+      "completed",
+      { task_name: "Cicero", message: "Inspect the adapter" },
+      { agent_id: "old-agent", nickname: "Cicero" },
+    ),
+  ];
+  const observer = createCodexPromptToolCallObserver(() => snapshot);
+
+  observer.begin(context);
+  snapshot = [
+    ...snapshot,
+    call(
+      "call-close",
+      "close_agent",
+      "completed",
+      { target: "old-agent" },
+      { previous_status: { completed: "Inspection complete" } },
+    ),
+  ];
+
+  assert.deepEqual(observer.poll(context), [{
+    type: "tool-call",
+    toolCall: {
+      id: "call-close",
+      commandId: "call-close",
+      kind: "subagent",
+      title: "Cicero",
+      status: "completed",
+      input: JSON.stringify({ target: "old-agent" }),
+      output: JSON.stringify({ previous_status: { completed: "Inspection complete" } }),
+      subagentOperation: {
+        action: "close",
+        targets: [{ id: "old-agent", label: "Cicero" }],
+      },
+      timestamp: "2026-07-14T11:17:27.959Z",
+      updatedAt: "2026-07-14T11:17:53.962Z",
+    },
+  }]);
 });
