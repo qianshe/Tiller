@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createElement } from "react";
+import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useDeckStore } from "../../../store";
-import { ContextUsageIndicator } from "./context-usage-indicator.js";
+import { buildUsageTooltipBody, ContextUsageIndicator } from "./context-usage-indicator.js";
 
 test("empty state renders empty ring and dash marker without tooltip trigger role", () => {
   useDeckStore.setState({ sessionLiveStates: {} } as any);
@@ -38,4 +38,53 @@ test("ring rotates so arc starts at 12-o'clock", () => {
     createElement(ContextUsageIndicator, { sessionId: "sess-b", isMobile: false }),
   );
   assert.match(html, /<svg[^>]*-rotate-90/u);
+});
+
+test("tooltip body shows remaining, usage, and cost when cost present", () => {
+  const body: ReactElement = buildUsageTooltipBody({
+    used: 6342,
+    size: 258400,
+    cost: { amount: 0.045, currency: "USD" },
+  });
+  const html = renderToStaticMarkup(body);
+  // remainder = round((1 - 6342/258400) * 100) = 98
+  // label 与值在不同 span,用 .*? 容忍标签边界
+  assert.match(html, /剩余:.*?98%/u);
+  assert.match(html, /用量:.*?6,342 \/ 258,400 t/u);
+  assert.match(html, /费用:.*?\$0\.04/u);
+});
+
+test("tooltip body omits cost line when cost absent", () => {
+  const body: ReactElement = buildUsageTooltipBody({
+    used: 121426,
+    size: 1000000,
+    cost: null,
+  });
+  const html = renderToStaticMarkup(body);
+  assert.match(html, /用量:.*?121,426 \/ 1,000,000 t/u);
+  assert.doesNotMatch(html, /费用:/u);
+});
+
+test("indicator wraps the ring in a tooltip trigger when usage present", () => {
+  useDeckStore.setState({
+    sessionLiveStates: {
+      "sess-c": { usage: { used: 6342, size: 258400 } } as any,
+    },
+  } as any);
+  const html = renderToStaticMarkup(
+    createElement(ContextUsageIndicator, { sessionId: "sess-c", isMobile: false }),
+  );
+  // Radix Tooltip trigger carries data-state; Content relies on Portal at runtime.
+  assert.match(html, /data-state="closed"/u);
+  assert.match(html, /cursor-help/u);
+});
+
+test("empty state still has no tooltip content section", () => {
+  useDeckStore.setState({ sessionLiveStates: {} } as any);
+  const html = renderToStaticMarkup(
+    createElement(ContextUsageIndicator, { sessionId: null, isMobile: false }),
+  );
+  assert.doesNotMatch(html, /剩余:/u);
+  assert.doesNotMatch(html, /用量:/u);
+  assert.doesNotMatch(html, /data-state=/u);
 });
