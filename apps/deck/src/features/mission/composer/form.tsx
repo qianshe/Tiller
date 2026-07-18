@@ -35,6 +35,7 @@ import {
 import { ComposerAttachments } from "./attachments";
 import { MissionStatusBar } from "./mission-status-bar";
 import { SlashCommandPopup } from "./slash-command-popup";
+import { ContextUsageIndicator } from "./context-usage-indicator";
 type MissionComposerProps = {
   activeSession: SessionSummary | null;
   contextSession?: SessionSummary | null;
@@ -453,6 +454,10 @@ export function MissionComposer({
               → {composerSession?.title ?? "新会话"}
             </span>
           )}
+          <ContextUsageIndicator
+            sessionId={composerSession?.id ?? null}
+            isMobile={isMobile}
+          />
         </div>
         <div ref={slashWrapperRef} className="slash-command-wrapper relative">
           <ComposerAttachments

@@ -294,3 +294,17 @@ test("composer shows only the interrupt action while a session can be cancelled"
   assert.doesNotMatch(html, /aria-label="增强提示词"/);
   assert.doesNotMatch(html, /aria-label="发送"/);
 });
+
+test("composer renders context usage indicator at row tail", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    activeSession: { id: "active", title: "活动会话", projectName: "Project A", agentName: "Codex" },
+  })));
+
+  // composerSession = activeSession (无 contextSession);无 store usage 注入 → 空态 dash
+  assert.match(html, /–/u);
+  // 圆环在 → 标题 之后:标题在前,dash 在后
+  assert.ok(
+    html.lastIndexOf("→ 活动会话") < html.indexOf("–"),
+    "context usage indicator should render after the session title hint",
+  );
+});
