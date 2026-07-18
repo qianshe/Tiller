@@ -32,7 +32,8 @@
     "smoke:contract": "node scripts/contract-smoke.mjs",
     "probe:acp-models": "tsx scripts/probe-codex-models.ts",
     "probe:codex-models": "tsx scripts/probe-codex-models.ts --command codex-acp",
-    "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --pure --arg --port --arg 0"
+    "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --pure --arg --port --arg 0",
+    "benchmark:session-timeline": "node --expose-gc --import tsx scripts/session-timeline-benchmark.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.0",

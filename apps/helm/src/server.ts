@@ -49,7 +49,10 @@ import { createHelmServerStores } from "./app/server/composition";
 import { createHelmServerEnvironment } from "./app/server/environment";
 import { createHelmContextState } from "./app/server/context";
 import { createHelmRuntimeComposition } from "./app/runtime-composition";
-import { attachHelmRpcConnection } from "./app/transport-composition";
+import {
+  attachHelmRpcConnection,
+  createHelmOutboundConnectionRegistry,
+} from "./app/transport-composition";
 import { createStaticDeckHandler } from "./app/static-deck-handler";
 import { createHelmAuthComposition } from "./app/auth-composition";
 import { createHandlerCatalogContext } from "./app/handler-context/catalog";
@@ -147,8 +150,11 @@ const {
 const socketState = createSocketState<WebSocket>();
 const { registry: authenticatedSockets, getSocketId } = socketState;
 const sessionTopics = createSessionTopicRegistry();
+const outboundConnections = createHelmOutboundConnectionRegistry();
 const handlerNotificationContext = createHandlerNotificationContext({
   authenticatedSockets,
+  getSocketId,
+  outboundConnections,
   sessionTopics,
 });
 const { broadcastNotification } = handlerNotificationContext;
@@ -351,7 +357,7 @@ server.on("connection", (socket) => {
   socket.on("close", () => {
     const socketId = getSocketId(socket);
     logger.debug("websocket.client.disconnected", { socketId });
-    sessionTopics.removeSocket(socketId);
+    handlerNotificationContext.removeSocketSessionTopics(socketId);
     authenticatedSockets.remove(socketId);
   });
 
@@ -435,6 +441,7 @@ function attachRpcConnection(socket: WebSocket) {
   attachHelmRpcConnection({
     socket,
     getSocketId,
+    outboundConnections,
     createHandlerContext,
     logInfo,
     logError,

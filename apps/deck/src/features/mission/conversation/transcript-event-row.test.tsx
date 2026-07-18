@@ -1,8 +1,14 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { TranscriptEventRow } from "./transcript-event-row.js";
+
+const transcriptEventRowSource = readFileSync(
+  new URL("./transcript-event-row.tsx", import.meta.url),
+  "utf8",
+);
 
 test("transcript compaction rows render as collapsed muted system summaries", () => {
   const summaryText = "This session is being continued from a previous conversation that ran out of context.";
@@ -95,4 +101,13 @@ test("transcript compaction rows can hide summary details for providers that onl
   assert.match(html, /上下文已压缩/);
   assert.doesNotMatch(html, /展开摘要/);
   assert.doesNotMatch(html, /收起摘要/);
+});
+
+test("expanded compaction summaries expose bottom-right collapse and copy actions", () => {
+  assert.match(transcriptEventRowSource, /compaction-summary-copy/);
+  assert.match(transcriptEventRowSource, /compaction-summary-collapse/);
+  assert.match(transcriptEventRowSource, /compaction-summary-actions absolute bottom-0 right-0/);
+  assert.match(transcriptEventRowSource, /onClick=\{\(\) => setOpen\(false\)\}/);
+  assert.match(transcriptEventRowSource, /writeClipboardText\(\s*summaryText/);
+  assert.match(transcriptEventRowSource, /aria-live="polite"/);
 });

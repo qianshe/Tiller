@@ -84,6 +84,7 @@ test("sqlite approval commit atomically writes update, approvals, and session st
 
     assert.equal(approvals.get("session-1")?.sequence, 1);
     assert.equal(states.get("session-1")?.status.pendingApprovalCount, 1);
+    assert.equal(updates.listPage("session-1").updates.length, 1);
   } finally {
     updates.close();
     states.close();

@@ -1,9 +1,11 @@
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { SessionTimelineBatch, SessionUpdateRecord } from "@tiller/shared";
 import {
-  applySessionRuntimeEvent,
+  applySessionRuntimeEventInPlace,
   buildSessionTimelineBatch,
   createEmptySessionTimelineAggregate,
+  createSessionTimelineMutationIndex,
+  rebuildSessionTimelineMutationIndex,
   retainActiveSessionTimelineEntries,
   type SessionTimelineAggregate,
 } from "./aggregate";
@@ -33,24 +35,22 @@ export function createSessionTimelineWorker(
     providerId: options.providerId,
     lastSequence: options.lastSequence,
   });
-  let lastFlushed = aggregate;
+  let lastFlushed = { ...aggregate, entries: [...aggregate.entries] };
   let pendingUpdates: SessionUpdateRecord[] = [];
   let pendingEntries = new Map<string, import("@tiller/shared").SessionTimelineEntry>();
+  const mutationIndex = createSessionTimelineMutationIndex();
 
   return {
     sessionId: options.sessionId,
 
     enqueue(event: SessionRuntimeEvent, update?: SessionUpdateRecord) {
-      aggregate = applySessionRuntimeEvent(aggregate, event);
-      const retainedIds = new Set(aggregate.entries.map((entry) => entry.id));
-      for (const id of pendingEntries.keys()) {
-        if (!retainedIds.has(id)) {
-          pendingEntries.delete(id);
-        }
-      }
-      const changed = resolveChangedTimelineEntry(aggregate, event);
+      applySessionRuntimeEventInPlace(aggregate, event, mutationIndex);
+      const changed = resolveChangedTimelineEntry(mutationIndex, aggregate.entries, event);
       if (changed) {
         pendingEntries.set(changed.id, changed);
+      }
+      if (event.type === "tool-call" && event.toolCall.commandId) {
+        prunePendingEntries(pendingEntries, mutationIndex.entryById);
       }
       if (update) {
         pendingUpdates.push(update);
@@ -70,7 +70,8 @@ export function createSessionTimelineWorker(
       pendingUpdates = [];
       pendingEntries = new Map();
       aggregate = retainActiveSessionTimelineEntries(aggregate);
-      lastFlushed = aggregate;
+      rebuildSessionTimelineMutationIndex(mutationIndex, aggregate.entries);
+      lastFlushed = { ...aggregate, entries: [...aggregate.entries] };
       return [{ batch, updates }];
     },
 
@@ -81,36 +82,44 @@ export function createSessionTimelineWorker(
 }
 
 function resolveChangedTimelineEntry(
-  aggregate: SessionTimelineAggregate,
+  index: ReturnType<typeof createSessionTimelineMutationIndex>,
+  entries: SessionTimelineAggregate["entries"],
   event: SessionRuntimeEvent,
 ) {
   switch (event.type) {
     case "message":
-      return aggregate.entries.find((entry) => entry.id === event.message.id);
+      return index.entryById.get(event.message.id) ??
+        entries.find((entry) => entry.id === event.message.id);
     case "tool-call": {
       const id = event.toolCall.kind === "think"
         ? stripThinkingSuffix(event.toolCall.commandId ?? event.toolCall.id)
         : `tool:${event.toolCall.id}`;
-      const exact = aggregate.entries.find((entry) => entry.id === id);
+      const exact = index.entryById.get(id);
       if (exact || !event.toolCall.commandId) {
         return exact;
       }
-      return aggregate.entries.find((entry) =>
-        entry.kind === "tool_call" &&
-        entry.toolCall.commandId === event.toolCall.commandId
-      );
+      return index.toolEntryByCommandId.get(event.toolCall.commandId);
     }
     case "command-output":
-      return aggregate.entries.find((entry) =>
-        entry.kind === "command_output" &&
-        entry.output.id === event.chunk.id
-      );
+      return entries[entries.length - 1];
     case "compaction":
-      return [...aggregate.entries].reverse().find((entry) =>
-        entry.kind === "context_compaction"
-      );
+      for (let index = entries.length - 1; index >= 0; index -= 1) {
+        const entry = entries[index];
+        if (entry?.kind === "context_compaction") return entry;
+      }
+      return undefined;
     default:
       return undefined;
+  }
+}
+
+function prunePendingEntries(
+  pendingEntries: Map<string, import("@tiller/shared").SessionTimelineEntry>,
+  retainedEntries: Map<string, import("@tiller/shared").SessionTimelineEntry>,
+): void {
+  if (pendingEntries.size === 0) return;
+  for (const id of pendingEntries.keys()) {
+    if (!retainedEntries.has(id)) pendingEntries.delete(id);
   }
 }
 

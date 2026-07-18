@@ -18,6 +18,36 @@ export type SessionTimelineAggregate = {
   providerId?: string;
 };
 
+export type SessionTimelineMutationIndex = {
+  entryById: Map<string, SessionTimelineEntry>;
+  toolEntryByCommandId: Map<string, SessionTimelineEntry>;
+};
+
+export function createSessionTimelineMutationIndex(
+  entries: SessionTimelineEntry[] = [],
+): SessionTimelineMutationIndex {
+  const index = {
+    entryById: new Map<string, SessionTimelineEntry>(),
+    toolEntryByCommandId: new Map<string, SessionTimelineEntry>(),
+  };
+  rebuildSessionTimelineMutationIndex(index, entries);
+  return index;
+}
+
+export function rebuildSessionTimelineMutationIndex(
+  index: SessionTimelineMutationIndex,
+  entries: SessionTimelineEntry[],
+): void {
+  index.entryById.clear();
+  index.toolEntryByCommandId.clear();
+  for (const entry of entries) {
+    index.entryById.set(entry.id, entry);
+    if (entry.kind === "tool_call" && entry.toolCall.commandId) {
+      index.toolEntryByCommandId.set(entry.toolCall.commandId, entry);
+    }
+  }
+}
+
 export function createEmptySessionTimelineAggregate(
   sessionId: string,
   options?: { providerId?: string; lastSequence?: number },
@@ -37,17 +67,42 @@ export function applySessionRuntimeEvent(
   aggregate: SessionTimelineAggregate,
   event: SessionRuntimeEvent,
 ): SessionTimelineAggregate {
+  const entries = [...aggregate.entries];
+  const next = { ...aggregate, entries };
+  applySessionRuntimeEventToEntries(entries, event, next);
+  return next;
+}
+
+export function applySessionRuntimeEventInPlace(
+  aggregate: SessionTimelineAggregate,
+  event: SessionRuntimeEvent,
+  index?: SessionTimelineMutationIndex,
+): SessionTimelineAggregate {
+  applySessionRuntimeEventToEntries(aggregate.entries, event, aggregate, index);
+  return aggregate;
+}
+
+function applySessionRuntimeEventToEntries(
+  entries: SessionTimelineEntry[],
+  event: SessionRuntimeEvent,
+  aggregate: SessionTimelineAggregate,
+  index?: SessionTimelineMutationIndex,
+): void {
   switch (event.type) {
     case "message":
-      return applyMessageEvent(aggregate, event);
+      applyMessageEvent(entries, aggregate, event, index);
+      break;
     case "tool-call":
-      return applyToolCallEvent(aggregate, event);
+      applyToolCallEvent(entries, aggregate, event, index);
+      return;
     case "command-output":
-      return applyCommandOutputEvent(aggregate, event);
+      applyCommandOutputEvent(entries, aggregate, event, index);
+      break;
     case "compaction":
-      return applyCompactionEvent(aggregate, event);
+      applyCompactionEvent(entries, aggregate, event, index);
+      break;
     default:
-      return aggregate;
+      return;
   }
 }
 
@@ -100,46 +155,63 @@ export function retainActiveSessionTimelineEntries(
 }
 
 function applyMessageEvent(
+  entries: SessionTimelineEntry[],
   aggregate: SessionTimelineAggregate,
   event: Extract<SessionRuntimeEvent, { type: "message" }>,
-): SessionTimelineAggregate {
+  index?: SessionTimelineMutationIndex,
+): void {
   const message = event.message;
   const sequence = message.sequence ?? nextSequence(aggregate);
-  const entries = [...aggregate.entries];
   appendMessageToSessionTimeline(entries, { ...message, sequence });
-  return {
-    ...aggregate,
-    lastSequence: Math.max(aggregate.lastSequence, sequence),
-    deliverySequence: aggregate.deliverySequence + 1,
-    entries,
-  };
+  if (index) rebuildSessionTimelineMutationIndex(index, entries);
+  aggregate.lastSequence = Math.max(aggregate.lastSequence, sequence);
+  aggregate.deliverySequence += 1;
 }
 
 function applyToolCallEvent(
+  entries: SessionTimelineEntry[],
   aggregate: SessionTimelineAggregate,
   event: Extract<SessionRuntimeEvent, { type: "tool-call" }>,
-): SessionTimelineAggregate {
+  index?: SessionTimelineMutationIndex,
+): void {
   const { toolCall } = event;
   const sequence = toolCall.sequence ?? nextSequence(aggregate);
-  const entries = [...aggregate.entries];
-  appendToolCallToSessionTimeline(entries, { ...toolCall, sequence });
-
-  return {
-    ...aggregate,
-    lastSequence: Math.max(aggregate.lastSequence, sequence),
-    deliverySequence: aggregate.deliverySequence + 1,
-    entries,
-  };
+  const normalized = { ...toolCall, sequence };
+  const id = `tool:${toolCall.id}`;
+  const canAppendWithoutSearch =
+    toolCall.kind !== "think" &&
+    index !== undefined &&
+    !index.entryById.has(id) &&
+    (!toolCall.commandId || !index.toolEntryByCommandId.has(toolCall.commandId));
+  if (canAppendWithoutSearch) {
+    const entry: SessionTimelineEntry = {
+      id,
+      kind: "tool_call",
+      toolCall: normalized,
+      timestamp: toolCall.timestamp,
+      updatedAt: toolCall.updatedAt,
+      sequence,
+    };
+    entries.push(entry);
+    index.entryById.set(id, entry);
+    if (toolCall.commandId) index.toolEntryByCommandId.set(toolCall.commandId, entry);
+  } else {
+    appendToolCallToSessionTimeline(entries, normalized);
+    if (index) rebuildSessionTimelineMutationIndex(index, entries);
+  }
+  aggregate.lastSequence = Math.max(aggregate.lastSequence, sequence);
+  aggregate.deliverySequence += 1;
 }
 
 function applyCommandOutputEvent(
+  entries: SessionTimelineEntry[],
   aggregate: SessionTimelineAggregate,
   event: Extract<SessionRuntimeEvent, { type: "command-output" }>,
-): SessionTimelineAggregate {
+  index?: SessionTimelineMutationIndex,
+): void {
   const { chunk } = event;
   const sequence = chunk.sequence ?? nextSequence(aggregate);
-  const entries = [...aggregate.entries];
-  entries.push({
+  const entry: SessionTimelineEntry = {
     id: `output:${chunk.commandId}:${sequence ?? chunk.id}`,
     kind: "command_output",
     commandId: chunk.commandId,
@@ -147,21 +219,20 @@ function applyCommandOutputEvent(
     timestamp: chunk.timestamp,
     updatedAt: chunk.timestamp,
     sequence,
-  });
-
-  return {
-    ...aggregate,
-    lastSequence: Math.max(aggregate.lastSequence, sequence),
-    deliverySequence: aggregate.deliverySequence + 1,
-    entries,
   };
+  entries.push(entry);
+  index?.entryById.set(entry.id, entry);
+
+  aggregate.lastSequence = Math.max(aggregate.lastSequence, sequence);
+  aggregate.deliverySequence += 1;
 }
 
 function applyCompactionEvent(
+  entries: SessionTimelineEntry[],
   aggregate: SessionTimelineAggregate,
   event: Extract<SessionRuntimeEvent, { type: "compaction" }>,
-): SessionTimelineAggregate {
-  const entries = [...aggregate.entries];
+  index?: SessionTimelineMutationIndex,
+): void {
   const compactionEntry = buildSessionCompactionEntryFromProvider({
     sessionId: aggregate.sessionId,
     timestamp: event.timestamp,
@@ -172,12 +243,9 @@ function applyCompactionEvent(
     summaryMessageId: event.messageId,
   });
   upsertSessionCompactionEntry(entries, compactionEntry);
+  if (index) rebuildSessionTimelineMutationIndex(index, entries);
 
-  return {
-    ...aggregate,
-    deliverySequence: aggregate.deliverySequence + 1,
-    entries,
-  };
+  aggregate.deliverySequence += 1;
 }
 
 function nextSequence(aggregate: SessionTimelineAggregate) {

@@ -30,8 +30,13 @@ type EncodedMessage = {
 };
 
 type PendingMessage = EncodedMessage & {
+  message: JsonRpcMessage;
   sequence: number;
   liveStateSequence?: number;
+};
+
+export type WebSocketJsonRpcStream = Stream & {
+  clearSession: (sessionId: string) => void;
 };
 
 const encodedMessageCache = new WeakMap<object, EncodedMessage>();
@@ -40,9 +45,10 @@ export function createWebSocketJsonRpcStream(
   socket: WebSocket,
   onDecodeError: (error: unknown) => void,
   options: WebSocketBackpressureOptions = {},
-): Stream {
+): WebSocketJsonRpcStream {
   const handlers = new Set<(message: JsonRpcMessage) => void>();
   const pending = new Map<string, PendingMessage>();
+  const deliveryRevisions = new Map<string, number>();
   const softHighWater = options.softHighWaterBytes ?? SOFT_SEND_BUFFER_BYTES;
   const hardHighWater = options.hardHighWaterBytes ?? MAX_SEND_BUFFER_BYTES;
   const maxCoalescedBytes = options.maxCoalescedBytes ?? MAX_COALESCED_BYTES;
@@ -54,6 +60,7 @@ export function createWebSocketJsonRpcStream(
 
   const closeForResync = () => {
     pending.clear();
+    deliveryRevisions.clear();
     pendingBytes = 0;
     if (flushTimer) clearTimeout(flushTimer);
     flushTimer = undefined;
@@ -78,13 +85,77 @@ export function createWebSocketJsonRpcStream(
     return next;
   };
 
-  const sendEncoded = (payload: EncodedMessage) => {
+  const stampTimelineDelivery = (message: JsonRpcMessage): JsonRpcMessage => {
+    const notification = message as any;
+    const sessionId = notification?.params?.sessionId;
+    const batch = notification?.params?.update?.batch;
+    if (
+      notification?.method !== "session/update" ||
+      notification?.params?.update?.kind !== "timeline_batch" ||
+      typeof sessionId !== "string" ||
+      !batch
+    ) {
+      return message;
+    }
+    const revision = (deliveryRevisions.get(sessionId) ?? 0) + 1;
+    deliveryRevisions.set(sessionId, revision);
+    return {
+      ...notification,
+      params: {
+        ...notification.params,
+        update: {
+          ...notification.params.update,
+          batch: { ...batch, deliverySequence: revision },
+        },
+      },
+    };
+  };
+
+  const sendMessage = (message: JsonRpcMessage) => {
     if (socket.bufferedAmount >= hardHighWater) {
       closeForResync();
       return false;
     }
-    socket.send(payload.encoded);
+    socket.send(encodeOnce(stampTimelineDelivery(message)).encoded);
     return true;
+  };
+
+  const deletePending = (key: string) => {
+    const previous = pending.get(key);
+    if (!previous) return;
+    pending.delete(key);
+    pendingBytes -= previous.bytes;
+  };
+
+  const clearPendingSession = (sessionId: string) => {
+    const prefix = `${sessionId}:`;
+    for (const key of pending.keys()) {
+      if (key.startsWith(prefix)) {
+        deletePending(key);
+      }
+    }
+  };
+
+  const discardSupersededPending = (message: JsonRpcMessage) => {
+    const notification = message as any;
+    if (notification?.method !== "session/update") return;
+    const sessionId = notification.params?.sessionId;
+    const update = notification.params?.update;
+    if (typeof sessionId !== "string" || !update) return;
+    if (update.kind === "timeline_batch" && Array.isArray(update.batch?.entries)) {
+      for (const entry of update.batch.entries) {
+        if (!coalescibleTimelineEntryKey(sessionId, entry) && entry?.id) {
+          deletePending(`${sessionId}:timeline:${entry.id}`);
+        }
+      }
+      return;
+    }
+    if (update.kind === "agent_message" && update.streaming !== true && update.message?.id) {
+      deletePending(`${sessionId}:message:${update.message.id}`);
+    }
+    if (update.kind === "tool_call" && update.toolCall?.status !== "running" && update.toolCall?.id) {
+      deletePending(`${sessionId}:tool:${update.toolCall.id}`);
+    }
   };
 
   const scheduleFlush = () => {
@@ -104,7 +175,7 @@ export function createWebSocketJsonRpcStream(
       pending.clear();
       pendingBytes = 0;
       for (const item of queued) {
-        if (!sendEncoded(item)) return;
+        if (!sendMessage(item.message)) return;
       }
     }, retryDelayMs);
     flushTimer.unref?.();
@@ -132,6 +203,7 @@ export function createWebSocketJsonRpcStream(
     pendingBytes = nextBytes;
     pending.set(key, {
       ...payload,
+      message,
       sequence: ++pendingSequence,
       ...(liveStateSequence !== undefined ? { liveStateSequence } : {}),
     });
@@ -173,11 +245,20 @@ export function createWebSocketJsonRpcStream(
           for (const item of split.coalescible) {
             enqueueCoalescible(item.key, item.message);
           }
-          if (split.required) sendEncoded(encodeOnce(split.required));
+          if (split.required) {
+            discardSupersededPending(split.required);
+            sendMessage(split.required);
+          }
           return;
         }
       }
-      sendEncoded(encodeOnce(message));
+      const timeline = readTimelineBatch(message);
+      if (timeline?.replace) {
+        clearPendingSession(timeline.sessionId);
+      } else {
+        discardSupersededPending(message);
+      }
+      sendMessage(message);
     },
     onMessage(handler) {
       handlers.add(handler);
@@ -185,10 +266,33 @@ export function createWebSocketJsonRpcStream(
     },
     close() {
       if (flushTimer) clearTimeout(flushTimer);
+      flushTimer = undefined;
       pending.clear();
+      pendingBytes = 0;
+      deliveryRevisions.clear();
+      handlers.clear();
       socket.off("message", onRawMessage);
     },
+    clearSession(sessionId) {
+      clearPendingSession(sessionId);
+      deliveryRevisions.delete(sessionId);
+    },
   };
+}
+
+function readTimelineBatch(message: JsonRpcMessage) {
+  const notification = message as any;
+  const sessionId = notification?.params?.sessionId;
+  const update = notification?.params?.update;
+  if (
+    notification?.method !== "session/update" ||
+    typeof sessionId !== "string" ||
+    update?.kind !== "timeline_batch" ||
+    !update.batch
+  ) {
+    return undefined;
+  }
+  return { sessionId, replace: update.batch.replace === true };
 }
 
 function splitCoalescibleSessionUpdate(message: JsonRpcMessage) {
@@ -197,6 +301,7 @@ function splitCoalescibleSessionUpdate(message: JsonRpcMessage) {
   const sessionId = notification.params?.sessionId;
   const update = notification.params?.update;
   if (typeof sessionId !== "string" || !update) return undefined;
+  if (update.kind === "timeline_batch" && update.batch?.replace === true) return undefined;
   const directKey = coalescibleUpdateKey(sessionId, update);
   if (directKey) {
     return { coalescible: [{ key: directKey, message }], required: undefined };

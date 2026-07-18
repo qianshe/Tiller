@@ -1,10 +1,8 @@
 import type { WebSocket } from "ws";
-import { encodeMessage } from "@tiller/sync-protocol";
 import type { HelmHandlerContext } from "../../handlers/context";
 
 export type HandlerNotificationSocket = {
   readyState: number;
-  send(message: string): void;
 };
 
 type AuthenticatedSocketRegistry<TSocket extends HandlerNotificationSocket> = {
@@ -16,6 +14,12 @@ type SessionTopicRegistry = {
   unsubscribe: HelmHandlerContext["unsubscribeSessionTopic"];
   removeSocket: HelmHandlerContext["removeSocketSessionTopics"];
   listSubscribers: (sessionId: string) => string[];
+};
+
+type OutboundConnectionPort = {
+  notify: (socketId: string, method: string, params: unknown) => void;
+  clearSession: (socketId: string, sessionId: string) => void;
+  remove: (socketId: string) => void;
 };
 
 export type HandlerNotificationContext<TSocket extends HandlerNotificationSocket = WebSocket> = Omit<
@@ -37,14 +41,18 @@ export function createHandlerNotificationContext<
   TSocket extends HandlerNotificationSocket = WebSocket,
 >(options: {
   authenticatedSockets: AuthenticatedSocketRegistry<TSocket>;
+  getSocketId: (socket: TSocket) => string | undefined;
+  outboundConnections: OutboundConnectionPort;
   sessionTopics: SessionTopicRegistry;
 }): HandlerNotificationContext<TSocket> {
   const notify = (socket: TSocket, method: string, params: unknown) => {
     if (socket.readyState !== 1) {
       return;
     }
-
-    socket.send(encodeMessage({ jsonrpc: "2.0", method, params }));
+    const socketId = options.getSocketId(socket);
+    if (socketId) {
+      options.outboundConnections.notify(socketId, method, params);
+    }
   };
 
   const broadcastNotification = (method: string, params: unknown) => {
@@ -69,7 +77,13 @@ export function createHandlerNotificationContext<
     broadcastNotification,
     broadcastSessionTopic,
     subscribeSessionTopic: options.sessionTopics.subscribe,
-    unsubscribeSessionTopic: options.sessionTopics.unsubscribe,
-    removeSocketSessionTopics: options.sessionTopics.removeSocket,
+    unsubscribeSessionTopic: (socketId, sessionId) => {
+      options.sessionTopics.unsubscribe(socketId, sessionId);
+      options.outboundConnections.clearSession(socketId, sessionId);
+    },
+    removeSocketSessionTopics: (socketId) => {
+      options.sessionTopics.removeSocket(socketId);
+      options.outboundConnections.remove(socketId);
+    },
   };
 }

@@ -5,6 +5,33 @@ import {
   WEBSOCKET_RESYNC_CLOSE_CODE,
 } from "./websocket-stream";
 
+function timelineUpdate(
+  sessionId: string,
+  entries: unknown[],
+  options: { replace?: boolean; deliverySequence?: number } = {},
+) {
+  return {
+    jsonrpc: "2.0" as const,
+    method: "session/update",
+    params: {
+      sessionId,
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: options.replace ?? false,
+          deliverySequence: options.deliverySequence ?? 99,
+          lastSequence: 1,
+          entries,
+        },
+      },
+    },
+  };
+}
+
+function decodeMessages(sent: string[]) {
+  return sent.map((message) => JSON.parse(message));
+}
+
 test("websocket stream encodes outbound JSON-RPC messages", () => {
   const sent: string[] = [];
   const socket = {
@@ -204,4 +231,261 @@ test("websocket stream closes with resync code above hard high-water", () => {
     code: WEBSOCKET_RESYNC_CLOSE_CODE,
     reason: "Resync required: send buffer overflow",
   }]);
+});
+
+test("timeline delivery revisions are continuous per session on one connection", () => {
+  const sent: string[] = [];
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 0,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  } as any;
+  const stream = createWebSocketJsonRpcStream(socket, () => undefined);
+
+  stream.send(timelineUpdate("a", [{ id: "a-1", kind: "user_message" }]) as any);
+  stream.send(timelineUpdate("b", [{ id: "b-1", kind: "user_message" }]) as any);
+  stream.send(timelineUpdate("a", [{ id: "a-2", kind: "user_message" }]) as any);
+  stream.send(timelineUpdate("b", [{ id: "b-2", kind: "user_message" }]) as any);
+
+  assert.deepEqual(
+    decodeMessages(sent).map((message) => [
+      message.params.sessionId,
+      message.params.update.batch.deliverySequence,
+    ]),
+    [["a", 1], ["b", 1], ["a", 2], ["b", 2]],
+  );
+});
+
+test("two connections stamp independent revisions on the same logical batch", () => {
+  const firstSent: string[] = [];
+  const secondSent: string[] = [];
+  const createSocket = (sent: string[]) => ({
+    readyState: 1,
+    bufferedAmount: 0,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  }) as any;
+  const first = createWebSocketJsonRpcStream(createSocket(firstSent), () => undefined);
+  const second = createWebSocketJsonRpcStream(createSocket(secondSent), () => undefined);
+  const shared = timelineUpdate("session-1", [{ id: "m1", kind: "user_message" }]);
+
+  first.send(shared as any);
+  first.send(shared as any);
+  second.send(shared as any);
+
+  assert.deepEqual(
+    decodeMessages(firstSent).map((message) => message.params.update.batch.deliverySequence),
+    [1, 2],
+  );
+  assert.deepEqual(
+    decodeMessages(secondSent).map((message) => message.params.update.batch.deliverySequence),
+    [1],
+  );
+  assert.equal(shared.params.update.batch.deliverySequence, 99);
+});
+
+test("coalesced timeline updates allocate a revision only when flushed", async () => {
+  const sent: string[] = [];
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 3,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  } as any;
+  const stream = createWebSocketJsonRpcStream(socket, () => undefined, {
+    softHighWaterBytes: 2,
+    hardHighWaterBytes: 10,
+    retryDelayMs: 1,
+  });
+  const streaming = (text: string) => timelineUpdate("session-1", [{
+    id: "assistant-1",
+    kind: "assistant_message",
+    streaming: true,
+    chunks: [{ kind: "content", text, streaming: true }],
+  }]);
+
+  stream.send(streaming("a") as any);
+  stream.send(streaming("ab") as any);
+  socket.bufferedAmount = 0;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const messages = decodeMessages(sent);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].params.update.batch.deliverySequence, 1);
+  assert.equal(messages[0].params.update.batch.entries[0].chunks[0].text, "ab");
+});
+
+test("mixed required and streaming fragments receive revisions in actual send order", async () => {
+  const sent: string[] = [];
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 3,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  } as any;
+  const stream = createWebSocketJsonRpcStream(socket, () => undefined, {
+    softHighWaterBytes: 2,
+    hardHighWaterBytes: 10,
+    retryDelayMs: 1,
+  });
+
+  stream.send(timelineUpdate("session-1", [
+    { id: "user-1", kind: "user_message" },
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      streaming: true,
+      chunks: [{ kind: "content", text: "working", streaming: true }],
+    },
+  ]) as any);
+  socket.bufferedAmount = 0;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const messages = decodeMessages(sent);
+  assert.deepEqual(
+    messages.map((message) => [
+      message.params.update.batch.entries[0].id,
+      message.params.update.batch.deliverySequence,
+    ]),
+    [["user-1", 1], ["assistant-1", 2]],
+  );
+});
+
+test("coalescing keys isolate equal entity ids across sessions", async () => {
+  const sent: string[] = [];
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 3,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  } as any;
+  const stream = createWebSocketJsonRpcStream(socket, () => undefined, {
+    softHighWaterBytes: 2,
+    hardHighWaterBytes: 10,
+    retryDelayMs: 1,
+  });
+  const streaming = (sessionId: string, text: string) => timelineUpdate(sessionId, [{
+    id: "assistant-1",
+    kind: "assistant_message",
+    streaming: true,
+    chunks: [{ kind: "content", text, streaming: true }],
+  }]);
+
+  stream.send(streaming("a", "from-a") as any);
+  stream.send(streaming("b", "from-b") as any);
+  socket.bufferedAmount = 0;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  assert.deepEqual(
+    decodeMessages(sent).map((message) => [
+      message.params.sessionId,
+      message.params.update.batch.deliverySequence,
+      message.params.update.batch.entries[0].chunks[0].text,
+    ]),
+    [["a", 1, "from-a"], ["b", 1, "from-b"]],
+  );
+});
+
+test("terminal timeline entity removes an older pending running entity", async () => {
+  const sent: string[] = [];
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 3,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  } as any;
+  const stream = createWebSocketJsonRpcStream(socket, () => undefined, {
+    softHighWaterBytes: 2,
+    hardHighWaterBytes: 10,
+    retryDelayMs: 1,
+  });
+
+  stream.send(timelineUpdate("session-1", [{
+    id: "tool:1",
+    kind: "tool_call",
+    toolCall: { id: "1", status: "running" },
+  }]) as any);
+  stream.send(timelineUpdate("session-1", [{
+    id: "tool:1",
+    kind: "tool_call",
+    toolCall: { id: "1", status: "completed" },
+  }]) as any);
+  socket.bufferedAmount = 0;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const messages = decodeMessages(sent);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].params.update.batch.deliverySequence, 1);
+  assert.equal(messages[0].params.update.batch.entries[0].toolCall.status, "completed");
+});
+
+test("replace timeline snapshot stays atomic and clears pending session fragments", async () => {
+  const sent: string[] = [];
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 3,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  } as any;
+  const stream = createWebSocketJsonRpcStream(socket, () => undefined, {
+    softHighWaterBytes: 2,
+    hardHighWaterBytes: 10,
+    retryDelayMs: 1,
+  });
+
+  stream.send(timelineUpdate("session-1", [{
+    id: "assistant-pending",
+    kind: "assistant_message",
+    streaming: true,
+    chunks: [{ kind: "content", text: "pending", streaming: true }],
+  }]) as any);
+  stream.send(timelineUpdate("session-1", [
+    { id: "user-1", kind: "user_message" },
+    { id: "assistant-1", kind: "assistant_message", chunks: [] },
+  ], { replace: true }) as any);
+  socket.bufferedAmount = 0;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+
+  const messages = decodeMessages(sent);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].params.update.batch.replace, true);
+  assert.equal(messages[0].params.update.batch.entries.length, 2);
+  assert.equal(messages[0].params.update.batch.deliverySequence, 1);
+});
+
+test("clearing a session lane removes pending fragments and resets its revision", async () => {
+  const sent: string[] = [];
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 0,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  } as any;
+  const stream = createWebSocketJsonRpcStream(socket, () => undefined);
+
+  stream.send(timelineUpdate("session-1", [{ id: "first", kind: "user_message" }]) as any);
+  stream.clearSession("session-1");
+  stream.send(timelineUpdate("session-1", [{ id: "second", kind: "user_message" }]) as any);
+
+  assert.deepEqual(
+    decodeMessages(sent).map((message) => message.params.update.batch.deliverySequence),
+    [1, 1],
+  );
 });

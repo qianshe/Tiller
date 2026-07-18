@@ -86,6 +86,15 @@ const replayPlanEvent: SessionRuntimeEvent = {
   },
 };
 
+const replayCompactionEvent: SessionRuntimeEvent = {
+  type: "compaction",
+  phase: "completed",
+  source: "heuristic",
+  timestamp: "2026-06-08T01:00:01.000Z",
+  summaryText: "恢复时重放的历史压缩摘要",
+  messageId: "compact-summary-1",
+};
+
 test("restore replay sink suppresses historical message replay until the restored session receives a new prompt", () => {
   const forwarded: SessionRuntimeEvent[] = [];
   const suppressed: SessionRuntimeEvent[] = [];
@@ -123,6 +132,7 @@ test("restore replay sink suppresses replay artifacts until prompt boundary", ()
   sink.onEvent(replayCommandOutputEvent);
   sink.onEvent(replayDiffEvent);
   sink.onEvent(replayPlanEvent);
+  sink.onEvent(replayCompactionEvent);
 
   assert.deepEqual(forwarded, []);
   assert.deepEqual(suppressed, [
@@ -130,10 +140,12 @@ test("restore replay sink suppresses replay artifacts until prompt boundary", ()
     replayCommandOutputEvent,
     replayDiffEvent,
     replayPlanEvent,
+    replayCompactionEvent,
   ]);
 
   sink.setSuppressing(false);
   sink.onEvent(replayToolCallEvent);
-  assert.deepEqual(forwarded, [replayToolCallEvent]);
+  sink.onEvent(replayCompactionEvent);
+  assert.deepEqual(forwarded, [replayToolCallEvent, replayCompactionEvent]);
 });
 

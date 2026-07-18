@@ -25,6 +25,33 @@ export type HelmRpcConnectionHandlersOptions = {
   logError: (message: string) => void;
 };
 
+export type HelmOutboundConnection = {
+  notify: (method: string, params: unknown) => void;
+  clearSession: (sessionId: string) => void;
+};
+
+export type HelmOutboundConnectionRegistry = {
+  add: (socketId: string, connection: HelmOutboundConnection) => void;
+  has: (socketId: string) => boolean;
+  notify: (socketId: string, method: string, params: unknown) => void;
+  clearSession: (socketId: string, sessionId: string) => void;
+  remove: (socketId: string) => void;
+};
+
+export function createHelmOutboundConnectionRegistry(): HelmOutboundConnectionRegistry {
+  const connections = new Map<string, HelmOutboundConnection>();
+
+  return {
+    add: (socketId, connection) => connections.set(socketId, connection),
+    has: (socketId) => connections.has(socketId),
+    notify: (socketId, method, params) => connections.get(socketId)?.notify(method, params),
+    clearSession: (socketId, sessionId) => connections.get(socketId)?.clearSession(sessionId),
+    remove: (socketId) => {
+      connections.delete(socketId);
+    },
+  };
+}
+
 export function createHelmRpcConnectionHandlers(
   options: HelmRpcConnectionHandlersOptions,
 ): ConnectionHandlers {
@@ -43,6 +70,7 @@ export function createHelmRpcConnectionHandlers(
 export type AttachHelmRpcConnectionOptions = {
   socket: WebSocket;
   getSocketId: (socket: WebSocket) => string | undefined;
+  outboundConnections: HelmOutboundConnectionRegistry;
   createHandlerContext: (socketId?: string) => HelmHandlerContext;
   logError: (message: string) => void;
   logInfo?: (message: string) => void;
@@ -78,11 +106,21 @@ export function attachHelmRpcConnection(options: AttachHelmRpcConnectionOptions)
       logError: options.logError,
     }),
   );
+  const socketId = options.getSocketId(options.socket);
+  if (socketId) {
+    options.outboundConnections.add(socketId, {
+      notify: (method, params) => connection.notify(method, params),
+      clearSession: (sessionId) => stream.clearSession(sessionId),
+    });
+  }
   options.socket.once("close", () => {
     if (coalescedDeltaCount > 0) {
       options.logInfo?.(
         `[tiller] websocket.backpressure.summary coalescedDeltaCount=${coalescedDeltaCount}`,
       );
+    }
+    if (socketId) {
+      options.outboundConnections.remove(socketId);
     }
     connection.close();
   });

@@ -80,6 +80,7 @@ export type SessionTimelineEntry =
 
 export type SessionTimelineBatch = {
   replace: boolean;
+  /** Per-connection, per-session send revision stamped by the outbound transport. */
   deliverySequence: number;
   lastSequence: number;
   entries: SessionTimelineEntry[];

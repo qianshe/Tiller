@@ -36,7 +36,8 @@ function isRestoreReplayEvent(event: SessionRuntimeEvent, assistantBaseline: Age
     event.type === "tool-call" ||
     event.type === "command-output" ||
     event.type === "diff-update" ||
-    event.type === "plan-update"
+    event.type === "plan-update" ||
+    event.type === "compaction"
   );
 }
 

@@ -57,6 +57,7 @@ export type SessionTimelineBatchUpdate<TimelineEntry = unknown> = {
   kind: "timeline_batch";
   batch: {
     replace: boolean;
+    /** Per-connection, per-session send revision stamped by the outbound transport. */
     deliverySequence: number;
     lastSequence: number;
     entries: TimelineEntry[];
