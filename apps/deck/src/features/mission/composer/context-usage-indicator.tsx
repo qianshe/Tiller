@@ -141,7 +141,11 @@ export function ContextUsageIndicator({ sessionId, isMobile }: ContextUsageIndic
           />
         ) : null}
       </svg>
-      {!hasUsage ? <span className="text-2xs text-muted-foreground">{DASH}</span> : null}
+      {!hasUsage ? (
+        <span className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[8px] leading-none text-muted-foreground">
+          {DASH}
+        </span>
+      ) : null}
     </span>
   );
 
