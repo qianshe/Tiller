@@ -3,7 +3,11 @@ import test from "node:test";
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { useDeckStore } from "../../../store";
-import { buildUsageTooltipBody, ContextUsageIndicator } from "./context-usage-indicator.js";
+import {
+  buildUsageTooltipBody,
+  ContextUsageIndicator,
+  shouldAcceptUsageUpdate,
+} from "./context-usage-indicator.js";
 
 test("empty state renders empty ring and dash marker without tooltip trigger role", () => {
   useDeckStore.setState({ sessionLiveStates: {} } as any);
@@ -87,4 +91,27 @@ test("empty state still has no tooltip content section", () => {
   assert.doesNotMatch(html, /剩余:/u);
   assert.doesNotMatch(html, /用量:/u);
   assert.doesNotMatch(html, /data-state=/u);
+});
+
+test("high-water accepts first usage when prev is undefined", () => {
+  assert.equal(shouldAcceptUsageUpdate(undefined, 1000), true);
+});
+
+test("high-water accepts increasing used", () => {
+  assert.equal(shouldAcceptUsageUpdate(1000, 1200), true);
+  assert.equal(shouldAcceptUsageUpdate(1000, 1000), true);
+});
+
+test("high-water rejects small drop as caliber noise (below threshold)", () => {
+  // 2x 口径噪音:343200 -> 171600, drop = 0.5 < 0.6 阈值,丢弃
+  assert.equal(shouldAcceptUsageUpdate(343200, 171600), false);
+  // 30% 下降,丢弃
+  assert.equal(shouldAcceptUsageUpdate(1000, 700), false);
+});
+
+test("high-water accepts large drop as compaction (at/above threshold)", () => {
+  // 60% drop 恰好阈值,接受
+  assert.equal(shouldAcceptUsageUpdate(1000, 400), true);
+  // 80% drop,典型 compaction,接受
+  assert.equal(shouldAcceptUsageUpdate(343000, 68000), true);
 });

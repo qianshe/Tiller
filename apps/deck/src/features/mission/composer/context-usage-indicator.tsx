@@ -1,4 +1,4 @@
-import { useState, type JSX, type ReactElement } from "react";
+import { useEffect, useRef, useState, type JSX, type ReactElement } from "react";
 import type { CanonicalSessionUsage } from "@tiller/shared";
 import { useDeckStore } from "../../../store";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../../shared/ui";
@@ -7,10 +7,31 @@ const DASH = "–";
 const RADIUS = 6;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS; // ≈37.699
 
-export type ContextUsageIndicatorProps = {
-  sessionId: string | null | undefined;
-  isMobile: boolean;
-};
+/**
+ * 降幅 ≥ 此阈值视为 compaction,允许水位下降;否则视为 agent 交替上报
+ * 不同口径(如完整窗口 vs 活动段,实测约 2x 差)的噪音,丢弃以稳定显示。
+ * 取值依据:Claude Code 实测口径噪音降幅 ~50%,真 compact 通常 ≥75%。
+ */
+export const COMPACT_DROP_THRESHOLD = 0.6;
+/**
+ * 节流窗口:升水位期间多次上报在窗口内只刷新一次 UI,降低重渲染频次。
+ * compaction 触发的下降不受节流,立即刷新。
+ */
+export const USAGE_THROTTLE_MS = 500;
+
+/**
+ * high-water + compaction 判定。返回 true 表示 next 应作为新显示值。
+ * 纯函数便于单测;时间相关节流由组件 effect 处理。
+ */
+export function shouldAcceptUsageUpdate(
+  prev: number | undefined,
+  next: number,
+): boolean {
+  if (prev === undefined) return true;
+  if (next >= prev) return true;
+  const drop = (prev - next) / prev;
+  return drop >= COMPACT_DROP_THRESHOLD;
+}
 
 /**
  * 悬浮窗内容(纯展示,SSR 可单独渲染断言)。从组件抽出以便测试在
@@ -42,18 +63,58 @@ export function buildUsageTooltipBody(usage: CanonicalSessionUsage): ReactElemen
   );
 }
 
-export function ContextUsageIndicator({ sessionId, isMobile }: ContextUsageIndicatorProps): JSX.Element {
-  // SSR 桥接:zustand v5 用 getInitialState 作为 useSyncExternalStore 的 server
-  // snapshot,后续 setState 在 server render 时不可见。lazy useState 让首次
-  // render 直接读 getState(),使 renderToStaticMarkup 测试与生产客户端首次
-  // 渲染都能拿到真实数据;之后 liveUsage selector 接管响应式更新。
-  const [initialUsage] = useState(() =>
-    sessionId ? useDeckStore.getState().sessionLiveStates[sessionId]?.usage : undefined,
-  );
-  const liveUsage = useDeckStore((state) =>
+/**
+ * 稳定化 usage:high-water(只升不降,降幅≥60% 视为 compact 才降)
+ * + 500ms 节流(升水位合并刷新,compact 立即刷新)。
+ * SSR 下 effect 不跑,直接返回 lazy initial(真实快照),兼容
+ * renderToStaticMarkup 测试与 zustand v5 server snapshot 行为。
+ */
+function useStableUsage(
+  sessionId: string | null | undefined,
+): CanonicalSessionUsage | undefined {
+  const live = useDeckStore((state) =>
     sessionId ? state.sessionLiveStates[sessionId]?.usage : undefined,
   );
-  const usage = liveUsage ?? initialUsage;
+  const [stable, setStable] = useState<CanonicalSessionUsage | undefined>(() =>
+    sessionId ? useDeckStore.getState().sessionLiveStates[sessionId]?.usage : undefined,
+  );
+  const highWaterRef = useRef<number | undefined>(stable?.used);
+  const lastFlushRef = useRef<number>(0);
+
+  // 会话切换:重置水位与显示,避免跨会话串值。
+  useEffect(() => {
+    const initial = sessionId
+      ? useDeckStore.getState().sessionLiveStates[sessionId]?.usage
+      : undefined;
+    highWaterRef.current = initial?.used;
+    lastFlushRef.current = 0;
+    setStable(initial);
+  }, [sessionId]);
+
+  // live 上报:high-water 过滤 + 节流刷新。
+  useEffect(() => {
+    if (!live || live.size <= 0) return;
+    if (!shouldAcceptUsageUpdate(highWaterRef.current, live.used)) return;
+    const prev = highWaterRef.current;
+    const isCompaction = prev !== undefined && live.used < prev;
+    highWaterRef.current = live.used;
+    const now = Date.now();
+    if (isCompaction || now - lastFlushRef.current >= USAGE_THROTTLE_MS) {
+      lastFlushRef.current = now;
+      setStable(live);
+    }
+  }, [live]);
+
+  return stable;
+}
+
+export type ContextUsageIndicatorProps = {
+  sessionId: string | null | undefined;
+  isMobile: boolean;
+};
+
+export function ContextUsageIndicator({ sessionId, isMobile }: ContextUsageIndicatorProps): JSX.Element {
+  const usage = useStableUsage(sessionId);
   const [open, setOpen] = useState(false);
 
   const ratio = usage && usage.size > 0 ? usage.used / usage.size : 0;
