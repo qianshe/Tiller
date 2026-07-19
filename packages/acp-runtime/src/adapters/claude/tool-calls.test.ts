@@ -474,6 +474,7 @@ test("Claude lifecycle normalization defers weak placeholders and reuses the lau
     "subagent:raw-internal-agent",
   );
   assert.equal(rawLaunchCompleted?.title, "Claude raw launch");
+  assert.equal(rawLaunchCompleted?.status, "completed");
 
   const launched = normalizer.normalize(baseToolCall({
     id: "task-call",

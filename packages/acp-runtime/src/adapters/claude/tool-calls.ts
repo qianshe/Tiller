@@ -159,7 +159,9 @@ export function createClaudeToolCallNormalizer(
           ...(commandId
             ? { commandId }
             : {}),
-          ...(background ? { status: "running" as const } : {}),
+          ...(background && !isTerminalToolStatus(normalized.status)
+            ? { status: "running" as const }
+            : {}),
         };
       }
       const lifecycleUpdate = normalized.kind === "subagent" &&
@@ -315,7 +317,9 @@ function normalizeClaudePayloadSubagentToolCall(
       ? description
       : context.toolCall.title,
     ...(normalizedInput ? { input: normalizedInput } : {}),
-    ...(background ? { status: "running" as const } : {}),
+    ...(background && !isTerminalToolStatus(context.toolCall.status)
+      ? { status: "running" as const }
+      : {}),
     ...(agentId ? { commandId: `subagent:${agentId}` } : {}),
   };
 }
@@ -454,6 +458,10 @@ function resolveClaudeSearchProjectionTitle(
 
 function isClaudeInputStreaming(status: AgentToolCall["status"]) {
   return status === "pending" || status === "running";
+}
+
+function isTerminalToolStatus(status: AgentToolCall["status"]) {
+  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 function isGenericClaudeShellTitle(title: string) {
