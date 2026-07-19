@@ -22,11 +22,19 @@ export function readClaudeTranscriptPlanFromDisk(
 ): AgentPlan | null {
   // Claude ACP replay can omit TaskCreate metadata needed to rebuild plans;
   // keep that transcript repair isolated in this provider adapter.
+  return extractClaudePlanFromToolCalls(
+    readClaudeTaskToolCallsFromDisk(options),
+  );
+}
+
+export function readClaudeTaskToolCallsFromDisk(
+  options: ClaudeTranscriptPlanOptions,
+): AgentToolCall[] {
   const path = resolveClaudeTranscriptPath(options);
   if (!existsSync(path)) {
-    return null;
+    return [];
   }
-  return extractClaudePlanFromTranscriptText(readFileSync(path, "utf8"));
+  return extractClaudeTaskToolCallsFromTranscriptText(readFileSync(path, "utf8"));
 }
 
 export function resolveClaudeTranscriptPath(options: ClaudeTranscriptPlanOptions) {
@@ -39,6 +47,12 @@ export function resolveClaudeTranscriptPath(options: ClaudeTranscriptPlanOptions
 }
 
 export function extractClaudePlanFromTranscriptText(raw: string): AgentPlan | null {
+  return extractClaudePlanFromToolCalls(
+    extractClaudeTaskToolCallsFromTranscriptText(raw),
+  );
+}
+
+export function extractClaudeTaskToolCallsFromTranscriptText(raw: string): AgentToolCall[] {
   const pendingToolUses = new Map<string, PendingToolUse>();
   const taskToolCalls: AgentToolCall[] = [];
 
@@ -67,7 +81,7 @@ export function extractClaudePlanFromTranscriptText(raw: string): AgentPlan | nu
     }
   }
 
-  return extractClaudePlanFromToolCalls(taskToolCalls);
+  return taskToolCalls;
 }
 
 function encodeClaudeProjectPath(cwd: string) {

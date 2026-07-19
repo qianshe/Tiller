@@ -5,6 +5,7 @@ import {
   resolveUnsupportedCleanup,
 } from "../shared";
 import { createClaudePlanUpdateProjector } from "./plan-events";
+import { createClaudePromptPlanObserver } from "./prompt-plan";
 import { createClaudePromptToolCallObserver } from "./prompt-tool-calls";
 import { createClaudeToolEvidenceCollector } from "./evidence";
 import { promptEventsToToolObservations } from "../../tool-recognition";
@@ -18,6 +19,12 @@ const CLAUDE_ACP_COMMANDS = [
 
 export function createClaudeAcpAdapter(): AcpAgentAdapter {
   const planProjector = createClaudePlanUpdateProjector();
+  const promptPlans = createClaudePromptPlanObserver(
+    (context, toolCalls) => planProjector.reconcileTaskUpdates(
+      context.runtimeSessionId,
+      toolCalls,
+    ),
+  );
   const toolEvidence = createClaudeToolEvidenceCollector();
   const promptToolCalls = createClaudePromptToolCallObserver();
   return {
@@ -51,9 +58,11 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
         sessionId: context.runtimeSessionId,
         cwd: context.cwd,
       }),
+    pollPromptRuntimeEvents: (context) => promptPlans.poll(context),
     mapToolCallUpdate: planProjector.mapUpdate,
     disposeSession: (sessionId) => {
       planProjector.disposeSession(sessionId);
+      promptPlans.dispose(sessionId);
       toolEvidence.disposeSession(sessionId);
       promptToolCalls.dispose(sessionId);
     },

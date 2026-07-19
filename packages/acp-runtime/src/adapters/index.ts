@@ -119,7 +119,7 @@ export function pollAdapterPromptEvents(
 ) {
   const adapter = resolveAcpAgentAdapter(provider);
   const observations = adapter.pollPromptToolObservations?.(context) ?? [];
-  return observations.flatMap((sourceObservation) => {
+  const toolEvents = observations.flatMap((sourceObservation) => {
     const observation = { ...sourceObservation, providerId: provider.id };
     const evidence = adapter.collectToolEvidence?.({ observation }) ?? [];
     return recognizeToolObservation(observation, evidence).toolCalls.map(
@@ -129,6 +129,10 @@ export function pollAdapterPromptEvents(
       }),
     );
   });
+  return [
+    ...toolEvents,
+    ...(adapter.pollPromptRuntimeEvents?.(context) ?? []),
+  ];
 }
 
 export function disposeAdapterSession(

@@ -118,6 +118,9 @@ export type AcpAgentAdapter = {
   pollPromptToolObservations?(
     context: AcpPromptObservationContext,
   ): ToolObservation[];
+  pollPromptRuntimeEvents?(
+    context: AcpPromptObservationContext,
+  ): SessionRuntimeEvent[];
   disposeSession?(sessionId: string): void;
   expandRuntimeEvent?(event: SessionRuntimeEvent): SessionRuntimeEvent[] | null;
   collectToolEvidence?(context: AcpToolEvidenceContext): ToolEvidence[];
