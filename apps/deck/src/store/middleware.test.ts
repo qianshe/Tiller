@@ -108,6 +108,31 @@ test("deck persistence includes compact chat workbench state", () => {
   });
 });
 
+test("deck persistence strips legacy retry prompt contents from notifications", () => {
+  const options = createDeckStorePersistOptions();
+  assert.ok(options.partialize);
+  const partial = options.partialize({
+    preferences: {} as never,
+    daemonProfiles: [],
+    selectedHelmKey: "local",
+    openChatSessionIds: [],
+    focusedChatWindowId: null,
+    draftChatWindow: null,
+    dismissedCompletedSessionPlanKeys: {},
+    notifications: [{
+      id: "notification-1",
+      kind: "error",
+      message: "Prompt failed",
+      sessionId: "session-1",
+      createdAt: "2026-06-02T00:00:00.000Z",
+      retryPrompt: { text: "private prompt" },
+    }],
+  } as never);
+
+  assert.equal(partial.notifications[0]?.message, "Prompt failed");
+  assert.equal((partial.notifications[0] as unknown as Record<string, unknown>).retryPrompt, undefined);
+});
+
 test("transient live-state updates do not write persisted Deck state", () => {
   const writes: string[] = [];
   const storage = createDeckStorePersistStorage({

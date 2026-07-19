@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import type { AcpAgentProvider, WorktreeSummary } from "@tiller/shared";
 import { AcpConnection } from "./lifecycle";
+import { wasAcpPromptFailureReported } from "./prompt-failure";
 import type { SessionRuntimeEvent } from "../runtime-types";
 
 const require = createRequire(import.meta.url);
@@ -625,7 +626,17 @@ test("prompt transport close marks the connection as unusable", async () => {
       onEvent: (event) => events.push(event as { type: string; message?: string }),
     });
 
-    await assert.rejects(handle.prompt("close now"), /ACP connection closed|ACP process exited/u);
+    await assert.rejects(
+      handle.prompt("close now"),
+      (error: unknown) => {
+        assert.match(
+          error instanceof Error ? error.message : "",
+          /ACP connection closed|ACP process exited/u,
+        );
+        assert.equal(wasAcpPromptFailureReported(error), true);
+        return true;
+      },
+    );
 
     assert.equal(["closed", "error"].includes(connection.inventory().status), true);
     assert.match(connection.inventory().lastError ?? "", /ACP connection closed/u);

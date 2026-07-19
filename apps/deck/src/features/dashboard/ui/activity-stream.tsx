@@ -1,6 +1,8 @@
 import { useState, type CSSProperties } from "react";
-import { AgentIcon, StatusDot } from "../../../shared/ui";
+import { AgentIcon, Icon, StatusDot } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
+import type { DashboardNotification } from "../orchestration/dashboard-view-model";
+import { DashboardNotificationList } from "./notification-list";
 
 export type DashboardActivityApproval = {
   id: string;
@@ -50,11 +52,13 @@ type DashboardActivityStreamProps = {
   approvals: DashboardActivityApproval[];
   planSessionCount: number;
   toolCallCount: number;
+  notifications?: DashboardNotification[];
   onOpenSession?: (sessionId: string) => void;
+  onClearNotifications?: () => void;
   isMobile?: boolean;
 };
 
-type ActivityTab = "最近" | "权限" | "7天前";
+type ActivityTab = "最近" | "权限" | "通知" | "7天前";
 
 const ACTIVITY_GRID_COLUMNS = "grid grid-cols-[88px_minmax(140px,1fr)_minmax(88px,0.85fr)_minmax(96px,0.85fr)_112px_var(--dashboard-activity-acp-width)] gap-2";
 const ACTIVITY_SPARKLINE_HOURS = 24;
@@ -219,7 +223,9 @@ export function DashboardActivityStream({
   approvals,
   planSessionCount,
   toolCallCount,
+  notifications = [],
   onOpenSession,
+  onClearNotifications,
   isMobile = false,
 }: DashboardActivityStreamProps) {
   const [activeTab, setActiveTab] = useState<ActivityTab>("最近");
@@ -289,22 +295,56 @@ export function DashboardActivityStream({
     <section className="wb-pane flex min-h-[520px] flex-col lg:col-span-2" style={acpColumnStyle}>
       <div className="wb-pane-head min-h-9">
         <span className="wb-pane-head-title">活动流</span>
-        <div className="ml-2 flex items-center gap-1">
-          {(["最近", "权限", "7天前"] as const).map((item) => (
+        <div className="ml-2 flex items-center gap-1" role="tablist" aria-label="活动分类">
+          {(["最近", "权限", "通知", "7天前"] as const).map((item) => (
             <button
               key={item}
               type="button"
               onClick={() => setActiveTab(item)}
-              className={`h-6 rounded px-2 text-meta ${activeTab === item ? "bg-surface-sunken font-medium text-foreground" : "text-muted-foreground hover:bg-surface-sunken"}`}
+              className={`inline-flex h-6 items-center gap-1 rounded px-2 text-meta ${activeTab === item ? "bg-surface-sunken font-medium text-foreground" : "text-muted-foreground hover:bg-surface-sunken"}`}
+              role="tab"
+              aria-selected={activeTab === item}
             >
               {item}
+              {item === "通知" && notifications.length > 0 ? (
+                <span className="font-mono tabular text-warning">{notifications.length}</span>
+              ) : null}
             </button>
           ))}
         </div>
-        <span className="ml-auto font-mono text-meta tabular text-muted-foreground">实时</span>
-        <StatusDot tone="primary" pulse size={5} />
+        {activeTab === "通知" ? (
+          <>
+            <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{notifications.length} 条</span>
+            {notifications.length > 0 && onClearNotifications ? (
+              <button
+                type="button"
+                className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-surface-sunken hover:text-foreground"
+                title="清空通知"
+                aria-label="清空通知"
+                onClick={onClearNotifications}
+              >
+                <Icon name="trash" size={12} />
+              </button>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <span className="ml-auto font-mono text-meta tabular text-muted-foreground">实时</span>
+            <StatusDot tone="primary" pulse size={5} />
+          </>
+        )}
       </div>
-      <div className={`${ACTIVITY_GRID_COLUMNS} border-b border-border-ghost px-3 py-2 font-mono text-meta uppercase tracking-wider text-muted-foreground`}>
+      {activeTab === "通知" ? (
+        <DashboardNotificationList
+          embedded
+          notifications={notifications}
+          onOpenSession={onOpenSession}
+        />
+      ) : null}
+      <div
+        className={`${ACTIVITY_GRID_COLUMNS} border-b border-border-ghost px-3 py-2 font-mono text-meta uppercase tracking-wider text-muted-foreground`}
+        hidden={activeTab === "通知"}
+      >
         <span>状态</span>
         <span>名称</span>
         <span>项目</span>
@@ -312,7 +352,7 @@ export function DashboardActivityStream({
         <span>计划 / 权限</span>
         <span>ACP</span>
       </div>
-      <ul className="flex-1 overflow-y-auto overflow-x-hidden">
+      <ul className="flex-1 overflow-y-auto overflow-x-hidden" hidden={activeTab === "通知"}>
         {filteredActivities.map((activity) => (
           <li key={activity.id} className="border-b border-border-ghost last:border-b-0">
             <button
@@ -345,7 +385,7 @@ export function DashboardActivityStream({
           </li>
         ))}
       </ul>
-      <div className="flex items-baseline gap-2 border-t border-border-ghost px-3 py-2.5">
+      <div className="flex items-baseline gap-2 border-t border-border-ghost px-3 py-2.5" hidden={activeTab === "通知"}>
         <span className="font-mono text-meta uppercase tracking-wider text-muted-foreground">近24h</span>
         <Sparkline points={sparklinePoints} />
         <span className="font-mono text-meta tabular text-muted-foreground">{recentActivityCount} 活动</span>

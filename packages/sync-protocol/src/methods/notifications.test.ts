@@ -6,6 +6,7 @@ import * as sessionSubscribe from "./session/subscribe";
 import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
+import * as notificationRaised from "./notification/raised";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
 
@@ -77,6 +78,17 @@ test("error/raised is a notification with at least a message", () => {
   assert.equal(errorRaised.method, "error/raised");
   assert.equal(errorRaised.descriptor.kind, "notification");
   errorRaised.ParamsSchema.parse({ message: "boom" });
+});
+
+test("notification/raised carries extensible source and severity fields", () => {
+  assert.equal(notificationRaised.method, "notification/raised");
+  assert.equal(notificationRaised.descriptor.kind, "notification");
+  notificationRaised.ParamsSchema.parse({
+    kind: "warning",
+    source: "storage",
+    message: "Storage is temporarily unavailable",
+    occurredAt: "2026-07-18T12:00:00.000Z",
+  });
 });
 
 test("device/pair and device/authenticate carry the expected fields", () => {

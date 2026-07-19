@@ -15,6 +15,7 @@ import {
   applyApprovalResolved,
   applyDeviceResult,
   applyErrorRaised,
+  applyNotificationRaised,
   applyInventoryResult,
   applySessionResult,
   applySessionUpdate,
@@ -177,6 +178,7 @@ export function createServerEventController(source: any, helpers: any) {
       toolCallsRef,
       mergeSessionToolCalls,
       appendSystemMessage,
+      addNotification: source.addNotification,
     };
   }
 
@@ -217,6 +219,10 @@ export function createServerEventController(source: any, helpers: any) {
     }
     if (method === "error/raised") {
       applyErrorRaised(params as any, activityContext());
+      return;
+    }
+    if (method === "notification/raised") {
+      applyNotificationRaised(params as any, activityContext());
     }
   }
 

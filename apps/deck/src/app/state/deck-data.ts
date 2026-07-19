@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useDeckStore } from "../../store";
+import { useDeckStore, type DeckNotification } from "../../store";
 import type {
   AcpAgentProvider,
   AgentMessage,
@@ -15,7 +15,6 @@ import type {
   SessionPromptQueueSnapshot,
   WorktreeSummary,
 } from "@tiller/shared";
-
 type DeckApprovalItem = {
   request: PermissionRequest;
 };
@@ -121,6 +120,10 @@ export function useDeckData(missionVisualFixture: any) {
   const setActivityHistoryState = useDeckStore((state) => state.setActivityHistoryState);
   const activityVisibleCounts = useDeckStore((state) => state.activityVisibleCounts);
   const setActivityVisibleCounts = useDeckStore((state) => state.setActivityVisibleCounts);
+  const storedNotifications = useDeckStore((state) => state.notifications);
+  const notifications = (missionVisualFixture?.notifications ?? storedNotifications) as DeckNotification[];
+  const addNotification = useDeckStore((state) => state.addNotification);
+  const clearNotifications = useDeckStore((state) => state.clearNotifications);
 
   const sessionTitles = useDeckStore((state) => state.sessionTitles);
   const setSessionTitles = useDeckStore((state) => state.setSessionTitles);
@@ -233,6 +236,9 @@ export function useDeckData(missionVisualFixture: any) {
     setActivityHistoryState,
     activityVisibleCounts,
     setActivityVisibleCounts,
+    notifications,
+    addNotification,
+    clearNotifications,
     sessionTitles,
     setSessionTitles,
     diffs,

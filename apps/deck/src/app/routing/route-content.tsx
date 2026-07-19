@@ -64,6 +64,8 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     focusedChatWindowId,
     sessionPlans,
     helms,
+    notifications,
+    clearNotifications,
     approvalItemsById,
     toolCalls,
     navigateToView,
@@ -192,6 +194,7 @@ function renderDashboard() {
     sessionPlans,
     toolCalls,
     approvalItemsById,
+    notifications,
     resolveDisplaySessionTitle,
   });
 
@@ -207,6 +210,7 @@ function renderDashboard() {
       onRespondApproval={(approvalRequestId, decision) =>
         respondToPermission(approvalRequestId, decision)
       }
+      onClearNotifications={clearNotifications}
     />
   );
 }

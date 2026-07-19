@@ -2,7 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, SessionConfigOption, SessionSummary, TrustedDeviceSummary } from "@tiller/shared";
 import { useDeckStore } from "../../store";
-import { applyDeviceResult, applyInventoryResult, applySessionResult, applySessionUpdate } from "./rpc-event-appliers.js";
+import {
+  applyDeviceResult,
+  applyErrorRaised,
+  applyNotificationRaised,
+  applyInventoryResult,
+  applySessionResult,
+  applySessionUpdate,
+} from "./rpc-event-appliers.js";
 
 function session(id: string): SessionSummary {
   return {
@@ -27,11 +34,84 @@ function resetStore() {
     sessions: [],
     messages: {},
     sessionTimeline: {},
+    notifications: [],
     trustedDevices: [],
     sessionAvailableCommands: {},
     agentAvailableCommands: {},
   });
 }
+
+test("applyErrorRaised records error context without prompt contents", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [session("s1")] });
+  const systemMessages: Array<{ sessionId: string; text: string }> = [];
+
+  const handled = applyErrorRaised(
+    {
+      sessionId: "s1",
+      code: "ACP_PROMPT_FAILED",
+      message: "ACP agent produced no prompt progress within 45000ms.",
+    },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: (sessionId: string, text: string) => {
+        systemMessages.push({ sessionId, text });
+      },
+      addNotification: (notification) => {
+        useDeckStore.getState().addNotification(notification);
+      },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(systemMessages, [{
+    sessionId: "s1",
+    text: "[ACP_PROMPT_FAILED] ACP agent produced no prompt progress within 45000ms.",
+  }]);
+  assert.deepEqual(useDeckStore.getState().notifications[0], {
+    id: useDeckStore.getState().notifications[0]?.id,
+    kind: "error",
+    message: "ACP agent produced no prompt progress within 45000ms.",
+    source: "rpc",
+    code: "ACP_PROMPT_FAILED",
+    sessionId: "s1",
+    createdAt: useDeckStore.getState().notifications[0]?.createdAt,
+  });
+  assert.equal(useDeckStore.getState().sessions[0]?.status, "error");
+  assert.match(useDeckStore.getState().sessions[0]?.lastMessagePreview ?? "", /ACP_PROMPT_FAILED/);
+});
+
+test("applyNotificationRaised accepts non-error system notifications", () => {
+  resetStore();
+  const handled = applyNotificationRaised(
+    {
+      kind: "warning",
+      source: "storage",
+      code: "STORAGE_DEGRADED",
+      message: "Storage is temporarily unavailable; new events remain in memory.",
+      occurredAt: "2026-07-18T12:00:00.000Z",
+    },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => {
+        throw new Error("warning notifications are not conversation messages");
+      },
+      addNotification: (notification) => useDeckStore.getState().addNotification(notification),
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().notifications[0], {
+    id: useDeckStore.getState().notifications[0]?.id,
+    kind: "warning",
+    source: "storage",
+    code: "STORAGE_DEGRADED",
+    message: "Storage is temporarily unavailable; new events remain in memory.",
+    createdAt: "2026-07-18T12:00:00.000Z",
+  });
+});
 
 test("applyDeviceResult syncs device/list RPC results into the current helm", () => {
   resetStore();

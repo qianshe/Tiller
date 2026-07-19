@@ -81,6 +81,52 @@ test("deriveSessionListResult keeps canonical live status over stale lifecycle i
   assert.equal(result.nextStatuses.resumed, "idle");
 });
 
+test("deriveSessionListResult keeps runtime-confirmed config over stale persisted selection", () => {
+  const runtimeConfigOptions = [
+    {
+      id: "model",
+      category: "model",
+      currentValue: "default",
+      options: [
+        { value: "default", label: "Default" },
+        { value: "opus", label: "Opus" },
+      ],
+    },
+    {
+      id: "thought_level",
+      category: "thought_level",
+      currentValue: "medium",
+      options: [{ value: "medium", label: "Medium" }],
+    },
+  ];
+  const result = deriveSessionListResult({
+    currentSessions: [],
+    liveStatesBySession: {
+      resumed: {
+        sequence: 43,
+        config: {
+          model: "default",
+          reasoningEffort: "medium",
+          configOptions: runtimeConfigOptions,
+          modelOptions: [{ id: "default", name: "Default" }],
+        },
+      },
+    },
+    payload: {
+      sessions: [session({
+        id: "resumed",
+        updatedAt: "2026-05-29T00:03:00.000Z",
+        model: "opus",
+        reasoningEffort: "high",
+      })],
+    },
+  });
+
+  assert.equal(result.nextSessions[0]?.model, "default");
+  assert.equal(result.nextSessions[0]?.reasoningEffort, "medium");
+  assert.deepEqual(result.nextSessions[0]?.configOptions, runtimeConfigOptions);
+});
+
 test("deriveSessionListResult preserves listed config when canonical config is uninitialized", () => {
   const configOptions = [
     {

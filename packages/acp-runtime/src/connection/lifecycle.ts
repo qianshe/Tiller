@@ -24,6 +24,7 @@ import {
   createAcpPromptStartGuard,
   isAcpPromptProgressEvent,
 } from "./prompt-liveness";
+import { markAcpPromptFailureReported } from "./prompt-failure";
 import { withConnectionRequest } from "./request";
 import {
   resolveRequestedRuntimeSessionId,
@@ -516,6 +517,7 @@ export class AcpConnection {
         code: "ACP_PROMPT_FAILED",
         message,
       });
+      markAcpPromptFailureReported(error);
       session.onEvent({ type: "status", status: "error", message: "ACP prompt failed" });
       if (connectionMustReset) {
         this.suppressExitError = true;

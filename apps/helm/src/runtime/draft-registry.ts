@@ -219,14 +219,21 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
           }
           if (event.type === "model-options") {
             modelState = event.state;
+            if (event.state.currentModelId) {
+              configState = {
+                ...(readyDraft?.configState ?? configState),
+                model: event.state.currentModelId,
+              };
+            }
             if (readyDraft) {
               readyDraft.modelState = event.state;
+              readyDraft.configState = configState;
             }
             return;
           }
           if (event.type === "config-options") {
             const previousState = readyDraft?.configState ?? configState;
-            const nextModel = previousState.model ?? event.state.model;
+            const nextModel = event.state.model ?? previousState.model;
             const resolvedConfigOptions = resolveConfigOptionsForSelection({
               incomingOptions: event.options,
               previousOptions: readyDraft?.configOptions ?? configOptions,
@@ -234,10 +241,11 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
             });
             const nextOptions = resolvedConfigOptions.options ?? [];
             const nextReasoning = resolveConfigReasoningEffortForOptions(
-              previousState.reasoningEffort ?? event.state.reasoningEffort,
+              event.state.reasoningEffort ?? previousState.reasoningEffort,
               resolvedConfigOptions,
             );
             configState = {
+              ...previousState,
               ...event.state,
               model: nextModel,
               reasoningEffort: nextReasoning,
@@ -430,7 +438,7 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
       configId: params.configId,
       value: params.value,
     });
-    const nextModel = params.model ?? draft.configState.model ?? result.state.model;
+    const nextModel = result.state.model ?? result.modelState?.currentModelId ?? draft.configState.model;
     const resolvedConfigOptions = resolveConfigOptionsForSelection({
       incomingOptions: result.options ?? draft.runtime.sessionConfigOptions,
       previousOptions: draft.configOptions,
@@ -438,13 +446,13 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
     });
     const nextConfigOptions = resolvedConfigOptions.options ?? [];
     const nextReasoning = resolveConfigReasoningEffortForOptions(
-      params.reasoningEffort ?? result.state.reasoningEffort ?? draft.configState.reasoningEffort,
+      result.state.reasoningEffort ?? draft.configState.reasoningEffort,
       resolvedConfigOptions,
     );
     draft.configState = {
       ...draft.configState,
       ...result.state,
-      agentMode: params.agentMode ?? result.state.agentMode ?? draft.configState.agentMode,
+      agentMode: result.state.agentMode ?? draft.configState.agentMode,
       model: nextModel,
       reasoningEffort: nextReasoning,
     };

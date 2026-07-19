@@ -2225,7 +2225,7 @@ test("session/prompt acknowledges before runtime prompt failures are reported", 
 
   assert.equal(result.accepted, "sent");
   await flushPromises();
-  assert.equal(broadcasts.some((item) => item.method === "error/raised"), true);
+  assert.equal(broadcasts.some((item) => item.method === "notification/raised"), true);
 });
 
 test("session/prompt broadcasts synchronous prompt failures to connected decks", async () => {
@@ -2274,7 +2274,7 @@ test("session/prompt broadcasts synchronous prompt failures to connected decks",
   assert.deepEqual(
     broadcasts.map((item) => [item.method, item.params?.sessionId, item.params?.update?.kind ?? item.params?.message]),
     [
-      ["error/raised", sessionId, "/unknown command is not supported by ACP agent. Available commands: /review"],
+      ["notification/raised", sessionId, "/unknown command is not supported by ACP agent. Available commands: /review"],
       ["session/update", sessionId, "live_state"],
     ],
   );

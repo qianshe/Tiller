@@ -105,8 +105,12 @@ function createRpcClient(socket: WebSocket, helmKey: string, handlers: RpcHandle
     (method, params) => handlers.handleRpcNotification(method, params, helmKey),
     (error) => {
       handlers.handleRpcNotification(
-        "error/raised",
-        { message: error instanceof Error ? error.message : String(error) },
+        "notification/raised",
+        {
+          kind: "error",
+          source: "rpc",
+          message: error instanceof Error ? error.message : String(error),
+        },
         helmKey,
       );
     },

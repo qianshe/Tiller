@@ -948,7 +948,7 @@ test("runtime-generated independent assistant messages get distinct stream segme
   assert.notEqual(capture.observedTimelineMessages?.[0]?.id, capture.observedTimelineMessages?.[1]?.id);
 });
 
-test("runtime config option defaults do not overwrite a stored session model selection", () => {
+test("runtime config state overwrites a stale stored model selection", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -971,7 +971,7 @@ test("runtime config option defaults do not overwrite a stored session model sel
     context,
   );
 
-  assert.equal(capture.summaryUpdates?.at(-1)?.model, "gpt-5.4");
+  assert.equal(capture.summaryUpdates?.at(-1)?.model, "gpt-5.5");
 });
 
 test("runtime config options omit reasoning when authoritative options omit reasoning", () => {
@@ -1057,7 +1057,7 @@ test("runtime config options preserve reasoning for haiku when ACP exposes reaso
   );
 });
 
-test("runtime stale config option defaults do not re-add reasoning for selected model", () => {
+test("runtime config options replace stale model-specific options", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -1104,16 +1104,16 @@ test("runtime stale config option defaults do not re-add reasoning for selected 
   );
 
   const liveState = context.sessionLiveStateStore?.get("session-stale-haiku");
-  assert.equal(capture.summaryUpdates?.at(-1)?.model, "claude-haiku-4-5");
-  assert.equal(capture.summaryUpdates?.at(-1)?.reasoningEffort, undefined);
-  assert.equal(liveState?.config.model, "claude-haiku-4-5");
+  assert.equal(capture.summaryUpdates?.at(-1)?.model, "claude-opus-4-7");
+  assert.equal(capture.summaryUpdates?.at(-1)?.reasoningEffort, "medium");
+  assert.equal(liveState?.config.model, "claude-opus-4-7");
   assert.equal(
     liveState?.config.configOptions.some((option) => option.category === "thought_level"),
-    false,
+    true,
   );
 });
 
-test("runtime model option defaults do not overwrite a stored session model selection", () => {
+test("runtime model state overwrites a stale stored model selection", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -1137,7 +1137,7 @@ test("runtime model option defaults do not overwrite a stored session model sele
     context,
   );
 
-  assert.equal(capture.summaryUpdates?.at(-1)?.model, "gpt-5.4");
+  assert.equal(capture.summaryUpdates?.at(-1)?.model, "gpt-5.5");
   assert.deepEqual(
     capture.summaryUpdates?.at(-1)?.modelOptions?.map((option) => option.id),
     ["gpt-5.4", "gpt-5.5"],

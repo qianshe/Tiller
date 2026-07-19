@@ -10,6 +10,7 @@ import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
   ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
 } from "@tiller/shared";
+import { wasAcpPromptFailureReported } from "@tiller/acp-runtime";
 import { applyUserPromptToSummary } from "../../sessions/facade";
 import { createSessionEventPublisher } from "./event/publisher";
 import {
@@ -129,7 +130,11 @@ function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
   publishPromptQueueState(sessionId, context.promptQueue.snapshot(sessionId), context);
 }
 
-function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, message: string) {
+function broadcastPromptFailure(
+  context: HelmHandlerContext,
+  sessionId: string,
+  message: string,
+) {
   context.updateSessionSummary(sessionId, (current) => ({
     ...current,
     status: "error",
@@ -138,6 +143,23 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
   }));
   createSessionEventPublisher(context).errorRaised({ sessionId, message });
   publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
+}
+
+function handleUnreportedPromptFailure(
+  context: HelmHandlerContext,
+  sessionId: string,
+  error: unknown,
+  logEvent: string,
+) {
+  if (wasAcpPromptFailureReported(error)) {
+    return;
+  }
+  const message = error instanceof Error ? error.message : "Prompt failed.";
+  logRuntimeError(context, logEvent, {
+    sessionId,
+    messageChars: message.length,
+  });
+  broadcastPromptFailure(context, sessionId, message);
 }
 
 function subscribePromptingSocketToSession(sessionId: string, context: HelmHandlerContext) {
@@ -285,12 +307,12 @@ async function runInFlightPrompt(
   try {
     await sendPromptImmediately(item, context);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Prompt failed.";
-    logRuntimeError(context, "runtime.prompt.inflight_failed", {
-      sessionId: item.sessionId,
-      messageChars: message.length,
-    });
-    broadcastPromptFailure(context, item.sessionId, message);
+    handleUnreportedPromptFailure(
+      context,
+      item.sessionId,
+      error,
+      "runtime.prompt.inflight_failed",
+    );
   } finally {
     context.promptQueue.clearInFlight(item.sessionId, item.id);
     broadcastPromptQueue(context, item.sessionId);
@@ -327,11 +349,12 @@ export async function drainPromptQueue(sessionId: string, context: HelmHandlerCo
       try {
         await sendPromptImmediately(inFlight, context);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Prompt failed.";
-        logRuntimeError(context, "runtime.prompt.queue_failed", {
+        handleUnreportedPromptFailure(
+          context,
           sessionId,
-          messageChars: message.length,
-        });
+          error,
+          "runtime.prompt.queue_failed",
+        );
       } finally {
         context.promptQueue.clearInFlight(sessionId, inFlight.id);
         broadcastPromptQueue(context, sessionId);
@@ -451,12 +474,12 @@ export async function sendPromptToSession(
     createUserMessage: (item) => createUserPromptMessage(item, context),
     onQueueChanged: (sessionId) => broadcastPromptQueue(context, sessionId),
     onPromptFailed: (sessionId, error) => {
-      const message = error instanceof Error ? error.message : "Prompt failed.";
-      logRuntimeError(context, "runtime.prompt.inflight_failed", {
+      handleUnreportedPromptFailure(
+        context,
         sessionId,
-        messageChars: message.length,
-      });
-      broadcastPromptFailure(context, sessionId, message);
+        error,
+        "runtime.prompt.inflight_failed",
+      );
     },
     onPromptSettled: (sessionId, queueItem) => {
       context.promptQueue.clearInFlight(sessionId, queueItem.id);
@@ -512,8 +535,12 @@ export async function configureSessionRuntime(
         value: params.value,
       })
     : null;
-  const nextAgentMode = params.agentMode ?? runtimeResult?.state.agentMode ?? current.agentMode;
-  const nextModel = params.model ?? runtimeResult?.state.model ?? current.model;
+  const nextAgentMode = runtimeResult
+    ? (runtimeResult.state.agentMode ?? current.agentMode)
+    : (params.agentMode ?? current.agentMode);
+  const nextModel = runtimeResult
+    ? (runtimeResult.state.model ?? runtimeResult.modelState?.currentModelId ?? current.model)
+    : (params.model ?? current.model);
   const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
   const resolvedConfigOptions = resolveConfigOptionsForSelection({
     incomingOptions: runtimeResult?.options ?? activeRecord?.runtime.sessionConfigOptions,
@@ -522,7 +549,9 @@ export async function configureSessionRuntime(
   });
   const nextConfigOptions = resolvedConfigOptions.options ?? current.configOptions ?? [];
   const nextReasoning = resolveConfigReasoningEffortForOptions(
-    params.reasoningEffort ?? runtimeResult?.state.reasoningEffort ?? current.reasoningEffort,
+    runtimeResult
+      ? (runtimeResult.state.reasoningEffort ?? current.reasoningEffort)
+      : (params.reasoningEffort ?? current.reasoningEffort),
     resolvedConfigOptions,
   );
   const updatedAt = new Date().toISOString();

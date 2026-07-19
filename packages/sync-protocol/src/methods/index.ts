@@ -55,6 +55,7 @@ import * as sessionRename from "./session/rename";
 import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
+import * as notificationRaised from "./notification/raised";
 
 type AnyDescriptor =
   | RequestDescriptor<string, z.ZodType, z.ZodType>
@@ -116,6 +117,7 @@ const METHOD_DESCRIPTORS = {
   [sessionCancel.method]: sessionCancel.descriptor,
   [sessionUpdate.method]: sessionUpdate.descriptor,
   [errorRaised.method]: errorRaised.descriptor,
+  [notificationRaised.method]: notificationRaised.descriptor,
 } as const;
 
 export const METHODS: typeof METHOD_DESCRIPTORS &
@@ -181,6 +183,7 @@ export const CLIENT_NOTIFICATION_METHODS = [sessionCancel.method] as const;
 export const SERVER_NOTIFICATION_METHODS = [
   sessionUpdate.method,
   errorRaised.method,
+  notificationRaised.method,
   approvalCreated.method,
   approvalResolved.method,
 ] as const;
@@ -189,3 +192,5 @@ export type ClientRequestMethod = (typeof CLIENT_REQUEST_METHODS)[number];
 export type ClientNotificationMethod =
   (typeof CLIENT_NOTIFICATION_METHODS)[number];
 export type ServerNotificationMethod = (typeof SERVER_NOTIFICATION_METHODS)[number];
+
+export type NotificationRaisedParams = notificationRaised.Params;

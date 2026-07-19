@@ -1,11 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AcpAgentProvider } from "@tiller/shared";
+import { DEFAULT_ACP_PROMPT_START_TIMEOUT_MS } from "../constants";
 import {
   ACP_PROMPT_STALLED_CODE,
   createAcpPromptStartGuard,
   isAcpPromptProgressEvent,
 } from "./prompt-liveness";
+
+test("prompt start guard allows two minutes for initial progress by default", () => {
+  assert.equal(DEFAULT_ACP_PROMPT_START_TIMEOUT_MS, 2 * 60_000);
+});
 
 const provider: AcpAgentProvider = {
   id: "fake-acp",

@@ -102,14 +102,19 @@ test("session event publisher preserves notification payloads", () => {
   publisher.sessionUpdate("session-1", update);
   publisher.errorRaised({ sessionId: "session-1", message: "failed" });
 
-  assert.deepEqual(calls, [
-    {
-      method: "session/update",
-      params: { sessionId: "session-1", update },
-    },
-    {
-      method: "error/raised",
-      params: { sessionId: "session-1", message: "failed" },
-    },
-  ]);
+  assert.deepEqual(calls[0], {
+    method: "session/update",
+    params: { sessionId: "session-1", update },
+  });
+  assert.equal(calls[1]?.method, "notification/raised");
+  assert.deepEqual(calls[1]?.params && typeof calls[1].params === "object"
+    ? { ...(calls[1].params as Record<string, unknown>), occurredAt: undefined }
+    : calls[1]?.params, {
+    sessionId: "session-1",
+    message: "failed",
+    kind: "error",
+    source: "runtime",
+    occurredAt: undefined,
+  });
+  assert.match(String((calls[1]?.params as Record<string, unknown>)?.occurredAt), /^20/);
 });

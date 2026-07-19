@@ -10,7 +10,10 @@ import type {
   SessionTimelineMessageEntry,
   SessionUpdateRecord,
 } from "@tiller/shared";
-import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import {
+  markAcpPromptFailureReported,
+  type SessionRuntimeEvent,
+} from "@tiller/acp-runtime";
 import type { HelmHandlerContext } from "../../handlers/context";
 import { sendPromptToSession, drainPromptQueue } from "./router";
 import { createSessionPromptQueueManager } from "./prompt-queue";
@@ -544,6 +547,54 @@ test("sendPromptToSession acknowledges before a long ACP prompt completes", asyn
   assert.equal(context.promptQueue.hasInFlight("session-1"), false);
 });
 
+test("sendPromptToSession does not re-broadcast a prompt failure already emitted by runtime", async () => {
+  const error = new Error("ACP prompt failed");
+  let context: HelmHandlerContext;
+  const testContext = createContext({
+    activeRuntime: {
+      prompt: async () => {
+        handleRuntimeEvent(
+          "session-1",
+          {
+            type: "error",
+            code: "ACP_PROMPT_FAILED",
+            message: error.message,
+          } satisfies SessionRuntimeEvent,
+          context,
+        );
+        markAcpPromptFailureReported(error);
+        throw error;
+      },
+      sessionCapabilities: { imageInput: true },
+    },
+  });
+  context = testContext.context;
+
+  await sendPromptToSession(
+    { sessionId: "session-1", text: "will fail", clientMessageId: "client-runtime-failed" },
+    context,
+  );
+  await waitForPromptSettled(context, "session-1");
+
+  const failures = testContext.broadcasts.filter(
+    (item) => item.method === "notification/raised",
+  );
+  assert.equal(failures.length, 1);
+  assert.deepEqual(failures[0]?.params && typeof failures[0].params === "object"
+    ? {
+        ...(failures[0].params as Record<string, unknown>),
+        occurredAt: undefined,
+      }
+    : failures[0]?.params, {
+    sessionId: "session-1",
+    code: "ACP_PROMPT_FAILED",
+    message: "ACP prompt failed",
+    kind: "error",
+    source: "runtime",
+    occurredAt: undefined,
+  });
+});
+
 test("sendPromptToSession accepts new runtime status after a previous error", async () => {
   const { context, sessions } = createContext({
     summary: { status: "error" },
@@ -574,7 +625,7 @@ test("sendPromptToSession accepts new runtime status after a previous error", as
 
 test("sendPromptToSession evicts a failed runtime so the next prompt restores it", async () => {
   const restoredPrompts: string[] = [];
-  const { context, sessions } = createContext({
+  const { context, sessions, broadcasts } = createContext({
     activeRuntime: {
       prompt: async () => {
         throw new Error("provider stalled");
@@ -596,6 +647,10 @@ test("sendPromptToSession evicts a failed runtime so the next prompt restores it
   );
   await waitForPromptSettled(context, "session-1");
   assert.equal(sessions.has("session-1"), false);
+  const failure = broadcasts.find((item) => item.method === "notification/raised");
+  assert.equal(failure?.params.message, "provider stalled");
+  assert.equal("data" in (failure?.params ?? {}), false);
+  assert.equal(JSON.stringify(failure?.params ?? {}).includes("first"), false);
 
   await sendPromptToSession(
     { sessionId: "session-1", text: "second", clientMessageId: "client-restored" },
@@ -824,7 +879,7 @@ test("configureSessionRuntime returns current model state and options for a no-o
   assert.deepEqual(result.options, currentOptions);
 });
 
-test("configureSessionRuntime persists explicit model over runtime default state", async () => {
+test("configureSessionRuntime uses the model confirmed by the active runtime", async () => {
   const { context, broadcasts } = createContext({
     activeRuntime: {
       prompt: async () => undefined,
@@ -846,8 +901,8 @@ test("configureSessionRuntime persists explicit model over runtime default state
     context,
   );
 
-  assert.equal(result.state.model, "gpt-5.4");
-  assert.equal(broadcasts.at(-1)?.params.update.snapshot.config.model, "gpt-5.4");
+  assert.equal(result.state.model, "gpt-5.5");
+  assert.equal(broadcasts.at(-1)?.params.update.snapshot.config.model, "gpt-5.5");
 });
 
 test("configureSessionRuntime applies arbitrary ACP config option to the session runtime", async () => {
@@ -972,7 +1027,7 @@ test("configureSessionRuntime preserves reasoning for haiku when ACP exposes it"
   );
 });
 
-test("configureSessionRuntime ignores stale default options for a different selected model", async () => {
+test("configureSessionRuntime replaces stale selection with runtime-confirmed config", async () => {
   const runtimeOptions = [
     {
       id: "model",
@@ -1019,9 +1074,9 @@ test("configureSessionRuntime ignores stale default options for a different sele
     context,
   );
 
-  assert.equal(result.state.model, "claude-haiku-4-5");
-  assert.equal(result.state.reasoningEffort, undefined);
-  assert.deepEqual(result.options, previousOptions);
+  assert.equal(result.state.model, "claude-opus-4-7");
+  assert.equal(result.state.reasoningEffort, "medium");
+  assert.deepEqual(result.options, runtimeOptions);
 });
 
 test("configureSessionRuntime saves config when no runtime is active", async () => {
@@ -1092,6 +1147,6 @@ test("cancelSessionRuntime broadcasts an error when the runtime is missing", asy
   const handled = await cancelSessionRuntime("missing-session", context);
 
   assert.equal(handled, true);
-  assert.equal(broadcasts.at(-1)?.method, "error/raised");
+  assert.equal(broadcasts.at(-1)?.method, "notification/raised");
   assert.equal(broadcasts.at(-1)?.params.message, "Session not found");
 });

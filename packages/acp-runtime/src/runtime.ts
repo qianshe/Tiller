@@ -12,6 +12,10 @@ export { createAcpConnectionManager } from "./connection/manager";
 export type { AcpConnectionLifecycleEvent } from "./connection/manager";
 export { resolveAcpConnectionKey } from "./connection/key";
 export type { AcpConnectionInventoryItem } from "./connection/types";
+export {
+  markAcpPromptFailureReported,
+  wasAcpPromptFailureReported,
+} from "./connection/prompt-failure";
 export { testAcpConnection } from "./connection-test";
 export {
   listAcpAgentSessions,

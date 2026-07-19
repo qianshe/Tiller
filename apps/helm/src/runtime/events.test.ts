@@ -728,6 +728,93 @@ test("canonical session state replaces competing legacy state notifications", ()
   assert.equal(finalState.diffs[0]?.path, "src/a.ts");
 });
 
+test("runtime config events replace stale persisted model selections", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(
+    [],
+    capture,
+    "session-runtime-config",
+    {
+      agentMode: "old-mode",
+      model: "requested-opus",
+      reasoningEffort: "high",
+    },
+    { useCanonicalPipeline: true },
+  );
+
+  handleRuntimeEvent(
+    "session-runtime-config",
+    {
+      type: "config-options",
+      state: {
+        agentMode: "runtime-mode",
+        model: "default",
+        reasoningEffort: "medium",
+      },
+      options: [
+        {
+          id: "model",
+          category: "model",
+          currentValue: "default",
+          options: [{ value: "default", label: "Default" }],
+        },
+        {
+          id: "thought_level",
+          category: "thought_level",
+          currentValue: "medium",
+          options: [{ value: "medium", label: "Medium" }],
+        },
+      ],
+    },
+    context,
+  );
+
+  const summary = capture.summaryUpdates?.at(-1);
+  assert.equal(summary?.agentMode, "runtime-mode");
+  assert.equal(summary?.model, "default");
+  assert.equal(summary?.reasoningEffort, "medium");
+  const liveState = (
+    capture.detailBroadcasts.filter((item: any) => item.method === "session/update").at(-1) as any
+  )?.params.update.snapshot;
+  assert.equal(liveState.config.model, "default");
+  assert.equal(liveState.config.reasoningEffort, "medium");
+});
+
+test("runtime model events replace a stale summary model", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext(
+    [],
+    capture,
+    "session-runtime-model",
+    { model: "stale-model" },
+    { useCanonicalPipeline: true },
+  );
+
+  handleRuntimeEvent(
+    "session-runtime-model",
+    {
+      type: "model-options",
+      state: {
+        currentModelId: "runtime-model",
+        options: [{ id: "runtime-model", name: "Runtime Model" }],
+      },
+    },
+    context,
+  );
+
+  assert.equal(capture.summaryUpdates?.at(-1)?.model, "runtime-model");
+});
+
 test("prompt queue uses the canonical persisted live-state path", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

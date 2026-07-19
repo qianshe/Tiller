@@ -1023,7 +1023,7 @@ test("session restore preserves markerless trailing compaction order", async () 
   );
 });
 
-test("session restore prefers runtime model state over stale persisted summary values", async () => {
+test("session restore reapplies persisted model config after ACP load returns defaults", async () => {
   const sessionId = "session-stale-model";
   const summary: SessionSummary = {
     id: sessionId,
@@ -1039,14 +1039,23 @@ test("session restore prefers runtime model state over stale persisted summary v
     updatedAt: "2026-07-06T00:00:00.000Z",
     messageCount: 4,
     runtimeSessionId: "runtime-old",
-    model: "claude-sonnet-old",
-    modelOptions: [{ id: "claude-sonnet-old", name: "Claude Sonnet Old" }],
+    model: "opus",
+    reasoningEffort: "high",
+    modelOptions: [{ id: "opus", name: "Opus" }],
   };
   const worktree: WorktreeSummary = {
     name: "main",
     path: "D:/repo",
   };
   const stored = { summary: undefined as SessionSummary | undefined };
+  const configured: Array<{ model?: string; reasoningEffort?: string }> = [];
+  const configOptions = [{
+    id: "thought_level",
+    name: "Reasoning",
+    category: "thought_level",
+    currentValue: "high",
+    options: [{ value: "high", label: "High" }],
+  }];
 
   const service = createSessionResumeService({
     sessions: new Map(),
@@ -1073,13 +1082,25 @@ test("session restore prefers runtime model state over stale persisted summary v
       createRuntime: async () => ({
         runtimeSessionId: "runtime-new",
         sessionCapabilities: { sessionResume: true },
-        sessionConfigState: { model: "claude-sonnet-new" },
+        sessionConfigState: { model: "default", reasoningEffort: "medium" },
         sessionModelState: {
-          currentModelId: "claude-sonnet-new",
-          options: [{ id: "claude-sonnet-new", name: "Claude Sonnet New" }],
+          currentModelId: "default",
+          options: [{ id: "default", name: "Default" }, { id: "opus", name: "Opus" }],
         },
-        sessionConfigOptions: [],
+        sessionConfigOptions: configOptions,
         prompt: async () => undefined,
+        configure: async (next: { model?: string; reasoningEffort?: string }) => {
+          configured.push(next);
+          return {
+            runtimeApplied: true,
+            state: { model: "opus", reasoningEffort: "high" },
+            modelState: {
+              currentModelId: "opus",
+              options: [{ id: "default", name: "Default" }, { id: "opus", name: "Opus" }],
+            },
+            options: configOptions,
+          };
+        },
         cancel: () => undefined,
       }),
     },
@@ -1125,9 +1146,113 @@ test("session restore prefers runtime model state over stale persisted summary v
   const result = await service.startSessionResume(sessionId);
 
   assert.equal(result.ok, true);
-  assert.equal(result.session?.model, "claude-sonnet-new");
+  assert.deepEqual(configured, [{ model: "opus", reasoningEffort: "high" }]);
+  assert.equal(result.session?.model, "opus");
+  assert.equal(result.session?.reasoningEffort, "high");
   assert.deepEqual(result.session?.modelOptions, [
-    { id: "claude-sonnet-new", name: "Claude Sonnet New" },
+    { id: "default", name: "Default" },
+    { id: "opus", name: "Opus" },
   ]);
-  assert.equal(stored.summary?.model, "claude-sonnet-new");
+  assert.equal(stored.summary?.model, "opus");
+  assert.equal(stored.summary?.reasoningEffort, "high");
+});
+
+test("session restore keeps ACP runtime defaults when persisted config is unsupported", async () => {
+  const sessionId = "session-unsupported-model";
+  const summary: SessionSummary = {
+    id: sessionId,
+    title: "旧会话",
+    status: "idle",
+    projectId: "project-1",
+    projectName: "Tiller",
+    helmId: "helm-1",
+    agentId: "claude-code",
+    agentName: "Claude Code",
+    cwd: "D:/repo",
+    createdAt: "2026-07-06T00:00:00.000Z",
+    updatedAt: "2026-07-06T00:00:00.000Z",
+    messageCount: 4,
+    runtimeSessionId: "runtime-old",
+    model: "removed-model",
+    reasoningEffort: "high",
+  };
+  const stored = { summary: undefined as SessionSummary | undefined };
+  const warnings: string[] = [];
+
+  const service = createSessionResumeService({
+    sessions: new Map(),
+    sessionStore: {
+      get: () => summary,
+      upsert: (next: SessionSummary) => {
+        stored.summary = next;
+      },
+    },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "claude-code",
+        runtimeSessionId: "runtime-old",
+        capabilities: { sessionResume: true },
+        lastSeenAt: summary.updatedAt,
+        state: "resumeable",
+      }),
+    },
+    providerLifecycle: {
+      createRuntime: async () => ({
+        runtimeSessionId: "runtime-new",
+        sessionCapabilities: { sessionResume: true },
+        sessionConfigState: { model: "default", reasoningEffort: "medium" },
+        sessionModelState: {
+          currentModelId: "default",
+          options: [{ id: "default", name: "Default" }],
+        },
+        sessionConfigOptions: [],
+        configure: async () => ({
+          runtimeApplied: false,
+          state: { model: "default", reasoningEffort: "medium" },
+          modelState: {
+            currentModelId: "default",
+            options: [{ id: "default", name: "Default" }],
+          },
+          options: [],
+        }),
+      }),
+    },
+    getAgents: () => [{
+      id: "claude-code",
+      name: "Claude Code",
+      command: "claude-code",
+      transport: "stdio",
+      protocol: "acp",
+    }],
+    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+    resolveStoredSessionWorktree: () => ({ name: "main", path: "D:/repo" }),
+    buildResumeInfo: () => ({
+      mode: "same-process",
+      state: "resume-available",
+      reason: "resume",
+      checkedAt: "2026-07-06T00:00:00.000Z",
+      runtimeSessionId: "runtime-new",
+      restoreMethod: "session/resume",
+    }),
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    persistRuntimeDescriptor: () => undefined,
+    handleRuntimeEvent: () => undefined,
+    logConnectionLifecycle: () => undefined,
+    logger: {
+      debug: () => undefined,
+      warn: (event: string) => warnings.push(event),
+      error: () => undefined,
+    },
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  const result = await service.startSessionResume(sessionId);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.session?.model, "default");
+  assert.equal(result.session?.reasoningEffort, undefined);
+  assert.equal(stored.summary?.model, "default");
+  assert.deepEqual(warnings, ["runtime.session_restore.config_not_applied"]);
 });

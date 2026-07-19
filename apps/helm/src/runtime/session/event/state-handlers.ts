@@ -143,14 +143,14 @@ export function handleRuntimeConfigOptionsEvent(
 ) {
   flushLiveAssistantMessage(sessionId, context);
   const current = context.sessions.get(sessionId)?.summary ?? context.sessionStore.get(sessionId);
-  const resolvedModel = current?.model ?? event.state.model;
+  const resolvedModel = event.state.model ?? current?.model;
   const resolvedConfigOptions = resolveConfigOptionsForSelection({
     incomingOptions: event.options,
     previousOptions: current?.configOptions,
     selectedModel: resolvedModel,
   });
   const resolvedReasoningEffort = resolveConfigReasoningEffortForOptions(
-    current?.reasoningEffort ?? event.state.reasoningEffort,
+    event.state.reasoningEffort ?? current?.reasoningEffort,
     resolvedConfigOptions,
   );
   const resolvedOptions = resolvedConfigOptions.options ?? [];
@@ -175,7 +175,7 @@ export function handleRuntimeConfigOptionsEvent(
   });
   context.updateSessionSummary(sessionId, (currentSummary) => ({
     ...currentSummary,
-    agentMode: currentSummary.agentMode ?? event.state.agentMode,
+    agentMode: event.state.agentMode ?? currentSummary.agentMode,
     model: resolvedModel,
     configOptions: resolvedOptions,
     reasoningEffort: resolvedReasoningEffort,
@@ -198,7 +198,7 @@ export function handleRuntimeModelOptionsEvent(
   });
   context.updateSessionSummary(sessionId, (current) => ({
     ...current,
-    model: current.model ?? event.state.currentModelId,
+    model: event.state.currentModelId ?? current.model,
     modelOptions: event.state.options,
     updatedAt: new Date().toISOString(),
   }));

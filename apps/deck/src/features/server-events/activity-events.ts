@@ -1,7 +1,11 @@
 import type { MutableRefObject } from "react";
-import type { AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionSummary,
+} from "@tiller/shared";
 import { dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
-import { useDeckStore } from "../../store";
+import { useDeckStore, type DeckNotificationInput } from "../../store";
 import { stripRedundantAttachmentData } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
 
@@ -9,6 +13,7 @@ export type ActivityServerEventContext = {
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
   mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => void;
   appendSystemMessage: (sessionId: string, text: string) => void;
+  addNotification?: (input: DeckNotificationInput) => void;
   scheduleSubagentSettlement?: (callback: () => void) => void;
 };
 
@@ -19,6 +24,15 @@ type ErrorRaisedParams = {
   message: string;
   code?: string;
   data?: unknown;
+};
+
+type NotificationRaisedParams = {
+  kind: "error" | "warning" | "info";
+  source: string;
+  sessionId?: string;
+  code?: string;
+  message: string;
+  occurredAt?: string;
 };
 
 export function applyActivityUpdate(
@@ -150,14 +164,38 @@ export function applyErrorRaised(
   params: ErrorRaisedParams,
   context: ActivityServerEventContext,
 ) {
-  const { appendSystemMessage } = context;
+  return applyNotificationRaised({
+    ...params,
+    kind: "error",
+    source: "rpc",
+  }, context);
+}
+
+export function applyNotificationRaised(
+  params: NotificationRaisedParams,
+  context: ActivityServerEventContext,
+) {
+  const { appendSystemMessage, addNotification } = context;
   const store = useDeckStore.getState();
-  store.setPairingFeedback(params.message);
-  if (/not paired|not authenticated/iu.test(params.message)) {
+  const sessionMessage = params.code
+    ? `[${params.code}] ${params.message}`
+    : params.message;
+  addNotification?.({
+    kind: params.kind,
+    message: params.message,
+    source: params.source,
+    code: params.code,
+    sessionId: params.sessionId,
+    createdAt: params.occurredAt,
+  });
+  if (params.kind === "error") {
+    store.setPairingFeedback(params.message);
+  }
+  if (params.kind === "error" && /not paired|not authenticated/iu.test(params.message)) {
     store.setPairingState("input");
   }
-  if (params.sessionId) {
-    appendSystemMessage(params.sessionId, params.message);
+  if (params.sessionId && params.kind === "error") {
+    appendSystemMessage(params.sessionId, sessionMessage);
     store.setSessions((current) =>
       current.map((session) =>
         session.id === params.sessionId
@@ -165,7 +203,7 @@ export function applyErrorRaised(
               ...session,
               status: "error",
               updatedAt: new Date().toISOString(),
-              lastMessagePreview: params.message.slice(0, 160),
+              lastMessagePreview: sessionMessage.slice(0, 160),
             }
           : session,
       ),

@@ -185,6 +185,6 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
     updatedAt: new Date().toISOString(),
     lastMessagePreview: "Prompt failed",
   }));
-  broadcastErrorRaised(context, { sessionId, message });
+  broadcastErrorRaised(context, { sessionId, message, source: "session" });
   publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
 }

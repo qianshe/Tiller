@@ -26,6 +26,7 @@ type DashboardInput = {
   sessionPlans?: Record<string, AgentPlan | undefined>;
   toolCalls: Record<string, unknown[]>;
   approvalItemsById: Record<string, any>;
+  notifications?: DashboardNotification[];
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
 };
 
@@ -33,6 +34,17 @@ type DashboardPlanSummary = {
   completed: number;
   total: number;
   label: string;
+};
+
+export type DashboardNotification = {
+  id: string;
+  kind: "error" | "warning" | "info";
+  message: string;
+  source?: string;
+  code?: string;
+  sessionId?: string;
+  sessionName?: string;
+  createdAt: string;
 };
 
 const DASHBOARD_APPROVAL_DECISIONS: PermissionDecision[] = [
@@ -173,5 +185,14 @@ export function buildDashboardViewModel(input: DashboardInput) {
     sessions,
     helms,
     approvals,
+    notifications: (input.notifications ?? []).map((notification) => {
+      const session = notification.sessionId ? sessionsById.get(notification.sessionId) : undefined;
+      return {
+        ...notification,
+        sessionName: session
+          ? input.resolveDisplaySessionTitle(session)
+          : notification.sessionId,
+      };
+    }),
   };
 }

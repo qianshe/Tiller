@@ -105,7 +105,10 @@ export async function createSession(
           },
         }),
       buildSession: ({ runtime, timestamp }) => {
-        const summaryRuntimeModel = summary.model ?? runtime.sessionConfigState?.model;
+        const summaryRuntimeModel =
+          runtime.sessionConfigState?.model ??
+          runtime.sessionModelState?.currentModelId ??
+          summary.model;
         const resolvedRuntimeConfigOptions = resolveConfigOptionsForSelection({
           incomingOptions: runtime.sessionConfigOptions,
           previousOptions: summary.configOptions,
@@ -115,12 +118,12 @@ export async function createSession(
           ...summary,
           status: "idle" as const,
           updatedAt: timestamp,
-          agentMode: summary.agentMode ?? runtime.sessionConfigState?.agentMode,
+          agentMode: runtime.sessionConfigState?.agentMode ?? summary.agentMode,
           model: summaryRuntimeModel,
           modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
           configOptions: resolvedRuntimeConfigOptions.options,
           reasoningEffort: resolveConfigReasoningEffortForOptions(
-            summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
+            runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
             resolvedRuntimeConfigOptions,
           ),
           runtimeSessionId: runtime.runtimeSessionId,
@@ -157,7 +160,7 @@ export async function createSession(
     return { session: summaryWithRuntime };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create session runtime";
-    broadcastErrorRaised(context, { sessionId, message });
+    broadcastErrorRaised(context, { sessionId, message, source: "session" });
     logSessionCreateError(context, "session.create.failed", {
       projectId: project.id,
       agentId: agent.id,
