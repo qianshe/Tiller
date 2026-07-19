@@ -2287,12 +2287,19 @@ test("session/rename persists and broadcasts the next title", async () => {
     title: "旧标题",
     updatedAt: "2026-05-06T00:00:00.000Z",
   };
+  const canonical = createPromptQueueContextExtras();
+  canonical.sessionLiveStateStore.apply("s1", {
+    type: "session-info",
+    title: "旧标题",
+    updatedAt: stored.updatedAt,
+  }, 1);
   let persisted: unknown;
-  let broadcasted: unknown;
+  const broadcasts: Array<{ method: string; params: any }> = [];
   const result = await handleSessionRpcRequest(
     "session/rename",
     { sessionId: "s1", title: "新标题" },
     {
+      ...canonical,
       sessions: new Map(),
       sessionStore: { get: (sessionId: string) => sessionId === stored.id ? stored : undefined },
       updateSessionSummary: (_sessionId: string, mutate: (summary: typeof stored) => typeof stored) => {
@@ -2300,23 +2307,40 @@ test("session/rename persists and broadcasts the next title", async () => {
         return persisted;
       },
       broadcastNotification: (method: string, params: unknown) => {
-        broadcasted = { method, params };
+        broadcasts.push({ method, params });
       },
+      broadcastSessionTopic: (_sessionId: string, method: string, params: unknown) =>
+        broadcasts.push({ method, params }),
     } as any,
   );
 
   assert.deepEqual(result, { ok: true });
   assert.deepEqual(persisted, { ...stored, title: "新标题" });
-  assert.deepEqual(broadcasted, {
-    method: "session/update",
-    params: {
-      sessionId: "s1",
-      update: {
-        kind: "session_updated",
-        session: { ...stored, title: "新标题" },
+  assert.equal(canonical.sessionLiveStateStore.get("s1")?.sessionInfo?.title, "新标题");
+  assert.deepEqual(
+    broadcasts.map(({ method, params }) => ({
+      method,
+      sessionId: params.sessionId,
+      kind: params.update.kind,
+      title: params.update.kind === "live_state"
+        ? params.update.snapshot.sessionInfo?.title
+        : params.update.session.title,
+    })),
+    [
+      {
+        method: "session/update",
+        sessionId: "s1",
+        kind: "live_state",
+        title: "新标题",
       },
-    },
-  });
+      {
+        method: "session/update",
+        sessionId: "s1",
+        kind: "session_updated",
+        title: "新标题",
+      },
+    ],
+  );
 });
 
 test("session/prompt activates a runtime draft before sending first prompt", async () => {

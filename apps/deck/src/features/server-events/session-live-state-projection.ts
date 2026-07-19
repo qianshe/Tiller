@@ -6,6 +6,7 @@ import {
   hasInitializedSessionConfig,
   resolveSessionConfigSelection,
 } from "./session-config-selection";
+import { resolveLiveSessionTitle } from "./session-list-result";
 
 export type SessionLiveStateProjection = {
   applied: boolean;
@@ -52,6 +53,9 @@ export function projectSessionLiveStateSnapshot(
     ),
   };
   const currentSession = state.sessions.find((session) => session.id === sessionId);
+  const liveTitle = currentSession
+    ? resolveLiveSessionTitle(currentSession, snapshot)
+    : undefined;
   const initializedConfig = hasInitializedSessionConfig(snapshot.config)
     ? snapshot.config
     : undefined;
@@ -142,8 +146,8 @@ export function projectSessionLiveStateSnapshot(
             ...(snapshot.availableCommands
               ? { availableCommands: snapshot.availableCommands }
               : {}),
-            ...(typeof snapshot.sessionInfo?.title === "string"
-              ? { title: snapshot.sessionInfo.title }
+            ...(liveTitle !== undefined
+              ? { title: liveTitle }
               : {}),
             ...(typeof snapshot.sessionInfo?.updatedAt === "string"
               ? { updatedAt: snapshot.sessionInfo.updatedAt }

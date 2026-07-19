@@ -112,6 +112,7 @@ export function upsertSessionSummary(
   const next = previous
     ? {
         ...incoming,
+        title: incoming.title ?? previous.title,
         model: incoming.model ?? previous.model,
         agentMode: incoming.agentMode ?? previous.agentMode,
         reasoningEffort: incoming.reasoningEffort ?? previous.reasoningEffort,

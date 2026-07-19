@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionSummary } from "@tiller/shared";
-import { deriveSessionListResult } from "./session-list-result.js";
+import {
+  deriveSessionListResult,
+  mergeSessionLifecycleSummary,
+} from "./session-list-result.js";
 
 function session(overrides: Partial<SessionSummary> & Pick<SessionSummary, "id" | "updatedAt">): SessionSummary {
   return {
@@ -109,4 +112,28 @@ test("deriveSessionListResult preserves listed config when canonical config is u
   assert.equal(result.nextSessions[0]?.model, "cpa-oai/gpt-5.5");
   assert.deepEqual(result.nextSessions[0]?.configOptions, configOptions);
   assert.deepEqual(result.configOptionsBySession.resumed, configOptions);
+});
+
+test("mergeSessionLifecycleSummary keeps a saved title over an ACP session title", () => {
+  const result = mergeSessionLifecycleSummary(
+    session({ id: "renamed", title: "发布计划", updatedAt: "2026-05-29T00:03:00.000Z" }),
+    {
+      sequence: 44,
+      sessionInfo: { title: "请检查发布计划" },
+    },
+  );
+
+  assert.equal(result.title, "发布计划");
+});
+
+test("mergeSessionLifecycleSummary fills an unnamed session title from ACP", () => {
+  const result = mergeSessionLifecycleSummary(
+    session({ id: "unnamed", title: undefined, updatedAt: "2026-05-29T00:03:00.000Z" }),
+    {
+      sequence: 45,
+      sessionInfo: { title: "请检查发布计划" },
+    },
+  );
+
+  assert.equal(result.title, "请检查发布计划");
 });

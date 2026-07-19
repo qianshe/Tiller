@@ -14,6 +14,14 @@ export type SessionListResultPayload = {
   hasMore?: boolean;
 };
 
+export function resolveLiveSessionTitle(
+  summary: Pick<SessionSummary, "title">,
+  snapshot: Pick<SessionLiveStateSnapshot, "sessionInfo">,
+): string | undefined {
+  const title = snapshot.sessionInfo?.title;
+  return typeof title === "string" && !summary.title?.trim() ? title : undefined;
+}
+
 export function deriveSessionListResult({
   currentSessions,
   liveStatesBySession = {},
@@ -52,6 +60,7 @@ export function mergeSessionLifecycleSummary(
   const initializedConfig = hasInitializedSessionConfig(snapshot.config)
     ? snapshot.config
     : undefined;
+  const liveTitle = resolveLiveSessionTitle(summary, snapshot);
   return {
     ...summary,
     ...(snapshot.status ? { status: snapshot.status.effectiveStatus } : {}),
@@ -67,8 +76,8 @@ export function mergeSessionLifecycleSummary(
     ...(snapshot.availableCommands
       ? { availableCommands: snapshot.availableCommands }
       : {}),
-    ...(typeof snapshot.sessionInfo?.title === "string"
-      ? { title: snapshot.sessionInfo.title }
+    ...(liveTitle !== undefined
+      ? { title: liveTitle }
       : {}),
     ...(typeof snapshot.sessionInfo?.updatedAt === "string"
       ? { updatedAt: snapshot.sessionInfo.updatedAt }

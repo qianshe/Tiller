@@ -18,7 +18,10 @@ import {
   collectPromptAttachmentIds,
   persistPromptImageAttachments,
 } from "../../runtime/session/attachment-projection";
-import { publishPromptQueueState } from "../../runtime/events";
+import {
+  publishCanonicalSessionStateEvent,
+  publishPromptQueueState,
+} from "../../runtime/events";
 import type { HelmHandlerContext } from "../context";
 import { createSessionDraft, discardSessionDraft } from "./draft-rpc";
 import { createSession } from "./session-create-rpc";
@@ -302,6 +305,11 @@ async function renameSession(
   }
   const next = { ...summary, title: params.title };
   context.updateSessionSummary(params.sessionId, () => next);
+  publishCanonicalSessionStateEvent(
+    params.sessionId,
+    { type: "session-info", title: params.title },
+    context,
+  );
   broadcastSessionUpdate(context, params.sessionId, {
     kind: "session_updated",
     session: next,
