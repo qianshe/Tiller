@@ -41,7 +41,7 @@ type SessionResumeServiceOptions = {
       ? Event
       : never
     : never): void;
-  logger?: Pick<TillerLogger, "debug" | "warn" | "error">;
+  logger?: Pick<TillerLogger, "debug" | "error">;
   logInfo(message: string): void;
   logError(message: string): void;
   protocolLogging?: AcpProtocolLoggingOptions;
@@ -134,10 +134,6 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         sessionId,
         worktree: restoreWorktree,
         agent: restoreAgent,
-        sessionConfig: {
-          model: summary.model,
-          reasoningEffort: summary.reasoningEffort,
-        },
         restore: {
           runtimeSessionId: restoreRuntimeSessionId,
           strategy: restoreMethod === "session/load" ? "load" : "resume",
@@ -148,50 +144,11 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         onRestoreReplayEvent: () => undefined,
         onConnectionLifecycleEvent: options.logConnectionLifecycle,
       });
-      const loadedRuntimeModel =
-        runtime.sessionConfigState?.model ?? runtime.sessionModelState?.currentModelId;
-      const requestedModel = summary.model !== loadedRuntimeModel ? summary.model : undefined;
-      const requestedReasoningEffort =
-        summary.reasoningEffort !== runtime.sessionConfigState?.reasoningEffort
-          ? summary.reasoningEffort
-          : undefined;
-      let restoredConfigResult: Awaited<ReturnType<typeof runtime.configure>> | undefined;
-      let restoreConfigErrorMessage: string | undefined;
-      if (requestedModel || requestedReasoningEffort) {
-        try {
-          restoredConfigResult = await runtime.configure({
-            model: requestedModel,
-            reasoningEffort: requestedReasoningEffort,
-          });
-        } catch (error) {
-          restoreConfigErrorMessage =
-            error instanceof Error
-              ? error.message
-              : "Runtime rejected the persisted session config.";
-        }
-      }
-      const restoredRuntimeState = restoredConfigResult?.state ?? runtime.sessionConfigState;
-      const restoredModelState = restoredConfigResult?.modelState ?? runtime.sessionModelState;
       const restoredRuntimeModel =
-        restoredRuntimeState?.model ?? restoredModelState?.currentModelId ?? loadedRuntimeModel;
-      const restoredRuntimeReasoningEffort =
-        restoredRuntimeState?.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort;
-      if (
-        (requestedModel && restoredRuntimeModel !== summary.model) ||
-        (requestedReasoningEffort && restoredRuntimeReasoningEffort !== summary.reasoningEffort)
-      ) {
-        logResumeWarning(options, "runtime.session_restore.config_not_applied", {
-          sessionId,
-          requestedModel: requestedModel ?? "unchanged",
-          actualModel: restoredRuntimeModel ?? "unknown",
-          requestedReasoningEffort: requestedReasoningEffort ?? "unchanged",
-          actualReasoningEffort: restoredRuntimeReasoningEffort ?? "unknown",
-          errorMessage: restoreConfigErrorMessage ?? "unsupported",
-        });
-      }
+        runtime.sessionConfigState?.model ?? runtime.sessionModelState?.currentModelId;
       const restoredModel = restoredRuntimeModel ?? summary.model;
       const resolvedRestoredConfigOptions = resolveConfigOptionsForSelection({
-        incomingOptions: restoredConfigResult?.options ?? runtime.sessionConfigOptions,
+        incomingOptions: runtime.sessionConfigOptions,
         previousOptions: summary.configOptions,
         selectedModel: restoredModel,
       });
@@ -199,10 +156,10 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       const restoredSummary = options.hydrateSessionSummary({
         ...summary,
         model: restoredModel,
-        modelOptions: restoredModelState?.options ?? summary.modelOptions,
+        modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
         configOptions: restoredConfigOptions,
         reasoningEffort: resolveConfigReasoningEffortForOptions(
-          restoredRuntimeReasoningEffort ?? summary.reasoningEffort,
+          runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
           resolvedRestoredConfigOptions,
         ),
         runtimeSessionId: runtime.runtimeSessionId,
@@ -273,18 +230,6 @@ function logResumeError(
     return;
   }
   options.logError(`[tiller] ${event} ${formatLogFields(fields)}`);
-}
-
-function logResumeWarning(
-  options: SessionResumeServiceOptions,
-  event: string,
-  fields: Record<string, unknown>,
-) {
-  if (options.logger) {
-    options.logger.warn(event, fields);
-    return;
-  }
-  options.logInfo(`[tiller] warning ${event} ${formatLogFields(fields)}`);
 }
 
 function formatLogFields(fields: Record<string, unknown>) {

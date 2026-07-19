@@ -1023,7 +1023,7 @@ test("session restore preserves markerless trailing compaction order", async () 
   );
 });
 
-test("session restore reapplies persisted model config after ACP load returns defaults", async () => {
+test("session restore prefers ACP-reported config over persisted values", async () => {
   const sessionId = "session-stale-model";
   const summary: SessionSummary = {
     id: sessionId,
@@ -1048,13 +1048,17 @@ test("session restore reapplies persisted model config after ACP load returns de
     path: "D:/repo",
   };
   const stored = { summary: undefined as SessionSummary | undefined };
-  const configured: Array<{ model?: string; reasoningEffort?: string }> = [];
+  let createRuntimeInput: { sessionConfig?: unknown } | undefined;
+  let configureCalls = 0;
   const configOptions = [{
     id: "thought_level",
     name: "Reasoning",
     category: "thought_level",
-    currentValue: "high",
-    options: [{ value: "high", label: "High" }],
+    currentValue: "medium",
+    options: [
+      { value: "medium", label: "Medium" },
+      { value: "high", label: "High" },
+    ],
   }];
 
   const service = createSessionResumeService({
@@ -1079,30 +1083,25 @@ test("session restore reapplies persisted model config after ACP load returns de
       }),
     },
     providerLifecycle: {
-      createRuntime: async () => ({
-        runtimeSessionId: "runtime-new",
-        sessionCapabilities: { sessionResume: true },
-        sessionConfigState: { model: "default", reasoningEffort: "medium" },
-        sessionModelState: {
-          currentModelId: "default",
-          options: [{ id: "default", name: "Default" }, { id: "opus", name: "Opus" }],
-        },
-        sessionConfigOptions: configOptions,
-        prompt: async () => undefined,
-        configure: async (next: { model?: string; reasoningEffort?: string }) => {
-          configured.push(next);
-          return {
-            runtimeApplied: true,
-            state: { model: "opus", reasoningEffort: "high" },
-            modelState: {
-              currentModelId: "opus",
-              options: [{ id: "default", name: "Default" }, { id: "opus", name: "Opus" }],
-            },
-            options: configOptions,
-          };
-        },
-        cancel: () => undefined,
-      }),
+      createRuntime: async (input: { sessionConfig?: unknown }) => {
+        createRuntimeInput = input;
+        return {
+          runtimeSessionId: "runtime-new",
+          sessionCapabilities: { sessionResume: true },
+          sessionConfigState: { model: "default", reasoningEffort: "medium" },
+          sessionModelState: {
+            currentModelId: "default",
+            options: [{ id: "default", name: "Default" }, { id: "opus", name: "Opus" }],
+          },
+          sessionConfigOptions: configOptions,
+          prompt: async () => undefined,
+          configure: async () => {
+            configureCalls += 1;
+            throw new Error("restore must not configure ACP");
+          },
+          cancel: () => undefined,
+        };
+      },
     },
     providerHistory: {
       hasHistoryContent: () => false,
@@ -1146,18 +1145,19 @@ test("session restore reapplies persisted model config after ACP load returns de
   const result = await service.startSessionResume(sessionId);
 
   assert.equal(result.ok, true);
-  assert.deepEqual(configured, [{ model: "opus", reasoningEffort: "high" }]);
-  assert.equal(result.session?.model, "opus");
-  assert.equal(result.session?.reasoningEffort, "high");
+  assert.equal(configureCalls, 0);
+  assert.equal("sessionConfig" in (createRuntimeInput ?? {}), false);
+  assert.equal(result.session?.model, "default");
+  assert.equal(result.session?.reasoningEffort, "medium");
   assert.deepEqual(result.session?.modelOptions, [
     { id: "default", name: "Default" },
     { id: "opus", name: "Opus" },
   ]);
-  assert.equal(stored.summary?.model, "opus");
-  assert.equal(stored.summary?.reasoningEffort, "high");
+  assert.equal(stored.summary?.model, "default");
+  assert.equal(stored.summary?.reasoningEffort, "medium");
 });
 
-test("session restore keeps ACP runtime defaults when persisted config is unsupported", async () => {
+test("session restore falls back to persisted config when ACP reports no current config", async () => {
   const sessionId = "session-unsupported-model";
   const summary: SessionSummary = {
     id: sessionId,
@@ -1177,7 +1177,8 @@ test("session restore keeps ACP runtime defaults when persisted config is unsupp
     reasoningEffort: "high",
   };
   const stored = { summary: undefined as SessionSummary | undefined };
-  const warnings: string[] = [];
+  let createRuntimeInput: { sessionConfig?: unknown } | undefined;
+  let configureCalls = 0;
 
   const service = createSessionResumeService({
     sessions: new Map(),
@@ -1198,25 +1199,18 @@ test("session restore keeps ACP runtime defaults when persisted config is unsupp
       }),
     },
     providerLifecycle: {
-      createRuntime: async () => ({
-        runtimeSessionId: "runtime-new",
-        sessionCapabilities: { sessionResume: true },
-        sessionConfigState: { model: "default", reasoningEffort: "medium" },
-        sessionModelState: {
-          currentModelId: "default",
-          options: [{ id: "default", name: "Default" }],
-        },
-        sessionConfigOptions: [],
-        configure: async () => ({
-          runtimeApplied: false,
-          state: { model: "default", reasoningEffort: "medium" },
-          modelState: {
-            currentModelId: "default",
-            options: [{ id: "default", name: "Default" }],
+      createRuntime: async (input: { sessionConfig?: unknown }) => {
+        createRuntimeInput = input;
+        return {
+          runtimeSessionId: "runtime-new",
+          sessionCapabilities: { sessionResume: true },
+          sessionConfigState: {},
+          configure: async () => {
+            configureCalls += 1;
+            throw new Error("restore must not configure ACP");
           },
-          options: [],
-        }),
-      }),
+        };
+      },
     },
     getAgents: () => [{
       id: "claude-code",
@@ -1239,11 +1233,7 @@ test("session restore keeps ACP runtime defaults when persisted config is unsupp
     persistRuntimeDescriptor: () => undefined,
     handleRuntimeEvent: () => undefined,
     logConnectionLifecycle: () => undefined,
-    logger: {
-      debug: () => undefined,
-      warn: (event: string) => warnings.push(event),
-      error: () => undefined,
-    },
+    logger: { debug: () => undefined, error: () => undefined },
     logInfo: () => undefined,
     logError: () => undefined,
   } as any);
@@ -1251,8 +1241,10 @@ test("session restore keeps ACP runtime defaults when persisted config is unsupp
   const result = await service.startSessionResume(sessionId);
 
   assert.equal(result.ok, true);
-  assert.equal(result.session?.model, "default");
-  assert.equal(result.session?.reasoningEffort, undefined);
-  assert.equal(stored.summary?.model, "default");
-  assert.deepEqual(warnings, ["runtime.session_restore.config_not_applied"]);
+  assert.equal(configureCalls, 0);
+  assert.equal("sessionConfig" in (createRuntimeInput ?? {}), false);
+  assert.equal(result.session?.model, "removed-model");
+  assert.equal(result.session?.reasoningEffort, "high");
+  assert.equal(stored.summary?.model, "removed-model");
+  assert.equal(stored.summary?.reasoningEffort, "high");
 });
