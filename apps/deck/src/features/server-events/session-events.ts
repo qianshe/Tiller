@@ -109,7 +109,24 @@ export type SessionServerEventContext = {
   requestSessionResumeStart: (sessionId: string, reason: string) => void;
   setResumeFeedback: (value: string) => void;
   resumeStartRequestsRef: MutableRefObject<Set<string>>;
+  setResumeStartRequestIds?: (update: (current: Set<string>) => Set<string>) => void;
 };
+
+function clearResumeStartRequest(
+  sessionId: string,
+  context: Pick<
+    SessionServerEventContext,
+    "resumeStartRequestsRef" | "setResumeStartRequestIds"
+  >,
+) {
+  context.resumeStartRequestsRef.current.delete(sessionId);
+  context.setResumeStartRequestIds?.((current) => {
+    if (!current.has(sessionId)) return current;
+    const next = new Set(current);
+    next.delete(sessionId);
+    return next;
+  });
+}
 
 function applySessionCreated(payload: { session: SessionSummary }, context: SessionServerEventContext) {
   const {
@@ -195,7 +212,6 @@ export function applySessionResult(
     shouldAutoStartSessionResume,
     requestSessionResumeStart,
     setResumeFeedback,
-    resumeStartRequestsRef,
     rpcClientRef,
     dispatch,
   } = context;
@@ -233,7 +249,7 @@ export function applySessionResult(
             (session.resume.mode === "same-process" ||
               session.resume.restoreMethod === "client-reconnect")
           ) {
-            resumeStartRequestsRef.current.delete(session.id);
+            clearResumeStartRequest(session.id, context);
           }
         }
         pruneTimelineIndexCaches(nextSessions);
@@ -414,7 +430,7 @@ export function applySessionResult(
       return true;
     case "session/resume": {
       setResumeFeedback(payload.message);
-      resumeStartRequestsRef.current.delete(payload.sessionId);
+      clearResumeStartRequest(payload.sessionId, context);
       const resume = payload.ok
         ? payload.resume
         : {

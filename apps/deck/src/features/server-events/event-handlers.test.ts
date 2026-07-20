@@ -85,6 +85,7 @@ function createSessionEventContext(overrides: Record<string, unknown> = {}) {
     requestSessionResumeStart: () => undefined,
     setResumeFeedback: () => undefined,
     resumeStartRequestsRef: { current: new Set<string>() },
+    setResumeStartRequestIds: () => undefined,
     ...overrides,
   };
 }
@@ -2107,6 +2108,7 @@ test("session list clears stale resume requests for authoritative same-process s
   const resumeStartRequestsRef = {
     current: new Set(["same-process", "historical"]),
   };
+  let resumeStartRequestIds = new Set(["same-process", "historical"]);
 
   const handled = applySessionResult(
     "session/list",
@@ -2135,11 +2137,17 @@ test("session list clears stale resume requests for authoritative same-process s
     },
     "helm-1",
     true,
-    createSessionEventContext({ resumeStartRequestsRef }),
+    createSessionEventContext({
+      resumeStartRequestsRef,
+      setResumeStartRequestIds: (update: (current: Set<string>) => Set<string>) => {
+        resumeStartRequestIds = update(resumeStartRequestIds);
+      },
+    }),
   );
 
   assert.equal(handled, true);
   assert.deepEqual([...resumeStartRequestsRef.current], ["historical"]);
+  assert.deepEqual([...resumeStartRequestIds], ["historical"]);
 });
 
 test("session RPC results hydrate config options from listed sessions", () => {
@@ -2371,6 +2379,7 @@ test("session check resume auto starts provider restore", () => {
 test("successful session resume clears the pending restore request", () => {
   resetStore();
   const pendingRequests = new Set<string>(["s1"]);
+  let resumeStartRequestIds = new Set<string>(["s1"]);
   let feedback = "";
   const dispatched: string[] = [];
   useDeckStore.setState({ sessions: [session("s1")] });
@@ -2409,11 +2418,15 @@ test("successful session resume clears the pending restore request", () => {
         feedback = value;
       },
       resumeStartRequestsRef: { current: pendingRequests },
+      setResumeStartRequestIds: (update: (current: Set<string>) => Set<string>) => {
+        resumeStartRequestIds = update(resumeStartRequestIds);
+      },
     },
   );
 
   assert.equal(handled, true);
   assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(resumeStartRequestIds.has("s1"), false);
   assert.equal(feedback, "已恢复");
   assert.equal(useDeckStore.getState().sessions[0]?.runtimeSessionId, "runtime-s1");
   assert.deepEqual(dispatched, ["agent/connections"]);

@@ -62,6 +62,7 @@ export function createServerEventController(source: any, helpers: any) {
     assignSessionTitleFromPrompt,
     setResumeFeedback,
     resumeStartRequestsRef,
+    setResumeStartRequestIds,
   } = source;
   const {
     appendSystemMessage,
@@ -170,6 +171,7 @@ export function createServerEventController(source: any, helpers: any) {
       requestSessionResumeStart,
       setResumeFeedback,
       resumeStartRequestsRef,
+      setResumeStartRequestIds,
     };
   }
 

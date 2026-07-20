@@ -49,6 +49,7 @@ export function buildMissionWorktreeModel(input: any) {
     missionProjects,
     worktrees,
     resumeStartRequestsRef,
+    resumeStartRequestIds,
     draftModelLoading,
   } = input;
   const effectiveComposerSession = composerSession ?? activeSession;
@@ -66,7 +67,10 @@ export function buildMissionWorktreeModel(input: any) {
     activeSession,
     activeSessionStatus,
     resumeStartPending: Boolean(
-      activeSession && resumeStartRequestsRef?.current?.has(activeSession.id),
+      activeSession && (
+        resumeStartRequestIds?.has(activeSession.id) ||
+        resumeStartRequestsRef?.current?.has(activeSession.id)
+      ),
     ),
   });
   const composerSessionRestoreGate = resolveSessionRestoreGate({
@@ -74,7 +78,8 @@ export function buildMissionWorktreeModel(input: any) {
     activeSessionStatus: composerSessionStatus,
     resumeStartPending: Boolean(
       effectiveComposerSession &&
-        resumeStartRequestsRef?.current?.has(effectiveComposerSession.id),
+        (resumeStartRequestIds?.has(effectiveComposerSession.id) ||
+          resumeStartRequestsRef?.current?.has(effectiveComposerSession.id)),
     ),
   });
   const composerModelLoading = Boolean(draftModelLoading);
@@ -135,7 +140,10 @@ export function buildMissionWorktreeModel(input: any) {
   const missionDiffCount = activeDiffs.length;
   const missionLogCount = activeToolCalls.length || activeOutputs.length;
   const missionStatusLabel = activeSession
-    ? copy.status[statuses[activeSession.id] ?? activeSession.status]
+    ? activeSessionRestoreGate.state === "checking" ||
+      activeSessionRestoreGate.state === "restoring"
+      ? "恢复中"
+      : copy.status[statuses[activeSession.id] ?? activeSession.status]
     : "待创建";
   const missionDisplayTabs = buildMissionDisplayTabs(
     missionDiffCount,

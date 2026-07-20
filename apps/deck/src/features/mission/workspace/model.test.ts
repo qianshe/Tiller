@@ -76,6 +76,7 @@ test("worktree model blocks sending while historical session is restoring", () =
 
   assert.equal(model.canSend, false);
   assert.equal(model.activeSessionRestoreGate.state, "restoring");
+  assert.equal(model.missionStatusLabel, "恢复中");
   assert.match(model.activeSessionRestoreGate.message, /正在恢复 ACP 会话/);
 });
 

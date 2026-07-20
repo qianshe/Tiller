@@ -47,6 +47,7 @@ export function useAppControllers(ctx: any) {
     setPromptImages,
     permissionRequests,
     resumeStartRequestsRef,
+    setResumeStartRequestIds,
     setResumeFeedback,
   } = source;
 
@@ -115,6 +116,7 @@ export function useAppControllers(ctx: any) {
     appendUserMessage,
     permissionRequests,
     resumeStartRequestsRef,
+    setResumeStartRequestIds,
     setResumeFeedback,
   });
 

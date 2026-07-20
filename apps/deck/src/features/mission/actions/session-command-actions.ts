@@ -11,8 +11,10 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 import type {
+  Dispatch,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
+  SetStateAction,
 } from "react";
 import type { AgentModelOptionsEntry } from "../../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
@@ -73,6 +75,7 @@ type UseSessionCommandActionsOptions = {
   ) => void;
   permissionRequests: Record<string, PermissionRequest | null>;
   resumeStartRequestsRef: MutableRef<Set<string>>;
+  setResumeStartRequestIds: Dispatch<SetStateAction<Set<string>>>;
   setResumeFeedback: (value: string) => void;
 };
 
@@ -122,6 +125,7 @@ export function useSessionCommandActions({
   appendUserMessage,
   permissionRequests,
   resumeStartRequestsRef,
+  setResumeStartRequestIds,
   setResumeFeedback,
 }: UseSessionCommandActionsOptions) {
   function createSession(
@@ -160,6 +164,7 @@ export function useSessionCommandActions({
     requestSessionResumeStartImpl(sessionId, reason, {
       rpcClientRef,
       resumeStartRequestsRef,
+      setResumeStartRequestIds,
       setResumeFeedback,
       dispatch,
     });

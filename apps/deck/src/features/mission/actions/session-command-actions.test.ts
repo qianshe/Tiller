@@ -43,12 +43,29 @@ function createActions(overrides: Record<string, unknown> = {}) {
     appendUserMessage: () => undefined,
     permissionRequests: {},
     resumeStartRequestsRef: { current: new Set<string>() },
+    setResumeStartRequestIds: () => undefined,
     setResumeFeedback: () => undefined,
     ...overrides,
   } as any;
 
   return { actions: useSessionCommandActions(options), dispatched };
 }
+
+test("requestSessionResumeStart exposes restoring sessions reactively", () => {
+  let restoringSessionIds = new Set<string>();
+  const { actions, dispatched } = createActions({
+    setResumeStartRequestIds: (update: (current: Set<string>) => Set<string>) => {
+      restoringSessionIds = update(restoringSessionIds);
+    },
+  });
+
+  actions.requestSessionResumeStart("session-restore", "正在恢复");
+
+  assert.deepEqual([...restoringSessionIds], ["session-restore"]);
+  assert.deepEqual(dispatched, [
+    { method: "session/resume", params: { sessionId: "session-restore" } },
+  ]);
+});
 
 test("respondToPermission dispatches approval response without requiring an active session", () => {
   resetApprovals();

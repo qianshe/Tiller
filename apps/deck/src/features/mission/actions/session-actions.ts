@@ -1,4 +1,4 @@
-import type { FormEvent, MutableRefObject } from "react";
+import type { Dispatch, FormEvent, MutableRefObject, SetStateAction } from "react";
 import type {
   AcpAgentProvider,
   AgentPromptContent,
@@ -39,11 +39,15 @@ type CreateSessionContext = {
 type ResumeStartContext = {
   rpcClientRef: RpcClientRef;
   resumeStartRequestsRef: MutableRefObject<Set<string>>;
+  setResumeStartRequestIds: Dispatch<SetStateAction<Set<string>>>;
   setResumeFeedback: (value: string) => void;
   dispatch: DispatchToHelm;
 };
 
-type StartResumeContext = Omit<ResumeStartContext, "resumeStartRequestsRef"> & {
+type StartResumeContext = Omit<
+  ResumeStartContext,
+  "resumeStartRequestsRef" | "setResumeStartRequestIds"
+> & {
   activeSessionId: string | null;
 };
 
@@ -153,6 +157,7 @@ export function requestSessionResumeStart(
   const {
     rpcClientRef,
     resumeStartRequestsRef,
+    setResumeStartRequestIds,
     setResumeFeedback,
     dispatch,
   } = context;
@@ -163,9 +168,20 @@ export function requestSessionResumeStart(
   }
 
   resumeStartRequestsRef.current.add(sessionId);
+  setResumeStartRequestIds((current) => {
+    const next = new Set(current);
+    next.add(sessionId);
+    return next;
+  });
   setResumeFeedback(reason);
   void dispatch(client, "session/resume", { sessionId }).catch((error: unknown) => {
     resumeStartRequestsRef.current.delete(sessionId);
+    setResumeStartRequestIds((current) => {
+      if (!current.has(sessionId)) return current;
+      const next = new Set(current);
+      next.delete(sessionId);
+      return next;
+    });
     setResumeFeedback(error instanceof Error ? error.message : "ACP 会话恢复请求失败，请重试。");
   });
 }
