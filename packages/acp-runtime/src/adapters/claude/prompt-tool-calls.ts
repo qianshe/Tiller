@@ -17,7 +17,6 @@ import {
 } from "../prompt-observer";
 import {
   extractClaudeToolCallsFromTranscriptText,
-  readClaudeTranscriptToolCallsFromDisk,
 } from "./transcript/tool-calls";
 import { resolveClaudeTranscriptPath } from "./transcript/plan";
 
@@ -26,10 +25,8 @@ const MAX_TRANSCRIPT_TAIL_BYTES = 512 * 1024;
 
 export function createClaudePromptToolCallObserver(
   readTranscript: PromptToolCallReader = createCachedClaudeSubagentTranscriptReader(),
-  readRecoveryTranscript: PromptToolCallReader = readTranscript,
 ) {
   const fingerprintsBySession = new Map<string, Map<string, string>>();
-  const initialEventsBySession = new Map<string, SessionRuntimeEvent[]>();
 
   return {
     begin(context: AcpPromptObservationContext) {
@@ -48,14 +45,6 @@ export function createClaudePromptToolCallObserver(
           ]),
         ),
       );
-      initialEventsBySession.set(
-        context.runtimeSessionId,
-        latestPromptToolCallsById(
-          safelyReadPromptToolCalls(readRecoveryTranscript, context),
-        )
-          .filter(isTerminalToolCall)
-          .map(toRuntimeEvent),
-      );
     },
     poll(context: AcpPromptObservationContext): SessionRuntimeEvent[] {
       let fingerprints = fingerprintsBySession.get(context.runtimeSessionId);
@@ -63,8 +52,7 @@ export function createClaudePromptToolCallObserver(
         this.begin(context);
         fingerprints = fingerprintsBySession.get(context.runtimeSessionId);
       }
-      const events = initialEventsBySession.get(context.runtimeSessionId) ?? [];
-      initialEventsBySession.delete(context.runtimeSessionId);
+      const events: SessionRuntimeEvent[] = [];
       if (!fingerprints) {
         return events;
       }
@@ -85,7 +73,6 @@ export function createClaudePromptToolCallObserver(
     },
     dispose(sessionId: string) {
       fingerprintsBySession.delete(sessionId);
-      initialEventsBySession.delete(sessionId);
     },
   };
 }
@@ -93,12 +80,6 @@ export function createClaudePromptToolCallObserver(
 function toRuntimeEvent(toolCall: AgentToolCall): SessionRuntimeEvent {
   const { sequence: _sequence, ...canonicalToolCall } = toolCall;
   return { type: "tool-call", toolCall: canonicalToolCall };
-}
-
-function isTerminalToolCall(toolCall: AgentToolCall) {
-  return toolCall.status === "completed" ||
-    toolCall.status === "failed" ||
-    toolCall.status === "cancelled";
 }
 
 function isObservableLiveToolCall(toolCall: AgentToolCall) {

@@ -12,7 +12,6 @@ import { createClaudePromptToolCallObserver } from "./prompt-tool-calls";
 import { createClaudeToolEvidenceCollector } from "./evidence";
 import { promptEventsToToolObservations } from "../../tool-recognition";
 import { readClaudeTranscriptCompactionFromDisk } from "./transcript/history";
-import { readClaudeTranscriptToolCallsFromDisk } from "./transcript/tool-calls";
 
 const CLAUDE_ACP_COMMANDS = [
   "claude-acp",
@@ -30,10 +29,7 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
     ),
   );
   const toolEvidence = createClaudeToolEvidenceCollector();
-  const promptToolCalls = createClaudePromptToolCallObserver(
-    undefined,
-    readClaudeTranscriptToolCallsFromDisk,
-  );
+  const promptToolCalls = createClaudePromptToolCallObserver();
   const promptCompactions = createClaudePromptCompactionObserver();
   return {
     id: "claude",

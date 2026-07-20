@@ -28,26 +28,18 @@ function shell(
   };
 }
 
-test("Claude prompt observer recovers an existing terminal parent tool call once", () => {
-  let snapshot: AgentToolCall[] = [shell("old-shell", "completed", "OLD")];
+test("Claude prompt observer baselines existing transcript tools without replaying them", () => {
+  let snapshot: AgentToolCall[] = [
+    shell("old-shell", "completed", "OLD"),
+    {
+      ...shell("old-subagent", "completed", "SCAN"),
+      kind: "subagent",
+      title: "Explore",
+    },
+  ];
   const observer = createClaudePromptToolCallObserver(() => snapshot);
 
   observer.begin(context);
-  assert.deepEqual(observer.poll(context), [
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "old-shell",
-        kind: "shell",
-        title: "node -e \"console.log('CLAUDE_TITLE_OK')\"",
-        status: "completed",
-        input: JSON.stringify({ command: "node -e \"console.log('CLAUDE_TITLE_OK')\"" }),
-        output: "OLD",
-        timestamp: "2026-07-14T15:19:26.795Z",
-        updatedAt: "2026-07-14T15:19:29.453Z",
-      },
-    },
-  ]);
   assert.deepEqual(observer.poll(context), []);
 
   snapshot = [...snapshot, shell("call-shell", "running")];
@@ -68,6 +60,7 @@ test("Claude prompt observer recovers an existing terminal parent tool call once
 
   snapshot = [
     snapshot[0]!,
+    snapshot[1]!,
     shell("call-shell", "completed", "CLAUDE_TITLE_OK"),
   ];
   const completed = observer.poll(context);
