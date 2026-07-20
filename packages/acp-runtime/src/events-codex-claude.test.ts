@@ -3,6 +3,45 @@ import test from "node:test";
 import { mapSessionUpdateNotificationBatch } from "./runtime";
 import { mapSessionUpdateNotification } from "./events";
 
+test("mapSessionUpdateNotification maps Claude synthetic authentication errors to ACP errors", () => {
+  const provider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-agent-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const payload = {
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-claude-auth-error",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "synthetic-error",
+        content: {
+          type: "text",
+          text: "Failed to authenticate. API Error: 403 \u9884\u6263\u8d39\u989d\u5ea6\u5931\u8d25 (request id: abc123)",
+        },
+      },
+    },
+  };
+
+  assert.deepEqual(
+    mapSessionUpdateNotificationBatch(payload, { provider, providerId: provider.id }),
+    {
+      sessionId: "session-claude-auth-error",
+      events: [{
+        type: "error",
+        code: "ACP_AGENT_API_ERROR",
+        message: "Failed to authenticate. API Error: 403 \u9884\u6263\u8d39\u989d\u5ea6\u5931\u8d25 (request id: abc123)",
+      }],
+    },
+  );
+  const generic = mapSessionUpdateNotificationBatch(payload, { providerId: "generic" });
+  assert.equal(generic?.events[0]?.type, "message");
+});
+
 test("mapSessionUpdateNotification classifies Claude Task tool with subagent_type as subagent", () => {
   const mapped = mapSessionUpdateNotification(
     {
