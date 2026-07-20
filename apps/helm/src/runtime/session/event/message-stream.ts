@@ -1,5 +1,6 @@
-import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
+import { expandAdapterRuntimeEvent, type SessionRuntimeEvent } from "@tiller/acp-runtime";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "../../../sessions/facade";
+import { hydrateRuntimeCompactionEventSummary } from "../../../sessions/compaction-summary";
 import type { HelmHandlerContext } from "../../../handlers/context";
 import { emitFirstHelmPromptTrace } from "../../prompt-trace";
 import {
@@ -168,19 +169,68 @@ export function flushLiveAssistantMessage(
     ...message,
     streaming: false,
   };
+  const originalEvent = {
+    type: "message" as const,
+    message: finalizedMessage,
+  };
+  const expandedEvents = expandAdapterRuntimeEvent(
+    resolveFinalizedMessageProviderId(sessionId, context),
+    originalEvent,
+  );
+  if (expandedEvents?.length && expandedEvents.every(isFinalizedAssistantMessageOrCompaction)) {
+    for (const event of expandedEvents) {
+      if (event.type === "compaction") {
+        routeFinalizedAssistantCompaction(
+          sessionId,
+          event,
+          context,
+          finalizedMessage.sequence,
+        );
+        continue;
+      }
+      routeFinalizedAssistantMessage(sessionId, event.message, context);
+    }
+    return true;
+  }
+  routeFinalizedAssistantMessage(sessionId, finalizedMessage, context);
+  return true;
+}
+
+function resolveFinalizedMessageProviderId(
+  sessionId: string,
+  context: Pick<HelmHandlerContext, "sessions" | "sessionStore">,
+) {
+  const record = context.sessions.get(sessionId);
+  return (
+    record?.agent?.id ?? record?.summary?.agentId ?? context.sessionStore.get(sessionId)?.agentId
+  );
+}
+
+function isFinalizedAssistantMessageOrCompaction(
+  event: SessionRuntimeEvent,
+): event is Extract<SessionRuntimeEvent, { type: "message" | "compaction" }> {
+  return event.type === "message" || event.type === "compaction";
+}
+
+function routeFinalizedAssistantMessage(
+  sessionId: string,
+  message: Extract<SessionRuntimeEvent, { type: "message" }>["message"],
+  context: HelmHandlerContext,
+) {
+  assertCanonicalTimelinePipeline(context);
   const prepared = prepareRuntimeSessionUpdate(
     sessionId,
-    { type: "message", message: finalizedMessage },
+    { type: "message", message },
     context,
-    finalizedMessage.sequence,
+    message.sequence,
   );
   routeCanonicalTimelineEvent(
     sessionId,
     {
       type: "message",
       message: {
-        ...finalizedMessage,
-        sequence: finalizedMessage.sequence ?? prepared.resolvedSequence,
+        ...message,
+        sequence: message.sequence ?? prepared.resolvedSequence,
       },
     },
     context,
@@ -188,7 +238,30 @@ export function flushLiveAssistantMessage(
     prepared.update,
   );
   context.updateSessionSummary(sessionId, (current) =>
-    applyAgentMessageToSummary(current, finalizedMessage),
+    applyAgentMessageToSummary(current, message),
   );
-  return true;
+}
+
+function routeFinalizedAssistantCompaction(
+  sessionId: string,
+  event: Extract<SessionRuntimeEvent, { type: "compaction" }>,
+  context: HelmHandlerContext,
+  sequence?: number,
+) {
+  assertCanonicalTimelinePipeline(context);
+  startNextAssistantResponseSegment(sessionId);
+  const hydratedEvent = hydrateRuntimeCompactionEventSummary(sessionId, event, context);
+  const prepared = prepareRuntimeSessionUpdate(
+    sessionId,
+    hydratedEvent,
+    context,
+    sequence,
+  );
+  routeCanonicalTimelineEvent(
+    sessionId,
+    hydratedEvent,
+    context,
+    prepared.resolvedSequence,
+    prepared.update,
+  );
 }

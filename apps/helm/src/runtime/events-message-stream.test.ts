@@ -249,6 +249,100 @@ test("runtime streaming chunks defer summary persistence until flush", () => {
   assert.equal(capture.observedTimelineMessages?.[0]?.text, "你好");
 });
 
+test("runtime stores OpenCode automatic compaction summaries as compaction entries", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(logs, capture);
+  const summary = [
+    "## Objective",
+    "- Continue the repository cleanup task.",
+    "",
+    "## Important Details",
+    "- Preserve the existing worktree changes.",
+    "",
+    "## Work State",
+    "### Completed",
+    "- Located the relevant runtime path.",
+    "",
+    "### Active",
+    "- Waiting for the next prompt.",
+    "",
+    "### Blocked",
+    "- (none)",
+    "",
+    "## Next Move",
+    "1. Continue from the recorded state.",
+    "",
+    "## Relevant Files",
+    "- packages/acp-runtime/src/events.ts: maps ACP updates.",
+  ].join("\n");
+
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "msg-opencode-compaction",
+        role: "assistant",
+        text: summary.slice(0, 120),
+        timestamp: "2026-07-20T14:01:13.000Z",
+        streaming: true,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    {
+      type: "message",
+      message: {
+        id: "msg-opencode-compaction",
+        role: "assistant",
+        text: summary.slice(120),
+        timestamp: "2026-07-20T14:01:13.159Z",
+        streaming: true,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-1",
+    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const compactionEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "context_compaction") ?? [];
+  assert.equal(compactionEntries.length, 1);
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction"
+      ? compactionEntries[0].summaryText
+      : undefined,
+    summary,
+  );
+  assert.equal(
+    capture.timelineEntries?.some((entry) => entry.kind === "assistant_message"),
+    false,
+  );
+  assert.equal(
+    capture.sessionUpdates?.some((update) => update.updateType === "message"),
+    false,
+  );
+  assert.equal(
+    capture.sessionUpdates?.some((update) => update.updateType === "compaction"),
+    true,
+  );
+  assert.equal(
+    capture.sessionUpdates?.find((update) => update.updateType === "compaction")?.sequence,
+    1,
+  );
+});
+
 test("runtime assistant chunks reuse one ordered segment id", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };

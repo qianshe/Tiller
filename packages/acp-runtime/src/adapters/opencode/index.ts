@@ -6,6 +6,7 @@ import {
 } from "../session-config";
 import { extractOpenCodePlanFromToolCall, isOpenCodePlanToolCall, mapOpenCodePlanUpdate } from "./plan-events";
 import { collectOpenCodeToolEvidence } from "./evidence";
+import { expandOpenCodeRuntimeEvent } from "./compaction-events";
 
 export const OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS = 120_000;
 
@@ -38,6 +39,7 @@ export function createOpenCodeAcpAdapter(): AcpAgentAdapter {
     },
     resolveRequestTimeout: ({ method }) =>
       isOpenCodeSessionRequest(method) ? OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS : undefined,
+    expandRuntimeEvent: expandOpenCodeRuntimeEvent,
     mapToolCallUpdate: mapOpenCodePlanUpdate,
     extractPlanFromToolCall: extractOpenCodePlanFromToolCall,
     isPlanToolCall: isOpenCodePlanToolCall,

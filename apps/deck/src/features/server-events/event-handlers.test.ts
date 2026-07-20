@@ -582,6 +582,55 @@ test("terminal session timeline_batch removes matching live tool overlays", () =
   assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
 });
 
+test("compaction timeline_batch removes its matching live assistant overlay", () => {
+  resetStore();
+  useDeckStore.setState({
+    messages: {
+      "session-1": [
+        {
+          id: "opencode-compaction-summary",
+          role: "assistant",
+          text: "## Objective\n- Continue the task.",
+          timestamp: "2026-07-20T14:01:13.000Z",
+          streaming: true,
+        } as AgentMessage,
+      ],
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: false,
+          deliverySequence: 1,
+          lastSequence: 1,
+          entries: [
+            {
+              id: "compaction:opencode-compaction-summary",
+              kind: "context_compaction",
+              phase: "completed",
+              source: "provider",
+              summaryMessageId: "opencode-compaction-summary",
+              summaryText: "## Objective\n- Continue the task.",
+              timestamp: "2026-07-20T14:01:13.159Z",
+              updatedAt: "2026-07-20T14:01:13.159Z",
+              replayCompleteness: "compacted",
+              detailsVisibility: "expandable",
+            },
+          ],
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().messages["session-1"], []);
+});
+
 test("idle live_state clears stale non-terminal live tool overlays without terminal history", () => {
   resetStore();
   const toolCalls = {

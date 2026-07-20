@@ -753,9 +753,15 @@ function removeTerminalTimelineOverlays(
   entries: SessionTimelineEntry[],
 ) {
   const terminalMessageIds = new Set(
-    entries.flatMap((entry) =>
-      entry.kind === "assistant_message" && entry.streaming !== true ? [entry.id] : [],
-    ),
+    entries.flatMap((entry) => {
+      if (entry.kind === "assistant_message" && entry.streaming !== true) {
+        return [entry.id];
+      }
+      if (entry.kind === "context_compaction" && entry.summaryMessageId) {
+        return [entry.summaryMessageId];
+      }
+      return [];
+    }),
   );
   const terminalToolCallIds = new Set(
     entries.flatMap((entry) =>
