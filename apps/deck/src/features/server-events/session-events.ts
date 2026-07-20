@@ -336,7 +336,7 @@ export function applySessionResult(
         hasMore: Boolean(payload.hasMore),
         liveState: payload.liveState,
         legacyEvidence: payload.legacyEvidence,
-      });
+      }, toolCallsRef);
       return true;
     }
     case "session/list_legacy_evidence": {
@@ -514,15 +514,25 @@ function applySessionLiveStateSnapshot(
   store: DeckStore,
   sessionId: string,
   snapshot: SessionLiveStateSnapshot | undefined,
+  toolCallsRef?: MutableRefObject<Record<string, AgentToolCall[]>>,
 ) {
   const projection = projectSessionLiveStateSnapshot(store, sessionId, snapshot);
-  const patch = projection.patch;
+  if (!projection.applied) {
+    return false;
+  }
+  const toolCalls = removeIdleLiveToolCallOverlays(store, sessionId, snapshot);
+  const patch = toolCalls
+    ? { ...projection.patch, toolCalls }
+    : projection.patch;
   if (patch) {
     withDeckStorePersistenceSuppressed(() => {
       useDeckStore.setState(patch);
     });
   }
-  return projection.applied;
+  if (toolCalls && toolCallsRef) {
+    toolCallsRef.current = toolCalls;
+  }
+  return true;
 }
 
 function applySessionTimelineHistoryResult(
@@ -536,6 +546,7 @@ function applySessionTimelineHistoryResult(
     liveState?: SessionLiveStateSnapshot;
     legacyEvidence?: LegacyEvidenceAvailability;
   },
+  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>,
 ) {
   timelineIndexCacheBySession.delete(payload.sessionId);
   const shouldReplace = !payload.before;
@@ -549,6 +560,15 @@ function applySessionTimelineHistoryResult(
       [payload.sessionId]: nextEntries,
     };
   });
+  const overlays = removeTerminalTimelineOverlays(store, payload.sessionId, payload.entries);
+  if (overlays.messages || overlays.toolCalls) {
+    withDeckStorePersistenceSuppressed(() => {
+      useDeckStore.setState(overlays);
+    });
+    if (overlays.toolCalls) {
+      toolCallsRef.current = overlays.toolCalls;
+    }
+  }
   if (shouldReplace) {
     store.setSessionTimelineDeliveryState((current) => ({
       ...current,
@@ -575,7 +595,7 @@ function applySessionTimelineHistoryResult(
     },
   }));
   if (shouldReplace || payload.liveState) {
-    applySessionLiveStateSnapshot(store, payload.sessionId, payload.liveState);
+    applySessionLiveStateSnapshot(store, payload.sessionId, payload.liveState, toolCallsRef);
   }
   if (payload.legacyEvidence) {
     store.setSessionLegacyEvidence((current) => {
@@ -750,6 +770,29 @@ function isTerminalToolCallStatus(status: AgentToolCall["status"]) {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
 
+function removeIdleLiveToolCallOverlays(
+  store: DeckStore,
+  sessionId: string,
+  snapshot: SessionLiveStateSnapshot | undefined,
+) {
+  const sequence = snapshot?.sequence;
+  if (snapshot?.status?.effectiveStatus !== "idle" || typeof sequence !== "number") {
+    return undefined;
+  }
+  const toolCalls = store.toolCalls[sessionId];
+  if (!toolCalls) {
+    return undefined;
+  }
+  const nextToolCalls = toolCalls.filter(
+    (toolCall) =>
+      isTerminalToolCallStatus(toolCall.status) ||
+      (typeof toolCall.sequence === "number" && toolCall.sequence > sequence),
+  );
+  return nextToolCalls.length === toolCalls.length
+    ? undefined
+    : { ...store.toolCalls, [sessionId]: nextToolCalls };
+}
+
 function mergeTimelineEntries(
   incoming: SessionTimelineEntry[],
   current: SessionTimelineEntry[],
@@ -860,7 +903,7 @@ export function applySessionUpdate(
     case "live_state":
       {
         const snapshot = update.snapshot as SessionLiveStateSnapshot;
-        applySessionLiveStateSnapshot(store, sessionId, snapshot);
+        applySessionLiveStateSnapshot(store, sessionId, snapshot, context.toolCallsRef);
       }
       return true;
     default:

@@ -4,7 +4,10 @@ import type {
   SessionSummary,
   SessionTimelineEntry,
 } from "@tiller/shared";
-import { deriveToolCallsFromTimeline } from "../utils/timeline-activity";
+import {
+  deriveToolCallsFromTimeline,
+  mergeHistoricalAndLiveToolCalls,
+} from "../utils/timeline-activity";
 
 /**
  * Measures the total streamed character volume of a session so callers can
@@ -46,9 +49,10 @@ export function splitMissionToolCalls(
   toolCalls: AgentToolCall[],
   timelineItems?: SessionTimelineEntry[],
 ) {
-  const effectiveToolCalls = toolCalls.length > 0
-    ? toolCalls
-    : deriveToolCallsFromTimeline(timelineItems);
+  const effectiveToolCalls = mergeHistoricalAndLiveToolCalls(
+    deriveToolCallsFromTimeline(timelineItems),
+    toolCalls,
+  );
   return {
     thinkingToolCalls: effectiveToolCalls.filter((toolCall) => toolCall.kind === "think"),
     timelineToolCalls: effectiveToolCalls.filter((toolCall) => toolCall.kind !== "think"),

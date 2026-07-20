@@ -317,7 +317,7 @@ test("session/list_timeline prepends older canonical history pages", () => {
   });
 });
 
-test("session/list_timeline leaves live tool call overlays untouched", () => {
+test("session/list_timeline clears a stale running overlay once history is terminal", () => {
   resetStore();
   useDeckStore.setState({
     toolCalls: {
@@ -326,7 +326,7 @@ test("session/list_timeline leaves live tool call overlays untouched", () => {
           id: "call-1",
           kind: "shell",
           title: "Shell",
-          status: "completed",
+          status: "running",
           input: "{\"pattern\":\"Tiller\",\"glob\":\"**/README.md\",\"output_mode\":\"files_with_matches\"}",
           output: "Found 2 files",
           timestamp: "2026-07-07T08:06:52.322Z",
@@ -368,10 +368,7 @@ test("session/list_timeline leaves live tool call overlays untouched", () => {
   );
 
   assert.equal(handled, true);
-  assert.deepEqual(
-    useDeckStore.getState().toolCalls["session-1"]?.map((entry) => [entry.id, entry.kind, entry.title]),
-    [["call-1", "shell", "Shell"]],
-  );
+  assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
 });
 
 test("session updates reject legacy user_message events after canonical cutover", () => {
@@ -582,6 +579,46 @@ test("terminal session timeline_batch removes matching live tool overlays", () =
 
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
+});
+
+test("idle live_state clears stale non-terminal live tool overlays without terminal history", () => {
+  resetStore();
+  const toolCalls = {
+    "session-1": [
+      {
+        id: "subagent-1",
+        kind: "subagent",
+        title: "Read-only subagent",
+        status: "running",
+        timestamp: "2026-07-19T15:20:00.000Z",
+        updatedAt: "2026-07-19T15:20:01.000Z",
+      } as AgentToolCall,
+    ],
+  };
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = { current: toolCalls };
+  useDeckStore.setState({ toolCalls });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "live_state",
+        snapshot: {
+          sequence: 12,
+          status: { runtimeStatus: "idle", effectiveStatus: "idle", pendingApprovalCount: 0 },
+          config: { configOptions: [], modelOptions: [] },
+          availableCommands: [],
+          sessionInfo: {},
+          diffs: [],
+        },
+      } as any,
+    },
+    createSessionEventContext({ toolCallsRef }),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
+  assert.equal(toolCallsRef.current, useDeckStore.getState().toolCalls);
 });
 
 test("session live_state snapshots replace plan and prompt queue", () => {

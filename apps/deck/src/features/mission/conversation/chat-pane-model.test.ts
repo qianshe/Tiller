@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { SessionTimelineEntry } from "@tiller/shared";
+import type { AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
 import {
   formatSessionPreviewTime,
   hasSessionBodyScrollSnapshotChanged,
@@ -82,6 +82,47 @@ test("splitMissionToolCalls falls back to canonical timeline entries when compat
   assert.deepEqual(split.thinkingToolCalls.map((item) => item.id), ["assistant-1:thinking"]);
   assert.deepEqual(split.timelineToolCalls.map((item) => item.id), ["cmd-1"]);
   assert.deepEqual(split.boundaryTimestamps, ["2026-06-30T00:00:00.000Z", "2026-06-30T00:00:01.000Z"]);
+});
+
+test("splitMissionToolCalls keeps canonical Todo completion over a stale live overlay", () => {
+  const liveTodos: AgentToolCall[] = [
+    {
+      id: "call-todo-1",
+      kind: "todo",
+      title: "Update todos",
+      status: "running",
+      timestamp: "2026-07-20T04:35:18.588Z",
+      updatedAt: "2026-07-20T04:35:18.588Z",
+    },
+    {
+      id: "call-todo-2",
+      kind: "todo",
+      title: "Update todos",
+      status: "running",
+      timestamp: "2026-07-20T04:35:23.055Z",
+      updatedAt: "2026-07-20T04:35:23.055Z",
+    },
+  ];
+  const split = splitMissionToolCalls(liveTodos, liveTodos.map((liveTodo, index) => ({
+    id: `tool:${liveTodo.id}`,
+    kind: "tool_call",
+    toolCall: {
+      ...liveTodo,
+      status: "completed",
+      updatedAt: "2026-07-20T04:35:28.792Z",
+    },
+    timestamp: liveTodo.timestamp,
+    updatedAt: "2026-07-20T04:35:28.792Z",
+    sequence: 14409 + index,
+  })) as SessionTimelineEntry[]);
+
+  assert.deepEqual(
+    split.timelineToolCalls.map((toolCall) => [toolCall.id, toolCall.status]),
+    [
+      ["call-todo-1", "completed"],
+      ["call-todo-2", "completed"],
+    ],
+  );
 });
 
 test("resolveSessionStatusTone maps session statuses", () => {

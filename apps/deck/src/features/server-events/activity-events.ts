@@ -77,18 +77,22 @@ export function applyActivityUpdate(
     }
     case "tool_call": {
       const toolCall = update.toolCall;
-      const isAlreadySettled =
-        toolCall.status === "completed"
-        || toolCall.status === "failed"
-        || (toolCall.kind === "subagent" && toolCall.status === "cancelled");
-      if (isAlreadySettled) {
-        const runningSnapshot = toolCall.kind === "subagent"
-          ? { ...toolCall, status: "running" as const, output: undefined }
-          : { ...toolCall, status: "running" as const };
+      const isSettledSubagent =
+        toolCall.kind === "subagent"
+        && (
+          toolCall.status === "completed"
+          || toolCall.status === "failed"
+          || toolCall.status === "cancelled"
+        );
+      if (isSettledSubagent) {
+        const runningSnapshot = {
+          ...toolCall,
+          status: "running" as const,
+          output: undefined,
+        };
         mergeSessionToolCalls(sessionId, [runningSnapshot]);
-        const scheduleSettlement = toolCall.kind === "subagent"
-          ? context.scheduleSubagentSettlement ?? scheduleVisibleSubagentSettlement
-          : requestAnimationFrame;
+        const scheduleSettlement =
+          context.scheduleSubagentSettlement ?? scheduleVisibleSubagentSettlement;
         scheduleSettlement(() => {
           mergeSessionToolCalls(sessionId, [toolCall]);
         });

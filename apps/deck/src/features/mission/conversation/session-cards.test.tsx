@@ -118,7 +118,7 @@ test("DraftSessionCard renders selectable agent options", () => {
 test("session cards use real borders so scroll content cannot cover the frame", () => {
   const card = renderToStaticMarkup(
     <SessionCard
-      session={session()}
+      session={session({ status: "idle" })}
       active={false}
       onBodyScroll={() => undefined}
       onFocus={() => undefined}
@@ -546,7 +546,8 @@ test("SessionCard renders running tool status in the title bar", () => {
   );
 
   assert.match(html, /mission-tool-loading-title/);
-  assert.match(html, /工具执行中/);
+  assert.match(html, /运行中/);
+  assert.doesNotMatch(html, /工具执行中/);
   assert.doesNotMatch(html, />等待 find -type d 返回结果…/);
   assert.match(html, /title="等待 find -type d 返回结果…"/);
 });

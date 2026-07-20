@@ -132,6 +132,34 @@ test("mapOpenCodePlanUpdate projects title-only todo updates when rawInput carri
   });
 });
 
+test("mapOpenCodePlanUpdate reads completed todo snapshots from ACP rawOutput metadata", () => {
+  const event = mapOpenCodePlanUpdate({
+    sessionId: "session-opencode-plan",
+    updateType: "tool_call_update",
+    text: null,
+    update: {
+      toolCallId: "call-todo-completed",
+      title: "1 todos",
+      status: "completed",
+      rawOutput: {
+        output: "[]",
+        metadata: {
+          todos: [{ content: "完成写入", status: "completed", priority: "high" }],
+        },
+      },
+    },
+    now: "2026-07-20T00:00:00.000Z",
+  });
+
+  assert.deepEqual(event, {
+    type: "plan-update",
+    plan: {
+      updatedAt: "2026-07-20T00:00:00.000Z",
+      entries: [{ content: "完成写入", priority: "high", status: "completed" }],
+    },
+  });
+});
+
 test("extractOpenCodePlanFromToolCall tolerates replayed non-todo kinds when payload still carries todos", () => {
   const plan = extractOpenCodePlanFromToolCall({
     id: "call-replayed-todo",

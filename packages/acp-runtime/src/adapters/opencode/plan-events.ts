@@ -119,6 +119,7 @@ function extractTodoList(source: Record<string, unknown>): Array<Record<string, 
       input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).todos : null,
       input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).items : null,
       parseInput(source.output),
+      nestedMetadataTodos(source.rawOutput ?? source.raw_output),
       source.todos,
     ];
   for (const candidate of candidates) {
@@ -129,6 +130,17 @@ function extractTodoList(source: Record<string, unknown>): Array<Record<string, 
     }
   }
   return null;
+}
+
+function nestedMetadataTodos(value: unknown): unknown {
+  const output = parseInput(value);
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    return undefined;
+  }
+  const metadata = parseInput((output as Record<string, unknown>).metadata);
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>).todos
+    : undefined;
 }
 
 function nestedInput(value: unknown): unknown {

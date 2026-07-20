@@ -65,7 +65,29 @@ export function mergeHistoricalAndLiveToolCalls(
   historical: AgentToolCall[],
   live: AgentToolCall[],
 ): AgentToolCall[] {
-  return mergeActivityById(historical, live);
+  const merged = [...historical];
+  const positions = new Map(merged.map((toolCall, index) => [toolCall.id, index]));
+  for (const toolCall of live) {
+    const index = positions.get(toolCall.id);
+    if (index === undefined) {
+      positions.set(toolCall.id, merged.length);
+      merged.push(toolCall);
+      continue;
+    }
+    const historicalToolCall = merged[index]!;
+    if (
+      isTerminalToolCallStatus(historicalToolCall.status) &&
+      !isTerminalToolCallStatus(toolCall.status)
+    ) {
+      continue;
+    }
+    merged[index] = toolCall;
+  }
+  return merged;
+}
+
+function isTerminalToolCallStatus(status: AgentToolCall["status"]): boolean {
+  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 export function mergeHistoricalAndLiveOutputs(

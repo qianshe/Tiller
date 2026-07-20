@@ -847,6 +847,7 @@ test("mapSessionUpdateNotificationBatch preserves OpenCode todo tools before der
           toolCall: {
             id: "call-opencode-plan",
             tool: "todowrite",
+            status: "completed",
             state: {
               input: {
                 todos: [{ content: "Adapter projection", status: "completed" }],
@@ -868,6 +869,11 @@ test("mapSessionUpdateNotificationBatch preserves OpenCode todo tools before der
   );
 
   assert.deepEqual(mapped?.events.map((event) => event.type), ["tool-call", "plan-update"]);
+  const toolEvent = mapped?.events[0];
+  if (toolEvent?.type !== "tool-call") {
+    throw new Error("Expected todo tool-call event");
+  }
+  assert.equal(toolEvent.toolCall.status, "completed");
   const planEvent = mapped?.events[1];
   if (planEvent?.type !== "plan-update") {
     throw new Error("Expected derived plan-update event");
@@ -875,6 +881,166 @@ test("mapSessionUpdateNotificationBatch preserves OpenCode todo tools before der
   assert.deepEqual(planEvent.plan.entries, [
     { content: "Adapter projection", priority: "medium", status: "completed" },
   ]);
+});
+
+test("OpenCode completed TodoWrite updates finish the tool before the next write", () => {
+  const provider = {
+    id: "opencode",
+    name: "OpenCode",
+    command: "opencode",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const updates = [
+    {
+      toolCallId: "call-todo-1",
+      title: "1 todos",
+      status: "in_progress",
+      rawInput: {
+        todos: [{ content: "第一步", status: "in_progress", priority: "high" }],
+      },
+    },
+    {
+      toolCallId: "call-todo-1",
+      title: "1 todos",
+      status: "completed",
+      rawOutput: {
+        output: "[]",
+        metadata: {
+          todos: [{ content: "第一步", status: "in_progress", priority: "high" }],
+        },
+      },
+    },
+    {
+      toolCallId: "call-todo-2",
+      title: "1 todos",
+      status: "in_progress",
+      rawInput: {
+        todos: [{ content: "第一步", status: "completed", priority: "high" }],
+      },
+    },
+    {
+      toolCallId: "call-todo-2",
+      title: "1 todos",
+      status: "completed",
+      rawOutput: {
+        output: "[]",
+        metadata: {
+          todos: [{ content: "第一步", status: "completed", priority: "high" }],
+        },
+      },
+    },
+  ] as const;
+
+  const lifecycle = updates.map((update) => {
+    const mapped = mapSessionUpdateNotificationBatch(
+      {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: "session-opencode-sequential-todos",
+          update: {
+            sessionUpdate: "tool_call_update",
+            ...update,
+          },
+        },
+      },
+      { provider },
+    );
+
+    assert.deepEqual(mapped?.events.map((event) => event.type), ["tool-call", "plan-update"]);
+    const toolEvent = mapped?.events[0];
+    if (toolEvent?.type !== "tool-call") {
+      throw new Error("Expected TodoWrite tool-call event");
+    }
+    return [toolEvent.toolCall.id, toolEvent.toolCall.status];
+  });
+
+  assert.deepEqual(lifecycle, [
+    ["call-todo-1", "running"],
+    ["call-todo-1", "completed"],
+    ["call-todo-2", "running"],
+    ["call-todo-2", "completed"],
+  ]);
+});
+
+test("OpenCode todo snapshots respect explicit and initial running states", () => {
+  for (const update of [
+    {
+      sessionUpdate: "tool_call",
+      toolCall: {
+        id: "call-opencode-plan-initial",
+        tool: "todowrite",
+        state: {
+          input: {
+            todos: [{ content: "Initial snapshot", status: "in_progress" }],
+          },
+        },
+      },
+    },
+    {
+      sessionUpdate: "tool_call_update",
+      toolCall: {
+        id: "call-opencode-plan-running",
+        tool: "todowrite",
+        status: "running",
+        state: {
+          input: {
+            todos: [{ content: "Running snapshot", status: "in_progress" }],
+          },
+        },
+      },
+    },
+  ]) {
+    const mapped = mapSessionUpdateNotificationBatch(
+      {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: "session-opencode-plan-running",
+          update,
+        },
+      },
+      { providerId: "opencode" },
+    );
+
+    assert.equal(mapped?.events[0]?.type, "tool-call");
+    if (mapped?.events[0]?.type !== "tool-call") {
+      throw new Error("Expected todo tool-call event");
+    }
+    assert.equal(mapped.events[0].toolCall.status, "running");
+  }
+});
+
+test("OpenCode Todo does not infer completion from a statusless update", () => {
+  const mapped = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-plan-statusless",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-plan-statusless",
+            tool: "todowrite",
+            state: {
+              input: {
+                todos: [{ content: "Statusless snapshot", status: "completed" }],
+              },
+            },
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.events[0]?.type, "tool-call");
+  if (mapped?.events[0]?.type !== "tool-call") {
+    throw new Error("Expected todo tool-call event");
+  }
+  assert.equal(mapped.events[0].toolCall.status, "running");
 });
 
 test("mapSessionUpdateNotificationBatch preserves count-title OpenCode todo tools before plans", () => {
