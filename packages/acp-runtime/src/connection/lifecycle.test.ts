@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
 import type { AcpAgentProvider, WorktreeSummary } from "@tiller/shared";
 import { AcpConnection } from "./lifecycle";
 import { wasAcpPromptFailureReported } from "./prompt-failure";
 import type { SessionRuntimeEvent } from "../runtime-types";
+import { resolveClaudeTranscriptPath } from "../adapters/claude/transcript/plan";
 
 const require = createRequire(import.meta.url);
 const sdkImportUrl = pathToFileURL(require.resolve("@agentclientprotocol/sdk")).href;
@@ -156,6 +157,17 @@ async function waitForProcessExit(pid: number, timeoutMs = 2_000) {
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
   return false;
+}
+
+async function waitForCondition(predicate: () => boolean, timeoutMs = 2_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (predicate()) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return predicate();
 }
 
 function isProcessRunning(pid: number) {
@@ -604,6 +616,212 @@ test("prompt emits idle after fire-and-forget assistant updates are delivered", 
 
     await connection.dispose();
   } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("idle prompt observation emits a delayed Claude subagent completion", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-idle-observer-"));
+  const tempHome = join(tempDir, "home");
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  let connection: AcpConnection | undefined;
+  try {
+    process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
+    writeFileSync(join(tempDir, "marker.txt"), "assistant response", "utf8");
+    const { agentPath } = writeInitializeOnlyAgent(tempDir);
+    connection = await AcpConnection.open({
+      provider: { ...createProvider("node", [agentPath]), id: "claude", name: "Claude" },
+      worktree: { ...worktree, path: tempDir },
+    });
+    const events: SessionRuntimeEvent[] = [];
+    const handle = await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event),
+    });
+
+    await handle.prompt("finish the foreground prompt");
+
+    const transcriptPath = resolveClaudeTranscriptPath({
+      runtimeSessionId: "runtime-session-1",
+      cwd: tempDir,
+    });
+    assert.equal(transcriptPath.startsWith(tempDir), true);
+    mkdirSync(dirname(transcriptPath), { recursive: true });
+    writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({
+        timestamp: "2026-07-19T14:12:55.834Z",
+        content: [
+          "<task-notification>",
+          "<task-id>agent-1</task-id>",
+          "<tool-use-id>call-background</tool-use-id>",
+          "<status>completed</status>",
+          "<result>SUBAGENT_DONE</result>",
+          "</task-notification>",
+        ].join("\\n"),
+      })}\n`,
+      "utf8",
+    );
+
+    assert.equal(
+      await waitForCondition(() => events.some((event) =>
+        event.type === "tool-call" &&
+        event.toolCall.id === "call-background" &&
+        event.toolCall.status === "completed"),
+      ),
+      true,
+    );
+  } finally {
+    await connection?.dispose();
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
+    }
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("automatic Claude compaction reaches the session through ACP without a follow-up prompt", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-automatic-compaction-"));
+  let connection: AcpConnection | undefined;
+  try {
+    writeFileSync(join(tempDir, "marker.txt"), "assistant response", "utf8");
+    const { agentPath } = writeInitializeOnlyAgent(tempDir);
+    connection = await AcpConnection.open({
+      provider: { ...createProvider("node", [agentPath]), id: "claude", name: "Claude" },
+      worktree: { ...worktree, path: tempDir },
+    });
+    const events: SessionRuntimeEvent[] = [];
+    await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event),
+    });
+
+    (connection as unknown as {
+      handleSessionUpdate(params: unknown): void;
+    }).handleSessionUpdate({
+      sessionId: "runtime-session-1",
+      update: {
+        sessionUpdate: "compaction_completed",
+        messageId: "automatic-compaction",
+        timestamp: "2026-07-20T09:00:00.000Z",
+        status: "completed",
+        compaction: {
+          summary: "Automatically compacted context.",
+        },
+      },
+    });
+
+    assert.deepEqual(events, [{
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      messageId: "automatic-compaction",
+      summaryText: "Automatically compacted context.",
+      timestamp: "2026-07-20T09:00:00.000Z",
+    }]);
+  } finally {
+    await connection?.dispose();
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("manual Claude /compact persists its transcript summary without a follow-up prompt", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-idle-compaction-"));
+  const tempHome = join(tempDir, "home");
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  let connection: AcpConnection | undefined;
+  try {
+    process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
+    writeFileSync(join(tempDir, "marker.txt"), "assistant response", "utf8");
+    const { agentPath } = writeInitializeOnlyAgent(tempDir);
+    connection = await AcpConnection.open({
+      provider: { ...createProvider("node", [agentPath]), id: "claude", name: "Claude" },
+      worktree: { ...worktree, path: tempDir },
+    });
+    const events: SessionRuntimeEvent[] = [];
+    const handle = await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event),
+    });
+
+    await handle.prompt("/compact");
+
+    const transcriptPath = resolveClaudeTranscriptPath({
+      runtimeSessionId: "runtime-session-1",
+      cwd: tempDir,
+    });
+    mkdirSync(dirname(transcriptPath), { recursive: true });
+    writeFileSync(
+      transcriptPath,
+      `${JSON.stringify({
+        timestamp: "2026-07-19T14:12:55.834Z",
+        uuid: "summary-after-compact",
+        isCompactSummary: true,
+        message: {
+          role: "user",
+          content: [
+            "Summary:",
+            "Compacted context written after the command completed.",
+            "If you need specific details from before compaction, read the transcript.",
+          ].join("\n"),
+        },
+      })}\n`,
+      "utf8",
+    );
+
+    assert.equal(
+      await waitForCondition(() => events.some((event) =>
+        event.type === "compaction" &&
+        event.messageId === "summary-after-compact"),
+      ),
+      true,
+    );
+    const compaction = events.find((event) =>
+      event.type === "compaction" &&
+      event.messageId === "summary-after-compact");
+    assert.deepEqual(compaction, {
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      messageId: "summary-after-compact",
+      summaryText: "Compacted context written after the command completed.",
+      timestamp: "2026-07-19T14:12:55.834Z",
+    });
+  } finally {
+    await connection?.dispose();
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
+    }
     if (existsSync(tempDir)) {
       rmSync(tempDir, { recursive: true, force: true });
     }

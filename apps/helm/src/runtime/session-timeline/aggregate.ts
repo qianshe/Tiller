@@ -131,6 +131,9 @@ export function retainActiveSessionTimelineEntries(
   let latestUnresolvedCompactionIndex = -1;
   for (let index = aggregate.entries.length - 1; index >= 0; index -= 1) {
     const entry = aggregate.entries[index];
+    if (entry?.kind === "user_message") {
+      break;
+    }
     if (
       entry?.kind === "context_compaction" &&
       (entry.phase === "started" || !entry.summaryText)

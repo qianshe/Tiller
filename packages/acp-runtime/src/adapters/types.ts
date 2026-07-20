@@ -58,6 +58,7 @@ export type AcpToolEvidenceContext = {
 export type AcpPromptObservationContext = {
   runtimeSessionId: string;
   cwd: string;
+  observeCompaction?: boolean;
 };
 
 export type AcpCompactionSummaryContext = {

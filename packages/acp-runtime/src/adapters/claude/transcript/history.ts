@@ -13,6 +13,10 @@ export type ClaudeTranscriptCompactionSummaryOptions =
     completedAt?: string;
   };
 
+export type ClaudeTranscriptCompaction = AcpCompactionSummary & {
+  timestamp: string;
+};
+
 type TimedClaudeCompactionSummary = AcpCompactionSummary & {
   timestamp?: number;
 };
@@ -50,6 +54,17 @@ export function readClaudeTranscriptCompactionFromDisk(
   return selectClaudeCompaction(
     readCachedClaudeTranscriptCompactions(options) ?? [],
     options.completedAt,
+  );
+}
+
+export function readClaudeTranscriptCompactionsFromDisk(
+  options: ClaudeTranscriptHistoryOptions,
+): ClaudeTranscriptCompaction[] {
+  return (readCachedClaudeTranscriptCompactions(options) ?? []).flatMap(
+    ({ timestamp, ...summary }) =>
+      timestamp === undefined
+        ? []
+        : [{ ...summary, timestamp: new Date(timestamp).toISOString() }],
   );
 }
 

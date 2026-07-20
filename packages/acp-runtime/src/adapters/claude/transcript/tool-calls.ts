@@ -22,6 +22,13 @@ type PendingToolUse = {
   timestamp: string;
 };
 
+type ClaudeTaskNotification = {
+  agentId: string;
+  output?: string;
+  status: Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled">;
+  toolCallId: string;
+};
+
 export type ClaudeTranscriptToolCallOptions = ClaudeTranscriptPlanOptions;
 export type ClaudeTranscriptToolUse = {
   input: unknown;
@@ -59,6 +66,22 @@ export function extractClaudeToolCallsFromTranscriptText(
       continue;
     }
     const timestamp = firstString(record.timestamp) || new Date(0).toISOString();
+    const taskNotification = readClaudeTaskNotification(record);
+    if (taskNotification) {
+      sequence += 1;
+      toolCalls.push({
+        id: taskNotification.toolCallId,
+        commandId: `subagent:${taskNotification.agentId}`,
+        kind: "subagent",
+        title: "Subagent",
+        status: taskNotification.status,
+        ...(taskNotification.output ? { output: taskNotification.output } : {}),
+        timestamp,
+        updatedAt: timestamp,
+        sequence,
+      });
+      pendingToolUses.delete(taskNotification.toolCallId);
+    }
     for (const part of contentParts(recordFrom(record.message).content)) {
       const partRecord = recordFrom(part);
       const partType = firstString(partRecord.type);
@@ -111,6 +134,49 @@ export function extractClaudeToolCallsFromTranscriptText(
   }
 
   return toolCalls;
+}
+
+function readClaudeTaskNotification(
+  record: Record<string, unknown>,
+): ClaudeTaskNotification | null {
+  const candidates = [
+    record.content,
+    recordFrom(record.attachment).prompt,
+    recordFrom(record.message).content,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate !== "string") {
+      continue;
+    }
+    const notification = candidate.match(
+      /<task-notification>([\s\S]*?)<\/task-notification>/iu,
+    )?.[1];
+    if (!notification) {
+      continue;
+    }
+    const agentId = notification.match(/<task-id>\s*([^<]+?)\s*<\/task-id>/iu)?.[1]?.trim();
+    const toolCallId = notification.match(
+      /<tool-use-id>\s*([^<]+?)\s*<\/tool-use-id>/iu,
+    )?.[1]?.trim();
+    const status = notification.match(/<status>\s*([^<]+?)\s*<\/status>/iu)?.[1]
+      ?.trim()
+      .toLowerCase();
+    if (
+      !agentId ||
+      !toolCallId ||
+      (status !== "completed" && status !== "failed" && status !== "cancelled")
+    ) {
+      continue;
+    }
+    const output = notification.match(/<result>\s*([\s\S]*?)\s*<\/result>/iu)?.[1]?.trim();
+    return {
+      agentId,
+      toolCallId,
+      status,
+      ...(output ? { output } : {}),
+    };
+  }
+  return null;
 }
 
 function createClaudeTranscriptToolCall(

@@ -351,3 +351,131 @@ test("temporary subagent identity keeps its historical id when a later update su
   assert.equal(linked?.commandId, "subagent:agent-later");
   disposeToolRecognitionSession("claude", sessionId);
 });
+
+test("a background launch result with a different tool id reuses the only unidentified spawn", () => {
+  const sessionId = "recognition-background-launch-result";
+  const initial = createToolObservation({
+    providerId: "claude",
+    sessionId,
+    toolCall: toolCall({ id: "call-agent", status: "running" }),
+  });
+  const [spawned] = recognizeToolObservation(
+    initial,
+    subagentEvidence({ action: "spawn", background: true }),
+  ).toolCalls;
+
+  const launchResult = createToolObservation({
+    providerId: "claude",
+    sessionId,
+    toolCall: toolCall({
+      id: "stale-provider-id",
+      status: "running",
+      output: "Async agent launched successfully.",
+    }),
+  });
+  const [linked] = recognizeToolObservation(
+    launchResult,
+    subagentEvidence({
+      action: "spawn",
+      background: true,
+      entityIds: ["agent-1"],
+    }),
+  ).toolCalls;
+
+  assert.equal(spawned?.id, "call-agent");
+  assert.equal(linked?.id, "call-agent");
+  assert.equal(linked?.commandId, "subagent:agent-1");
+  disposeToolRecognitionSession("claude", sessionId);
+});
+
+test("a launch result does not guess between multiple unidentified spawns", () => {
+  const sessionId = "recognition-ambiguous-background-launch-result";
+  for (const id of ["call-agent-1", "call-agent-2"]) {
+    recognizeToolObservation(
+      createToolObservation({
+        providerId: "claude",
+        sessionId,
+        toolCall: toolCall({ id, status: "running" }),
+      }),
+      subagentEvidence({ action: "spawn", background: true }),
+    );
+  }
+
+  const [unlinked] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({
+        id: "stale-provider-id",
+        status: "running",
+        output: "Async agent launched successfully.",
+      }),
+    }),
+    subagentEvidence({
+      action: "spawn",
+      background: true,
+      entityIds: ["agent-1"],
+    }),
+  ).toolCalls;
+
+  assert.equal(unlinked?.id, "stale-provider-id");
+  assert.equal(unlinked?.commandId, "subagent:agent-1");
+  disposeToolRecognitionSession("claude", sessionId);
+});
+
+test("a Claude background spawn closes on its transcript task notification", () => {
+  const sessionId = "recognition-claude-background-completion";
+  const spawn = createToolObservation({
+    providerId: "claude",
+    sessionId,
+    toolCall: toolCall({ id: "call-agent", status: "running" }),
+  });
+  recognizeToolObservation(
+    spawn,
+    subagentEvidence({ action: "spawn", background: true }),
+  );
+
+  const launchResult = createToolObservation({
+    providerId: "claude",
+    sessionId,
+    toolCall: toolCall({
+      id: "stale-provider-id",
+      status: "running",
+      output: "Async agent launched successfully.",
+    }),
+  });
+  recognizeToolObservation(
+    launchResult,
+    subagentEvidence({
+      action: "spawn",
+      background: true,
+      entityIds: ["agent-1"],
+    }),
+  );
+
+  const completion = createToolObservation({
+    providerId: "claude",
+    sessionId,
+    toolCall: toolCall({
+      id: "call-agent",
+      commandId: "subagent:agent-1",
+      kind: "subagent",
+      status: "completed",
+      output: "SUBAGENT_DONE",
+    }),
+  });
+  const [completed] = recognizeToolObservation(
+    completion,
+    subagentEvidence({
+      action: "result",
+      entityIds: ["agent-1"],
+      terminal: true,
+    }),
+  ).toolCalls;
+
+  assert.equal(completed?.id, "call-agent");
+  assert.equal(completed?.commandId, "subagent:agent-1");
+  assert.equal(completed?.status, "completed");
+  assert.equal(completed?.output, "SUBAGENT_DONE");
+  disposeToolRecognitionSession("claude", sessionId);
+});

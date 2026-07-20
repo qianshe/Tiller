@@ -193,6 +193,38 @@ test("mapSessionUpdateNotification maps explicit compaction progress chunks into
   assert.equal(mapped.event.source, "provider");
 });
 
+test("mapSessionUpdateNotification maps standalone ACP compaction completion notifications", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_compaction_notification",
+      update: {
+        sessionUpdate: "compaction_completed",
+        messageId: "msg_compaction_notification",
+        timestamp: "2026-07-20T09:00:00.000Z",
+        status: "completed",
+        compaction: {
+          summary: "Automatically compacted context.",
+        },
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "compaction");
+  if (mapped?.event.type !== "compaction") {
+    throw new Error("Expected compaction event");
+  }
+  assert.deepEqual(mapped.event, {
+    type: "compaction",
+    phase: "completed",
+    source: "provider",
+    messageId: "msg_compaction_notification",
+    summaryText: "Automatically compacted context.",
+    timestamp: "2026-07-20T09:00:00.000Z",
+  });
+});
+
 test("mapSessionUpdateNotification maps continuation summaries into completed compaction events", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",

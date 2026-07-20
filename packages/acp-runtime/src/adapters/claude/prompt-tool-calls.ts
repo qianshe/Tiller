@@ -15,7 +15,10 @@ import {
   safelyReadPromptToolCalls,
   type PromptToolCallReader,
 } from "../prompt-observer";
-import { extractClaudeToolCallsFromTranscriptText } from "./transcript/tool-calls";
+import {
+  extractClaudeToolCallsFromTranscriptText,
+  readClaudeTranscriptToolCallsFromDisk,
+} from "./transcript/tool-calls";
 import { resolveClaudeTranscriptPath } from "./transcript/plan";
 
 const MAX_RECENT_SUBAGENT_TRANSCRIPTS = 16;
@@ -23,49 +26,92 @@ const MAX_TRANSCRIPT_TAIL_BYTES = 512 * 1024;
 
 export function createClaudePromptToolCallObserver(
   readTranscript: PromptToolCallReader = createCachedClaudeSubagentTranscriptReader(),
+  readRecoveryTranscript: PromptToolCallReader = readTranscript,
 ) {
   const fingerprintsBySession = new Map<string, Map<string, string>>();
+  const initialEventsBySession = new Map<string, SessionRuntimeEvent[]>();
 
   return {
     begin(context: AcpPromptObservationContext) {
+      if (fingerprintsBySession.has(context.runtimeSessionId)) {
+        return;
+      }
+      const toolCalls = latestPromptToolCallsById(
+        safelyReadPromptToolCalls(readTranscript, context),
+      );
       fingerprintsBySession.set(
         context.runtimeSessionId,
         new Map(
-          safelyReadPromptToolCalls(readTranscript, context).map((toolCall) => [
+          toolCalls.map((toolCall) => [
             toolCall.id,
             fingerprintPromptToolCall(toolCall),
           ]),
         ),
       );
+      initialEventsBySession.set(
+        context.runtimeSessionId,
+        latestPromptToolCallsById(
+          safelyReadPromptToolCalls(readRecoveryTranscript, context),
+        )
+          .filter(isTerminalToolCall)
+          .map(toRuntimeEvent),
+      );
     },
     poll(context: AcpPromptObservationContext): SessionRuntimeEvent[] {
-      const fingerprints = fingerprintsBySession.get(context.runtimeSessionId);
+      let fingerprints = fingerprintsBySession.get(context.runtimeSessionId);
       if (!fingerprints) {
         this.begin(context);
-        return [];
+        fingerprints = fingerprintsBySession.get(context.runtimeSessionId);
       }
-      const events: SessionRuntimeEvent[] = [];
-      for (const toolCall of safelyReadPromptToolCalls(readTranscript, context)) {
+      const events = initialEventsBySession.get(context.runtimeSessionId) ?? [];
+      initialEventsBySession.delete(context.runtimeSessionId);
+      if (!fingerprints) {
+        return events;
+      }
+      for (const toolCall of latestPromptToolCallsById(
+        safelyReadPromptToolCalls(readTranscript, context),
+      )) {
         const nextFingerprint = fingerprintPromptToolCall(toolCall);
         if (fingerprints.get(toolCall.id) === nextFingerprint) {
           continue;
         }
         fingerprints.set(toolCall.id, nextFingerprint);
-        if (
-          toolCall.kind !== "subagent" &&
-          (toolCall.kind !== "shell" || isOpaqueToolTitle(toolCall.title))
-        ) {
+        if (!isObservableLiveToolCall(toolCall)) {
           continue;
         }
-        const { sequence: _sequence, ...canonicalToolCall } = toolCall;
-        events.push({ type: "tool-call", toolCall: canonicalToolCall });
+        events.push(toRuntimeEvent(toolCall));
       }
       return events;
     },
     dispose(sessionId: string) {
       fingerprintsBySession.delete(sessionId);
+      initialEventsBySession.delete(sessionId);
     },
   };
+}
+
+function toRuntimeEvent(toolCall: AgentToolCall): SessionRuntimeEvent {
+  const { sequence: _sequence, ...canonicalToolCall } = toolCall;
+  return { type: "tool-call", toolCall: canonicalToolCall };
+}
+
+function isTerminalToolCall(toolCall: AgentToolCall) {
+  return toolCall.status === "completed" ||
+    toolCall.status === "failed" ||
+    toolCall.status === "cancelled";
+}
+
+function isObservableLiveToolCall(toolCall: AgentToolCall) {
+  return toolCall.kind === "subagent" ||
+    (toolCall.kind === "shell" && !isOpaqueToolTitle(toolCall.title));
+}
+
+function latestPromptToolCallsById(toolCalls: AgentToolCall[]): AgentToolCall[] {
+  const latest = new Map<string, AgentToolCall>();
+  for (const toolCall of toolCalls) {
+    latest.set(toolCall.id, toolCall);
+  }
+  return [...latest.values()];
 }
 
 function createCachedClaudeSubagentTranscriptReader(): PromptToolCallReader {

@@ -28,11 +28,26 @@ function shell(
   };
 }
 
-test("Claude prompt observer supplements subagent shell titles without replaying history", () => {
+test("Claude prompt observer recovers an existing terminal parent tool call once", () => {
   let snapshot: AgentToolCall[] = [shell("old-shell", "completed", "OLD")];
   const observer = createClaudePromptToolCallObserver(() => snapshot);
 
   observer.begin(context);
+  assert.deepEqual(observer.poll(context), [
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "old-shell",
+        kind: "shell",
+        title: "node -e \"console.log('CLAUDE_TITLE_OK')\"",
+        status: "completed",
+        input: JSON.stringify({ command: "node -e \"console.log('CLAUDE_TITLE_OK')\"" }),
+        output: "OLD",
+        timestamp: "2026-07-14T15:19:26.795Z",
+        updatedAt: "2026-07-14T15:19:29.453Z",
+      },
+    },
+  ]);
   assert.deepEqual(observer.poll(context), []);
 
   snapshot = [...snapshot, shell("call-shell", "running")];
@@ -98,4 +113,60 @@ test("Claude prompt observer exposes running subagents and ignores opaque shell 
       },
     },
   ]);
+});
+
+test("Claude prompt observer emits only the latest state for a repeated tool id", () => {
+  let snapshot: AgentToolCall[] = [];
+  const observer = createClaudePromptToolCallObserver(() => snapshot);
+  observer.begin(context);
+
+  snapshot = [
+    {
+      ...shell("subagent", "running"),
+      kind: "subagent",
+      title: "Delegate task",
+    },
+    {
+      ...shell("subagent", "completed", "SUBAGENT_DONE"),
+      commandId: "subagent:agent-1",
+      kind: "subagent",
+      title: "Subagent",
+    },
+  ];
+
+  const events = observer.poll(context);
+  assert.equal(events.length, 1);
+  assert.equal(
+    events[0]?.type === "tool-call" ? events[0].toolCall.status : undefined,
+    "completed",
+  );
+  assert.deepEqual(observer.poll(context), []);
+});
+
+test("Claude prompt observer preserves a background completion that arrives between prompts", () => {
+  let snapshot: AgentToolCall[] = [
+    {
+      ...shell("subagent", "running"),
+      commandId: "subagent:agent-1",
+      kind: "subagent",
+      title: "Subagent",
+    },
+  ];
+  const observer = createClaudePromptToolCallObserver(() => snapshot);
+  observer.begin(context);
+
+  snapshot = [
+    {
+      ...shell("subagent", "completed", "SUBAGENT_DONE"),
+      commandId: "subagent:agent-1",
+      kind: "subagent",
+      title: "Subagent",
+    },
+  ];
+
+  // The next prompt must not take a new baseline and hide this terminal state.
+  observer.begin(context);
+  const [event] = observer.poll(context);
+  assert.equal(event?.type, "tool-call");
+  assert.equal(event?.type === "tool-call" ? event.toolCall.status : undefined, "completed");
 });

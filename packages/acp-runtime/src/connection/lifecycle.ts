@@ -34,6 +34,12 @@ import {
 import type { AcpConnectionInventoryItem, AcpConnectionStatus } from "./types";
 import { ConnectionTerminalClient } from "./terminal-client";
 
+const IDLE_PROMPT_OBSERVATION_INTERVAL_MS = 1_000;
+
+function isManualCompactionPrompt(text: string): boolean {
+  return /^\/compact(?:\s|$)/iu.test(text.trim());
+}
+
 export type AcpConnectionOptions = {
   provider: AcpAgentProvider;
   worktree: WorktreeSummary;
@@ -111,6 +117,8 @@ export class AcpConnection {
     denyOptionId?: string;
     resolve: (response: acp.RequestPermissionResponse) => void;
   } | { kind: "client"; resolve: (allowed: boolean) => void }>();
+  private readonly idlePromptObservationTimers = new Map<string, NodeJS.Timeout>();
+  private readonly idlePromptObservationCompactionFlags = new Map<string, boolean>();
   private permissionRequestCounter = 0;
   private readonly terminalClient: ConnectionTerminalClient;
   private suppressExitError = false;
@@ -122,6 +130,7 @@ export class AcpConnection {
     });
     this.state.child.once("exit", (code, signal) => {
       this.status = "closed";
+      this.stopIdlePromptObservations();
       for (const session of this.sessions.values()) {
         disposeAdapterSession(this.state.provider, session.runtimeSessionId);
       }
@@ -263,6 +272,7 @@ export class AcpConnection {
         entry.configOptions = handle.configOptions;
         entry.modelState = handle.modelState;
         entry.refCount = pendingRefCount;
+        this.startIdlePromptObservation(request.tillerSessionId, entry);
         return this.createRuntimeHandle(request.tillerSessionId, entry);
       })
       .catch((error) => {
@@ -288,6 +298,7 @@ export class AcpConnection {
       }
       this.pendingSessions.delete(tillerSessionId);
       const runtimeSessionId = this.sessions.get(tillerSessionId)?.runtimeSessionId ?? tillerSessionId;
+      this.stopIdlePromptObservation(tillerSessionId);
       this.sessions.delete(tillerSessionId);
       disposeAdapterSession(this.state.provider, runtimeSessionId);
       if (this.state.capabilities.sessionClose) {
@@ -319,6 +330,7 @@ export class AcpConnection {
       };
     }
 
+    this.stopIdlePromptObservation(tillerSessionId);
     this.sessions.delete(tillerSessionId);
     disposeAdapterSession(this.state.provider, session.runtimeSessionId);
     if (this.state.capabilities.sessionClose) {
@@ -348,11 +360,21 @@ export class AcpConnection {
         if (sessionId === activeTillerSessionId) {
           return;
         }
-        if (this.sessions.get(activeTillerSessionId) === entry) {
-          this.sessions.delete(activeTillerSessionId);
+        const previousTillerSessionId = activeTillerSessionId;
+        const observingWhileIdle = this.idlePromptObservationTimers.has(previousTillerSessionId);
+        const observeCompaction =
+          this.idlePromptObservationCompactionFlags.get(previousTillerSessionId) ?? false;
+        if (observingWhileIdle) {
+          this.stopIdlePromptObservation(previousTillerSessionId);
+        }
+        if (this.sessions.get(previousTillerSessionId) === entry) {
+          this.sessions.delete(previousTillerSessionId);
         }
         this.sessions.set(sessionId, entry);
         activeTillerSessionId = sessionId;
+        if (observingWhileIdle) {
+          this.startIdlePromptObservation(sessionId, entry, observeCompaction);
+        }
       },
       deleteSession: async () => ({
         kind: "unsupported",
@@ -464,13 +486,19 @@ export class AcpConnection {
     if (!session) {
       throw new Error(`Session is not active: ${tillerSessionId}`);
     }
+    this.stopIdlePromptObservation(tillerSessionId);
     const promptContent = content?.length ? content : [{ type: "text" as const, text }];
     const promptObservation = {
       runtimeSessionId: session.runtimeSessionId,
       cwd: session.worktree.path,
+      observeCompaction: isManualCompactionPrompt(text),
     };
+    let observedManualCompaction = false;
     const publishPromptEvents = () => {
       for (const event of pollAdapterPromptEvents(this.state.provider, promptObservation)) {
+        if (promptObservation.observeCompaction && event.type === "compaction") {
+          observedManualCompaction = true;
+        }
         if (isAcpPromptProgressEvent(event)) {
           session.markPromptProgress?.();
         }
@@ -501,6 +529,11 @@ export class AcpConnection {
       await waitUntilNextEventLoopTurn();
       publishPromptEvents();
       session.onEvent({ type: "status", status: "idle", message: "ACP prompt completed" });
+      this.startIdlePromptObservation(
+        tillerSessionId,
+        session,
+        promptObservation.observeCompaction && !observedManualCompaction,
+      );
     } catch (error) {
       publishPromptEvents();
       const message = error instanceof Error ? error.message : "Failed to send ACP prompt.";
@@ -519,6 +552,13 @@ export class AcpConnection {
       });
       markAcpPromptFailureReported(error);
       session.onEvent({ type: "status", status: "error", message: "ACP prompt failed" });
+      if (!connectionMustReset && this.sessions.get(tillerSessionId) === session) {
+        this.startIdlePromptObservation(
+          tillerSessionId,
+          session,
+          promptObservation.observeCompaction && !observedManualCompaction,
+        );
+      }
       if (connectionMustReset) {
         this.suppressExitError = true;
         await terminateChildProcessAndWait(this.state.child);
@@ -533,11 +573,63 @@ export class AcpConnection {
     }
   }
 
+  private startIdlePromptObservation(
+    tillerSessionId: string,
+    session: AcpSessionEntry,
+    observeCompaction = false,
+  ): void {
+    if (this.idlePromptObservationTimers.has(tillerSessionId)) {
+      return;
+    }
+    const promptObservation = {
+      runtimeSessionId: session.runtimeSessionId,
+      cwd: session.worktree.path,
+      observeCompaction,
+    };
+    beginAdapterPromptObservation(this.state.provider, promptObservation);
+    const timer = setInterval(() => {
+      if (this.sessions.get(tillerSessionId) !== session) {
+        this.stopIdlePromptObservation(tillerSessionId);
+        return;
+      }
+      const events = pollAdapterPromptEvents(this.state.provider, promptObservation);
+      for (const event of events) {
+        session.onEvent(event);
+      }
+      if (observeCompaction && events.some((event) => event.type === "compaction")) {
+        this.stopIdlePromptObservation(tillerSessionId);
+        this.startIdlePromptObservation(tillerSessionId, session);
+      }
+    }, IDLE_PROMPT_OBSERVATION_INTERVAL_MS);
+    timer.unref();
+    this.idlePromptObservationTimers.set(tillerSessionId, timer);
+    this.idlePromptObservationCompactionFlags.set(tillerSessionId, observeCompaction);
+  }
+
+  private stopIdlePromptObservation(tillerSessionId: string): void {
+    const timer = this.idlePromptObservationTimers.get(tillerSessionId);
+    if (!timer) {
+      return;
+    }
+    clearInterval(timer);
+    this.idlePromptObservationTimers.delete(tillerSessionId);
+    this.idlePromptObservationCompactionFlags.delete(tillerSessionId);
+  }
+
+  private stopIdlePromptObservations(): void {
+    for (const timer of this.idlePromptObservationTimers.values()) {
+      clearInterval(timer);
+    }
+    this.idlePromptObservationTimers.clear();
+    this.idlePromptObservationCompactionFlags.clear();
+  }
+
   private cancelSession(tillerSessionId: string): void {
     const session = this.sessions.get(tillerSessionId);
     if (!session) {
       return;
     }
+    this.stopIdlePromptObservation(tillerSessionId);
     void this.state.agent.cancel({ sessionId: session.runtimeSessionId })
       .catch(() => undefined)
       .finally(() => {
@@ -806,6 +898,7 @@ export class AcpConnection {
   async dispose(): Promise<void> {
     this.status = "closed";
     this.suppressExitError = true;
+    this.stopIdlePromptObservations();
     for (const session of this.sessions.values()) {
       disposeAdapterSession(this.state.provider, session.runtimeSessionId);
     }

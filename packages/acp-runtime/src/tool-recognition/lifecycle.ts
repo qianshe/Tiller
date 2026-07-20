@@ -40,7 +40,8 @@ export function createToolLifecycleCorrelator() {
           const existing = ids
             .map((id) => session.byAlias.get(id))
             .find((candidate): candidate is SubagentEntity => Boolean(candidate))
-            ?? session.byAlias.get(toolCall.id);
+            ?? session.byAlias.get(toolCall.id)
+            ?? resolveOnlyUnidentifiedSpawn(session, entityIds, toolCall);
           const commandId = entityId === toolCall.id && !toolCall.commandId
             ? undefined
             : `subagent:${entityId}`;
@@ -119,6 +120,18 @@ export function createToolLifecycleCorrelator() {
       sessions.delete(`${providerId ?? "generic"}\u001f${sessionId}`);
     },
   };
+}
+
+function resolveOnlyUnidentifiedSpawn(
+  session: SessionLifecycle,
+  entityIds: string[],
+  toolCall: AgentToolCall,
+): SubagentEntity | undefined {
+  if (entityIds.length !== 1 || toolCall.input || !toolCall.output) {
+    return undefined;
+  }
+  const candidates = [...session.running].filter((entity) => !entity.commandId);
+  return candidates.length === 1 ? candidates[0] : undefined;
 }
 
 function strongestSubagentEvidence(evidence: ToolEvidence[]): ToolEvidence | undefined {

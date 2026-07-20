@@ -116,3 +116,78 @@ test("upsertSessionCompactionEntry preserves two independent provider compaction
     ["summary-1", "summary-2"],
   );
 });
+
+test("upsertSessionCompactionEntry keeps separate compaction starts", () => {
+  const entries = [
+    buildSessionCompactionEntryFromProvider({
+      sessionId: "session-claude-compaction",
+      timestamp: "2026-07-19T14:54:42.656Z",
+      providerId: "claudecode",
+      phase: "started",
+    }),
+  ];
+
+  for (const timestamp of [
+    "2026-07-19T15:08:10.882Z",
+    "2026-07-19T15:15:19.539Z",
+  ]) {
+    upsertSessionCompactionEntry(
+      entries,
+      buildSessionCompactionEntryFromProvider({
+        sessionId: "session-claude-compaction",
+        timestamp,
+        providerId: "claudecode",
+        phase: "started",
+      }),
+    );
+  }
+
+  assert.equal(entries.length, 3);
+  assert.deepEqual(
+    entries.map((entry) => entry.timestamp),
+    [
+      "2026-07-19T14:54:42.656Z",
+      "2026-07-19T15:08:10.882Z",
+      "2026-07-19T15:15:19.539Z",
+    ],
+  );
+});
+
+test("upsertSessionCompactionEntry keeps a later summary after a completed boundary", () => {
+  const entries = [
+    buildSessionCompactionEntryFromProvider({
+      sessionId: "session-claude-compaction",
+      timestamp: "2026-07-19T15:24:06.137Z",
+      providerId: "claudecode",
+      phase: "completed",
+    }),
+    buildSessionCompactionEntryFromProvider({
+      sessionId: "session-claude-compaction",
+      timestamp: "2026-07-19T15:24:30.000Z",
+      providerId: "claudecode",
+      phase: "completed",
+      summaryMessageId: "summary-auto",
+      summaryText: "Automatically compacted context",
+    }),
+  ];
+
+  upsertSessionCompactionEntry(
+    entries,
+    buildSessionCompactionEntryFromProvider({
+      sessionId: "session-claude-compaction",
+      timestamp: "2026-07-19T15:25:47.411Z",
+      providerId: "claudecode",
+      phase: "completed",
+      summaryMessageId: "summary-manual",
+      summaryText: "Manually compacted context",
+    }),
+  );
+
+  assert.equal(entries.length, 3);
+  assert.deepEqual(
+    entries.map((entry) =>
+      entry.kind === "context_compaction" ? entry.summaryMessageId : undefined,
+    ),
+    [undefined, "summary-auto", "summary-manual"],
+  );
+});

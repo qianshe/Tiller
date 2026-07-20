@@ -8,6 +8,8 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 
+const MAX_COMPACTION_LIFECYCLE_GAP_MS = 5 * 60 * 1000;
+
 export function buildSessionCompactionEntry(args: {
   sessionId: string;
   timestamp: string;
@@ -72,22 +74,32 @@ export function upsertSessionCompactionEntry(
     return incoming;
   }
 
-  const lifecycleMergeIndex = findCompactionLifecycleMergeIndex(entries, incoming);
-  if (lifecycleMergeIndex !== -1) {
-    const current = entries[lifecycleMergeIndex];
-    if (current?.kind === "context_compaction") {
-      const merged = mergeCompactionEntry(current, incoming);
-      entries[lifecycleMergeIndex] = merged;
-      return merged;
-    }
-  }
-
   const identityMergeIndex = findCompactionIdentityMergeIndex(entries, incoming);
   if (identityMergeIndex !== -1) {
     const current = entries[identityMergeIndex];
     if (current?.kind === "context_compaction") {
       const merged = mergeCompactionEntry(current, incoming);
       entries[identityMergeIndex] = merged;
+      return merged;
+    }
+  }
+
+  const delayedSummaryMergeIndex = findDelayedSummaryMergeIndex(entries, incoming);
+  if (delayedSummaryMergeIndex !== -1) {
+    const current = entries[delayedSummaryMergeIndex];
+    if (current?.kind === "context_compaction") {
+      const merged = mergeCompactionEntry(current, incoming);
+      entries[delayedSummaryMergeIndex] = merged;
+      return merged;
+    }
+  }
+
+  const lifecycleMergeIndex = findCompactionLifecycleMergeIndex(entries, incoming);
+  if (lifecycleMergeIndex !== -1) {
+    const current = entries[lifecycleMergeIndex];
+    if (current?.kind === "context_compaction") {
+      const merged = mergeCompactionEntry(current, incoming);
+      entries[lifecycleMergeIndex] = merged;
       return merged;
     }
   }
@@ -149,12 +161,43 @@ function findCompactionLifecycleMergeIndex(
   }
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const current = entries[index];
+    if (current?.kind === "user_message") {
+      return -1;
+    }
     if (current?.kind !== "context_compaction" || current.phase !== "started") {
       continue;
     }
     if (isCompactionLifecycleMergeCandidate(current, incoming)) {
       return index;
     }
+  }
+  return -1;
+}
+
+function findDelayedSummaryMergeIndex(
+  entries: SessionTimelineEntry[],
+  incoming: SessionTimelineContextCompactionEntry,
+) {
+  if (incoming.phase !== "completed" || !incoming.summaryMessageId?.trim()) {
+    return -1;
+  }
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const current = entries[index];
+    if (current?.kind === "user_message") {
+      return -1;
+    }
+    if (current?.kind !== "context_compaction") {
+      continue;
+    }
+    if (
+      current.phase === "completed" &&
+      !current.summaryMessageId?.trim() &&
+      current.source === incoming.source &&
+      isCompactionLifecycleMergeCandidate(current, incoming)
+    ) {
+      return index;
+    }
+    return -1;
   }
   return -1;
 }
@@ -166,16 +209,18 @@ function isCompactionLifecycleMergeCandidate(
   const currentTime = Date.parse(current.timestamp);
   const incomingTime = Date.parse(incoming.timestamp);
   if (!Number.isFinite(currentTime) || !Number.isFinite(incomingTime)) {
-    return true;
+    return false;
   }
   const deltaMs = incomingTime - currentTime;
-  return deltaMs >= 0 && deltaMs <= 5 * 60 * 1000;
+  return deltaMs >= 0 && deltaMs <= MAX_COMPACTION_LIFECYCLE_GAP_MS;
 }
 
 function mergeCompactionEntry(
   current: SessionTimelineContextCompactionEntry,
   incoming: SessionTimelineContextCompactionEntry,
 ): SessionTimelineContextCompactionEntry {
+  const preserveCurrentProviderDetails =
+    current.source === "provider" && incoming.source === "heuristic";
   return {
     ...current,
     ...incoming,
@@ -187,8 +232,14 @@ function mergeCompactionEntry(
       current.source === "provider" || incoming.source === "provider"
         ? "provider"
         : (incoming.source ?? current.source),
-    summaryMessageId: incoming.summaryMessageId ?? current.summaryMessageId,
-    summaryText: incoming.summaryText ?? current.summaryText,
-    detailsVisibility: incoming.detailsVisibility ?? current.detailsVisibility,
+    summaryMessageId: preserveCurrentProviderDetails
+      ? (current.summaryMessageId ?? incoming.summaryMessageId)
+      : (incoming.summaryMessageId ?? current.summaryMessageId),
+    summaryText: preserveCurrentProviderDetails
+      ? (current.summaryText ?? incoming.summaryText)
+      : (incoming.summaryText ?? current.summaryText),
+    detailsVisibility: preserveCurrentProviderDetails
+      ? (current.detailsVisibility ?? incoming.detailsVisibility)
+      : (incoming.detailsVisibility ?? current.detailsVisibility),
   };
 }

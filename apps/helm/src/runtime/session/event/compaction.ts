@@ -32,6 +32,9 @@ function findPendingTimelineCompactionEntry(
   }
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
+    if (entry?.kind === "user_message") {
+      return undefined;
+    }
     if (entry?.kind === "context_compaction" && entry.phase === "started") {
       return entry;
     }
@@ -81,16 +84,17 @@ export function inferPendingCompactionCompletion(
     return false;
   }
   assertCanonicalTimelinePipeline(context);
-  const completionEvent = hydrateRuntimeCompactionEventSummary(sessionId, {
+  const completionEvent = {
     type: "compaction",
     phase: "completed",
     source: pending.source,
     timestamp: resolveCompactionCompletionTimestamp(event, pending),
-  }, context);
-  const prepared = prepareRuntimeSessionUpdate(sessionId, completionEvent, context);
+  } as const;
+  const hydratedEvent = hydrateRuntimeCompactionEventSummary(sessionId, completionEvent, context);
+  const prepared = prepareRuntimeSessionUpdate(sessionId, hydratedEvent, context);
   routeCanonicalTimelineEvent(
     sessionId,
-    completionEvent,
+    hydratedEvent,
     context,
     prepared.resolvedSequence,
     prepared.update,

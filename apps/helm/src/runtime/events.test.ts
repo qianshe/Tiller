@@ -1159,6 +1159,77 @@ test("runtime compaction summary enrichment updates the existing compaction row 
   );
 });
 
+test("runtime keeps a delayed Claude compaction summary after its /compact user message", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const sessionId = "session-claude-delayed-compaction";
+  const context = createTestContext(logs, capture, sessionId, {
+    agentId: "claudecode",
+    agentName: "Claude Code",
+  });
+
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      timestamp: "2026-07-19T15:24:00.000Z",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: "manual-compact-command",
+        role: "user",
+        text: "/compact",
+        timestamp: "2026-07-19T15:24:06.135Z",
+        streaming: false,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      messageId: "manual-compaction-summary",
+      summaryText: "Manually compacted context.",
+      timestamp: "2026-07-19T15:25:47.411Z",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.deepEqual(
+    capture.timelineEntries?.map((entry) => entry.kind),
+    ["context_compaction", "user_message", "context_compaction"],
+  );
+  const compactionEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "context_compaction") ?? [];
+  assert.deepEqual(
+    compactionEntries.map((entry) =>
+      entry.kind === "context_compaction" ? entry.summaryMessageId : undefined,
+    ),
+    [undefined, "manual-compaction-summary"],
+  );
+  assert.equal(
+    compactionEntries[1]?.kind === "context_compaction"
+      ? compactionEntries[1].summaryText
+      : undefined,
+    "Manually compacted context.",
+  );
+});
+
 test("runtime compaction starts a fresh assistant segment after the divider", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

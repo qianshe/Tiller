@@ -159,6 +159,34 @@ test("extractClaudeToolCallsFromTranscriptText can expose pending transcript too
   );
 });
 
+test("extractClaudeToolCallsFromTranscriptText restores completed background task notifications", () => {
+  const transcript = JSON.stringify({
+    type: "queue-operation",
+    operation: "enqueue",
+    timestamp: "2026-07-19T14:12:55.834Z",
+    content: [
+      "<task-notification>",
+      "<task-id>agent-1</task-id>",
+      "<tool-use-id>call-agent-1</tool-use-id>",
+      "<status>completed</status>",
+      "<result>SUBAGENT_DONE</result>",
+      "</task-notification>",
+    ].join("\n"),
+  });
+
+  assert.deepEqual(extractClaudeToolCallsFromTranscriptText(transcript), [{
+    id: "call-agent-1",
+    commandId: "subagent:agent-1",
+    kind: "subagent",
+    title: "Subagent",
+    status: "completed",
+    output: "SUBAGENT_DONE",
+    timestamp: "2026-07-19T14:12:55.834Z",
+    updatedAt: "2026-07-19T14:12:55.834Z",
+    sequence: 1,
+  }]);
+});
+
 test("readClaudeTranscriptToolUseFromDisk finds a recent subagent shell command", () => {
   const root = join(tmpdir(), `tiller-claude-tool-${Date.now()}`);
   const cwd = "D:\\workspace\\project";

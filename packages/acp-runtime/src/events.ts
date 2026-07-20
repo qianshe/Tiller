@@ -99,10 +99,12 @@ function projectSessionUpdate(
     if (adapterEvent) {
       return [adapterEvent];
     }
-    const compactionEvent = projectCompactionEvent(sessionId, updateType, update, text);
-    if (compactionEvent) {
-      return [compactionEvent];
-    }
+  }
+  const compactionEvent = projectCompactionEvent(sessionId, updateType, update, text);
+  if (compactionEvent) {
+    return [compactionEvent];
+  }
+  if (isMessageChunkUpdateType(updateType)) {
     const messageEvent = projectMessageEvent(sessionId, updateType, update, text);
     if (messageEvent) {
       return [messageEvent];

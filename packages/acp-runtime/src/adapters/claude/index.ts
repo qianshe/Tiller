@@ -5,11 +5,13 @@ import {
   resolveUnsupportedCleanup,
 } from "../shared";
 import { createClaudePlanUpdateProjector } from "./plan-events";
+import { createClaudePromptCompactionObserver } from "./prompt-compaction";
 import { createClaudePromptPlanObserver } from "./prompt-plan";
 import { createClaudePromptToolCallObserver } from "./prompt-tool-calls";
 import { createClaudeToolEvidenceCollector } from "./evidence";
 import { promptEventsToToolObservations } from "../../tool-recognition";
 import { readClaudeTranscriptCompactionFromDisk } from "./transcript/history";
+import { readClaudeTranscriptToolCallsFromDisk } from "./transcript/tool-calls";
 
 const CLAUDE_ACP_COMMANDS = [
   "claude-acp",
@@ -26,7 +28,11 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
     ),
   );
   const toolEvidence = createClaudeToolEvidenceCollector();
-  const promptToolCalls = createClaudePromptToolCallObserver();
+  const promptToolCalls = createClaudePromptToolCallObserver(
+    undefined,
+    readClaudeTranscriptToolCallsFromDisk,
+  );
+  const promptCompactions = createClaudePromptCompactionObserver();
   return {
     id: "claude",
     isMatch: (provider) =>
@@ -51,20 +57,27 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
     },
     resolveCapabilities: (_provider, _initializeResult, detected) => detected,
     resolveCleanup: ({ provider }) => resolveUnsupportedCleanup(provider),
-    beginPromptObservation: (context) => promptToolCalls.begin(context),
+    beginPromptObservation: (context) => {
+      promptToolCalls.begin(context);
+      promptCompactions.begin(context);
+    },
     pollPromptToolObservations: (context) =>
       promptEventsToToolObservations(promptToolCalls.poll(context), {
         providerId: "claude",
         sessionId: context.runtimeSessionId,
         cwd: context.cwd,
       }),
-    pollPromptRuntimeEvents: (context) => promptPlans.poll(context),
+    pollPromptRuntimeEvents: (context) => [
+      ...promptPlans.poll(context),
+      ...promptCompactions.poll(context),
+    ],
     mapToolCallUpdate: planProjector.mapUpdate,
     disposeSession: (sessionId) => {
       planProjector.disposeSession(sessionId);
       promptPlans.dispose(sessionId);
       toolEvidence.disposeSession(sessionId);
       promptToolCalls.dispose(sessionId);
+      promptCompactions.dispose(sessionId);
     },
     collectToolEvidence: toolEvidence.collect,
     resolveCompactionSummary: (context) =>
