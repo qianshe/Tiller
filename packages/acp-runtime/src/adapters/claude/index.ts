@@ -4,6 +4,7 @@ import {
   resolveDefaultLaunch,
   resolveUnsupportedCleanup,
 } from "../shared";
+import { createClaudeApiErrorMessageProjector } from "./api-error-message";
 import { createClaudePlanUpdateProjector } from "./plan-events";
 import { createClaudePromptCompactionObserver } from "./prompt-compaction";
 import { createClaudePromptPlanObserver } from "./prompt-plan";
@@ -20,6 +21,7 @@ const CLAUDE_ACP_COMMANDS = [
 ];
 
 export function createClaudeAcpAdapter(): AcpAgentAdapter {
+  const apiErrorMessages = createClaudeApiErrorMessageProjector();
   const planProjector = createClaudePlanUpdateProjector();
   const promptPlans = createClaudePromptPlanObserver(
     (context, toolCalls) => planProjector.reconcileTaskUpdates(
@@ -71,6 +73,7 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
       ...promptPlans.poll(context),
       ...promptCompactions.poll(context),
     ],
+    mapMessageUpdate: apiErrorMessages.mapUpdate,
     mapToolCallUpdate: planProjector.mapUpdate,
     disposeSession: (sessionId) => {
       planProjector.disposeSession(sessionId);

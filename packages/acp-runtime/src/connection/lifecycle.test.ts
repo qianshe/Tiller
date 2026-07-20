@@ -14,7 +14,7 @@ import { resolveClaudeTranscriptPath } from "../adapters/claude/transcript/plan"
 const require = createRequire(import.meta.url);
 const sdkImportUrl = pathToFileURL(require.resolve("@agentclientprotocol/sdk")).href;
 
-function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number; exitOnPrompt?: boolean; fireAndForgetPromptUpdate?: boolean; hangOnPrompt?: boolean } = {}) {
+function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number; exitOnPrompt?: boolean; fireAndForgetPromptUpdate?: boolean; hangOnPrompt?: boolean; promptMessageText?: string } = {}) {
   const initializeCountPath = join(tempDir, "initialize-count.txt");
   const newSessionCountPath = join(tempDir, "new-session-count.txt");
   const newSessionCwdPath = join(tempDir, "new-session-cwd.txt");
@@ -47,6 +47,7 @@ const exitAfterMs = ${JSON.stringify(options.exitAfterMs ?? null)};
 const exitOnPrompt = ${JSON.stringify(options.exitOnPrompt ?? false)};
 const fireAndForgetPromptUpdate = ${JSON.stringify(options.fireAndForgetPromptUpdate ?? false)};
 const hangOnPrompt = ${JSON.stringify(options.hangOnPrompt ?? false)};
+const promptMessageText = ${JSON.stringify(options.promptMessageText ?? null)};
 const newSessionDelayMs = ${JSON.stringify(options.newSessionDelayMs ?? 50)};
 writeFileSync(launchArgsPath, JSON.stringify(process.argv.slice(2)), "utf8");
 writeFileSync(pidPath, String(process.pid), "utf8");
@@ -107,7 +108,7 @@ const agent = {
       update: {
         sessionUpdate: "agent_message_chunk",
         messageId: "message-" + params.sessionId,
-        content: { type: "text", text: result.content },
+        content: { type: "text", text: promptMessageText ?? result.content },
       },
     });
     if (!fireAndForgetPromptUpdate) {
@@ -613,6 +614,45 @@ test("prompt emits idle after fire-and-forget assistant updates are delivered", 
     assert.notEqual(messageIndex, -1);
     assert.notEqual(idleIndex, -1);
     assert.equal(messageIndex < idleIndex, true);
+
+    await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("prompt preserves Claude synthetic API errors instead of marking the prompt idle", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-claude-api-error-"));
+  const apiError = "Failed to authenticate. API Error: 403 预扣费额度失败 (request id: abc123)";
+  mkdirSync(tempDir, { recursive: true });
+  writeFileSync(join(tempDir, "marker.txt"), "unused", "utf8");
+  try {
+    const { agentPath } = writeInitializeOnlyAgent(tempDir, { promptMessageText: apiError });
+    const connection = await AcpConnection.open({
+      provider: { ...createProvider(process.execPath, [agentPath]), id: "claudecode", name: "Claude Code" },
+      worktree: { ...worktree, path: tempDir },
+    });
+    const events: SessionRuntimeEvent[] = [];
+    const handle = await connection.openOrCreateSession({
+      tillerSessionId: "session-claude-api-error",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event),
+    });
+
+    await handle.prompt("test API error");
+
+    assert.deepEqual(
+      events.filter((event) => event.type === "error"),
+      [{ type: "error", code: "ACP_AGENT_API_ERROR", message: apiError }],
+    );
+    assert.equal(events.some((event) => event.type === "message"), false);
+    assert.equal(
+      events.some((event) => event.type === "status" && event.status === "idle"),
+      false,
+    );
 
     await connection.dispose();
   } finally {

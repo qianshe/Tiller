@@ -45,6 +45,7 @@ export type AcpRequestTimeoutContext = {
 
 export type AcpSessionUpdateProjectionContext = {
   sessionId: string;
+  cwd?: string;
   updateType: string | undefined;
   update: unknown;
   text: string | null;

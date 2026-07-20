@@ -102,6 +102,7 @@ type AcpSessionEntry = {
   refCount: number;
   configOptions: AcpSessionConfigOption[];
   modelState: ReturnType<typeof extractAcpModelState>;
+  promptReportedError?: boolean;
   markPromptProgress?: () => void;
 };
 
@@ -493,6 +494,7 @@ export class AcpConnection {
       cwd: session.worktree.path,
       observeCompaction: isManualCompactionPrompt(text),
     };
+    session.promptReportedError = false;
     let observedManualCompaction = false;
     const publishPromptEvents = () => {
       for (const event of pollAdapterPromptEvents(this.state.provider, promptObservation)) {
@@ -528,6 +530,9 @@ export class AcpConnection {
       );
       await waitUntilNextEventLoopTurn();
       publishPromptEvents();
+      if (session.promptReportedError) {
+        return;
+      }
       session.onEvent({ type: "status", status: "idle", message: "ACP prompt completed" });
       this.startIdlePromptObservation(
         tillerSessionId,
@@ -856,6 +861,9 @@ export class AcpConnection {
     }
     for (const session of this.sessions.values()) {
       if (session.runtimeSessionId === mapped.sessionId) {
+        if (mapped.events.some((event) => event.type === "error")) {
+          session.promptReportedError = true;
+        }
         if (mapped.events.some(isAcpPromptProgressEvent)) {
           session.markPromptProgress?.();
         }

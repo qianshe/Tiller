@@ -84,7 +84,13 @@ function projectSessionUpdate(
   options: SessionUpdateMappingOptions,
 ): SessionRuntimeEvent[] {
   const { sessionId, updateType, update, text } = envelope;
-  const adapterContext = { sessionId, updateType, update, text };
+  const adapterContext = {
+    sessionId,
+    cwd: options.sessionCwd,
+    updateType,
+    update,
+    text,
+  };
 
   const thinkingToolCall = extractThinkingToolCall(sessionId, updateType, update);
   if (thinkingToolCall) {
