@@ -282,7 +282,7 @@ test("provider-neutral structured observations classify common tool semantics co
   }> = [
     { expected: "shell", title: "run", update: { rawInput: { command: "pnpm test" } } },
     { expected: "search", title: "find", update: { rawInput: { search_string: "tool lifecycle" } } },
-    { expected: "read", title: "file", update: { rawInput: { path: "src/index.ts" } } },
+    { expected: "read", title: "file", update: { rawInput: { relativePath: "src/index.ts" } } },
     { expected: "write", title: "file", update: { rawInput: { path: "src/index.ts", content: "next" } } },
     { expected: "skill", title: "skill", update: { rawInput: { skillName: "review" } } },
     {

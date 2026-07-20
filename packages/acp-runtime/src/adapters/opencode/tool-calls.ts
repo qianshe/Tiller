@@ -3,6 +3,7 @@ import {
   resolveAgentToolCallMcp,
   type AgentToolCall,
 } from "@tiller/shared";
+import { classifyStructuredFileOperation } from "../../tool-recognition/file-operation";
 
 type OpenCodeToolCallNormalizationContext = {
   toolCall: AgentToolCall;
@@ -122,13 +123,8 @@ function normalizeOpenCodeStructuredBuiltinRule({
     return null;
   }
 
-  const path = firstString(
-    input.filePath,
-    input.file_path,
-    input.relativePath,
-    input.relative_path,
-    input.path,
-  );
+  const fileOperation = classifyStructuredFileOperation(input);
+  const path = fileOperation?.path;
   if (/diagnostic/iu.test(descriptor) && path) {
     return {
       ...toolCall,
@@ -184,16 +180,15 @@ function normalizeOpenCodeStructuredBuiltinRule({
     };
   }
 
-  if (path) {
-    const isWrite = ["content", "body", "old_string", "new_string", "code_edit", "new_name"]
-      .some((key) => key in input);
+  if (fileOperation) {
+    const isWrite = fileOperation.kind === "write";
     return {
       ...toolCall,
       kind: isWrite ? "write" as const : "read" as const,
       title: resolveOpenCodeStructuredTitle(
         toolCall,
         isWrite ? "Write" : "Read",
-        resolveOpenCodePathTitle(toolCall.title, path),
+        resolveOpenCodePathTitle(toolCall.title, fileOperation.path),
       ),
     };
   }

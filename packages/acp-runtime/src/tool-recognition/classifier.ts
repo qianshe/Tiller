@@ -1,5 +1,6 @@
 import { resolveAgentToolCallMcp, type AgentToolCall } from "@tiller/shared";
 import { recordFrom } from "../session-update";
+import { classifyStructuredFileOperation } from "./file-operation";
 import type { ToolEvidence, ToolObservation } from "./types";
 
 const WEAK_KINDS = new Set<AgentToolCall["kind"]>(["tool", "unknown"]);
@@ -46,11 +47,7 @@ function classifyStructuredInput(input: unknown): AgentToolCall["kind"] | undefi
   if (typeof record.command === "string" || typeof record.cmd === "string" || Array.isArray(record.command)) return "shell";
   if ("substring_pattern" in record || "search_string" in record || "query" in record || "pattern" in record) return "search";
   if (typeof record.url === "string") return "fetch";
-  const hasPath = [record.file_path, record.filePath, record.relative_path, record.path]
-    .some((value) => typeof value === "string");
-  if (!hasPath) return undefined;
-  return ["content", "body", "old_string", "new_string", "code_edit", "new_name"]
-    .some((key) => key in record) ? "write" : "read";
+  return classifyStructuredFileOperation(record)?.kind;
 }
 
 function classifyDescriptor(descriptor: string): AgentToolCall["kind"] | undefined {

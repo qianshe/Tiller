@@ -5,6 +5,7 @@ import {
   type AgentToolCall,
   type CommandChunk,
 } from "@tiller/shared";
+import { classifyStructuredFileOperation } from "./tool-recognition/file-operation";
 
 function timestamp() {
   return new Date().toISOString();
@@ -273,13 +274,8 @@ function isSkillToolInput(rawInput: unknown) {
 function inferKindFromStructuredInput(toolInput: unknown): AgentToolCall["kind"] | undefined {
   if (!toolInput || typeof toolInput !== "object") return undefined;
   const record = toolInput as Record<string, unknown>;
-  const hasFilePath = typeof record.file_path === "string" || typeof record.relative_path === "string" || typeof record.path === "string" || typeof record.filePath === "string";
-  if (hasFilePath) {
-    if ("old_string" in record || "new_string" in record || "content" in record || "body" in record || "code_edit" in record || "repl" in record || "new_name" in record) {
-      return "write";
-    }
-    return "read";
-  }
+  const fileOperation = classifyStructuredFileOperation(record);
+  if (fileOperation) return fileOperation.kind;
   if (typeof record.notebook_path === "string") return "write";
   if (typeof record.command === "string") return "shell";
   if ("substring_pattern" in record || "search_string" in record) return "search";
@@ -300,9 +296,7 @@ function looksLikePathTitle(title: unknown): boolean {
 function extractPathFromInput(input: string | undefined): string | undefined {
   if (!input) return undefined;
   const parsed = parseToolInput(input);
-  if (!parsed || typeof parsed !== "object") return undefined;
-  const record = parsed as Record<string, unknown>;
-  return primitiveStringFrom(record.file_path) ?? primitiveStringFrom(record.relative_path) ?? primitiveStringFrom(record.path) ?? primitiveStringFrom(record.filePath);
+  return classifyStructuredFileOperation(parsed)?.path;
 }
 
 function resolveRawToolInput(source: any, update: any) {
