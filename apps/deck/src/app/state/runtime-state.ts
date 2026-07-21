@@ -27,6 +27,7 @@ export function useAppRuntimeState(missionVisualFixture: any) {
   const lastPairingAttemptRef = useRef<string | null>(null);
   const pendingPromptRef = useRef<string | null>(null);
   const pendingPromptContentRef = useRef<AgentPromptContent[] | undefined>(undefined);
+  const newSessionPromptPendingScopesRef = useRef(new Set<string>());
   const promptModelPickerRef = useRef<HTMLDivElement | null>(null);
   const missionPromptRef = useRef<HTMLTextAreaElement | null>(null);
   const chatMainRef = useRef<HTMLDivElement | null>(null);
@@ -93,7 +94,8 @@ export function useAppRuntimeState(missionVisualFixture: any) {
 
   return {
     socketRef, rpcClientRef, helmSocketRefs, helmRpcClientRefs, requestCounter, pairInputRefs, lastPairingAttemptRef,
-    pendingPromptRef, pendingPromptContentRef, promptModelPickerRef, missionPromptRef,
+    pendingPromptRef, pendingPromptContentRef, newSessionPromptPendingScopesRef,
+    promptModelPickerRef, missionPromptRef,
     chatMainRef, stickChatToBottomRef, lastAutoScrollSessionIdRef,
     pendingSessionScrollToBottomRef, worktreePickerRef, agentPickerRef,
     pendingAddHelmProfileRef, primaryHelmKeyRef, resumeStartRequestsRef,

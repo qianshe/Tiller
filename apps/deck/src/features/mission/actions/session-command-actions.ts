@@ -57,6 +57,7 @@ type UseSessionCommandActionsOptions = {
   agentModelOptions?: Record<string, AgentModelOptionsEntry>;
   pendingPromptRef: MutableRef<string | null>;
   pendingPromptContentRef: MutableRef<AgentPromptContent[] | undefined>;
+  newSessionPromptPendingScopesRef: MutableRef<Set<string>>;
   dispatch: DispatchToHelm;
   effectiveDraftAgentMode?: string;
   normalizeModelSelection: (model: string) => string | undefined;
@@ -64,8 +65,8 @@ type UseSessionCommandActionsOptions = {
   selectedReasoningEffort?: SessionReasoningEffort;
   navigateToView: (view: "sessions") => void;
   isMobile?: boolean;
-  setPrompt: (value: string) => void;
-  setPromptImages: (images: AgentPromptImageContent[]) => void;
+  setPrompt: Dispatch<SetStateAction<string>>;
+  setPromptImages: Dispatch<SetStateAction<AgentPromptImageContent[]>>;
   createClientUserMessageId: (sessionId: string) => string;
   appendUserMessage: (
     sessionId: string,
@@ -112,6 +113,7 @@ export function useSessionCommandActions({
   agentModelOptions,
   pendingPromptRef,
   pendingPromptContentRef,
+  newSessionPromptPendingScopesRef,
   dispatch,
   effectiveDraftAgentMode,
   normalizeModelSelection,
@@ -147,6 +149,20 @@ export function useSessionCommandActions({
       rpcClientRef,
       pendingPromptRef,
       pendingPromptContentRef,
+      newSessionPromptPendingScopesRef,
+      restoreInitialPrompt: (promptToRestore, contentToRestore) => {
+        const text = contentToRestore
+          ? contentToRestore
+            .filter((item) => item.type === "text")
+            .map((item) => item.text)
+            .join("\n")
+          : promptToRestore;
+        const images = contentToRestore?.filter(
+          (item): item is AgentPromptImageContent => item.type === "image",
+        ) ?? [];
+        setPrompt((current) => current || text);
+        setPromptImages((current) => current.length ? current : images);
+      },
       dispatch,
       effectiveDraftAgentMode,
       normalizeModelSelection,

@@ -24,6 +24,7 @@ export {
 export {
   DEFAULT_ACP_PROMPT_TIMEOUT_MS,
   DEFAULT_ACP_REQUEST_TIMEOUT_MS,
+  DEFAULT_ACP_SESSION_REQUEST_TIMEOUT_MS,
   resolveAcpRequestTimeout,
 } from "./constants";
 
@@ -98,7 +99,6 @@ export {
 
 export { buildOpenCodeConfigOverride } from "./config-adapters";
 export {
-  CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS,
   createClaudeAcpAdapter,
   createCodexAcpAdapter,
   createGenericAcpAdapter,

@@ -5,7 +5,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DashboardNotificationList } from "./notification-list";
+import {
+  copyNotificationReport,
+  DashboardNotificationList,
+  formatNotificationReport,
+} from "./notification-list";
 import { DashboardPage } from "./page";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -223,6 +227,34 @@ test("DashboardPage routes conversation notifications to a clickable table", () 
   assert.match(html, /打开会话/);
   assert.match(html, /Plan review/);
   assert.match(html, /ACP connection closed/);
+  assert.match(html, /复制通知/);
+});
+
+test("notification reports preserve the diagnostics needed for feedback", () => {
+  assert.equal(formatNotificationReport(commonProps.notifications[0]!), [
+    "Tiller 错误通知",
+    "时间: 2026-06-02T00:00:00.000Z",
+    "来源: runtime",
+    "错误码: ACP_PROMPT_FAILED",
+    "会话: Plan review (session-1)",
+    "消息: ACP connection closed",
+  ].join("\n"));
+});
+
+test("copyNotificationReport writes the complete report to the clipboard", async () => {
+  const writes: string[] = [];
+
+  await copyNotificationReport(commonProps.notifications[0]!, {
+    writeText: async (text: string) => {
+      writes.push(text);
+    },
+  });
+
+  assert.deepEqual(writes, [formatNotificationReport(commonProps.notifications[0]!)]);
+  await assert.rejects(
+    copyNotificationReport(commonProps.notifications[0]!, undefined),
+    /Clipboard API is unavailable/,
+  );
 });
 
 test("DashboardPage delegates activity rendering to the activity stream component", () => {

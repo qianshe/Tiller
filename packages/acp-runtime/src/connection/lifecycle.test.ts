@@ -337,7 +337,7 @@ test("pending session reuse routes prompt events to the latest listener", async 
   }
 });
 
-test("session requests time out and clear pending state", async () => {
+test("session requests time out and clear pending state", async (t) => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-session-timeout-"));
   try {
     const { agentPath } = writeInitializeOnlyAgent(tempDir, { newSessionDelayMs: 2_000 });
@@ -346,14 +346,17 @@ test("session requests time out and clear pending state", async () => {
       worktree: { ...worktree, path: tempDir },
     });
 
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const request = connection.openOrCreateSession({
+      tillerSessionId: "session-timeout",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: () => undefined,
+    });
+    t.mock.timers.tick(120_000);
     await assert.rejects(
-      connection.openOrCreateSession({
-        tillerSessionId: "session-timeout",
-        worktree: { ...worktree, path: tempDir },
-        kind: "new",
-        onEvent: () => undefined,
-      }),
-      /Timed out waiting for ACP response: session\/new/u,
+      request,
+      /Timed out waiting for ACP response: session\/new after 120000ms/u,
     );
     assert.equal(connection.inventory().pendingSessionCount, 0);
     assert.equal(connection.inventory().activeSessionCount, 0);
@@ -366,7 +369,7 @@ test("session requests time out and clear pending state", async () => {
   }
 });
 
-test("session restore timeout disposes the ACP connection", async () => {
+test("session restore timeout disposes the ACP connection", async (t) => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-session-restore-timeout-"));
   try {
     const { agentPath, pidPath } = writeInitializeOnlyAgent(tempDir, { loadSessionDelayMs: 2_000 });
@@ -375,18 +378,22 @@ test("session restore timeout disposes the ACP connection", async () => {
       worktree: { ...worktree, path: tempDir },
     });
 
+    t.mock.timers.enable({ apis: ["setTimeout"] });
+    const request = connection.openOrCreateSession({
+      tillerSessionId: "session-restore-timeout",
+      worktree: { ...worktree, path: tempDir },
+      kind: "load",
+      runtimeSessionId: "runtime-restore-timeout",
+      onEvent: () => undefined,
+    });
+    t.mock.timers.tick(120_000);
     await assert.rejects(
-      connection.openOrCreateSession({
-        tillerSessionId: "session-restore-timeout",
-        worktree: { ...worktree, path: tempDir },
-        kind: "load",
-        runtimeSessionId: "runtime-restore-timeout",
-        onEvent: () => undefined,
-      }),
-      /Timed out waiting for ACP response: session\/load after 1500ms/u,
+      request,
+      /Timed out waiting for ACP response: session\/load after 120000ms/u,
     );
 
     assert.equal(connection.inventory().status, "closed");
+    t.mock.timers.reset();
     assert.equal(await waitForProcessExit(Number(readFileSync(pidPath, "utf8"))), true);
     await connection.dispose();
   } finally {

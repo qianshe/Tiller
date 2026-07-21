@@ -119,11 +119,12 @@ test("withConnectionRequest excludes stderr emitted before the request", async (
   }
 });
 
-test("withConnectionRequest reports timeout instead of treating a warning as the cause", async () => {
+test("withConnectionRequest reports session timeout instead of treating a warning as the cause", async (t) => {
   const child = new EventEmitter() as ChildProcess;
   const logFile = createLogFile();
   let timeoutCount = 0;
   try {
+    t.mock.timers.enable({ apis: ["setTimeout"] });
     const request = withConnectionRequest(
       "session/load",
       new Promise<string>(() => {}),
@@ -135,19 +136,20 @@ test("withConnectionRequest reports timeout instead of treating a warning as the
         timeoutCount += 1;
       },
     );
+    t.mock.timers.tick(120_000);
 
     await assert.rejects(
       request,
       (error: unknown) => {
         assert.equal(
           (error as Error).message,
-          "Timed out waiting for ACP response: session/load after 5ms",
+          "Timed out waiting for ACP response: session/load after 120000ms",
         );
         return true;
       },
     );
     assert.equal(timeoutCount, 1);
-    assert.match(readFileSync(logFile.path, "utf8"), /sdk-timeout.*session\/load after 5ms/u);
+    assert.match(readFileSync(logFile.path, "utf8"), /sdk-timeout.*session\/load after 120000ms/u);
   } finally {
     logFile.cleanup();
   }

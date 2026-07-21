@@ -208,6 +208,10 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logError: options.logError,
     logger: options.logger,
     protocolLogging: options.protocolLogging,
+    notify: (notification) => broadcastNotificationRaised(
+      { broadcastNotification: options.broadcastNotification },
+      notification,
+    ),
   });
   const sessionResume = createSessionResumeService({
     sessions: options.sessions,

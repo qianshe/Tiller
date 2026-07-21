@@ -38,6 +38,7 @@ export function useAppControllers(ctx: any) {
     agentModelOptions,
     pendingPromptRef,
     pendingPromptContentRef,
+    newSessionPromptPendingScopesRef,
     effectiveDraftAgentMode,
     selectedModel,
     selectedReasoningEffort,
@@ -102,6 +103,7 @@ export function useAppControllers(ctx: any) {
     agentModelOptions,
     pendingPromptRef,
     pendingPromptContentRef,
+    newSessionPromptPendingScopesRef,
     dispatch: socketController.dispatch,
 
     effectiveDraftAgentMode,

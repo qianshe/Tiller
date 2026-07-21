@@ -30,6 +30,7 @@ function createActions(overrides: Record<string, unknown> = {}) {
     filteredAgents: [],
     pendingPromptRef: { current: null },
     pendingPromptContentRef: { current: undefined },
+    newSessionPromptPendingScopesRef: { current: new Set<string>() },
     dispatch: (_client: unknown, method: string, params: unknown) => {
       dispatched.push({ method, params });
       return Promise.resolve({});
@@ -192,4 +193,92 @@ test("submitPrompt refuses a selected session id before its summary and timeline
   actions.submitPrompt({ preventDefault: () => undefined } as any);
 
   assert.deepEqual(dispatched, []);
+});
+
+test("failed draft activation restores cleared text and images", async () => {
+  const image = { type: "image" as const, data: "abc", mimeType: "image/png" };
+  let promptState = "";
+  let imageState: typeof image[] = [];
+  const { actions } = createActions({
+    selectedProjectId: "project-1",
+    projects: [{ id: "project-1", name: "Project", path: "D:/repo" }],
+    selectedWorktree: { id: "worktree-1", name: "main", path: "D:/repo" },
+    filteredWorktrees: [{ id: "worktree-1", name: "main", path: "D:/repo" }],
+    selectedAgentId: "codex",
+    filteredAgents: [{ id: "codex", name: "Codex" }],
+    agentModelOptions: {
+      "codex::D:/repo::project-1": {
+        warmed: true,
+        draftId: "draft-codex-1",
+        modelOptions: [],
+        configOptions: [],
+        state: {},
+      },
+    },
+    setPrompt: (update: string | ((current: string) => string)) => {
+      promptState = typeof update === "function" ? update(promptState) : update;
+    },
+    setPromptImages: (update: typeof image[] | ((current: typeof image[]) => typeof image[])) => {
+      imageState = typeof update === "function" ? update(imageState) : update;
+    },
+    dispatch: () => Promise.reject(new Error("draft activation failed")),
+  });
+
+  assert.equal(actions.createSession("hello", [
+    { type: "text", text: "hello" },
+    image,
+  ]), true);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(promptState, "hello");
+  assert.deepEqual(imageState, [image]);
+});
+
+test("failed draft activation preserves newer composer input", async () => {
+  const originalImage = { type: "image" as const, data: "old", mimeType: "image/png" };
+  const newImage = { type: "image" as const, data: "new", mimeType: "image/png" };
+  let rejectPrompt: (error: Error) => void = () => undefined;
+  const promptResult = new Promise((_resolve, reject) => {
+    rejectPrompt = reject;
+  });
+  let promptState = "";
+  let imageState: typeof originalImage[] = [];
+  const { actions } = createActions({
+    selectedProjectId: "project-1",
+    projects: [{ id: "project-1", name: "Project", path: "D:/repo" }],
+    selectedWorktree: { id: "worktree-1", name: "main", path: "D:/repo" },
+    filteredWorktrees: [{ id: "worktree-1", name: "main", path: "D:/repo" }],
+    selectedAgentId: "codex",
+    filteredAgents: [{ id: "codex", name: "Codex" }],
+    agentModelOptions: {
+      "codex::D:/repo::project-1": {
+        warmed: true,
+        draftId: "draft-codex-1",
+        modelOptions: [],
+        configOptions: [],
+        state: {},
+      },
+    },
+    setPrompt: (update: string | ((current: string) => string)) => {
+      promptState = typeof update === "function" ? update(promptState) : update;
+    },
+    setPromptImages: (
+      update: typeof originalImage[] | ((current: typeof originalImage[]) => typeof originalImage[]),
+    ) => {
+      imageState = typeof update === "function" ? update(imageState) : update;
+    },
+    dispatch: () => promptResult,
+  });
+
+  assert.equal(actions.createSession("old", [
+    { type: "text", text: "old" },
+    originalImage,
+  ]), true);
+  promptState = "new";
+  imageState = [newImage];
+  rejectPrompt(new Error("draft activation failed"));
+  await new Promise<void>((resolve) => setImmediate(resolve));
+
+  assert.equal(promptState, "new");
+  assert.deepEqual(imageState, [newImage]);
 });

@@ -64,7 +64,13 @@ async function promptRuntimeDraft(
 ) {
   const draft = context.takeRuntimeDraft(params.draftId);
   if (!draft) {
-    throw new Error("Runtime draft is not available. Create a new session and retry.");
+    const message = "Runtime draft is not available. Create a new session and retry.";
+    broadcastErrorRaised(context, {
+      code: "ACP_DRAFT_NOT_AVAILABLE",
+      message,
+      source: "session",
+    });
+    throw new Error(message);
   }
 
   const sessionId = `session-${Date.now()}`;

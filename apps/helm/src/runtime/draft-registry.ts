@@ -8,6 +8,7 @@ import type {
   SessionReasoningEffort,
   WorktreeSummary,
 } from "@tiller/shared";
+import type { NotificationRaisedParams } from "@tiller/sync-protocol";
 import type { AcpProtocolLoggingOptions, SessionRuntimeEvent } from "@tiller/acp-runtime";
 import { performDraftRuntimeCleanup } from "./draft-lifecycle";
 import type { ProviderLifecyclePort } from "./provider-lifecycle";
@@ -68,6 +69,7 @@ type RuntimeDraftRegistryOptions = {
   logError(message: string): void;
   logger?: TillerLogger;
   protocolLogging?: AcpProtocolLoggingOptions;
+  notify?: (notification: NotificationRaisedParams) => void;
 };
 
 export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions) {
@@ -334,6 +336,12 @@ export function createRuntimeDraftRegistry(options: RuntimeDraftRegistryOptions)
         deckClientId: params.deckClientId,
         providerId: params.agent.id,
         messageChars: message.length,
+      });
+      options.notify?.({
+        kind: "error",
+        source: "session",
+        code: "ACP_DRAFT_START_FAILED",
+        message,
       });
       throw error;
     } finally {

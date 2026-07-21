@@ -107,3 +107,50 @@ test("runtime draft reports ACP-confirmed config instead of requested values", a
 
   registry.takeRuntimeDraft(created.draftId);
 });
+
+test("concurrent callers receive one notification when shared draft creation fails", async () => {
+  const notifications: Array<Record<string, unknown>> = [];
+  let rejectRuntime: (error: Error) => void = () => undefined;
+  const runtimeResult = new Promise<never>((_resolve, reject) => {
+    rejectRuntime = reject;
+  });
+  const registry = createRuntimeDraftRegistry({
+    providerLifecycle: {
+      createRuntime: () => runtimeResult,
+      cleanupDraftRuntime: async () => ({ kind: "closed" }),
+    },
+    handleRuntimeEvent: () => undefined,
+    logConnectionLifecycle: () => undefined,
+    logInfo: () => undefined,
+    logError: () => undefined,
+    notify: (notification: Record<string, unknown>) => {
+      notifications.push(notification);
+    },
+  } as any);
+  const params = {
+    deckClientId: "deck-1",
+    project: { id: "project-1", name: "Tiller", helmId: "helm-1" },
+    helm: { id: "helm-1", name: "Local" },
+    worktree: { name: "main", path: "D:/repo" },
+    agent: {
+      id: "claude-code",
+      name: "Claude Code",
+      command: "claude-code",
+      transport: "stdio",
+      protocol: "acp",
+    },
+  } as any;
+
+  const first = registry.createRuntimeDraft(params);
+  const second = registry.createRuntimeDraft(params);
+  rejectRuntime(new Error("Claude startup failed"));
+
+  await assert.rejects(first, /Claude startup failed/u);
+  await assert.rejects(second, /Claude startup failed/u);
+  assert.deepEqual(notifications, [{
+    kind: "error",
+    source: "session",
+    code: "ACP_DRAFT_START_FAILED",
+    message: "Claude startup failed",
+  }]);
+});

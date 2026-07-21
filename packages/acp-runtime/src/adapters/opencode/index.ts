@@ -8,7 +8,7 @@ import { extractOpenCodePlanFromToolCall, isOpenCodePlanToolCall, mapOpenCodePla
 import { collectOpenCodeToolEvidence } from "./evidence";
 import { expandOpenCodeRuntimeEvent } from "./compaction-events";
 
-export const OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS = 120_000;
+export const OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS = 150_000;
 
 function isOpenCodeSessionRequest(method: string) {
   return method === "session/new" || method === "session/load" || method === "session/resume";

@@ -2493,6 +2493,83 @@ test("session/prompt activates a runtime draft before sending first prompt", asy
   assert.equal(prompted, "你好");
 });
 
+test("session/prompt reports an unavailable runtime draft", async () => {
+  const broadcasts: Array<{ method: string; params: any }> = [];
+
+  await assert.rejects(
+    handleSessionRpcRequest("session/prompt", {
+      draftId: "missing-draft",
+      text: "你好",
+    }, {
+      takeRuntimeDraft: () => undefined,
+      broadcastNotification: (method: string, params: unknown) => {
+        broadcasts.push({ method, params });
+      },
+    } as any),
+    /Runtime draft is not available/,
+  );
+
+  assert.equal(broadcasts.length, 1);
+  assert.equal(broadcasts[0]?.method, "notification/raised");
+  assert.deepEqual(
+    {
+      ...broadcasts[0]?.params,
+      occurredAt: undefined,
+    },
+    {
+      kind: "error",
+      source: "session",
+      code: "ACP_DRAFT_NOT_AVAILABLE",
+      message: "Runtime draft is not available. Create a new session and retry.",
+      occurredAt: undefined,
+    },
+  );
+});
+
+test("session/draft leaves runtime creation failure notification ownership to the draft registry", async () => {
+  const project = {
+    id: "project-1",
+    name: "Tiller",
+    helmId: "local-helm",
+    path: "D:/repo",
+    cwds: [],
+  };
+  const helm = { id: "local-helm", name: "Local Helm" };
+  const worktree = { id: "worktree-1", name: "main", path: "D:/repo" };
+  const agent = { id: "claude", name: "Claude" };
+  const broadcasts: Array<{ method: string; params: any }> = [];
+
+  await assert.rejects(
+    handleSessionRpcRequest("session/draft", {
+      deckClientId: "deck-1",
+      projectId: project.id,
+      cwd: worktree.path,
+      agentId: agent.id,
+    }, {
+      loadAvailableHelms: () => [helm],
+      loadAvailableWorktrees: () => [worktree],
+      loadAvailableAgents: () => [agent],
+      loadAvailableProjectsWithSemanticSummaries: async () => [project],
+      setHelms: () => undefined,
+      setWorktrees: () => undefined,
+      setAgents: () => undefined,
+      setProjects: () => undefined,
+      resolveProjectById: () => project,
+      resolveProviderById: () => agent,
+      resolveHelmById: () => helm,
+      createRuntimeDraft: async () => {
+        throw new Error("Claude startup failed");
+      },
+      broadcastNotification: (method: string, params: unknown) => {
+        broadcasts.push({ method, params });
+      },
+    } as any),
+    /Claude startup failed/,
+  );
+
+  assert.deepEqual(broadcasts, []);
+});
+
 test("session/update_queued_prompt edits a queued prompt and broadcasts queue", async () => {
   const promptQueue = createSessionPromptQueueManager();
   const item = promptQueue.enqueue({

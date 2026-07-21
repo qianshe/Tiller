@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from "react";
 import { Icon, StatusDot } from "../../../shared/ui";
 import type { DashboardNotification } from "../orchestration/dashboard-view-model";
 
@@ -25,6 +26,11 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const NOTIFICATION_GRID_COLUMNS =
   "grid grid-cols-[88px_minmax(240px,1fr)_minmax(92px,0.45fr)_minmax(150px,0.7fr)_minmax(128px,0.55fr)] gap-2";
+const NOTIFICATION_ROW_COLUMNS =
+  "grid grid-cols-[minmax(0,1fr)_32px] items-center gap-1";
+
+type NotificationClipboard = Pick<Clipboard, "writeText">;
+type CopyState = "idle" | "copied" | "failed";
 
 function formatNotificationTime(value: string) {
   const timestamp = Date.parse(value);
@@ -49,6 +55,78 @@ function resolveSourceLabel(source?: string) {
 
 function formatNotificationAriaLabel(notification: DashboardNotification) {
   return `${KIND_LABELS[notification.kind]}通知: ${notification.message}. 来源 ${resolveSourceLabel(notification.source)}. ${notification.sessionName ? `会话 ${notification.sessionName}.` : "系统通知."}`;
+}
+
+export function formatNotificationReport(notification: DashboardNotification): string {
+  const session = notification.sessionId
+    ? notification.sessionName && notification.sessionName !== notification.sessionId
+      ? `${notification.sessionName} (${notification.sessionId})`
+      : notification.sessionId
+    : "系统";
+  return [
+    `Tiller ${KIND_LABELS[notification.kind]}通知`,
+    `时间: ${notification.createdAt}`,
+    `来源: ${notification.source ?? "runtime"}`,
+    ...(notification.code ? [`错误码: ${notification.code}`] : []),
+    `会话: ${session}`,
+    `消息: ${notification.message}`,
+  ].join("\n");
+}
+
+export async function copyNotificationReport(
+  notification: DashboardNotification,
+  clipboard: NotificationClipboard | undefined,
+): Promise<void> {
+  if (!clipboard?.writeText) {
+    throw new Error("Clipboard API is unavailable.");
+  }
+  await clipboard.writeText(formatNotificationReport(notification));
+}
+
+function NotificationCopyButton({ notification }: { notification: DashboardNotification }) {
+  const [copyState, setCopyState] = useState<CopyState>("idle");
+  const resetTimerRef = useRef<ReturnType<typeof globalThis.setTimeout> | null>(null);
+
+  useEffect(() => () => {
+    if (resetTimerRef.current !== null) {
+      globalThis.clearTimeout(resetTimerRef.current);
+    }
+  }, []);
+
+  const label = copyState === "copied"
+    ? "通知已复制"
+    : copyState === "failed"
+      ? "复制失败"
+      : "复制通知";
+
+  async function copyReport() {
+    if (resetTimerRef.current !== null) {
+      globalThis.clearTimeout(resetTimerRef.current);
+    }
+    try {
+      const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard;
+      await copyNotificationReport(notification, clipboard);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    resetTimerRef.current = globalThis.setTimeout(() => {
+      setCopyState("idle");
+      resetTimerRef.current = null;
+    }, 1_600);
+  }
+
+  return (
+    <button
+      type="button"
+      className="grid h-7 w-7 place-items-center rounded text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground focus-visible:text-foreground"
+      aria-label={label}
+      title={label}
+      onClick={() => void copyReport()}
+    >
+      <Icon name={copyState === "copied" ? "check" : "copy"} size={12} />
+    </button>
+  );
 }
 
 function NotificationRow({
@@ -93,21 +171,27 @@ function NotificationRow({
 
   if (notification.sessionId && onOpenSession) {
     return (
-      <button
-        type="button"
-        className={`${NOTIFICATION_GRID_COLUMNS} relative w-full items-center px-3 py-2.5 text-left transition-colors hover:bg-surface-sunken`}
-        aria-label={formatNotificationAriaLabel(notification)}
-        title="打开会话"
-        onClick={() => onOpenSession(notification.sessionId!)}
-      >
-        {content}
-      </button>
+      <div className={NOTIFICATION_ROW_COLUMNS}>
+        <button
+          type="button"
+          className={`${NOTIFICATION_GRID_COLUMNS} relative w-full items-center px-3 py-2.5 text-left transition-colors hover:bg-surface-sunken`}
+          aria-label={formatNotificationAriaLabel(notification)}
+          title="打开会话"
+          onClick={() => onOpenSession(notification.sessionId!)}
+        >
+          {content}
+        </button>
+        <NotificationCopyButton notification={notification} />
+      </div>
     );
   }
 
   return (
-    <div className={`${NOTIFICATION_GRID_COLUMNS} items-center px-3 py-2.5`} aria-label={formatNotificationAriaLabel(notification)}>
-      {content}
+    <div className={NOTIFICATION_ROW_COLUMNS}>
+      <div className={`${NOTIFICATION_GRID_COLUMNS} items-center px-3 py-2.5`} aria-label={formatNotificationAriaLabel(notification)}>
+        {content}
+      </div>
+      <NotificationCopyButton notification={notification} />
     </div>
   );
 }
@@ -144,13 +228,16 @@ export function DashboardNotificationList({
         </div>
       ) : null}
       <div className="min-w-0 flex-1 overflow-x-auto">
-        <div className="min-w-[760px]">
-          <div className={`${NOTIFICATION_GRID_COLUMNS} border-b border-border-ghost px-3 py-2 font-mono text-meta uppercase tracking-wider text-muted-foreground`}>
-            <span>级别</span>
-            <span>通知</span>
-            <span>来源</span>
-            <span>Conversation</span>
-            <span>错误码</span>
+        <div className="min-w-[800px]">
+          <div className={`${NOTIFICATION_ROW_COLUMNS} border-b border-border-ghost`}>
+            <div className={`${NOTIFICATION_GRID_COLUMNS} px-3 py-2 font-mono text-meta uppercase tracking-wider text-muted-foreground`}>
+              <span>级别</span>
+              <span>通知</span>
+              <span>来源</span>
+              <span>Conversation</span>
+              <span>错误码</span>
+            </div>
+            <span aria-hidden="true" />
           </div>
           {notifications.length > 0 ? (
             <ul className="divide-y divide-border-ghost">
