@@ -724,7 +724,7 @@ test("mission tool call rows stay compact", () => {
   assert.match(plainMessagesSource, /const TOOL_CATEGORY_SLOT_CLASS_NAME = \"w-20\"/);
   assert.match(plainMessagesSource, /cn\(\"inline-flex shrink-0 items-center\", TOOL_CATEGORY_SLOT_CLASS_NAME\)/);
   assert.doesNotMatch(plainMessagesSource, /maxGroupLabelLength/);
-  assert.match(plainMessagesSource, /<pre className=\"mt-0\.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground\/85\"/);
+  assert.match(plainMessagesSource, /<pre className=\"mt-0\.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-muted-foreground\/85\"/);
   assert.doesNotMatch(plainMessagesSource, /grid-cols-subgrid|col-span-/);
   assert.match(plainMessagesSource, /resolveToolCallIconName/);
   assert.match(plainMessagesSource, /plain-tool-group-content[^\n]+max-h-\[min\(22rem,55vh\)\]/);

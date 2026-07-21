@@ -578,10 +578,13 @@ export function PlainThinkingItem({
           className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起 Thinking" : "展开 Thinking"}
         >
-          <span aria-hidden="true" className="inline-flex size-4 shrink-0 items-center justify-center text-primary">
+          <span
+            aria-hidden="true"
+            className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-violet-500/10 text-violet-700 dark:bg-violet-300/10 dark:text-violet-300"
+          >
             <PlainThinkingIcon />
           </span>
-          <span className="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium">
+          <span className="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium text-violet-700 dark:text-violet-300">
             Thinking
           </span>
           {preview ? (
@@ -731,10 +734,13 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
           className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起工具调用" : "展开工具调用"}
         >
-          <span aria-hidden="true" className="inline-flex size-4 shrink-0 items-center justify-center text-primary">
+          <span
+            aria-hidden="true"
+            className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-sky-500/10 text-sky-700 dark:bg-sky-300/10 dark:text-sky-300"
+          >
             <Icon name="hammer" size={12} />
           </span>
-          <span className="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium leading-none text-muted-foreground">
+          <span className="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium leading-none text-sky-700 dark:text-sky-300">
             工具调用 · {group.length} 项
           </span>
           <span className="min-w-0 truncate text-muted-foreground/70">
@@ -757,7 +763,7 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
         </summary>
         <div
           ref={contentRef}
-          className="plain-tool-group-content flex max-h-[min(22rem,55vh)] min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-[12.5px] text-muted-foreground [&::-webkit-scrollbar-button]:hidden"
+          className="plain-tool-group-content flex max-h-[min(22rem,55vh)] min-w-0 flex-col divide-y divide-border-ghost/70 overflow-y-auto pr-1 text-[12.5px] text-muted-foreground [&::-webkit-scrollbar-button]:hidden"
           data-mission-swipe-lock="true"
         >
           {group.map((item) => (
@@ -809,10 +815,10 @@ export function PlainSubagentItem({
           aria-label={open ? `收起 ${label}` : `展开 ${label}`}
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
-            <span className="inline-flex size-4 shrink-0 items-center justify-center">
-              <Icon name="message" size={12} className="shrink-0 text-primary" />
+            <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-amber-500/10 text-amber-700 dark:bg-amber-300/10 dark:text-amber-300">
+              <Icon name="message" size={12} className="shrink-0" />
             </span>
-            <span className="inline-flex h-4 shrink-0 items-center font-medium leading-none">
+            <span className="inline-flex h-4 shrink-0 items-center font-medium leading-none text-amber-700 dark:text-amber-300">
               {label}
             </span>
             {summary ? (
@@ -1060,7 +1066,7 @@ const PlainToolCallItem = memo(function PlainToolCallItem({
           diff={diff}
         />
       ) : preview ? (
-        <pre className="mt-0.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
+        <pre className="mt-0.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-muted-foreground/85" data-mission-swipe-lock="true">
           {preview}
         </pre>
       ) : null}

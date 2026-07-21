@@ -89,7 +89,8 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
   assert.match(html, /plain-thinking-content[^"]*text-\[12\.5px\][^"]*leading-\[1\.5\]/);
   assert.doesNotMatch(html, /plain-thinking-content[^"]*border-l/);
   assert.match(html, /aria-label="展开 Thinking"/);
-  assert.match(html, /class="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium">Thinking<\/span>/);
+  assert.match(html, /plain-thinking[\s\S]*?bg-violet-500\/10[\s\S]*?text-violet-700/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium text-violet-700 dark:text-violet-300">Thinking<\/span>/);
   assert.match(html, /class="inline-flex h-4 min-w-0 flex-1 items-center truncate leading-none text-muted-foreground\/70"/);
   assert.doesNotMatch(html, /plain-thinking[^"]*rounded-xl/);
   assert.doesNotMatch(html, /plain-thinking[^"]*bg-surface-elevated/);
@@ -2968,7 +2969,7 @@ test("plain messages keeps tool call rows vertically centered with symmetric pad
   assert.match(html, /inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
   assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium leading-4 text-foreground">/);
   assert.match(html, /class="inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground\/60"/);
-  assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-foreground\/85"/);
+  assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-muted-foreground\/85"/);
   assert.doesNotMatch(html, /grid-cols-subgrid|col-span-/);
 });
 
@@ -3297,8 +3298,9 @@ test("plain tool rows align titles without letting expanded output resize the ro
     ],
   });
 
-  assert.match(html, /plain-tool-group[\s\S]*?class="inline-flex size-4 shrink-0 items-center justify-center text-primary"/);
-  assert.match(html, /plain-tool-group-content flex max-h-\[min\(22rem,55vh\)\] min-w-0 flex-col gap-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground/);
+  assert.match(html, /plain-tool-group[\s\S]*?bg-sky-500\/10[\s\S]*?text-sky-700/);
+  assert.match(html, /plain-tool-group-content flex max-h-\[min\(22rem,55vh\)\] min-w-0 flex-col divide-y divide-border-ghost\/70 overflow-y-auto pr-1 text-\[12\.5px\] text-muted-foreground/);
+  assert.doesNotMatch(html, /plain-tool-group-content[^\"]*gap-1/);
   assert.equal(html.match(/plain-tool-call min-w-0 text-muted-foreground/g)?.length, 2);
   assert.equal(html.match(/summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5/g)?.length, 2);
   assert.match(html, /class="inline-flex shrink-0 items-center w-20"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
@@ -3348,7 +3350,11 @@ test("plain messages removes vertical guide lines from thinking, subagent, and t
 
   assert.match(html, /class="plain-thinking-content pt-1 text-\[12\.5px\]/);
   assert.match(html, /class="plain-subagent-content pt-1 text-\[12\.5px\]/);
-  assert.match(html, /class="plain-tool-group-content grid grid-cols-\[0\.75rem_max-content_minmax\(0,1fr\)_auto_auto\] max-h-36 gap-x-1\.5 gap-y-1 overflow-y-auto pt-1 pr-1 text-\[12\.5px\] text-muted-foreground"/);
+  assert.match(html, /plain-thinking[\s\S]*?bg-violet-500\/10[\s\S]*?text-violet-700/);
+  assert.match(html, /plain-tool-group[\s\S]*?bg-sky-500\/10[\s\S]*?text-sky-700/);
+  assert.match(html, /plain-subagent[\s\S]*?bg-amber-500\/10[\s\S]*?text-amber-700/);
+  assert.match(html, /plain-tool-group-content flex max-h-\[min\(22rem,55vh\)\] min-w-0 flex-col divide-y divide-border-ghost\/70 overflow-y-auto pr-1 text-\[12\.5px\] text-muted-foreground/);
+  assert.doesNotMatch(html, /plain-tool-group-content[^\"]*gap-1/);
   assert.doesNotMatch(html, /border-l border-primary\/25/);
 });
 
