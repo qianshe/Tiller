@@ -364,6 +364,67 @@ test("groupToolCalls uses structured file paths for read and write titles", () =
   assert.equal(grouped[1]?.title, "apps/deck/src/features/logbook/activity-log-panel.tsx");
 });
 
+test("groupToolCalls appends requested line ranges to read titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-read-offset",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      input: JSON.stringify({
+        file_path: "apps/deck/src/features/logbook/timeline.ts",
+        offset: 200,
+        limit: 101,
+      }),
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+    {
+      id: "call-read-explicit",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      input: JSON.stringify({
+        filePath: "apps/deck/src/features/logbook/tool-title.ts",
+        start_line: 640,
+        end_line: 649,
+      }),
+      timestamp: "2026-04-30T13:22:47.627Z",
+      updatedAt: "2026-04-30T13:22:47.630Z",
+    },
+    {
+      id: "call-read-without-limit",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      input: JSON.stringify({
+        file_path: "apps/deck/src/features/logbook/timeline.ts",
+        offset: 200,
+      }),
+      timestamp: "2026-04-30T13:22:48.627Z",
+      updatedAt: "2026-04-30T13:22:48.630Z",
+    },
+    {
+      id: "call-write-with-range",
+      kind: "write",
+      title: "Edit",
+      status: "completed",
+      input: JSON.stringify({
+        file_path: "apps/deck/src/features/logbook/timeline.ts",
+        offset: 200,
+        limit: 101,
+      }),
+      timestamp: "2026-04-30T13:22:49.627Z",
+      updatedAt: "2026-04-30T13:22:49.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "apps/deck/src/features/logbook/timeline.ts · L200-300");
+  assert.equal(grouped[1]?.title, "apps/deck/src/features/logbook/tool-title.ts · L640-649");
+  assert.equal(grouped[2]?.title, "apps/deck/src/features/logbook/timeline.ts");
+  assert.equal(grouped[3]?.title, "apps/deck/src/features/logbook/timeline.ts");
+});
+
 
 test("groupToolCalls summarizes search tools from structured query inputs", () => {
   const grouped = groupToolCalls([

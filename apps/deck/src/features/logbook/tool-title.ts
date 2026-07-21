@@ -48,9 +48,13 @@ export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
     if (shouldHoldInputDerivedTitle(call, title, displayKind)) {
       return stripLeadingActionVerb(title, displayKind);
     }
-    return extractApplyPatchFilePath(call.input) ??
-      extractFilePathFromStructuredInput(parseToolCallInputObject(call.input)) ??
+    const parsedInput = parseToolCallInputObject(call.input);
+    const displayTitle = extractApplyPatchFilePath(call.input) ??
+      extractFilePathFromStructuredInput(parsedInput) ??
       stripLeadingActionVerb(title, displayKind);
+    return displayKind === "read"
+      ? appendReadLineRange(displayTitle, parsedInput)
+      : displayTitle;
   }
   if (displayKind === "diagnostics") {
     if (shouldHoldInputDerivedTitle(call, title, displayKind)) {
@@ -196,6 +200,41 @@ function extractFilePathFromStructuredInput(
     parsed.notebook_path ??
     parsed.notebookPath;
   return typeof candidate === "string" && candidate.trim() ? compactDisplayPath(candidate.trim()) : undefined;
+}
+
+function appendReadLineRange(
+  title: string,
+  parsed: Record<string, unknown> | null,
+) {
+  const range = extractReadLineRange(parsed);
+  return range ? `${title} · ${range}` : title;
+}
+
+function extractReadLineRange(parsed: Record<string, unknown> | null) {
+  if (!parsed) {
+    return undefined;
+  }
+
+  const start = extractPositiveInteger(
+    parsed.start_line ?? parsed.startLine ?? parsed.offset,
+  );
+  if (start === undefined) {
+    return undefined;
+  }
+
+  const end = extractPositiveInteger(parsed.end_line ?? parsed.endLine);
+  if (end !== undefined) {
+    return end >= start ? `L${start}-${end}` : undefined;
+  }
+
+  const limit = extractPositiveInteger(parsed.limit);
+  return limit === undefined ? undefined : `L${start}-${start + limit - 1}`;
+}
+
+function extractPositiveInteger(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
 }
 
 function summarizeSearchInput(
