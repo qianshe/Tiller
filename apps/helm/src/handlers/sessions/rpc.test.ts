@@ -2281,6 +2281,65 @@ test("session/prompt broadcasts synchronous prompt failures to connected decks",
   assert.equal((broadcasts[1]?.params?.update as any)?.snapshot?.status?.effectiveStatus, "error");
 });
 
+test("session/prompt does not repeat an already-notified restore failure", async () => {
+  const sessionId = "s1";
+  const broadcasts: any[] = [];
+  let status = "idle";
+  const summary = {
+    id: sessionId,
+    agentId: "codex",
+    status,
+    runtimeSessionId: "runtime-s1",
+  };
+  const context = {
+    sessions: new Map(),
+    sessionStore: { get: () => summary },
+    ...createPromptQueueContextExtras(),
+    logDebug: () => undefined,
+    logInfo: () => undefined,
+    logError: () => undefined,
+    persistSessionMessage: () => undefined,
+    updateSessionSummary: (_sessionId: string, mutate: (current: typeof summary) => typeof summary) => {
+      const next = mutate({ ...summary, status });
+      status = next.status;
+      return next;
+    },
+    startSessionResume: async () => {
+      broadcasts.push({
+        method: "notification/raised",
+        params: {
+          sessionId,
+          code: "ACP_SESSION_RESTORE_FAILED",
+          kind: "error",
+          source: "runtime",
+          message: "ACP restore failed: provider rejected the stored session.",
+        },
+      });
+      return {
+        ok: false,
+        resume: {
+          state: "resume-unavailable",
+          reason: "ACP restore failed: provider rejected the stored session.",
+          restoreMethod: "session/load",
+        },
+        message: "ACP restore failed: provider rejected the stored session.",
+      };
+    },
+    broadcastNotification: (method: string, params: unknown) => broadcasts.push({ method, params }),
+  };
+
+  await assert.rejects(
+    handleSessionRpcRequest("session/prompt", { sessionId, text: "继续" }, context as any),
+    /Session runtime is not available/u,
+  );
+
+  assert.equal(status, "error");
+  assert.deepEqual(
+    broadcasts.filter((item) => item.method === "notification/raised").map((item) => item.params.message),
+    ["ACP restore failed: provider rejected the stored session."],
+  );
+});
+
 test("session/rename persists and broadcasts the next title", async () => {
   const stored = {
     id: "s1",

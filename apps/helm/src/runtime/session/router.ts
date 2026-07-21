@@ -10,7 +10,10 @@ import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
   ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
 } from "@tiller/shared";
-import { wasAcpPromptFailureReported } from "@tiller/acp-runtime";
+import {
+  markAcpPromptFailureReported,
+  wasAcpPromptFailureReported,
+} from "@tiller/acp-runtime";
 import { applyUserPromptToSummary } from "../../sessions/facade";
 import { createSessionEventPublisher } from "./event/publisher";
 import {
@@ -105,6 +108,11 @@ async function resolvePromptRuntime(
     messageChars: restore.message.length,
   });
   record = context.sessions.get(params.sessionId);
+  if (!record && !restore.ok) {
+    const error = new Error("Session runtime is not available. Try reconnecting this Mission first.");
+    markAcpPromptFailureReported(error);
+    throw error;
+  }
   return record;
 }
 

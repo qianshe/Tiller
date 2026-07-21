@@ -6,6 +6,7 @@ import { createSession } from "./session-create-rpc";
 
 test("new session stores the config confirmed by the ACP runtime", async () => {
   const stored: SessionSummary[] = [];
+  const notifications: Array<{ method: string; params: any }> = [];
   const runtimeOptions = [
     {
       id: "model",
@@ -51,7 +52,9 @@ test("new session stores the config confirmed by the ACP runtime", async () => {
     sessions: new Map(),
     buildResumeInfo: () => undefined,
     persistRuntimeDescriptor: () => undefined,
-    broadcastNotification: () => undefined,
+    broadcastNotification: (method: string, params: any) => {
+      notifications.push({ method, params });
+    },
     broadcastSessionTopic: () => undefined,
     createRuntime: async (params: any) => {
       assert.deepEqual(params.sessionConfig, {
@@ -102,4 +105,10 @@ test("new session stores the config confirmed by the ACP runtime", async () => {
   assert.equal(stored.at(-1)?.agentMode, "runtime-mode");
   assert.equal(stored.at(-1)?.model, "default");
   assert.equal(stored.at(-1)?.reasoningEffort, "medium");
+  assert.equal(notifications.some((item) =>
+    item.method === "notification/raised"
+      && item.params.code === "ACP_SESSION_STARTED"
+      && item.params.kind === "info"
+      && item.params.sessionId === result.session.id,
+  ), true);
 });

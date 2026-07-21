@@ -1,4 +1,4 @@
-import { broadcastSessionUpdate } from "../../rpc/notifications";
+import { broadcastInfoRaised, broadcastSessionUpdate } from "../../rpc/notifications";
 import type { FileDiffSummary, SessionResumeInfo } from "@tiller/shared";
 import { materializeDiffPayloads } from "../../runtime/session/diff-payload";
 import type { HelmHandlerContext } from "../context";
@@ -245,6 +245,12 @@ export async function resumeSession(params: { sessionId: string }, context: Helm
   });
   if (result.ok) {
     if (result.session) {
+      broadcastInfoRaised(context, {
+        sessionId: params.sessionId,
+        code: "ACP_SESSION_RESTORED",
+        message: result.message,
+        source: "session",
+      });
       broadcastSessionUpdate(context, params.sessionId, {
         kind: "session_updated",
         session: result.session,

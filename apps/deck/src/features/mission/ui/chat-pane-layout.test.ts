@@ -300,7 +300,10 @@ test("ACP runtime overview refreshes after restore and does not stay connected d
   assert.match(runtimeOverviewActionsSource, /pendingAcpReconnects/);
   assert.match(runtimeOverviewActionsSource, /setPendingAcpReconnects/);
   assert.match(runtimeOverviewActionsSource, /dispatch\?\.\(client, runtime\.canReconnect \? "agent\/reconnect" : "agent\/connect"/);
-  assert.match(runtimeOverviewSource, /status: reconnectPending \? "未连接" : formatAcpConnectionStatus/);
+  assert.match(
+    runtimeOverviewSource,
+    /status: reconnectPending \|\| activeSessionRestoreMissing\s*\? "未连接"\s*:\s*formatAcpConnectionStatus/,
+  );
   assert.match(runtimeOverviewSource, /canReconnect: !reconnectPending/);
   assert.match(runtimeOverviewSource, /canConnect: reconnectPending/);
   assert.match(runtimeOverviewSource, /agentOrder/);
@@ -986,7 +989,7 @@ test("mission mobile session selection routes back to chat and keeps desktop thi
   assert.match(chatPaneComponentSource, /!isMissionMobile \? \(\s*<div className=\"wb-pane-head\"/s);
   assert.match(chatPaneComponentSource, /showThinkingToggle=\{isMissionMobile\}/);
   assert.match(chatPaneComponentSource, /onToggleThinking=\{onToggleThinking\}/);
-  assert.match(worktreeSource, /isMissionMobile\s*\?\s*"输入消息"\s*:\s*draftPromptPlaceholder/);
+  assert.match(workspaceChatCompositionSource, /return isMobile \? "输入消息" : draftPromptPlaceholder/);
 });
 
 test("mission ACP overview keeps the foldout without the extra bubble wrapper", () => {

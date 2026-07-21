@@ -98,6 +98,7 @@ export {
 
 export { buildOpenCodeConfigOverride } from "./config-adapters";
 export {
+  CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS,
   createClaudeAcpAdapter,
   createCodexAcpAdapter,
   createGenericAcpAdapter,

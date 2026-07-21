@@ -5,7 +5,7 @@ import { createRuntimeMetrics } from "./runtime-metrics";
 test("runtime metrics keeps one bounded aggregate per session", () => {
   const logs: unknown[] = [];
   const metrics = createRuntimeMetrics({
-    logger: { info: (_event, fields) => logs.push(fields) },
+    logger: { debug: (_event, fields) => logs.push(fields) },
     setIntervalFn: (() => ({ unref() {} })) as any,
     clearIntervalFn: (() => undefined) as any,
   });
@@ -23,7 +23,7 @@ test("runtime metrics keeps one bounded aggregate per session", () => {
 
 test("runtime metrics removes session aggregates without retaining payload bodies", () => {
   const metrics = createRuntimeMetrics({
-    logger: { info: () => undefined },
+    logger: { debug: () => undefined },
     setIntervalFn: (() => ({ unref() {} })) as any,
     clearIntervalFn: (() => undefined) as any,
   });

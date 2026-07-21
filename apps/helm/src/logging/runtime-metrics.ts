@@ -37,7 +37,7 @@ const NUMERIC_FIELDS = [
 ] as const;
 
 export function createRuntimeMetrics(options: {
-  logger: Pick<TillerLogger, "info">;
+  logger: Pick<TillerLogger, "debug">;
   flushIntervalMs?: number;
   setIntervalFn?: typeof setInterval;
   clearIntervalFn?: typeof clearInterval;
@@ -88,10 +88,10 @@ export function createRuntimeMetrics(options: {
 
 function publishMetrics(
   records: RuntimeMetricFields[],
-  logger: Pick<TillerLogger, "info">,
+  logger: Pick<TillerLogger, "debug">,
 ) {
   for (const record of records) {
-    logger.info("runtime.metrics", record);
+    logger.debug("runtime.metrics", record);
   }
 }
 

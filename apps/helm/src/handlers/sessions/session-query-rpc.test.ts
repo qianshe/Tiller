@@ -52,7 +52,23 @@ test("resumeSession broadcasts refreshed session_updated from the resume result 
   );
 
   assert.equal(result.ok, true);
-  assert.deepEqual(notifications, [
+  assert.deepEqual(notifications.map((item) => {
+    if (item.method !== "notification/raised" || !item.params || typeof item.params !== "object") {
+      return item;
+    }
+    const { occurredAt: _occurredAt, ...params } = item.params;
+    return { ...item, params };
+  }), [
+    {
+      method: "notification/raised",
+      params: {
+        sessionId: "s1",
+        code: "ACP_SESSION_RESTORED",
+        message: "已恢复",
+        source: "session",
+        kind: "info",
+      },
+    },
     {
       method: "session/update",
       params: {

@@ -283,6 +283,7 @@ test("session restore failure logs visible error details", async () => {
   };
   let errorEvent = "";
   let errorFields: Record<string, unknown> = {};
+  let raisedNotification: Record<string, unknown> | undefined;
 
   const service = createSessionResumeService({
     sessions: new Map(),
@@ -351,6 +352,9 @@ test("session restore failure logs visible error details", async () => {
     },
     logInfo: () => undefined,
     logError: () => undefined,
+    notify: (notification: Record<string, unknown>) => {
+      raisedNotification = notification;
+    },
   } as any);
 
   const result = await service.startSessionResume(sessionId);
@@ -361,6 +365,13 @@ test("session restore failure logs visible error details", async () => {
   assert.equal(errorFields.runtimeSessionId, "runtime-codex-fail");
   assert.equal(errorFields.method, "session/load");
   assert.equal(errorFields.providerId, "codex");
+  assert.deepEqual(raisedNotification, {
+    kind: "error",
+    source: "runtime",
+    code: "ACP_SESSION_RESTORE_FAILED",
+    sessionId,
+    message: "Internal error",
+  });
 });
 
 test("force reload active session releases old runtime before ACP load restore", async () => {

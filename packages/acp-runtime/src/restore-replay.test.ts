@@ -39,6 +39,12 @@ const statusEvent: SessionRuntimeEvent = {
   message: "ready",
 };
 
+const replayErrorEvent: SessionRuntimeEvent = {
+  type: "error",
+  code: "ACP_AGENT_API_ERROR",
+  message: "Failed to authenticate. API Error: 403 预扣费额度失败",
+};
+
 const replayToolCallEvent: SessionRuntimeEvent = {
   type: "tool-call",
   toolCall: {
@@ -107,15 +113,27 @@ test("restore replay sink suppresses historical message replay until the restore
   sink.setSuppressing(true);
   sink.onEvent(assistantReplayEvent);
   sink.onEvent(userReplayEvent);
+  sink.onEvent(replayErrorEvent);
   sink.onEvent(statusEvent);
   sink.onEvent(assistantReplayEvent);
   sink.onEvent(unknownAssistantEvent);
 
   sink.setSuppressing(false);
   sink.onEvent(assistantReplayEvent);
+  sink.onEvent(replayErrorEvent);
 
-  assert.deepEqual(forwarded, [statusEvent, unknownAssistantEvent, assistantReplayEvent]);
-  assert.deepEqual(suppressed, [assistantReplayEvent, userReplayEvent, assistantReplayEvent]);
+  assert.deepEqual(forwarded, [
+    statusEvent,
+    unknownAssistantEvent,
+    assistantReplayEvent,
+    replayErrorEvent,
+  ]);
+  assert.deepEqual(suppressed, [
+    assistantReplayEvent,
+    userReplayEvent,
+    replayErrorEvent,
+    assistantReplayEvent,
+  ]);
 });
 
 test("restore replay sink suppresses replay artifacts until prompt boundary", () => {
@@ -133,6 +151,7 @@ test("restore replay sink suppresses replay artifacts until prompt boundary", ()
   sink.onEvent(replayDiffEvent);
   sink.onEvent(replayPlanEvent);
   sink.onEvent(replayCompactionEvent);
+  sink.onEvent(replayErrorEvent);
 
   assert.deepEqual(forwarded, []);
   assert.deepEqual(suppressed, [
@@ -141,11 +160,13 @@ test("restore replay sink suppresses replay artifacts until prompt boundary", ()
     replayDiffEvent,
     replayPlanEvent,
     replayCompactionEvent,
+    replayErrorEvent,
   ]);
 
   sink.setSuppressing(false);
   sink.onEvent(replayToolCallEvent);
   sink.onEvent(replayCompactionEvent);
-  assert.deepEqual(forwarded, [replayToolCallEvent, replayCompactionEvent]);
+  sink.onEvent(replayErrorEvent);
+  assert.deepEqual(forwarded, [replayToolCallEvent, replayCompactionEvent, replayErrorEvent]);
 });
 

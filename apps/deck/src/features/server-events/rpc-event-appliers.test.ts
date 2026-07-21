@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, SessionConfigOption, SessionSummary, TrustedDeviceSummary } from "@tiller/shared";
 import { useDeckStore } from "../../store";
+import { toast } from "../toast";
 import {
   applyDeviceResult,
   applyErrorRaised,
@@ -29,6 +30,7 @@ function session(id: string): SessionSummary {
 }
 
 function resetStore() {
+  toast.clear();
   useDeckStore.setState({
     helmInventories: {},
     sessions: [],
@@ -80,6 +82,9 @@ test("applyErrorRaised records error context without prompt contents", () => {
   });
   assert.equal(useDeckStore.getState().sessions[0]?.status, "error");
   assert.match(useDeckStore.getState().sessions[0]?.lastMessagePreview ?? "", /ACP_PROMPT_FAILED/);
+  assert.deepEqual(toast.getSnapshot().map((item) => ({ variant: item.variant, message: item.message })), [
+    { variant: "error", message: "[ACP_PROMPT_FAILED] ACP agent produced no prompt progress within 45000ms." },
+  ]);
 });
 
 test("applyNotificationRaised accepts non-error system notifications", () => {
@@ -111,6 +116,32 @@ test("applyNotificationRaised accepts non-error system notifications", () => {
     message: "Storage is temporarily unavailable; new events remain in memory.",
     createdAt: "2026-07-18T12:00:00.000Z",
   });
+  assert.deepEqual(toast.getSnapshot().map((item) => ({ variant: item.variant, message: item.message })), [
+    { variant: "warning", message: "[STORAGE_DEGRADED] Storage is temporarily unavailable; new events remain in memory." },
+  ]);
+});
+
+test("applyNotificationRaised surfaces info notifications as Toasts", () => {
+  resetStore();
+  const handled = applyNotificationRaised(
+    {
+      kind: "info",
+      source: "session",
+      code: "ACP_SESSION_RESTORED",
+      message: "ACP session/load completed for this session.",
+    },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      appendSystemMessage: () => undefined,
+      addNotification: (notification) => useDeckStore.getState().addNotification(notification),
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(toast.getSnapshot().map((item) => ({ variant: item.variant, message: item.message })), [
+    { variant: "info", message: "[ACP_SESSION_RESTORED] ACP session/load completed for this session." },
+  ]);
 });
 
 test("applyDeviceResult syncs device/list RPC results into the current helm", () => {

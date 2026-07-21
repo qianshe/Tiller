@@ -19,6 +19,7 @@ import { useChatWindowActions } from "./chat-window-actions";
 import { MissionPage } from "./page";
 import {
   buildDraftPreparingMessage,
+  buildComposerPromptPlaceholder,
   buildMissionChatRestoreNotice,
   resolveMissionChatSelectedSessionId,
 } from "./chat-composition";
@@ -902,11 +903,13 @@ export function MissionWorktree(props: any) {
   const shouldShowRestoreGateNotice = Boolean(
     helmConnected && activeSession && !activeSessionRestoreGate.canChat && activeSessionRestoreGate.message,
   );
-  const composerPromptPlaceholder = shouldShowRestoreGateNotice
-    ? activeSessionRestoreGate.message
-    : isMissionMobile
-      ? "输入消息"
-      : draftPromptPlaceholder;
+  const composerPromptPlaceholder = buildComposerPromptPlaceholder({
+    showRestoreNotice: shouldShowRestoreGateNotice,
+    state: activeSessionRestoreGate.state,
+    message: activeSessionRestoreGate.message,
+    isMobile: isMissionMobile,
+    draftPromptPlaceholder,
+  });
   const missionChatSelectedSessionId = resolveMissionChatSelectedSessionId({
     focusedDraftWindow: Boolean(focusedDraftWindow),
     focusedRealSessionId,

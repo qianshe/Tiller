@@ -1,6 +1,7 @@
 import type { AcpAgentProvider, SessionResumeInfo, SessionSummary, WorktreeSummary } from "@tiller/shared";
 import { resolveProviderById } from "@tiller/agent-registry";
 import type { AcpProtocolLoggingOptions, SessionRuntimeEvent } from "@tiller/acp-runtime";
+import type { NotificationRaisedParams } from "@tiller/sync-protocol";
 import type { StoredSessionRuntimeDescriptor } from "../../sessions/facade";
 import type { SessionRecord } from "./services";
 import type { ProviderLifecyclePort } from "../provider-lifecycle";
@@ -44,6 +45,7 @@ type SessionResumeServiceOptions = {
   logger?: Pick<TillerLogger, "debug" | "error">;
   logInfo(message: string): void;
   logError(message: string): void;
+  notify?: (notification: NotificationRaisedParams) => void;
   protocolLogging?: AcpProtocolLoggingOptions;
 };
 
@@ -69,6 +71,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
     const summary = activeRecord?.summary ?? options.sessionStore.get(sessionId);
     if (!summary) {
       const now = new Date().toISOString();
+      notifyResumeFailure(options, sessionId, "Session not found.", "SESSION_RESUME_UNAVAILABLE");
       return {
         ok: false,
         resume: {
@@ -108,6 +111,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       cwd: summary.cwd ?? options.getProjects().find((item) => item.id === summary.projectId)?.path,
     });
     if (unavailableReason) {
+      notifyResumeFailure(options, sessionId, unavailableReason, "SESSION_RESUME_UNAVAILABLE");
       return {
         ok: false,
         resume: markSessionResumeUnavailable(resume, unavailableReason),
@@ -192,6 +196,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         providerId: restoreAgent.id,
         errorMessage,
       });
+      notifyResumeFailure(options, sessionId, errorMessage, "ACP_SESSION_RESTORE_FAILED");
       return {
         ok: false,
         resume: {
@@ -206,6 +211,21 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
   }
 
   return { startSessionResume };
+}
+
+function notifyResumeFailure(
+  options: SessionResumeServiceOptions,
+  sessionId: string,
+  message: string,
+  code: string,
+) {
+  options.notify?.({
+    kind: "error",
+    source: "runtime",
+    code,
+    sessionId,
+    message,
+  });
 }
 
 function logResumeInfo(

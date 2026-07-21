@@ -273,7 +273,10 @@ function inferProviderFromId(
   };
 }
 
-export { createClaudeAcpAdapter } from "./claude/index";
+export {
+  CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS,
+  createClaudeAcpAdapter,
+} from "./claude/index";
 export { createCodexAcpAdapter } from "./codex/index";
 export { createGenericAcpAdapter } from "./generic/index";
 export { createOpenClawAcpAdapter } from "./openclaw/index";

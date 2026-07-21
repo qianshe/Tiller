@@ -57,6 +57,7 @@ type AcpConnectionState = {
   launchCwd: string;
   sessionConfig?: AcpConnectionOptions["sessionConfig"];
   child: ChildProcess;
+  getStderrBuffer: () => string;
   agent: acp.ClientSideConnection;
   logFile?: string;
   protocolLog: ProtocolLogSink;
@@ -208,7 +209,7 @@ export class AcpConnection {
           clientInfo: { name: "tiller", version: "0.1.0" },
         }),
         child,
-        stderrBuffer,
+        () => stderrBuffer,
         logFile,
         options.provider,
       );
@@ -223,6 +224,7 @@ export class AcpConnection {
       launchCwd: launchConfig.cwd,
       sessionConfig: options.sessionConfig,
       child,
+      getStderrBuffer: () => stderrBuffer,
       agent,
       logFile,
       protocolLog,
@@ -409,7 +411,7 @@ export class AcpConnection {
         "session/set_config_option",
         this.state.agent.setSessionConfigOption(setConfigOptionRequest as any),
         this.state.child,
-        "",
+        this.state.getStderrBuffer,
         this.state.logFile,
         this.state.provider,
       );
@@ -443,7 +445,7 @@ export class AcpConnection {
           "session/set_mode",
           this.state.agent.setSessionMode({ sessionId: session.runtimeSessionId, modeId: nextConfig.agentMode }),
           this.state.child,
-          "",
+          this.state.getStderrBuffer,
           this.state.logFile,
           this.state.provider,
         );
@@ -464,7 +466,7 @@ export class AcpConnection {
         "session/set_model",
         this.state.agent.unstable_setSessionModel({ sessionId: session.runtimeSessionId, modelId: nextConfig.model }),
         this.state.child,
-        "",
+        this.state.getStderrBuffer,
         this.state.logFile,
         this.state.provider,
       );
@@ -524,7 +526,7 @@ export class AcpConnection {
           promptStartGuard.timeout,
         ]),
         this.state.child,
-        "",
+        this.state.getStderrBuffer,
         this.state.logFile,
         this.state.provider,
       );
@@ -658,7 +660,7 @@ export class AcpConnection {
       "session/close",
       this.state.agent.closeSession({ sessionId: runtimeSessionId }),
       this.state.child,
-      "",
+      this.state.getStderrBuffer,
       this.state.logFile,
       this.state.provider,
     );
@@ -674,9 +676,12 @@ export class AcpConnection {
           mcpServers: mapTillerMcpServersToSdkMcpServers(this.state.provider.mcpServers ?? []),
         }),
         this.state.child,
-        "",
+        this.state.getStderrBuffer,
         this.state.logFile,
         this.state.provider,
+        () => {
+          void this.dispose().catch(() => undefined);
+        },
       );
       return {
         runtimeSessionId: resolveRuntimeSessionId(result, request.runtimeSessionId),
@@ -694,9 +699,12 @@ export class AcpConnection {
           mcpServers: mapTillerMcpServersToSdkMcpServers(this.state.provider.mcpServers ?? []),
         }),
         this.state.child,
-        "",
+        this.state.getStderrBuffer,
         this.state.logFile,
         this.state.provider,
+        () => {
+          void this.dispose().catch(() => undefined);
+        },
       );
       return {
         runtimeSessionId: resolveRuntimeSessionId(result, request.runtimeSessionId),
@@ -712,7 +720,7 @@ export class AcpConnection {
         mcpServers: mapTillerMcpServersToSdkMcpServers(this.state.provider.mcpServers ?? []),
       }),
       this.state.child,
-      "",
+      this.state.getStderrBuffer,
       this.state.logFile,
       this.state.provider,
     );

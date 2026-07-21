@@ -5,6 +5,7 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import { dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
+import { toast } from "../toast";
 import { useDeckStore, type DeckNotificationInput } from "../../store";
 import { stripRedundantAttachmentData } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
@@ -192,6 +193,18 @@ export function applyNotificationRaised(
     sessionId: params.sessionId,
     createdAt: params.occurredAt,
   });
+  const toastOptions = params.kind === "error"
+    ? { duration: 8_000 }
+    : params.kind === "warning"
+      ? { duration: 6_000 }
+      : undefined;
+  if (params.kind === "error") {
+    toast.error(sessionMessage, toastOptions);
+  } else if (params.kind === "warning") {
+    toast.warning(sessionMessage, toastOptions);
+  } else {
+    toast.info(sessionMessage, toastOptions);
+  }
   if (params.kind === "error") {
     store.setPairingFeedback(params.message);
   }

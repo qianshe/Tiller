@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   buildOpenCodeConfigOverride,
+  CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS,
   normalizeAcpAgentSessionListResult,
   normalizeProviderCleanupResult,
   DEFAULT_ACP_PROMPT_TIMEOUT_MS,
@@ -147,6 +148,31 @@ test("Codex adapter exposes bounded prompt observation for missing multi-agent n
   });
   assert.equal(typeof adapter.beginPromptObservation, "function");
   assert.equal(typeof adapter.pollPromptToolObservations, "function");
+});
+
+test("Claude ACP session restore uses a longer request timeout", () => {
+  assert.equal(CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS, 120_000);
+  const provider = {
+    id: "claudecode",
+    name: "Claude Code",
+    command: "claude-agent-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+
+  assert.equal(
+    resolveAdapterRequestTimeout(provider, "session/load"),
+    CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS,
+  );
+  assert.equal(
+    resolveAdapterRequestTimeout(provider, "session/resume"),
+    CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS,
+  );
+  assert.equal(resolveAdapterRequestTimeout(provider, "session/prompt"), undefined);
+  assert.equal(
+    resolveAcpRequestTimeout(provider, "session/load"),
+    CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS,
+  );
 });
 
 test("tool-call plan repair stays behind provider adapters", () => {

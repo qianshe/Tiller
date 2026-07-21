@@ -42,6 +42,7 @@ import { createSessionTimelineFlushScheduler } from "../session-timeline/flush-s
 import { createSessionLiveStateStore } from "../session-timeline/live-state-store";
 import { createSessionApprovalStateStore } from "./event/approval-store";
 import { createSessionRuntimeEventState } from "./event/runtime-state";
+import { broadcastNotificationRaised } from "../../rpc/notifications";
 import { expirePersistedApprovalsOnStartup } from "./event/approval-recovery";
 import { createSessionTimelineWorkerRegistry } from "../session-timeline/worker-registry";
 import { resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary } from "./worktree-resolution";
@@ -224,6 +225,10 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logger: options.logger,
     logInfo: options.logInfo,
     logError: options.logError,
+    notify: (notification) => broadcastNotificationRaised(
+      { broadcastNotification: options.broadcastNotification },
+      notification,
+    ),
     protocolLogging: options.protocolLogging,
   });
 

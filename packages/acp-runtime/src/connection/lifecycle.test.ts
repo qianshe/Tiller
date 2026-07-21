@@ -14,7 +14,7 @@ import { resolveClaudeTranscriptPath } from "../adapters/claude/transcript/plan"
 const require = createRequire(import.meta.url);
 const sdkImportUrl = pathToFileURL(require.resolve("@agentclientprotocol/sdk")).href;
 
-function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number; exitOnPrompt?: boolean; fireAndForgetPromptUpdate?: boolean; hangOnPrompt?: boolean; promptMessageText?: string } = {}) {
+function writeInitializeOnlyAgent(tempDir: string, options: { exitAfterMs?: number; newSessionDelayMs?: number; loadSessionDelayMs?: number; exitOnPrompt?: boolean; fireAndForgetPromptUpdate?: boolean; hangOnPrompt?: boolean; promptMessageText?: string } = {}) {
   const initializeCountPath = join(tempDir, "initialize-count.txt");
   const newSessionCountPath = join(tempDir, "new-session-count.txt");
   const newSessionCwdPath = join(tempDir, "new-session-cwd.txt");
@@ -49,6 +49,7 @@ const fireAndForgetPromptUpdate = ${JSON.stringify(options.fireAndForgetPromptUp
 const hangOnPrompt = ${JSON.stringify(options.hangOnPrompt ?? false)};
 const promptMessageText = ${JSON.stringify(options.promptMessageText ?? null)};
 const newSessionDelayMs = ${JSON.stringify(options.newSessionDelayMs ?? 50)};
+const loadSessionDelayMs = ${JSON.stringify(options.loadSessionDelayMs ?? 100)};
 writeFileSync(launchArgsPath, JSON.stringify(process.argv.slice(2)), "utf8");
 writeFileSync(pidPath, String(process.pid), "utf8");
 const incrementCount = (path) => {
@@ -79,7 +80,7 @@ const agent = {
   async loadSession(params) {
     incrementCount(loadSessionCountPath);
     writeFileSync(loadSessionCwdPath, params.cwd, "utf8");
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    await new Promise((resolve) => setTimeout(resolve, loadSessionDelayMs));
     await client.sessionUpdate({
       sessionId: params.sessionId,
       update: {
@@ -357,6 +358,36 @@ test("session requests time out and clear pending state", async () => {
     assert.equal(connection.inventory().pendingSessionCount, 0);
     assert.equal(connection.inventory().activeSessionCount, 0);
 
+    await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("session restore timeout disposes the ACP connection", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-session-restore-timeout-"));
+  try {
+    const { agentPath, pidPath } = writeInitializeOnlyAgent(tempDir, { loadSessionDelayMs: 2_000 });
+    const connection = await AcpConnection.open({
+      provider: { ...createProvider("node", [agentPath]), initializeTimeoutMs: 1_500 },
+      worktree: { ...worktree, path: tempDir },
+    });
+
+    await assert.rejects(
+      connection.openOrCreateSession({
+        tillerSessionId: "session-restore-timeout",
+        worktree: { ...worktree, path: tempDir },
+        kind: "load",
+        runtimeSessionId: "runtime-restore-timeout",
+        onEvent: () => undefined,
+      }),
+      /Timed out waiting for ACP response: session\/load after 1500ms/u,
+    );
+
+    assert.equal(connection.inventory().status, "closed");
+    assert.equal(await waitForProcessExit(Number(readFileSync(pidPath, "utf8"))), true);
     await connection.dispose();
   } finally {
     if (existsSync(tempDir)) {

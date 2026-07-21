@@ -29,6 +29,20 @@ export function broadcastErrorRaised(
   });
 }
 
+export function broadcastInfoRaised(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  input: Omit<NotificationRaisedParams, "kind" | "source" | "occurredAt"> & {
+    source?: string;
+    occurredAt?: string;
+  },
+): void {
+  broadcastNotificationRaised(context, {
+    ...input,
+    kind: "info",
+    source: input.source ?? "runtime",
+  });
+}
+
 export function broadcastNotificationRaised(
   context: Pick<HelmHandlerContext, "broadcastNotification">,
   input: NotificationRaisedParams,

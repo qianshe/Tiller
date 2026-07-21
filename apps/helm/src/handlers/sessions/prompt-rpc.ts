@@ -1,4 +1,5 @@
 import type { AgentPromptContent, SessionSummary } from "@tiller/shared";
+import { wasAcpPromptFailureReported } from "@tiller/acp-runtime";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifications";
 import {
   resolveConfigOptionsForSelection,
@@ -185,6 +186,8 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
     updatedAt: new Date().toISOString(),
     lastMessagePreview: "Prompt failed",
   }));
-  broadcastErrorRaised(context, { sessionId, message, source: "session" });
+  if (!wasAcpPromptFailureReported(error)) {
+    broadcastErrorRaised(context, { sessionId, message, source: "session" });
+  }
   publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
 }

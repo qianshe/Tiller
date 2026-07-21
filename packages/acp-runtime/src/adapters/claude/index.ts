@@ -19,6 +19,12 @@ const CLAUDE_ACP_COMMANDS = [
   "claude-code-acp",
 ];
 
+export const CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS = 120_000;
+
+function isClaudeSessionRequest(method: string): boolean {
+  return method === "session/load" || method === "session/resume";
+}
+
 export function createClaudeAcpAdapter(): AcpAgentAdapter {
   const apiErrorMessages = createClaudeApiErrorMessageProjector();
   const planProjector = createClaudePlanUpdateProjector();
@@ -54,6 +60,8 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
       };
     },
     resolveCapabilities: (_provider, _initializeResult, detected) => detected,
+    resolveRequestTimeout: ({ method }) =>
+      isClaudeSessionRequest(method) ? CLAUDE_ACP_SESSION_REQUEST_TIMEOUT_MS : undefined,
     resolveCleanup: ({ provider }) => resolveUnsupportedCleanup(provider),
     beginPromptObservation: (context) => {
       promptToolCalls.begin(context);

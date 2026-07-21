@@ -1,6 +1,6 @@
 import { createSessionLifecycle } from "@tiller/core";
 import type { SessionReasoningEffort, SessionSummary } from "@tiller/shared";
-import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifications";
+import { broadcastErrorRaised, broadcastInfoRaised, broadcastSessionUpdate } from "../../rpc/notifications";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
@@ -147,6 +147,12 @@ export async function createSession(
       runtimeSessionId: runtime.runtimeSessionId,
       capabilities: runtime.sessionCapabilities ?? {},
     });
+    broadcastInfoRaised(context, {
+      sessionId,
+      code: "ACP_SESSION_STARTED",
+      message: "ACP session started.",
+      source: "session",
+    });
     context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, worktree, runtime });
     ensureLiveEventSequenceForSession(sessionId, context);
     context.persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
@@ -160,7 +166,12 @@ export async function createSession(
     return { session: summaryWithRuntime };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create session runtime";
-    broadcastErrorRaised(context, { sessionId, message, source: "session" });
+    broadcastErrorRaised(context, {
+      sessionId,
+      code: "ACP_SESSION_START_FAILED",
+      message,
+      source: "session",
+    });
     logSessionCreateError(context, "session.create.failed", {
       projectId: project.id,
       agentId: agent.id,
