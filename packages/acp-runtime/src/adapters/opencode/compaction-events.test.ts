@@ -66,6 +66,20 @@ test("expandOpenCodeRuntimeEvent waits for streaming summaries to finish", () =>
   assert.equal(expandOpenCodeRuntimeEvent(event), null);
 });
 
+test("expandOpenCodeRuntimeEvent does not classify unfinalized streaming=undefined messages", () => {
+  const event = {
+    type: "message",
+    message: {
+      id: "msg-opencode-undefined",
+      role: "assistant",
+      text: OPEN_CODE_AUTOMATIC_COMPACTION_SUMMARY,
+      timestamp: "2026-07-20T14:01:13.159Z",
+    },
+  } satisfies SessionRuntimeEvent;
+
+  assert.equal(expandOpenCodeRuntimeEvent(event), null);
+});
+
 test("expandOpenCodeRuntimeEvent does not classify incomplete objective-shaped replies", () => {
   const event = {
     type: "message",
@@ -80,7 +94,7 @@ test("expandOpenCodeRuntimeEvent does not classify incomplete objective-shaped r
   assert.equal(expandOpenCodeRuntimeEvent(event), null);
 });
 
-test("expandOpenCodeRuntimeEvent does not classify summaries with extra headings", () => {
+test("expandOpenCodeRuntimeEvent classifies a complete summary with an extra Notes heading (M2 characterization)", () => {
   const event = {
     type: "message",
     message: {
@@ -88,8 +102,171 @@ test("expandOpenCodeRuntimeEvent does not classify summaries with extra headings
       role: "assistant",
       text: `${OPEN_CODE_AUTOMATIC_COMPACTION_SUMMARY}\n\n## Notes\n- Keep this as a reply.`,
       timestamp: "2026-07-20T14:01:13.159Z",
+      streaming: false,
+    },
+  } satisfies SessionRuntimeEvent;
+
+  assert.equal(expandOpenCodeRuntimeEvent(event)?.[0]?.type, "compaction");
+});
+
+const OPEN_CODE_16_HEADING_COMPACTION_SUMMARY = [
+  "## Goal",
+  "- Continue the repository cleanup task.",
+  "",
+  "## Constraints & Preferences",
+  "- Preserve the existing worktree changes.",
+  "",
+  "## Progress",
+  "### Done",
+  "- Located the relevant runtime path.",
+  "",
+  "### In Progress",
+  "- Waiting for the next prompt.",
+  "",
+  "### Blocked",
+  "- (none)",
+  "",
+  "## Key Decisions",
+  "- Keep compaction recognition in the adapter.",
+  "",
+  "## Open Questions",
+  "- Whether the bridge will expose compaction metadata.",
+  "",
+  "## Risks",
+  "- Heuristic matcher may need updates for new variants.",
+  "",
+  "## Dependencies",
+  "- None.",
+  "",
+  "## Next Steps",
+  "1. Continue from the recorded state.",
+  "",
+  "## Critical Context",
+  "- The session was compacted automatically.",
+  "",
+  "## Testing Notes",
+  "- Covered by adapter unit tests.",
+  "",
+  "## Rollout Plan",
+  "- Merge behind the existing feature flag.",
+  "",
+  "## Verification",
+  "- Run the compaction-events test suite.",
+  "",
+  "## Relevant Files",
+  "- packages/acp-runtime/src/adapters/opencode/compaction-events.ts",
+].join("\n");
+
+test("expandOpenCodeRuntimeEvent recognizes a 16-heading compaction variant", () => {
+  const event = {
+    type: "message",
+    message: {
+      id: "msg-opencode-16-heading",
+      role: "assistant",
+      text: OPEN_CODE_16_HEADING_COMPACTION_SUMMARY,
+      timestamp: "2026-07-20T14:01:13.159Z",
+      streaming: false,
+    },
+  } satisfies SessionRuntimeEvent;
+
+  assert.deepEqual(expandOpenCodeRuntimeEvent(event), [
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      messageId: "msg-opencode-16-heading",
+      timestamp: "2026-07-20T14:01:13.159Z",
+      summaryText: OPEN_CODE_16_HEADING_COMPACTION_SUMMARY,
+    },
+  ]);
+});
+
+test("expandOpenCodeRuntimeEvent ignores fenced pseudo headings inside a normal reply", () => {
+  const event = {
+    type: "message",
+    message: {
+      id: "msg-opencode-fenced",
+      role: "assistant",
+      text: [
+        "This is a normal reply.",
+        "",
+        "```markdown",
+        "## Goal",
+        "## Progress",
+        "### Done",
+        "### In Progress",
+        "### Blocked",
+        "## Next Steps",
+        "## Relevant Files",
+        "```",
+        "",
+        "The headings above are only an example.",
+      ].join("\n"),
+      timestamp: "2026-07-20T14:01:13.159Z",
+      streaming: false,
     },
   } satisfies SessionRuntimeEvent;
 
   assert.equal(expandOpenCodeRuntimeEvent(event), null);
+});
+
+test("expandOpenCodeRuntimeEvent rejects summaries missing core sub-headings", () => {
+  const event = {
+    type: "message",
+    message: {
+      id: "msg-opencode-missing-core",
+      role: "assistant",
+      text: [
+        "## Goal",
+        "- Continue.",
+        "",
+        "## Progress",
+        "",
+        "## Next Steps",
+        "1. Continue.",
+        "",
+        "## Relevant Files",
+        "- file.ts",
+      ].join("\n"),
+      timestamp: "2026-07-20T14:01:13.159Z",
+      streaming: false,
+    },
+  } satisfies SessionRuntimeEvent;
+
+  assert.equal(expandOpenCodeRuntimeEvent(event), null);
+});
+
+test("expandOpenCodeRuntimeEvent classifies a normal reply that fully mimics the core headings (M2 limitation characterization)", () => {
+  const event = {
+    type: "message",
+    message: {
+      id: "msg-opencode-mimic",
+      role: "assistant",
+      text: [
+        "## Goal",
+        "- Explain the plan.",
+        "",
+        "## Progress",
+        "### Done",
+        "- nothing yet",
+        "",
+        "### In Progress",
+        "- drafting",
+        "",
+        "### Blocked",
+        "- (none)",
+        "",
+        "## Next Steps",
+        "1. Review.",
+        "",
+        "## Relevant Files",
+        "- none",
+      ].join("\n"),
+      timestamp: "2026-07-20T14:01:13.159Z",
+      streaming: false,
+    },
+  } satisfies SessionRuntimeEvent;
+
+  const expanded = expandOpenCodeRuntimeEvent(event);
+  assert.equal(expanded?.[0]?.type, "compaction");
 });

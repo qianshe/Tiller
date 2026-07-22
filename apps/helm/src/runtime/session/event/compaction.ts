@@ -42,10 +42,10 @@ function findPendingTimelineCompactionEntry(
   return undefined;
 }
 
-function shouldInferCompactionCompletionFromEvent(event: SessionRuntimeEvent) {
+export function shouldInferCompactionCompletionFromEvent(event: SessionRuntimeEvent) {
   switch (event.type) {
     case "message":
-      return event.message.role === "assistant";
+      return event.message.role === "assistant" && event.message.streaming === false;
     case "tool-call":
     case "command-output":
     case "permission-request":

@@ -20,6 +20,19 @@ const activeAssistantRuntimeThinkingBySession = new Map<
 >();
 const pendingAssistantBoundaryBySession = new Set<string>();
 
+export function shouldFlushActiveAssistantSegment(
+  sessionId: string,
+  incomingMessageId: string,
+): boolean {
+  const active = activeAssistantRuntimeMessageBySession.get(sessionId);
+  if (!active) {
+    return false;
+  }
+  const activeIsProvider = !isRuntimeGeneratedMessageId(active.sourceId);
+  const incomingIsProvider = !isRuntimeGeneratedMessageId(incomingMessageId);
+  return activeIsProvider && incomingIsProvider && active.sourceId !== incomingMessageId;
+}
+
 export function markAssistantStreamBoundary(sessionId: string) {
   if (activeAssistantRuntimeMessageBySession.has(sessionId)) {
     pendingAssistantBoundaryBySession.add(sessionId);

@@ -1,28 +1,13 @@
 import type { SessionRuntimeEvent } from "../../runtime-types";
 
-const OPENCODE_COMPACTION_SUMMARY_LAYOUTS = [
-  [
-    "## Objective",
-    "## Important Details",
-    "## Work State",
-    "### Completed",
-    "### Active",
-    "### Blocked",
-    "## Next Move",
-    "## Relevant Files",
-  ],
-  [
-    "## Goal",
-    "## Constraints & Preferences",
-    "## Progress",
-    "### Done",
-    "### In Progress",
-    "### Blocked",
-    "## Key Decisions",
-    "## Next Steps",
-    "## Critical Context",
-    "## Relevant Files",
-  ],
+const OPENCODE_COMPACTION_CORE_HEADING_GROUPS = [
+  ["## Objective", "## Goal"],
+  ["## Work State", "## Progress"],
+  ["### Completed", "### Done"],
+  ["### Active", "### In Progress"],
+  ["### Blocked"],
+  ["## Next Move", "## Next Steps"],
+  ["## Relevant Files"],
 ] as const;
 
 export function expandOpenCodeRuntimeEvent(
@@ -31,7 +16,7 @@ export function expandOpenCodeRuntimeEvent(
   if (event.type !== "message" || event.message.role !== "assistant") {
     return null;
   }
-  if (event.message.streaming === true) {
+  if (event.message.streaming !== false) {
     return null;
   }
   if (!looksLikeOpenCodeCompactionSummary(event.message.text)) {
@@ -50,23 +35,43 @@ export function expandOpenCodeRuntimeEvent(
 }
 
 function looksLikeOpenCodeCompactionSummary(text: string): boolean {
-  const normalized = text.trim();
-  return OPENCODE_COMPACTION_SUMMARY_LAYOUTS.some((layout) =>
-    matchesSummaryLayout(normalized, layout),
-  );
+  const headings = extractOpenCodeCompactionHeadings(text);
+  if (headings.length === 0) {
+    return false;
+  }
+  const entryGroup = OPENCODE_COMPACTION_CORE_HEADING_GROUPS[0];
+  if (!(entryGroup as readonly string[]).includes(headings[0])) {
+    return false;
+  }
+  return matchesOpenCodeCompactionCoreHeadings(headings);
 }
 
-function matchesSummaryLayout(
-  text: string,
-  headings: readonly string[],
-): boolean {
-  const lines = text.split(/\r?\n/u).map((line) => line.trimEnd());
-  const actualHeadings = lines.filter(
-    (line) => line.startsWith("## ") || line.startsWith("### "),
-  );
-  return (
-    lines[0] === headings[0] &&
-    actualHeadings.length === headings.length &&
-    actualHeadings.every((heading, index) => heading === headings[index])
-  );
+function matchesOpenCodeCompactionCoreHeadings(headings: string[]): boolean {
+  let groupIndex = 0;
+  for (const heading of headings) {
+    const group = OPENCODE_COMPACTION_CORE_HEADING_GROUPS[groupIndex];
+    if (group && (group as readonly string[]).includes(heading)) {
+      groupIndex += 1;
+    }
+  }
+  return groupIndex === OPENCODE_COMPACTION_CORE_HEADING_GROUPS.length;
+}
+
+function extractOpenCodeCompactionHeadings(text: string): string[] {
+  const lines = text.trim().split(/\r?\n/u).map((line) => line.trimEnd());
+  const headings: string[] = [];
+  let inFence = false;
+  for (const line of lines) {
+    if (/^```/u.test(line.trim())) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence) {
+      continue;
+    }
+    if (line.startsWith("## ") || line.startsWith("### ")) {
+      headings.push(line);
+    }
+  }
+  return headings;
 }

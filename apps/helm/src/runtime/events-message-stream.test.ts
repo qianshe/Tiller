@@ -780,6 +780,103 @@ test("runtime assistant chunks stay split when tool activity occurs between text
   assert.equal(appendedToolCalls.length, 0);
 });
 
+test("runtime splits compaction summary and reply on distinct provider message ids", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-boundary-split", {}, {
+    useCanonicalPipeline: true,
+  });
+  const summary = [
+    "## Objective",
+    "- Continue the repository cleanup task.",
+    "",
+    "## Important Details",
+    "- Preserve the existing worktree changes.",
+    "",
+    "## Work State",
+    "### Completed",
+    "- Located the relevant runtime path.",
+    "",
+    "### Active",
+    "- Waiting for the next prompt.",
+    "",
+    "### Blocked",
+    "- (none)",
+    "",
+    "## Next Move",
+    "1. Continue from the recorded state.",
+    "",
+    "## Relevant Files",
+    "- packages/acp-runtime/src/adapters/opencode/compaction-events.ts",
+  ].join("\n");
+
+  handleRuntimeEvent(
+    "session-boundary-split",
+    {
+      type: "message",
+      message: {
+        id: "msg_opencode_summary",
+        role: "assistant",
+        text: summary.slice(0, 120),
+        timestamp: "2026-07-20T14:01:13.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-boundary-split",
+    {
+      type: "message",
+      message: {
+        id: "msg_opencode_summary",
+        role: "assistant",
+        text: summary.slice(120),
+        timestamp: "2026-07-20T14:01:13.159Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-boundary-split",
+    {
+      type: "message",
+      message: {
+        id: "msg_opencode_reply",
+        role: "assistant",
+        text: "I will continue processing.",
+        timestamp: "2026-07-20T14:01:20.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-boundary-split",
+    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const timeline = capture.timelineEntries ?? [];
+  assert.deepEqual(
+    timeline.map((entry) => entry.kind),
+    ["context_compaction", "assistant_message"],
+  );
+  const compactionEntry = timeline.find((entry) => entry.kind === "context_compaction");
+  assert.equal(
+    compactionEntry?.kind === "context_compaction" ? compactionEntry.summaryText : undefined,
+    summary,
+  );
+  const assistantEntry = timeline.find((entry) => entry.kind === "assistant_message");
+  assert.equal(
+    assistantEntry?.kind === "assistant_message" ? assistantEntry.chunks[0]?.text : undefined,
+    "I will continue processing.",
+  );
+});
+
 test("runtime assistant chunks stay in one canonical segment when subagent activity occurs between cumulative text updates", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

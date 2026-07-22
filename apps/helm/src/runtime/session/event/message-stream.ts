@@ -5,6 +5,7 @@ import type { HelmHandlerContext } from "../../../handlers/context";
 import { emitFirstHelmPromptTrace } from "../../prompt-trace";
 import {
   normalizeRuntimeAssistantMessageId,
+  shouldFlushActiveAssistantSegment,
   startNextAssistantResponseSegment,
 } from "../../segment-state";
 import {
@@ -133,6 +134,10 @@ export function handleRuntimeAssistantMessage(
   event: Extract<SessionRuntimeEvent, { type: "message" }>,
   context: HelmHandlerContext,
 ) {
+  if (shouldFlushActiveAssistantSegment(sessionId, event.message.id)) {
+    flushLiveAssistantMessage(sessionId, context);
+    startNextAssistantResponseSegment(sessionId);
+  }
   const message = {
     ...event.message,
     id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
