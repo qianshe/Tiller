@@ -196,11 +196,13 @@ export function DashboardPage({
           </ul>
         </section>
 
-        <DashboardNotificationList
-          notifications={notifications}
-          onOpenSession={onOpenSession}
-          onClear={onClearNotifications}
-        />
+        <div className="mb-3">
+          <DashboardNotificationList
+            notifications={notifications}
+            onOpenSession={onOpenSession}
+            onClear={onClearNotifications}
+          />
+        </div>
 
         {/* Helm 矩阵 */}
         <section className="wb-pane mb-3">
