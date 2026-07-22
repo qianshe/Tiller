@@ -15,6 +15,7 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "./button";
+import { copyTextToClipboard } from "../utils/clipboard";
 import {
   Dialog,
   DialogContent,
@@ -565,7 +566,10 @@ function MarkdownCodeBlock({
 
   async function copyCode() {
     try {
-      await navigator.clipboard.writeText(code);
+      await copyTextToClipboard(
+        code,
+        typeof navigator === "undefined" ? undefined : navigator.clipboard,
+      );
       setCopyState("copied");
       window.setTimeout(() => setCopyState("idle"), 1400);
     } catch {

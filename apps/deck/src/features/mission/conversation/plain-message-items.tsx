@@ -7,6 +7,7 @@ import { MarkdownMessage } from "../../../shared/ui/markdown";
 import type { ConversationToolCallItem } from "../../logbook";
 import { resolveToolCallTone } from "../../logbook/tool-call-tone";
 import { cn } from "../../../shared/utils/cn";
+import { copyTextToClipboard } from "../../../shared/utils/clipboard";
 import {
   formatToolInputPreview,
   isActiveToolStatus,
@@ -470,10 +471,7 @@ export async function writeClipboardText(
   text: string,
   clipboard: Pick<Clipboard, "writeText"> | undefined,
 ) {
-  if (!text.trim() || !clipboard?.writeText) {
-    throw new Error("Clipboard unavailable");
-  }
-  await clipboard.writeText(text);
+  await copyTextToClipboard(text, clipboard);
 }
 
 function resolveCopyLabel(
