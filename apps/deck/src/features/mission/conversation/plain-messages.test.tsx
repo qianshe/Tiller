@@ -3198,7 +3198,7 @@ test("plain tool rows render diagnostics as an independent category", () => {
   });
 
   assert.match(html, /data-tool-kind="diagnostics"/);
-  assert.match(html, /class="inline-flex shrink-0 items-center w-20"/);
+  assert.match(html, /class="inline-flex shrink-0 items-center min-w-[3.25rem]"/);
   assert.match(html, />Diagnostics</);
   assert.match(html, />packages\/acp-runtime\/src\/adapters\/opencode\/tool-calls\.ts</);
   assert.doesNotMatch(html, /Diagnostics: packages/);
@@ -3303,7 +3303,7 @@ test("plain tool rows align titles without letting expanded output resize the ro
   assert.doesNotMatch(html, /plain-tool-group-content[^\"]*gap-1/);
   assert.equal(html.match(/plain-tool-call min-w-0 text-muted-foreground/g)?.length, 2);
   assert.equal(html.match(/summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5/g)?.length, 2);
-  assert.match(html, /class="inline-flex shrink-0 items-center w-20"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
+  assert.match(html, /class="inline-flex shrink-0 items-center min-w-[3.25rem]"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
   assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full/);
   assert.doesNotMatch(html, /grid-cols-subgrid|col-span-/);
 });

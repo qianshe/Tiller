@@ -31,7 +31,7 @@ const THINKING_SCROLL_CHAR_THRESHOLD = 640;
 const ASSISTANT_MESSAGE_FRAME_CLASS = "mr-auto w-[calc(100%-0.625rem)] max-w-[calc(100%-0.625rem)]";
 const ASSISTANT_MESSAGE_RAIL_CLASS = "grid-cols-[0.375rem_minmax(0,1fr)] gap-x-1";
 const USER_MESSAGE_RAIL_CLASS = "w-fit max-w-[min(56rem,76%)]";
-const TOOL_CATEGORY_SLOT_CLASS_NAME = "w-20";
+const TOOL_CATEGORY_SLOT_CLASS_NAME = "min-w-[3.25rem]";
 
 type MessageImageSourceEnvironment = {
   location?: Pick<Location, "protocol" | "hostname" | "port">;

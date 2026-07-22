@@ -724,7 +724,7 @@ test("mission tool call rows stay compact", () => {
   assert.match(plainMessagesSource, /plain-tool-group[^\n]+rounded-\[8px\][^\n]+bg-surface-sunken\/55/);
   assert.match(plainMessagesSource, /plain-tool-call min-w-0 text-muted-foreground/);
   assert.match(plainMessagesSource, /<summary className=\"flex min-w-0 cursor-pointer list-none items-center gap-1\.5/);
-  assert.match(plainMessagesSource, /const TOOL_CATEGORY_SLOT_CLASS_NAME = \"w-20\"/);
+  assert.match(plainMessagesSource, /const TOOL_CATEGORY_SLOT_CLASS_NAME = \"min-w-\[3\.25rem\]\"/);
   assert.match(plainMessagesSource, /cn\(\"inline-flex shrink-0 items-center\", TOOL_CATEGORY_SLOT_CLASS_NAME\)/);
   assert.doesNotMatch(plainMessagesSource, /maxGroupLabelLength/);
   assert.match(plainMessagesSource, /<pre className=\"mt-0\.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-muted-foreground\/85\"/);
