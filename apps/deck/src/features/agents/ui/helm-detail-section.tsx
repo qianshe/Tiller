@@ -206,9 +206,6 @@ export function HelmDetailSection({
           pulse={selectedHelmIsConnected || selectedHelmConnection === "connecting"}
           size={5}
         />
-        <span className="min-w-0 shrink font-mono text-meta tabular text-muted-foreground">
-          {selectedHelm.host}:{selectedHelm.port}
-        </span>
         <div className="flex-1" />
         <HelmActions
           connectDaemonProfile={connectDaemonProfile}
