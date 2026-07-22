@@ -383,11 +383,10 @@ function isAssistantTimelineBoundaryEntry(
   entry: SessionTimelineEntry,
 ): entry is Extract<
   SessionTimelineEntry,
-  { kind: "user_message" | "system_message" | "tool_call" | "command_output" }
+  { kind: "user_message" | "system_message" | "tool_call" }
 > {
   return entry.kind === "user_message" ||
     entry.kind === "system_message" ||
-    entry.kind === "command_output" ||
     entry.kind === "tool_call";
 }
 

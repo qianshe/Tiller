@@ -408,6 +408,17 @@ function stabilizeRuntimeToolCallOccurrence(
   };
 }
 
+function hasRuntimeToolCallOccurrence(
+  sessionId: string,
+  toolCallId: string,
+  context: HelmHandlerContext,
+) {
+  return runtimeEventState(context).get<Map<string, StableToolCallOccurrence>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.toolCallOccurrences,
+  )?.has(toolCallId) ?? false;
+}
+
 function isTerminalToolCallStatus(status: AgentToolCall["status"]) {
   return status === "completed" || status === "failed" || status === "cancelled";
 }
@@ -579,7 +590,13 @@ export function handleRuntimeToolCallEvent(
     event.toolCall,
     context,
   );
-  if (event.origin?.scope !== "subagent") {
+  const startsNewToolCall = !hasRuntimeToolCallOccurrence(
+    sessionId,
+    stableToolCall.id,
+    context,
+  );
+  const updatesAssistantBoundary = stableToolCall.kind === "subagent" || startsNewToolCall;
+  if (event.origin?.scope !== "subagent" && updatesAssistantBoundary) {
     flushLiveAssistantMessage(sessionId, context);
     if (stableToolCall.kind !== "subagent") {
       finalizeRuntimeThinking(sessionId, "completed", context);

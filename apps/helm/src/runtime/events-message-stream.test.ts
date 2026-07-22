@@ -780,6 +780,188 @@ test("runtime assistant chunks stay split when tool activity occurs between text
   assert.equal(appendedToolCalls.length, 0);
 });
 
+test("runtime tool-call updates do not split assistant content after the tool boundary", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const sessionId = "session-tool-update-message";
+  const context = createTestContext(logs, capture, sessionId, {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: "provider-message-1",
+        role: "assistant",
+        text: "工具前说明",
+        timestamp: "2026-07-22T00:00:01.000Z",
+        streamMode: "delta",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-shell-1",
+        commandId: "command-shell-1",
+        kind: "shell",
+        title: "Run tests",
+        status: "running",
+        input: "pnpm test",
+        timestamp: "2026-07-22T00:00:02.000Z",
+        updatedAt: "2026-07-22T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: "provider-message-1",
+        role: "assistant",
+        text: "工具后第一段",
+        timestamp: "2026-07-22T00:00:03.000Z",
+        streamMode: "delta",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-shell-1",
+        commandId: "command-shell-1",
+        kind: "shell",
+        title: "Run tests",
+        status: "completed",
+        output: "PASS",
+        timestamp: "2026-07-22T00:00:02.000Z",
+        updatedAt: "2026-07-22T00:00:04.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: "provider-message-1",
+        role: "assistant",
+        text: "工具后第二段",
+        timestamp: "2026-07-22T00:00:05.000Z",
+        streamMode: "delta",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const assistantEntries = capture.timelineEntries?.filter(
+    (entry) => entry.kind === "assistant_message",
+  ) ?? [];
+  assert.equal(assistantEntries.length, 2);
+  assert.deepEqual(
+    assistantEntries.map((entry) => entry.chunks.map((chunk) => chunk.text).join("")),
+    ["工具前说明", "工具后第一段工具后第二段"],
+  );
+  const toolEntry = capture.timelineEntries?.find((entry) => entry.kind === "tool_call");
+  assert.equal(toolEntry?.kind === "tool_call" ? toolEntry.toolCall.status : undefined, "completed");
+});
+
+test("runtime command output does not split assistant content", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const sessionId = "session-command-output-message";
+  const context = createTestContext(logs, capture, sessionId, {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: "provider-message-1",
+        role: "assistant",
+        text: "正文第一段",
+        timestamp: "2026-07-22T00:00:01.000Z",
+        streamMode: "delta",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "command-output",
+      chunk: {
+        id: "output-1",
+        commandId: "command-shell-1",
+        stream: "stdout",
+        text: "PASS",
+        timestamp: "2026-07-22T00:00:02.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: "provider-message-1",
+        role: "assistant",
+        text: "正文第二段",
+        timestamp: "2026-07-22T00:00:03.000Z",
+        streamMode: "delta",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const assistantEntries = capture.timelineEntries?.filter(
+    (entry) => entry.kind === "assistant_message",
+  ) ?? [];
+  assert.equal(assistantEntries.length, 1);
+  assert.equal(
+    assistantEntries[0]?.chunks.map((chunk) => chunk.text).join(""),
+    "正文第一段正文第二段",
+  );
+  assert.equal(
+    capture.timelineEntries?.filter((entry) => entry.kind === "command_output").length,
+    1,
+  );
+});
+
 test("runtime subagent child tools do not split cumulative assistant text", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

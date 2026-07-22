@@ -2,7 +2,6 @@ import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { CommandChunk } from "@tiller/shared";
 import type { HelmHandlerContext } from "../../../handlers/context";
 import { emitFirstHelmPromptTrace } from "../../prompt-trace";
-import { bumpAssistantStreamSegment } from "../../segment-state";
 import {
   assertCanonicalTimelinePipeline,
   nextLiveEventSequence,
@@ -10,7 +9,6 @@ import {
   routeCanonicalTimelineEvent,
 } from "./canonical";
 import { materializeRuntimeCommandOutputChunk } from "./effects";
-import { flushLiveAssistantMessage } from "./message-stream";
 import {
   clearRuntimeEventTimer,
   type CommandOutputSummary,
@@ -66,7 +64,6 @@ function emitRuntimeCommandOutputChunk(
   context: HelmHandlerContext,
 ) {
   assertCanonicalTimelinePipeline(context);
-  bumpAssistantStreamSegment(sessionId);
   const orderedChunk = {
     ...chunk,
     sequence: chunk.sequence ?? nextLiveEventSequence(sessionId, context),
@@ -239,7 +236,6 @@ export function handleRuntimeCommandOutputEvent(
     phase: "helm.runtime.first_command_output",
     meta: { commandId: event.chunk.commandId, stream: event.chunk.stream },
   });
-  flushLiveAssistantMessage(sessionId, context);
   bufferCommandOutputChunk(sessionId, {
     ...event.chunk,
     sequence: event.chunk.sequence ?? nextLiveEventSequence(sessionId, context),

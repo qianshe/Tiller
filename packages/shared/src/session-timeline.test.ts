@@ -394,6 +394,105 @@ test("sortSessionTimelineEntries keeps a cumulative assistant reply intact acros
   );
 });
 
+test("sortSessionTimelineEntries does not split assistant content at command output", () => {
+  const entries: SessionTimelineEntry[] = [];
+  appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "先说明",
+    timestamp: at(1),
+    sequence: 1,
+    streaming: true,
+    streamMode: "snapshot",
+  });
+  entries.push({
+    id: "output:call-shell:2",
+    kind: "command_output",
+    commandId: "call-shell",
+    output: {
+      id: "output-1",
+      commandId: "call-shell",
+      stream: "stdout",
+      text: "工具输出",
+      timestamp: at(2),
+      sequence: 2,
+    },
+    timestamp: at(2),
+    updatedAt: at(2),
+    sequence: 2,
+  });
+  appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "先说明再继续",
+    timestamp: at(3),
+    sequence: 3,
+    streaming: false,
+    streamMode: "snapshot",
+  });
+
+  const timeline = sortSessionTimelineEntries(entries);
+
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "assistant-1"],
+      ["command_output", "output:call-shell:2"],
+    ],
+  );
+  assert.equal(timeline[0]?.kind, "assistant_message");
+  if (timeline[0]?.kind !== "assistant_message") {
+    throw new Error("Expected assistant_message");
+  }
+  assert.equal(timeline[0].chunks.length, 1);
+  assert.equal(timeline[0].chunks[0]?.text, "先说明再继续");
+});
+
+test("sortSessionTimelineEntries still splits assistant content at a new tool call", () => {
+  const entries: SessionTimelineEntry[] = [];
+  appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "先说明",
+    timestamp: at(1),
+    sequence: 1,
+    streaming: true,
+    streamMode: "snapshot",
+  });
+  appendToolCallToSessionTimeline(entries, {
+    id: "call-shell",
+    kind: "shell",
+    title: "Shell",
+    status: "running",
+    timestamp: at(2),
+    updatedAt: at(2),
+    sequence: 2,
+  });
+  appendMessageToSessionTimeline(entries, {
+    id: "assistant-1",
+    role: "assistant",
+    text: "先说明再继续",
+    timestamp: at(3),
+    sequence: 3,
+    streaming: false,
+    streamMode: "snapshot",
+  });
+
+  const timeline = sortSessionTimelineEntries(entries);
+
+  assert.deepEqual(
+    timeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "assistant-1"],
+      ["tool_call", "tool:call-shell"],
+      ["assistant_message", "assistant-1#p1"],
+    ],
+  );
+  const assistantEntries = timeline.filter((entry) => entry.kind === "assistant_message");
+  assert.equal(assistantEntries[0]?.chunks[0]?.text, "先说明");
+  assert.equal(assistantEntries[1]?.chunks[0]?.text, "再继续");
+});
+
 test("sortSessionTimelineEntries keeps compacted transcript boundaries ahead of the first post-compaction assistant", () => {
   const timeline = sortSessionTimelineEntries([
     {
