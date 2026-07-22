@@ -246,7 +246,7 @@ export function MissionInspector({
                 rows={4}
                 value={commitMessage}
                 onChange={(event) => setCommitMessage(event.currentTarget.value)}
-                className="min-h-[96px] w-full resize-none overflow-y-auto rounded-none border border-border-ghost bg-surface-sunken/35 px-2 py-2 pr-[7.5rem] pb-10 text-section leading-5 shadow-none placeholder:text-muted-foreground focus:bg-surface-sunken/50 focus:outline-none"
+                className="min-h-[96px] w-full resize-none overflow-y-auto rounded-none border border-border-ghost bg-surface-sunken/35 px-2 py-2 pb-10 text-section leading-5 shadow-none placeholder:text-muted-foreground focus:bg-surface-sunken/50 focus:outline-none"
                 placeholder="提交信息(必填) · 描述本次变更"
                 aria-label="提交信息"
                 disabled={committing}

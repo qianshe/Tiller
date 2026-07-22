@@ -709,7 +709,8 @@ test("mission diff and inspector commit controls support full-row review", () =>
   assert.match(inspectorSource, /mission-inspector-commit-editor relative min-w-0 w-full/);
   assert.match(inspectorSource, /mission-inspector-commit-submit absolute bottom-2 right-2/);
   assert.match(shellStylesSource, /\.mission-responsive-mode \[data-mission-mobile-pane\] \.mission-inspector-commit-editor \.mission-inspector-commit-submit\s*\{[^}]*position:\s*absolute;/s);
-  assert.match(inspectorSource, /pr-\[7\.5rem\] pb-10/);
+  assert.match(inspectorSource, /px-2 py-2 pb-10/);
+  assert.doesNotMatch(inspectorSource, /pr-\[7\.5rem\]/);
   assert.doesNotMatch(inspectorSource, /grid grid-cols-\[minmax\(0,1fr\)_auto\] items-end gap-2 md:block/);
   assert.match(inspectorSource, /mission-worktree-picker relative grid grid-cols-\[minmax\(0,1fr\)_auto_auto\] items-center gap-1/);
   assert.match(inspectorSource, /min-h-\[96px\]/);
