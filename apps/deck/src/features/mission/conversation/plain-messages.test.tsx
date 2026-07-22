@@ -4965,3 +4965,25 @@ test("user messages render as plain text and keep the collapse affordance", () =
   assert.doesNotMatch(html, />你<\/span>/);
   assert.doesNotMatch(html, /plain-assistant-segment-dot/);
 });
+
+test("plain messages show a loading hint while the first history page is loading and the list is empty", () => {
+  const html = renderPlainMessages({
+    items: [],
+    emptyText: "等待回复",
+    historyState: { hasMore: false, loading: true },
+  });
+
+  assert.match(html, /加载消息中…/);
+  assert.doesNotMatch(html, /等待回复/);
+});
+
+test("plain messages fall back to emptyText once loading finishes with no messages", () => {
+  const html = renderPlainMessages({
+    items: [],
+    emptyText: "等待回复",
+    historyState: { hasMore: false, loading: false },
+  });
+
+  assert.match(html, /等待回复/);
+  assert.doesNotMatch(html, /加载消息中…/);
+});

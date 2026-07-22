@@ -74,6 +74,7 @@ export function PlainMessages({
   const remoteHistoryRevealBaselineRef = useRef<RemoteHistoryRevealBaseline | null>(null);
   const renderRevealRequestedRef = useRef(false);
   const historyRevealUnlockTimeoutRef = useRef<number | null>(null);
+  const didInitialScrollRef = useRef(false);
   const timelineCacheRef = useRef<{
     items: SessionTimelineEntry[];
     sessionId: string | null;
@@ -89,6 +90,7 @@ export function PlainMessages({
     remoteHistoryRevealBaselineRef.current = null;
     renderRevealRequestedRef.current = false;
     localScrollSnapshotRef.current = null;
+    didInitialScrollRef.current = false;
     timelineCacheRef.current = { items: [], sessionId };
     setVisibleItemLimit(INITIAL_PLAIN_MESSAGE_RENDER_LIMIT);
     setDismissedSystemMessageIds(new Set());
@@ -289,8 +291,26 @@ export function PlainMessages({
     localScrollSnapshotRef.current = null;
   }, [visibleRenderMessages.length, visibleRenderSignature]);
 
+  // 首批消息到达时同步(paint 前)滚到底,消除"空容器在顶→消息到了再跳底"的跳动;
+  // 仅首次生效,后续流式增长交还 stickToBottom / 外层滚动逻辑。
+  useLayoutEffect(() => {
+    if (didInitialScrollRef.current || displayItems.length === 0) {
+      return;
+    }
+    const scrollContainer = resolvePlainMessageScrollContainer(listRef.current);
+    if (!scrollContainer) {
+      return;
+    }
+    scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    didInitialScrollRef.current = true;
+  }, [displayItems.length]);
+
   if (!displayItems.length) {
-    return <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">{emptyText}</div>;
+    return (
+      <div className="empty-state rounded-md border border-border-ghost bg-surface-sunken p-4 text-sm text-muted-foreground">
+        {historyState?.loading ? "加载消息中…" : emptyText}
+      </div>
+    );
   }
 
   const startsInsideEarlierContext = Boolean(

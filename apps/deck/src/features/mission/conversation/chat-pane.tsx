@@ -16,7 +16,7 @@ import type {
   RefObject,
   UIEventHandler,
 } from "react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
 import { useDeckStore, type SessionLegacyEvidenceState } from "../../../store";
 import { MissionMessageTimeline } from "./message-timeline";
@@ -547,7 +547,7 @@ export function MissionChatPane({
     setMenuOpen(false);
   };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const chatMain = chatMainRef.current;
     if (!chatMain) {
       return;

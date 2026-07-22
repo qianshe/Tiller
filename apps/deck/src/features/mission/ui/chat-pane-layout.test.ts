@@ -387,6 +387,8 @@ test("mission chat pane follows the v6 workbench header and canvas body", () => 
   assert.match(chatPaneSource, /const handleBodyScroll = useCallback/);
   assert.match(chatPaneSource, /onBodyScroll=\{handleBodyScroll\}/);
   assert.match(chatPaneSource, /useLayoutEffect\(\(\) => \{/);
+  // 消息到达时同步(paint 前)滚到底,避免"先顶后底"跳动与顶部 prime 误触加载历史
+  assert.match(chatPaneSource, /useLayoutEffect\(\(\) => \{\s*const chatMain = chatMainRef\.current;\s*if \(!chatMain\)/);
   assert.match(chatPaneSource, /selectedSessionId: string \| null/);
   assert.match(chatPaneSource, /active=\{session\.id === selectedSessionId\}/);
   assert.match(chatPaneSource, /data-active-session-card=\{active \? "true" : undefined\}/);
