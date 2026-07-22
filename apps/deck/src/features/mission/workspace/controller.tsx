@@ -982,6 +982,7 @@ export function MissionWorktree(props: any) {
               sessionHistoryState={sessionHistoryState}
               toggleMissionProjectNode={toggleMissionProjectNode}
               setSelectedMissionMobilePane={setSelectedMissionMobilePane}
+              isMobile={isMissionMobile}
               resizer={null}
             />{" "}
           </ResizablePanel>

@@ -74,8 +74,10 @@ test("SessionRow keeps the action trigger inside the active row frame", () => {
 test("SessionRow marks managed worktree sessions with a branch tooltip", () => {
   const html = renderSessionRow();
 
-  assert.match(html, /title="Worktree：feature"/u);
+  // worktree 标识复用用量展示的 Tooltip 风格,取代原生 title 属性;正文经 Portal 运行时挂载
   assert.match(html, /mission-tree-worktree-icon/u);
+  assert.match(html, /data-state="closed"/u);
+  assert.doesNotMatch(html, /title="Worktree/u);
 });
 
 test("SessionRow marks named worktrees when cwd matches a secondary worktree path", () => {
@@ -90,8 +92,9 @@ test("SessionRow marks named worktrees when cwd matches a secondary worktree pat
     ],
   });
 
-  assert.match(html, /title="Worktree：test-worktree"/u);
   assert.match(html, /mission-tree-worktree-icon/u);
+  assert.match(html, /data-state="closed"/u);
+  assert.doesNotMatch(html, /title="Worktree/u);
 });
 
 test("SessionRow does not mark the project root worktree as a branch session", () => {

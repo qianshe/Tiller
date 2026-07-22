@@ -1,9 +1,10 @@
 import {
+  useState,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
 } from "react";
-import type { ProjectSummary, SessionStatus, SessionSummary } from "@tiller/shared";
+import type { ProjectSummary, SessionStatus, SessionSummary, WorktreeSummary } from "@tiller/shared";
 import {
   Badge,
   Button,
@@ -12,6 +13,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
   Icon,
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
 } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 
@@ -29,6 +34,7 @@ type SessionRowProps = {
   project: ProjectSummary;
   session: SessionSummary;
   sessionStatus: SessionStatus;
+  isMobile?: boolean;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
 };
 
@@ -46,11 +52,13 @@ export function SessionRow({
   project,
   session,
   sessionStatus,
+  isMobile = false,
   setPendingSessionCleanup,
 }: SessionRowProps) {
   const sessionPending = isSessionExecutionPending(sessionStatus);
   const title = resolveDisplayTitle(session);
-  const worktreeLabel = resolveSessionWorktreeLabel(session, project);
+  const [worktreeTooltipOpen, setWorktreeTooltipOpen] = useState(false);
+  const worktreeDetail = resolveSessionWorktreeDetail(session, project);
   const relativeUpdatedAt = formatRelativeTime(session.updatedAt);
   const isFocused = session.id === (highlightedSessionId ?? activeSessionId);
   const isOpenSession = openSessionIds.has(session.id);
@@ -85,13 +93,38 @@ export function SessionRow({
         <span className="mission-tree-main flex min-w-0 items-center">
           <span className="min-w-0 truncate text-action leading-none">{title}</span>
         </span>
-        {worktreeLabel ? (
-          <span
-            className="mission-tree-worktree-icon grid size-3.5 place-items-center text-muted-foreground/80"
-            title={`Worktree：${worktreeLabel}`}
-          >
-            <Icon name="branch" size={10} />
-          </span>
+        {worktreeDetail ? (
+          <TooltipProvider delayDuration={300}>
+            <Tooltip
+              open={worktreeTooltipOpen}
+              onOpenChange={setWorktreeTooltipOpen}
+              disableHoverableContent
+            >
+              <TooltipTrigger asChild>
+                <span
+                  className="mission-tree-worktree-icon grid size-3.5 place-items-center text-muted-foreground/80"
+                  onClick={
+                    isMobile
+                      ? (event) => {
+                          event.stopPropagation();
+                          setWorktreeTooltipOpen((open) => !open);
+                        }
+                      : undefined
+                  }
+                >
+                  <Icon name="branch" size={10} />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent className="min-w-0 max-w-[min(22rem,85vw)] px-2.5 py-1 text-left">
+                <div className="grid gap-0.5 text-xs leading-tight tabular-nums">
+                  <span className="min-w-0 truncate text-foreground">{worktreeDetail.name}</span>
+                  {worktreeDetail.branch ? (
+                    <span className="min-w-0 truncate text-muted-foreground">{worktreeDetail.branch}</span>
+                  ) : null}
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         ) : (
           <span aria-hidden="true" className="size-3.5" />
         )}
@@ -156,11 +189,39 @@ export function SessionRow({
   );
 }
 
-function resolveSessionWorktreeLabel(session: SessionSummary, project: ProjectSummary) {
+type WorktreeDetail = {
+  name: string;
+  branch?: string;
+};
+
+function resolveSessionWorktreeDetail(
+  session: SessionSummary,
+  project: ProjectSummary,
+): WorktreeDetail | null {
   if (!isWorktreeSession(session, project)) {
     return null;
   }
-  return session.worktreeName || session.cwd || null;
+  const normalizedCwd = normalizeWorktreePath(session.cwd);
+  const matchedWorktree = normalizedCwd
+    ? project.worktrees?.find(
+        (worktree) => normalizeWorktreePath(worktree.path) === normalizedCwd,
+      )
+    : undefined;
+  const name = resolveWorktreeFolderName(session, matchedWorktree);
+  const branch = matchedWorktree?.branch;
+  return branch ? { name, branch } : { name };
+}
+
+function resolveWorktreeFolderName(
+  session: SessionSummary,
+  matchedWorktree: WorktreeSummary | undefined,
+) {
+  const fromName = matchedWorktree?.name?.trim() || session.worktreeName?.trim();
+  if (fromName) {
+    return fromName;
+  }
+  const segments = session.cwd.replace(/\\/gu, "/").replace(/\/+$/u, "").split("/");
+  return segments.at(-1) || session.cwd;
 }
 
 function isWorktreeSession(session: SessionSummary, project: ProjectSummary) {

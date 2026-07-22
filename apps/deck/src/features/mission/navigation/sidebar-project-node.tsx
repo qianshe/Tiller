@@ -32,6 +32,7 @@ type SidebarProjectNodeProps = {
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
   toggleMissionProjectNode: (projectId: string) => void;
   setSelectedMissionMobilePane: Dispatch<SetStateAction<MissionMobilePane>>;
+  isMobile?: boolean;
 };
 
 /**
@@ -59,6 +60,7 @@ export function SidebarProjectNode({
   setPendingSessionCleanup,
   toggleMissionProjectNode,
   setSelectedMissionMobilePane,
+  isMobile = false,
 }: SidebarProjectNodeProps) {
   const projectNodeSessions = sessions.filter(
     (session) => resolveSessionProjectId(session, projects) === project.id,
@@ -120,6 +122,7 @@ export function SidebarProjectNode({
                   project={project}
                   session={session}
                   sessionStatus={sessionStatus}
+                  isMobile={isMobile}
                   setPendingSessionCleanup={setPendingSessionCleanup}
                 />
               );
