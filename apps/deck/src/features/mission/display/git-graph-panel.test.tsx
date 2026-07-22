@@ -138,3 +138,70 @@ test("git graph panel does not render commit hashes in the list body", () => {
   assert.doesNotMatch(html, /abc1234/);
   assert.match(html, /Test commit/);
 });
+
+test("git graph panel exposes a click trigger on each commit row for mobile detail expansion", () => {
+  const gitGraph: GitGraphState = {
+    projectId: "test",
+    cwd: "/test",
+    head: "abc1234",
+    commits: [
+      {
+        hash: "abc1234567890",
+        parents: [],
+        refs: [],
+        subject: "Add feature X",
+        authorName: "John Doe",
+        authoredAt: new Date().toISOString(),
+        body: "第一条说明",
+        changedFiles: 3,
+        insertions: 12,
+        deletions: 4,
+      },
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    createElement(GitGraphPanel, {
+      gitGraph,
+      onSelectCommit: noop,
+    }),
+  );
+
+  // 每行带可点击触发器与 aria 属性,移动端点击即可展开详情
+  assert.match(html, /data-commit-index="0"/);
+  assert.match(html, /aria-expanded="false"/);
+  // 初始折叠:行内不展示作者/时间等详情块
+  assert.doesNotMatch(html, /data-commit-index[\s\S]*>作者</);
+});
+
+test("git graph panel expands commit detail inline when a commit is preselected", () => {
+  const gitGraph: GitGraphState = {
+    projectId: "test",
+    cwd: "/test",
+    head: "abc1234",
+    commits: [
+      {
+        hash: "abc1234567890",
+        parents: [],
+        refs: [],
+        subject: "Add feature X",
+        authorName: "John Doe",
+        authoredAt: new Date("2026-01-01T00:00:00Z").toISOString(),
+      },
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    createElement(GitGraphPanel, {
+      gitGraph,
+      selectedCommitHash: "abc1234567890",
+      onSelectCommit: noop,
+    }),
+  );
+
+  // 预选中提交时,详情块就地展开,作者/时间/哈希可见
+  assert.match(html, /aria-expanded="true"/);
+  assert.match(html, /作者/);
+  assert.match(html, /John Doe/);
+  assert.match(html, /abc1234567890/);
+});
