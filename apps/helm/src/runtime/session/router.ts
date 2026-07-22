@@ -615,6 +615,5 @@ export async function cancelSessionRuntime(
     message: "Cancelled by user",
   }, context);
   record.runtime.cancel();
-  context.sessions.delete(sessionId);
   return true;
 }

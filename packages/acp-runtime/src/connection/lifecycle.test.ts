@@ -117,6 +117,7 @@ const agent = {
     }
     return {};
   },
+  async cancel() {},
   async closeSession(params) {
     incrementCount(closeSessionCountPath);
     writeFileSync(closeSessionIdPath, params.sessionId, "utf8");
@@ -652,6 +653,49 @@ test("prompt emits idle after fire-and-forget assistant updates are delivered", 
     assert.notEqual(messageIndex, -1);
     assert.notEqual(idleIndex, -1);
     assert.equal(messageIndex < idleIndex, true);
+
+    await connection.dispose();
+  } finally {
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
+test("cancelling a turn keeps the ACP session reusable", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-cancel-reuse-"));
+  mkdirSync(tempDir, { recursive: true });
+  writeFileSync(join(tempDir, "marker.txt"), "reused session", "utf8");
+  try {
+    const { agentPath } = writeInitializeOnlyAgent(tempDir);
+    const connection = await AcpConnection.open({
+      provider: createProvider("node", [agentPath]),
+      worktree: { ...worktree, path: tempDir },
+    });
+    const events: Array<{ type: string; status?: string }> = [];
+    const handle = await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event as { type: string; status?: string }),
+    });
+
+    handle.cancel();
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await handle.prompt("continue after cancellation");
+
+    assert.equal(
+      connection.inventory().sessions.some((session) => session.tillerSessionId === "session-1"),
+      true,
+    );
+    assert.equal(
+      events.some((event) => event.type === "status" && event.status === "cancelled"),
+      true,
+    );
+    assert.equal(
+      events.some((event) => event.type === "status" && event.status === "idle"),
+      true,
+    );
 
     await connection.dispose();
   } finally {

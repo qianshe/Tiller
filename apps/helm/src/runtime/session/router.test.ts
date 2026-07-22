@@ -1093,7 +1093,7 @@ test("configureSessionRuntime saves config when no runtime is active", async () 
   assert.equal(result.state.model, "provider-default");
 });
 
-test("cancelSessionRuntime canonicalizes active tools before clearing the runtime", async () => {
+test("cancelSessionRuntime canonicalizes active tools while keeping the runtime reusable", async () => {
   let cancelled = false;
   const { context, sessions, timelineEntries, broadcasts } = createContext({
     activeRuntime: {
@@ -1126,7 +1126,7 @@ test("cancelSessionRuntime canonicalizes active tools before clearing the runtim
 
   assert.equal(handled, true);
   assert.equal(cancelled, true);
-  assert.equal(sessions.has("session-1"), false);
+  assert.equal(sessions.has("session-1"), true);
   const subagentEntry = timelineEntries.find((entry) =>
     entry.kind === "tool_call" && entry.toolCall.id === "subagent-running"
   );

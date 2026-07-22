@@ -106,6 +106,21 @@ test("worktree model allows sending once restored to same-process runtime", () =
   assert.equal(model.activeSessionRestoreGate.canChat, true);
 });
 
+test("worktree model allows another prompt after the active turn is cancelled", () => {
+  const activeSession = {
+    ...baseInput().activeSession,
+    status: "cancelled",
+  };
+  const model = buildMissionWorktreeModel(baseInput({
+    activeSession,
+    statuses: { [activeSession.id]: "cancelled" },
+  }));
+
+  assert.equal(model.canSend, true);
+  assert.equal(model.sessionExecutionPending, false);
+  assert.equal(model.activeSessionRestoreGate.canChat, true);
+});
+
 test("worktree model blocks sending until the focused session timeline is loaded", () => {
   const missingTimeline = buildMissionWorktreeModel(baseInput({
     sessionTimeline: {},

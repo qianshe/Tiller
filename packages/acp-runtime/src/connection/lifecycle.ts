@@ -638,12 +638,7 @@ export class AcpConnection {
     }
     this.stopIdlePromptObservation(tillerSessionId);
     void this.state.agent.cancel({ sessionId: session.runtimeSessionId })
-      .catch(() => undefined)
-      .finally(() => {
-        this.sessions.delete(tillerSessionId);
-        disposeAdapterSession(this.state.provider, session.runtimeSessionId);
-        this.disposeIfIdle();
-      });
+      .catch(() => undefined);
     session.onEvent({ type: "status", status: "cancelled", message: "Cancelled by remote operator" });
   }
 

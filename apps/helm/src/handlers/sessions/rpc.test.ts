@@ -2159,7 +2159,7 @@ test("session/unsubscribe records a session topic removal", async () => {
   assert.deepEqual(result, { ok: true, message: "Unsubscribed from session s1." });
 });
 
-test("session RPC notification cancels active runtime and clears stale handle", async () => {
+test("session RPC notification cancels the active turn and keeps the session handle", async () => {
   let cancelled = false;
   const summary = {
     id: "s1",
@@ -2189,7 +2189,7 @@ test("session RPC notification cancels active runtime and clears stale handle", 
 
   assert.equal(handled, true);
   assert.equal(cancelled, true);
-  assert.equal(sessions.has("s1"), false);
+  assert.equal(sessions.has("s1"), true);
 });
 
 test("session/prompt acknowledges before runtime prompt failures are reported", async () => {
