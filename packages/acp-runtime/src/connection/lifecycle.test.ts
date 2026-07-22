@@ -226,7 +226,9 @@ test("AcpConnection.open terminates the child process when initialize times out"
 
     await assert.rejects(
       AcpConnection.open({
-        provider: { ...createProvider("node", [agentPath]), initializeTimeoutMs: 100 },
+        // Headroom so the silent agent's cold start still writes its pid file before the
+        // initialize timeout fires; 100ms flakes on slow CI runners where node startup ≈ timeout.
+        provider: { ...createProvider("node", [agentPath]), initializeTimeoutMs: 500 },
         worktree: { ...worktree, path: tempDir },
       }),
       /Timed out waiting for ACP response: initialize/u,
