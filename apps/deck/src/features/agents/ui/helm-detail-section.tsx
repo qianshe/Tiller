@@ -200,13 +200,13 @@ export function HelmDetailSection({
           </Button>
         )}
         <Icon name="server" size={12} className="text-muted-foreground" />
-        <span className="font-mono text-2xs tabular text-foreground">{selectedHelm.name}</span>
+        <span className="min-w-0 truncate font-mono text-2xs tabular text-foreground">{selectedHelm.name}</span>
         <StatusDot
           tone={selectedHelmIsConnected ? "active" : selectedHelmConnection === "connecting" ? "primary" : "idle"}
           pulse={selectedHelmIsConnected || selectedHelmConnection === "connecting"}
           size={5}
         />
-        <span className="font-mono text-meta tabular text-muted-foreground">
+        <span className="min-w-0 shrink font-mono text-meta tabular text-muted-foreground">
           {selectedHelm.host}:{selectedHelm.port}
         </span>
         <div className="flex-1" />
