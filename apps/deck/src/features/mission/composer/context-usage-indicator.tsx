@@ -69,6 +69,12 @@ export function buildUsageTooltipBody(usage: CanonicalSessionUsage): ReactElemen
  * SSR 下 effect 不跑,直接返回 lazy initial(真实快照),兼容
  * renderToStaticMarkup 测试与 zustand v5 server snapshot 行为。
  */
+function resolveEffectiveUsage(
+  usage: CanonicalSessionUsage | undefined,
+): CanonicalSessionUsage | undefined {
+  return usage && usage.size > 0 ? usage : undefined;
+}
+
 function useStableUsage(
   sessionId: string | null | undefined,
 ): CanonicalSessionUsage | undefined {
@@ -76,15 +82,19 @@ function useStableUsage(
     sessionId ? state.sessionLiveStates[sessionId]?.usage : undefined,
   );
   const [stable, setStable] = useState<CanonicalSessionUsage | undefined>(() =>
-    sessionId ? useDeckStore.getState().sessionLiveStates[sessionId]?.usage : undefined,
+    sessionId
+      ? resolveEffectiveUsage(useDeckStore.getState().sessionLiveStates[sessionId]?.usage)
+      : undefined,
   );
   const highWaterRef = useRef<number | undefined>(stable?.used);
   const lastFlushRef = useRef<number>(0);
 
   // 会话切换:重置水位与显示,避免跨会话串值。
+  // 与 live effect 一致,仅接受 size>0 的有效用量;provider 间歇上报 size:0(窗口大小未知)
+  // 时不应显示为 dash 占位,等后续有效上报到达再填充。
   useEffect(() => {
     const initial = sessionId
-      ? useDeckStore.getState().sessionLiveStates[sessionId]?.usage
+      ? resolveEffectiveUsage(useDeckStore.getState().sessionLiveStates[sessionId]?.usage)
       : undefined;
     highWaterRef.current = initial?.used;
     lastFlushRef.current = 0;

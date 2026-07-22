@@ -93,6 +93,21 @@ test("empty state still has no tooltip content section", () => {
   assert.doesNotMatch(html, /data-state=/u);
 });
 
+test("usage with size 0 (unknown window) renders as empty dash, not a stale ratio", () => {
+  useDeckStore.setState({
+    sessionLiveStates: {
+      "sess-zero": { usage: { used: 12345, size: 0 } } as any,
+    },
+  } as any);
+  const html = renderToStaticMarkup(
+    createElement(ContextUsageIndicator, { sessionId: "sess-zero", isMobile: false }),
+  );
+  // size:0 视为无效用量,显示 dash 占位,不渲染弧线与 tooltip
+  assert.match(html, /–/u);
+  assert.doesNotMatch(html, /role="button"/u);
+  assert.doesNotMatch(html, /data-state=/u);
+});
+
 test("high-water accepts first usage when prev is undefined", () => {
   assert.equal(shouldAcceptUsageUpdate(undefined, 1000), true);
 });
