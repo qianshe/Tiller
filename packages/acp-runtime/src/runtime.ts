@@ -82,6 +82,7 @@ export type {
   AcpSessionConfigState,
   AcpSessionRestoreStrategy,
   ProviderCleanupResult,
+  RuntimeEventOrigin,
   MappedSessionRuntimeEvents,
   SessionRuntimeEvent,
 } from "./runtime-types";

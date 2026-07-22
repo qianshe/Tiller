@@ -1,10 +1,15 @@
 import type { AcpRuntimeProviderConfig, AgentToolCall } from "@tiller/shared";
-import type { MappedSessionRuntimeEvents, SessionRuntimeEvent } from "./runtime-types";
+import type {
+  MappedSessionRuntimeEvents,
+  RuntimeEventOrigin,
+  SessionRuntimeEvent,
+} from "./runtime-types";
 import {
   mapAdapterMessageUpdate,
   mapAdapterToolCallUpdate,
   mapAdapterUnknownUpdate,
   recognizeAdapterToolCalls,
+  resolveAdapterRuntimeEventOrigin,
   SUPPRESS_SESSION_UPDATE,
 } from "./adapters";
 import type { AcpSessionUpdateProjection } from "./adapters";
@@ -75,8 +80,28 @@ export function mapSessionUpdateNotificationBatch(
   if (!envelope) {
     return null;
   }
-  const events = projectSessionUpdate(envelope, options);
+  const adapterContext = {
+    sessionId: envelope.sessionId,
+    cwd: options.sessionCwd,
+    updateType: envelope.updateType,
+    update: envelope.update,
+    text: envelope.text,
+  };
+  const origin = resolveAdapterRuntimeEventOrigin(options.provider, adapterContext);
+  const events = projectSessionUpdate(envelope, options).map((event) =>
+    attachRuntimeEventOrigin(event, origin),
+  );
   return events.length ? { sessionId: envelope.sessionId, events } : null;
+}
+
+function attachRuntimeEventOrigin(
+  event: SessionRuntimeEvent,
+  origin: RuntimeEventOrigin | undefined,
+): SessionRuntimeEvent {
+  if (!origin || (event.type !== "message" && event.type !== "tool-call")) {
+    return event;
+  }
+  return { ...event, origin };
 }
 
 function projectSessionUpdate(

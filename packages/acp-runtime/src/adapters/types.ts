@@ -5,7 +5,7 @@ import type {
   AgentToolCall,
   SessionReasoningEffort,
 } from "@tiller/shared";
-import type { SessionRuntimeEvent } from "../runtime-types";
+import type { RuntimeEventOrigin, SessionRuntimeEvent } from "../runtime-types";
 import type { ToolEvidence, ToolObservation } from "../tool-recognition";
 
 export type AcpLaunchContext = {
@@ -116,6 +116,9 @@ export type AcpAgentAdapter = {
   mapUnknownUpdate?(
     context: AcpSessionUpdateProjectionContext,
   ): AcpSessionUpdateProjection | null;
+  resolveRuntimeEventOrigin?(
+    context: AcpSessionUpdateProjectionContext,
+  ): RuntimeEventOrigin | undefined;
   beginPromptObservation?(context: AcpPromptObservationContext): void;
   pollPromptToolObservations?(
     context: AcpPromptObservationContext,

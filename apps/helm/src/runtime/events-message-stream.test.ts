@@ -780,6 +780,167 @@ test("runtime assistant chunks stay split when tool activity occurs between text
   assert.equal(appendedToolCalls.length, 0);
 });
 
+test("runtime subagent child tools do not split cumulative assistant text", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-subagent-child-message", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-subagent-child-message",
+    {
+      type: "message",
+      message: {
+        id: "session-subagent-child-message-a",
+        role: "assistant",
+        text: "我",
+        timestamp: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  for (const [index, kind] of (["read", "shell"] as const).entries()) {
+    handleRuntimeEvent(
+      "session-subagent-child-message",
+      {
+        type: "tool-call",
+        toolCall: {
+          id: `call-subagent-child-${index}`,
+          kind,
+          title: kind === "read" ? "Read file" : "Run command",
+          status: "completed",
+          timestamp: `2026-04-30T00:00:0${index + 2}.000Z`,
+          updatedAt: `2026-04-30T00:00:0${index + 2}.000Z`,
+        },
+        origin: {
+          scope: "subagent",
+          parentToolCallId: `call-parent-subagent-${index}`,
+        },
+      } satisfies SessionRuntimeEvent,
+      context,
+    );
+  }
+  handleRuntimeEvent(
+    "session-subagent-child-message",
+    {
+      type: "message",
+      message: {
+        id: "session-subagent-child-message-a",
+        role: "assistant",
+        text: "我准备继续处理。",
+        timestamp: "2026-04-30T00:00:04.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-subagent-child-message",
+    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const assistantEntries = capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
+  const toolEntries = capture.timelineEntries?.filter((entry) => entry.kind === "tool_call") ?? [];
+  assert.equal(assistantEntries.length, 1);
+  assert.equal(toolEntries.length, 2);
+  assert.equal(
+    capture.sessionUpdates?.some((update) =>
+      Object.hasOwn(JSON.parse(update.payloadJson) as object, "origin")
+    ),
+    false,
+  );
+  assert.doesNotMatch(JSON.stringify(capture.detailBroadcasts), /"origin"/u);
+  assert.equal(assistantEntries[0]?.kind, "assistant_message");
+  if (assistantEntries[0]?.kind !== "assistant_message") {
+    throw new Error("Expected assistant_message");
+  }
+  assert.equal(assistantEntries[0].chunks[0]?.text, "我准备继续处理。");
+});
+
+test("runtime subagent child tools do not finalize the main thinking segment", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-subagent-child-thinking", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(
+    "session-subagent-child-thinking",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "provider-main-thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "先分析",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        updatedAt: "2026-04-30T00:00:01.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-subagent-child-thinking",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-subagent-child-read",
+        kind: "read",
+        title: "Read file",
+        status: "completed",
+        timestamp: "2026-04-30T00:00:02.000Z",
+        updatedAt: "2026-04-30T00:00:02.000Z",
+      },
+      origin: {
+        scope: "subagent",
+        parentToolCallId: "call-parent-subagent",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-subagent-child-thinking",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "provider-main-thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "先分析，再继续",
+        timestamp: "2026-04-30T00:00:03.000Z",
+        updatedAt: "2026-04-30T00:00:03.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    "session-subagent-child-thinking",
+    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const thinkingChunks = (capture.timelineEntries ?? []).flatMap((entry) =>
+    entry.kind === "assistant_message"
+      ? entry.chunks.filter((chunk) => chunk.kind === "thinking")
+      : [],
+  );
+  assert.equal(thinkingChunks.length, 1);
+  assert.equal(thinkingChunks[0]?.text, "先分析，再继续");
+});
+
 test("runtime splits compaction summary and reply on distinct provider message ids", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

@@ -508,13 +508,20 @@ export function parsePersistedSessionEvent(payloadJson: string): PersistedSessio
 }
 
 function normalizeSessionUpdateEvent(event: PersistedSessionEvent): PersistedSessionEvent {
-  if (event.type !== "tool-call") {
-    return event;
+  if (event.type === "message") {
+    const normalized = { ...event };
+    delete normalized.origin;
+    return normalized;
   }
-  return {
-    ...event,
-    toolCall: compactBinaryToolCallOutput(event.toolCall),
-  };
+  if (event.type === "tool-call") {
+    const normalized = {
+      ...event,
+      toolCall: compactBinaryToolCallOutput(event.toolCall),
+    };
+    delete normalized.origin;
+    return normalized;
+  }
+  return event;
 }
 
 function backfillSessionUpdateEventMeta(

@@ -4,7 +4,7 @@ import type {
   AgentPlan,
   AgentToolCall,
 } from "@tiller/shared";
-import type { SessionRuntimeEvent } from "../runtime-types";
+import type { RuntimeEventOrigin, SessionRuntimeEvent } from "../runtime-types";
 import {
   createToolObservation,
   disposeToolRecognitionSession,
@@ -133,6 +133,15 @@ export function pollAdapterPromptEvents(
     ...toolEvents,
     ...(adapter.pollPromptRuntimeEvents?.(context) ?? []),
   ];
+}
+
+export function resolveAdapterRuntimeEventOrigin(
+  provider: AcpRuntimeProviderConfig | undefined,
+  context: AcpSessionUpdateProjectionContext,
+): RuntimeEventOrigin | undefined {
+  return provider
+    ? resolveAcpAgentAdapter(provider).resolveRuntimeEventOrigin?.(context)
+    : undefined;
 }
 
 export function disposeAdapterSession(

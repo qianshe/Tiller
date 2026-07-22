@@ -27,6 +27,11 @@ export type ProviderCleanupResult =
   | { kind: "remote-closed"; providerId: string; message: string }
   | { kind: "remote-close-failed"; providerId: string; message: string };
 
+export type RuntimeEventOrigin = {
+  scope: "subagent";
+  parentToolCallId: string;
+};
+
 export type SessionRuntimeEvent =
   | {
       type: "status";
@@ -36,6 +41,7 @@ export type SessionRuntimeEvent =
   | {
       type: "message";
       message: AgentMessage;
+      origin?: RuntimeEventOrigin;
     }
   | {
       type: "compaction";
@@ -57,6 +63,7 @@ export type SessionRuntimeEvent =
   | {
       type: "tool-call";
       toolCall: AgentToolCall;
+      origin?: RuntimeEventOrigin;
     }
   | {
       type: "plan-update";

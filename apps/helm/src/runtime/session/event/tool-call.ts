@@ -579,12 +579,14 @@ export function handleRuntimeToolCallEvent(
     event.toolCall,
     context,
   );
-  flushLiveAssistantMessage(sessionId, context);
-  if (stableToolCall.kind !== "subagent") {
-    finalizeRuntimeThinking(sessionId, "completed", context);
-    bumpAssistantStreamSegment(sessionId);
-  } else {
-    markAssistantStreamBoundary(sessionId);
+  if (event.origin?.scope !== "subagent") {
+    flushLiveAssistantMessage(sessionId, context);
+    if (stableToolCall.kind !== "subagent") {
+      finalizeRuntimeThinking(sessionId, "completed", context);
+      bumpAssistantStreamSegment(sessionId);
+    } else {
+      markAssistantStreamBoundary(sessionId);
+    }
   }
   const notificationSequence = stableToolCall.sequence ?? nextLiveEventSequence(sessionId, context);
   const compactedToolCall = compactBinaryToolCallOutput({

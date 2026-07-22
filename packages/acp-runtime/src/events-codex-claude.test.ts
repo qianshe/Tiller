@@ -42,6 +42,173 @@ test("mapSessionUpdateNotification maps Claude synthetic authentication errors t
   assert.equal(generic?.events[0]?.type, "message");
 });
 
+test("mapSessionUpdateNotification maps Claude subagent update metadata to runtime origins", () => {
+  const provider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-code-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const updates = [
+    {
+      sessionUpdate: "tool_call",
+      toolCallId: "call-subagent-read",
+      title: "Read",
+      kind: "read",
+      status: "pending",
+    },
+    {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call-subagent-read",
+      title: "Read",
+      kind: "read",
+      status: "completed",
+    },
+    {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "child output" },
+    },
+    {
+      sessionUpdate: "agent_thought_chunk",
+      content: { type: "text", text: "child thinking" },
+    },
+  ];
+
+  for (const [index, update] of updates.entries()) {
+    const mapped = mapSessionUpdateNotificationBatch(
+      {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: `session-claude-subagent-origin-${index}`,
+          update: {
+            ...update,
+            _meta: {
+              claudeCode: {
+                parentToolUseId: "call-parent-subagent",
+              },
+            },
+          },
+        },
+      },
+      { provider, providerId: provider.id },
+    );
+
+    assert.equal(mapped?.events.length, 1);
+    const event = mapped?.events[0];
+    assert.ok(event?.type === "message" || event?.type === "tool-call");
+    assert.deepEqual(event.origin, {
+      scope: "subagent",
+      parentToolCallId: "call-parent-subagent",
+    });
+  }
+});
+
+test("mapSessionUpdateNotification does not infer subagent origins without valid Claude metadata", () => {
+  const claudeProvider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-code-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const payload = (meta: unknown) => ({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-invalid-subagent-origin",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-read-without-origin",
+        title: "Read",
+        kind: "read",
+        status: "pending",
+        ...(meta === undefined ? {} : { _meta: meta }),
+      },
+    },
+  });
+
+  for (const meta of [
+    undefined,
+    {},
+    { claudeCode: {} },
+    { claudeCode: { parentToolUseId: "" } },
+    { claudeCode: { parentToolUseId: 42 } },
+  ]) {
+    const mapped = mapSessionUpdateNotificationBatch(payload(meta), {
+      provider: claudeProvider,
+      providerId: claudeProvider.id,
+    });
+    const event = mapped?.events[0];
+    assert.equal(event?.type, "tool-call");
+    assert.equal(event?.type === "tool-call" ? event.origin : undefined, undefined);
+  }
+
+  const generic = mapSessionUpdateNotificationBatch(
+    payload({ claudeCode: { parentToolUseId: "call-parent-subagent" } }),
+    { providerId: "generic" },
+  );
+  const genericEvent = generic?.events[0];
+  assert.equal(genericEvent?.type, "tool-call");
+  assert.equal(genericEvent?.type === "tool-call" ? genericEvent.origin : undefined, undefined);
+});
+
+test("non-Claude adapters ignore Claude subagent origin metadata", () => {
+  const providers = [
+    {
+      id: "codex",
+      name: "Codex",
+      command: "codex-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    {
+      id: "opencode",
+      name: "OpenCode",
+      command: "opencode-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    {
+      id: "generic",
+      name: "Generic ACP",
+      command: "generic-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+  ];
+
+  for (const provider of providers) {
+    const mapped = mapSessionUpdateNotificationBatch(
+      {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: `session-${provider.id}-claude-origin-metadata`,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: `call-${provider.id}-read`,
+            title: "Read",
+            kind: "read",
+            status: "pending",
+            _meta: {
+              claudeCode: {
+                parentToolUseId: "call-parent-subagent",
+              },
+            },
+          },
+        },
+      },
+      { provider, providerId: provider.id },
+    );
+
+    const event = mapped?.events[0];
+    assert.equal(event?.type, "tool-call");
+    assert.equal(event?.type === "tool-call" ? event.origin : undefined, undefined);
+  }
+});
+
 test("mapSessionUpdateNotification classifies Claude Task tool with subagent_type as subagent", () => {
   const mapped = mapSessionUpdateNotification(
     {

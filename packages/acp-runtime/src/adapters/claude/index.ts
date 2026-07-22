@@ -5,6 +5,7 @@ import {
   resolveUnsupportedCleanup,
 } from "../shared";
 import { createClaudeApiErrorMessageProjector } from "./api-error-message";
+import { resolveClaudeRuntimeEventOrigin } from "./event-origin";
 import { createClaudePlanUpdateProjector } from "./plan-events";
 import { createClaudePromptCompactionObserver } from "./prompt-compaction";
 import { createClaudePromptPlanObserver } from "./prompt-plan";
@@ -71,6 +72,7 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
     ],
     mapMessageUpdate: apiErrorMessages.mapUpdate,
     mapToolCallUpdate: planProjector.mapUpdate,
+    resolveRuntimeEventOrigin: resolveClaudeRuntimeEventOrigin,
     disposeSession: (sessionId) => {
       planProjector.disposeSession(sessionId);
       promptPlans.dispose(sessionId);
