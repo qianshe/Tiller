@@ -218,6 +218,7 @@ function inferToolCallKind(
   if (explicitKind && explicitKind !== "tool" && explicitKind !== "unknown") return explicitKind;
   if (isSkillToolInput(toolInput) || /(^|[_-])skill(s)?($|[_-])|execute_skill|load_skill/u.test(raw)) return "skill";
   if (mcp) return "mcp";
+  if (structuredKind === "shell") return "shell";
   if (/\b(?:read|view|list|glob)\b/u.test(raw)) return "read";
   if (/edit|delete|move|diff|patch|write|file/u.test(raw)) return "write";
   if (/search|grep/u.test(raw)) return "search";
