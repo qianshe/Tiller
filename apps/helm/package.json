@@ -40,7 +40,7 @@
     "@tiller/persistence": "workspace:*",
     "pino": "^10.3.1",
     "qrcode-terminal": "^0.12.0",
-    "ws": "^8.18.3",
+    "ws": "^8.21.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
