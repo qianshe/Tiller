@@ -57,3 +57,37 @@ export function persistMessageImageAttachments(input: {
     ...(attachments.length ? { attachments } : {}),
   };
 }
+
+export function hydratePromptImageAttachments(input: {
+  sessionId: string;
+  content?: AgentPromptContent[];
+  attachments: SessionAttachmentStore;
+}): AgentPromptContent[] | undefined {
+  if (!input.content?.length) {
+    return input.content;
+  }
+
+  return input.content.map((item) => {
+    if (item.type !== "image" || item.data) {
+      return item;
+    }
+    if (!item.attachmentId) {
+      throw new Error("Prompt image attachment is unavailable.");
+    }
+    const stored = input.attachments.get(item.attachmentId);
+    const bytes = input.attachments.readBytes(item.attachmentId);
+    if (!stored || stored.sessionId !== input.sessionId || !bytes) {
+      throw new Error("Prompt image attachment is unavailable.");
+    }
+    return {
+      ...item,
+      data: bytes.toString("base64"),
+    };
+  });
+}
+
+export function collectPromptAttachmentIds(content?: AgentPromptContent[]): string[] {
+  return content
+    ?.flatMap((item) => item.type === "image" && item.attachmentId ? [item.attachmentId] : [])
+    ?? [];
+}

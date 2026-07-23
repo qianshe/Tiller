@@ -1,4 +1,4 @@
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import {
   Tooltip,
   TooltipContent,
@@ -43,6 +43,15 @@ export function GitGraphPanel({
   selectedCommitHash,
   onSelectCommit,
 }: GitGraphPanelProps) {
+  const [expandedCommitHash, setExpandedCommitHash] = useState<string | null>(
+    selectedCommitHash ?? null,
+  );
+
+  function handleToggleCommit(hash: string) {
+    onSelectCommit?.(hash);
+    setExpandedCommitHash((current) => (current === hash ? null : hash));
+  }
+
   if (gitGraph?.loading) {
     return (
       <div
@@ -87,80 +96,95 @@ export function GitGraphPanel({
       <TooltipProvider delayDuration={180}>
         <div className="git-graph-list">
           {rows.map((row, index) => {
-            const isSelected = selectedCommitHash === row.commit.hash;
+            const isSelected = expandedCommitHash === row.commit.hash;
             return (
-              <Tooltip key={row.commit.hash}>
-                <TooltipTrigger asChild>
-                  <button
-                  type="button"
-                  data-merge-commit={row.commit.parents.length > 1 ? "true" : undefined}
-                  className={cn(
-                    "grid h-9 w-full items-center gap-2 px-3 text-left text-xs transition-colors hover:bg-surface-emphasis",
-                    isSelected && "bg-surface-emphasis",
-                  )}
-                    style={rowColumnStyle}
-                    onClick={() => onSelectCommit?.(row.commit.hash)}
+              <div key={row.commit.hash} data-commit-index={index}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      data-merge-commit={row.commit.parents.length > 1 ? "true" : undefined}
+                      aria-expanded={isSelected}
+                      className={cn(
+                        "grid h-9 w-full items-center gap-2 px-3 text-left text-xs transition-colors hover:bg-surface-emphasis",
+                        isSelected && "bg-surface-emphasis",
+                      )}
+                      style={rowColumnStyle}
+                      onClick={() => handleToggleCommit(row.commit.hash)}
+                    >
+                      <GraphLaneCell
+                        row={row}
+                        laneCount={visibleLaneCount}
+                        isFirst={index === 0}
+                        isLast={index === rows.length - 1}
+                      />
+                      <span className="flex h-full min-w-0 items-center gap-2 overflow-hidden border-b border-border-ghost">
+                        {row.commit.refs.length > 0 ? (
+                          <span className="flex shrink-0 flex-wrap gap-1">
+                            {row.commit.refs.map((ref, idx) => (
+                              <RefPill key={`${ref.name}-${idx}`} ref={ref} />
+                            ))}
+                          </span>
+                        ) : null}
+                        <span className="min-w-0 truncate">{row.commit.subject}</span>
+                      </span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent
+                    side="right"
+                    align="start"
+                    className="max-w-[460px] space-y-2 px-3 py-2 text-left"
                   >
-                    <GraphLaneCell
-                      row={row}
-                      laneCount={visibleLaneCount}
-                      isFirst={index === 0}
-                      isLast={index === rows.length - 1}
-                    />
-                    <span className="flex h-full min-w-0 items-center gap-2 overflow-hidden border-b border-border-ghost">
-                      {row.commit.refs.length > 0 ? (
-                        <span className="flex shrink-0 flex-wrap gap-1">
-                          {row.commit.refs.map((ref, idx) => (
-                            <RefPill key={`${ref.name}-${idx}`} ref={ref} />
-                          ))}
-                        </span>
-                      ) : null}
-                      <span className="min-w-0 truncate">{row.commit.subject}</span>
-                    </span>
-                  </button>
-                </TooltipTrigger>
-                <TooltipContent
-                  side="right"
-                  align="start"
-                  className="max-w-[460px] space-y-2 px-3 py-2 text-left"
-                >
-                  <div className="font-medium text-foreground">{row.commit.subject}</div>
-                  {row.commit.refs.length > 0 ? (
-                    <div className="flex flex-wrap gap-1">
-                      {row.commit.refs.map((ref, idx) => (
-                        <RefPill key={`tooltip-${ref.name}-${idx}`} ref={ref} />
-                      ))}
-                    </div>
-                  ) : null}
-                  {buildCommitTooltipMarkdown(row.commit) ? (
-                    <MarkdownMessage text={buildCommitTooltipMarkdown(row.commit)!} />
-                  ) : null}
-                  {typeof row.commit.changedFiles === "number" ? (
-                    <div className="text-2xs text-muted-foreground">
-                      已更改 {row.commit.changedFiles} 个文件
-                      {typeof row.commit.insertions === "number"
-                        ? `, ${row.commit.insertions} 行插入(+)`
-                        : ""}
-                      {typeof row.commit.deletions === "number"
-                        ? `, ${row.commit.deletions} 行删除(-)`
-                        : ""}
-                    </div>
-                  ) : null}
-                  <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-2xs text-muted-foreground">
-                    <span>作者</span>
-                    <span>{row.commit.authorName}</span>
-                    <span>时间</span>
-                    <span>{new Date(row.commit.authoredAt).toLocaleString("zh-CN")}</span>
-                    <span>提交</span>
-                    <span className="font-mono">{row.commit.hash}</span>
+                    <CommitDetail commit={row.commit} />
+                  </TooltipContent>
+                </Tooltip>
+                {isSelected ? (
+                  <div className="space-y-2 border-b border-border-ghost bg-surface px-3 py-2 text-left text-xs">
+                    <CommitDetail commit={row.commit} />
                   </div>
-                </TooltipContent>
-              </Tooltip>
+                ) : null}
+              </div>
             );
           })}
         </div>
       </TooltipProvider>
     </div>
+  );
+}
+
+function CommitDetail({ commit }: { commit: GitCommit }) {
+  const tooltipMarkdown = buildCommitTooltipMarkdown(commit);
+  return (
+    <>
+      <div className="font-medium text-foreground">{commit.subject}</div>
+      {commit.refs.length > 0 ? (
+        <div className="flex flex-wrap gap-1">
+          {commit.refs.map((ref, idx) => (
+            <RefPill key={`detail-${commit.hash}-${ref.name}-${idx}`} ref={ref} />
+          ))}
+        </div>
+      ) : null}
+      {tooltipMarkdown ? <MarkdownMessage text={tooltipMarkdown} /> : null}
+      {typeof commit.changedFiles === "number" ? (
+        <div className="text-2xs text-muted-foreground">
+          已更改 {commit.changedFiles} 个文件
+          {typeof commit.insertions === "number"
+            ? `, ${commit.insertions} 行插入(+)`
+            : ""}
+          {typeof commit.deletions === "number"
+            ? `, ${commit.deletions} 行删除(-)`
+            : ""}
+        </div>
+      ) : null}
+      <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-2xs text-muted-foreground">
+        <span>作者</span>
+        <span>{commit.authorName}</span>
+        <span>时间</span>
+        <span>{new Date(commit.authoredAt).toLocaleString("zh-CN")}</span>
+        <span>提交</span>
+        <span className="font-mono">{commit.hash}</span>
+      </div>
+    </>
   );
 }
 

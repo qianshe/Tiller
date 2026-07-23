@@ -20,15 +20,23 @@ export function resolveLaunchSpec(
 
   const cmdContent = readFileSync(resolvedCommand, "utf8");
   const scriptMatch = cmdContent.match(/"%_prog%"\s+"([^"]+)"\s+%\*/u);
-  if (!scriptMatch) {
+  if (scriptMatch) {
+    const scriptPath = expandWindowsBatchTarget(scriptMatch[1], resolvedCommand).replace(/\\/g, "/");
+    const localNode = join(dirname(resolvedCommand), "node.exe");
+    return {
+      command: existsSync(localNode) ? localNode : process.execPath,
+      args: [scriptPath, ...runtimeArgs],
+    };
+  }
+
+  const executableMatch = cmdContent.match(/"([^"]+\.(?:exe|cmd|bat))"\s+%\*/iu);
+  if (!executableMatch) {
     return { command: resolvedCommand, args: runtimeArgs };
   }
 
-  const scriptPath = scriptMatch[1].replace(/%dp0%?/giu, dirname(resolvedCommand).replace(/\\/g, "/"));
-  const localNode = join(dirname(resolvedCommand), "node.exe");
   return {
-    command: existsSync(localNode) ? localNode : process.execPath,
-    args: [scriptPath, ...runtimeArgs],
+    command: expandWindowsBatchTarget(executableMatch[1], resolvedCommand),
+    args: runtimeArgs,
   };
 }
 
@@ -43,6 +51,10 @@ function resolveWindowsCommand(command: string) {
   } catch {
     return command;
   }
+}
+
+function expandWindowsBatchTarget(target: string, resolvedCommand: string) {
+  return target.replace(/%dp0%/giu, dirname(resolvedCommand));
 }
 
 export function terminateChildProcess(pid: number | undefined) {

@@ -8,7 +8,6 @@ import type {
   AgentPlan,
   AgentToolCall,
   AcpAgentProvider,
-  SessionUpdateRecord,
   SessionSummary,
   SessionTimelineEntry,
   WorktreeSummary,
@@ -18,15 +17,12 @@ import { createSessionResumeService } from "./resume-service.js";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(currentDir, "resume-service.ts"), "utf8");
 
-test("restore replay completion logs only when replay content was persisted", () => {
-  assert.match(source, /hasRestoreReplayContent/);
-  assert.match(
-    source,
-    /if \(hasRestoreReplayContent\(replayCounts\)\) \{\s*logResumeInfo\(options, "runtime\.restore_replay\.completed"/,
-  );
+test("restore discards ACP replay instead of rebuilding local history", () => {
+  assert.doesNotMatch(source, /createRestoreReplayBuffer|providerHistory|acp_load_replay/u);
+  assert.match(source, /onRestoreReplayEvent: \(\) => undefined/u);
 });
 
-test("session restore uses ACP load replay as authoritative history", async () => {
+test("session restore discards ACP load replay without mutating local display history", async () => {
   const sessionId = "session-opencode-restore";
   const agent: AcpAgentProvider = {
     id: "opencode",
@@ -57,11 +53,12 @@ test("session restore uses ACP load replay as authoritative history", async () =
   let appliedSource = "";
   let appliedMessages: AgentMessage[] = [];
   const storedMessages: AgentMessage[] = [];
-  let replayUpdates: SessionUpdateRecord[] = [];
+  const runtimeEvents: Array<{ type: string; status?: string }> = [];
 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -122,11 +119,6 @@ test("session restore uses ACP load replay as authoritative history", async () =
         appendToolCall: () => undefined,
         replaceDiffs: () => undefined,
       },
-      sessionUpdateStore: {
-        replaceSession: (_sessionId: string, updates: SessionUpdateRecord[]) => {
-          replayUpdates = updates;
-        },
-      },
     } as any),
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
@@ -139,7 +131,9 @@ test("session restore uses ACP load replay as authoritative history", async () =
     }),
     hydrateSessionSummary: (next: SessionSummary) => next,
     persistRuntimeDescriptor: () => undefined,
-    handleRuntimeEvent: () => undefined,
+    handleRuntimeEvent: (_sessionId: string, event: { type: string; status?: string }) => {
+      runtimeEvents.push(event);
+    },
     logConnectionLifecycle: () => undefined,
     logInfo: () => undefined,
     logError: () => undefined,
@@ -149,15 +143,11 @@ test("session restore uses ACP load replay as authoritative history", async () =
 
   assert.equal(appliedSource, "");
   assert.deepEqual(appliedMessages, []);
-  assert.deepEqual(storedMessages.map((message) => [message.id, message.role, message.text]), [
-    ["load-assistant-1", "assistant", "第一条回复"],
-  ]);
-  assert.deepEqual(replayUpdates.map((update) => [update.source, update.providerId, update.runtimeSessionId, update.updateType]), [
-    ["acp_load_replay", "opencode", "runtime-1", "message"],
-  ]);
+  assert.deepEqual(storedMessages, []);
+  assert.deepEqual(runtimeEvents, [{ type: "status", status: "idle" }]);
 });
 
-test("session restore records replayed ACP plan for reimport hydration", async () => {
+test("session restore does not reimport replayed ACP plan", async () => {
   const sessionId = "session-codex-plan-restore";
   const plan: AgentPlan = {
     updatedAt: "2026-06-08T01:00:00.000Z",
@@ -190,11 +180,11 @@ test("session restore records replayed ACP plan for reimport hydration", async (
     runtimeSessionId: "runtime-codex-plan",
   };
   let recordedPlan: AgentPlan | undefined;
-  let replayUpdates: SessionUpdateRecord[] = [];
 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -243,11 +233,6 @@ test("session restore records replayed ACP plan for reimport hydration", async (
         appendToolCall: () => undefined,
         replaceDiffs: () => undefined,
       },
-      sessionUpdateStore: {
-        replaceSession: (_sessionId: string, updates: SessionUpdateRecord[]) => {
-          replayUpdates = updates;
-        },
-      },
     } as any),
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
@@ -268,11 +253,7 @@ test("session restore records replayed ACP plan for reimport hydration", async (
 
   await service.startSessionResume(sessionId);
 
-  assert.deepEqual(recordedPlan, plan);
-  assert.deepEqual(
-    replayUpdates.map((update) => [update.source, update.updateType]),
-    [["acp_load_replay", "plan-update"]],
-  );
+  assert.equal(recordedPlan, undefined);
 });
 
 test("session restore failure logs visible error details", async () => {
@@ -302,10 +283,12 @@ test("session restore failure logs visible error details", async () => {
   };
   let errorEvent = "";
   let errorFields: Record<string, unknown> = {};
+  let raisedNotification: Record<string, unknown> | undefined;
 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -369,6 +352,9 @@ test("session restore failure logs visible error details", async () => {
     },
     logInfo: () => undefined,
     logError: () => undefined,
+    notify: (notification: Record<string, unknown>) => {
+      raisedNotification = notification;
+    },
   } as any);
 
   const result = await service.startSessionResume(sessionId);
@@ -379,6 +365,13 @@ test("session restore failure logs visible error details", async () => {
   assert.equal(errorFields.runtimeSessionId, "runtime-codex-fail");
   assert.equal(errorFields.method, "session/load");
   assert.equal(errorFields.providerId, "codex");
+  assert.deepEqual(raisedNotification, {
+    kind: "error",
+    source: "runtime",
+    code: "ACP_SESSION_RESTORE_FAILED",
+    sessionId,
+    message: "Internal error",
+  });
 });
 
 test("force reload active session releases old runtime before ACP load restore", async () => {
@@ -436,6 +429,7 @@ test("force reload active session releases old runtime before ACP load restore",
   const service = createSessionResumeService({
     sessions,
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -507,7 +501,7 @@ test("force reload active session releases old runtime before ACP load restore",
   assert.equal(oldRuntimeCancelled, false);
 });
 
-test("session restore waits for asynchronous ACP replay before flushing", async () => {
+test("session restore ignores asynchronous ACP replay", async () => {
   const sessionId = "session-codex-replay";
   const agent: AcpAgentProvider = {
     id: "codex",
@@ -539,6 +533,7 @@ test("session restore waits for asynchronous ACP replay before flushing", async 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -653,27 +648,12 @@ test("session restore waits for asynchronous ACP replay before flushing", async 
 
   await service.startSessionResume(sessionId);
 
-  assert.deepEqual(
-    storedMessages.map((message) => [message.role, message.text, message.timelineSequence]),
-    [
-      ["user", "重新导入", 1],
-      ["assistant", "工具后继续输出", 3],
-    ],
-  );
-  assert.deepEqual(storedToolCalls.map((toolCall) => [toolCall.title, toolCall.timelineSequence]), [
-    ["git status --short", 2],
-  ]);
-  assert.deepEqual(
-    storedTimeline.map((entry) => [entry.kind, entry.id, (entry as any).timelineSequence]),
-    [
-      ["user_message", "user-1", 1],
-      ["tool_call", "tool:tool-1", 2],
-      ["assistant_message", "assistant-1", 3],
-    ],
-  );
+  assert.deepEqual(storedMessages, []);
+  assert.deepEqual(storedToolCalls, []);
+  assert.deepEqual(storedTimeline, []);
 });
 
-test("session restore reapplies compacted replay tail after flush so local prefix survives", async () => {
+test("session restore preserves a trailing compacted boundary from the canonical timeline", async () => {
   const sessionId = "session-compacted-tail-patch";
   const agent: AcpAgentProvider = {
     id: "codex",
@@ -704,14 +684,14 @@ test("session restore reapplies compacted replay tail after flush so local prefi
       role: "user",
       text: "压缩前问题",
       timestamp: "2026-06-18T14:01:20.000Z",
-      timelineSequence: 10,
+      sequence: 10,
     },
     {
       id: "anchor-user",
       role: "user",
       text: "锚点消息",
       timestamp: "2026-06-18T14:01:49.292Z",
-      timelineSequence: 20,
+      sequence: 20,
     },
   ];
   let persistedTimeline: SessionTimelineEntry[] = [
@@ -721,7 +701,7 @@ test("session restore reapplies compacted replay tail after flush so local prefi
       message: persistedMessages[0]!,
       timestamp: persistedMessages[0]!.timestamp,
       updatedAt: persistedMessages[0]!.timestamp,
-      timelineSequence: 10,
+      sequence: 10,
     },
     {
       id: "anchor-user",
@@ -729,13 +709,26 @@ test("session restore reapplies compacted replay tail after flush so local prefi
       message: persistedMessages[1]!,
       timestamp: persistedMessages[1]!.timestamp,
       updatedAt: persistedMessages[1]!.timestamp,
-      timelineSequence: 20,
+      sequence: 20,
+    },
+    {
+      id: `compaction:${sessionId}:compaction-summary`,
+      kind: "context_compaction",
+      phase: "completed",
+      source: "heuristic",
+      summaryMessageId: "compaction-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      detailsVisibility: "expandable",
+      timestamp: "2026-06-18T14:05:25.193Z",
+      updatedAt: "2026-06-18T14:05:25.193Z",
+      replayCompleteness: "compacted",
     },
   ];
 
   const service = createSessionResumeService({
     sessions: new Map(),
     sessionStore: {
+      get: () => summary,
       list: () => [summary],
       upsert: () => undefined,
     },
@@ -776,7 +769,7 @@ test("session restore reapplies compacted replay tail after flush so local prefi
             role: "user",
             text: "锚点消息",
             timestamp: "2026-06-18T14:01:49.292Z",
-            timelineSequence: 20,
+            sequence: 20,
           },
         });
         input.onRestoreReplayEvent?.({
@@ -786,7 +779,7 @@ test("session restore reapplies compacted replay tail after flush so local prefi
             role: "assistant",
             text: "新的回复",
             timestamp: "2026-06-18T14:02:16.000Z",
-            timelineSequence: 21,
+            sequence: 21,
           },
         });
         return {
@@ -814,9 +807,6 @@ test("session restore reapplies compacted replay tail after flush so local prefi
         appendOutput: () => undefined,
         appendToolCall: () => undefined,
         replaceDiffs: () => undefined,
-      },
-      sessionUpdateStore: {
-        replaceSession: () => undefined,
       },
       sessionTimelineStore: {
         list: () => persistedTimeline,
@@ -847,10 +837,425 @@ test("session restore reapplies compacted replay tail after flush so local prefi
 
   assert.deepEqual(
     persistedMessages.map((message) => message.id),
-    ["older-user", "anchor-user", "new-assistant"],
+    ["older-user", "anchor-user"],
   );
   assert.deepEqual(
     persistedTimeline.map((entry) => entry.id),
-    ["older-user", "anchor-user", "new-assistant"],
+    [
+      "older-user",
+      "anchor-user",
+      `compaction:${sessionId}:compaction-summary`,
+    ],
   );
+  assert.deepEqual(
+    persistedTimeline.map((entry) => entry.kind),
+    [
+      "user_message",
+      "user_message",
+      "context_compaction",
+    ],
+  );
+});
+
+test("session restore preserves markerless trailing compaction order", async () => {
+  const sessionId = "session-compacted-replay-without-markers";
+  const agent: AcpAgentProvider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-code-acp",
+    transport: "stdio",
+    protocol: "acp",
+  };
+  const worktree: WorktreeSummary = { name: "main", path: "D:/repo" };
+  const summary: SessionSummary = {
+    id: sessionId,
+    title: "Compacted replay without markers",
+    status: "idle",
+    projectId: "project-1",
+    projectName: "Tiller",
+    helmId: "helm-1",
+    agentId: "claudecode",
+    agentName: "ClaudeCode",
+    cwd: "D:/repo",
+    createdAt: "2026-06-18T14:00:00.000Z",
+    updatedAt: "2026-06-18T14:00:00.000Z",
+    messageCount: 2,
+    runtimeSessionId: "runtime-claude-tail",
+  };
+  let persistedTimeline: SessionTimelineEntry[] = [
+    {
+      id: "assistant-after-compaction",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-after-compaction:content",
+          kind: "content",
+          text: "压缩后的第一条回复",
+          timestamp: "2026-06-18T14:02:16.000Z",
+          sequence: 21,
+        },
+      ],
+      timestamp: "2026-06-18T14:02:16.000Z",
+      updatedAt: "2026-06-18T14:02:16.000Z",
+      sequence: 21,
+    },
+    {
+      id: "user-after-compaction",
+      kind: "user_message",
+      message: {
+        id: "user-after-compaction",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-06-18T14:02:40.000Z",
+        sequence: 22,
+      },
+      timestamp: "2026-06-18T14:02:40.000Z",
+      updatedAt: "2026-06-18T14:02:40.000Z",
+      sequence: 22,
+    },
+    {
+      id: `compaction:${sessionId}:runtime-summary`,
+      kind: "context_compaction",
+      phase: "completed",
+      source: "heuristic",
+      summaryMessageId: "runtime-summary",
+      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      detailsVisibility: "expandable",
+      timestamp: "2026-06-18T17:22:48.093Z",
+      updatedAt: "2026-06-18T17:22:48.093Z",
+      replayCompleteness: "compacted",
+    },
+  ];
+
+  const service = createSessionResumeService({
+    sessions: new Map(),
+    sessionStore: {
+      get: () => summary,
+      list: () => [summary],
+      upsert: () => undefined,
+    },
+    sessionMessageStore: {
+      list: () => [],
+      replace: () => undefined,
+    },
+    sessionArtifactStore: {
+      remove: () => undefined,
+    },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "claudecode",
+        runtimeSessionId: "runtime-claude-tail",
+        capabilities: { sessionLoad: true },
+        lastSeenAt: summary.updatedAt,
+        state: "resumeable",
+      }),
+    },
+    providerLifecycle: {
+      createRuntime: async (input: any) => {
+        input.onRestoreReplayEvent?.({
+          type: "message",
+          message: {
+            id: "assistant-after-compaction",
+            role: "assistant",
+            text: "压缩后的第一条回复",
+            timestamp: "2026-06-18T14:02:16.000Z",
+            sequence: 21,
+          },
+        });
+        input.onRestoreReplayEvent?.({
+          type: "message",
+          message: {
+            id: "user-after-compaction",
+            role: "user",
+            text: "继续",
+            timestamp: "2026-06-18T14:02:40.000Z",
+            sequence: 22,
+          },
+        });
+        return {
+          runtimeSessionId: "runtime-claude-tail",
+          sessionCapabilities: { sessionLoad: true },
+          prompt: async () => undefined,
+          cancel: () => undefined,
+        };
+      },
+    },
+    providerHistory: {
+      hasHistoryContent: (history: { messages: unknown[] }) => history.messages.length > 0,
+      applyAuthoritativeProviderHistory: () => undefined,
+      refreshAuthoritativeSessionHistory: async () => undefined,
+    } as any,
+    getAgents: () => [agent],
+    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+    createHandlerContext: () => ({
+      sessionMessageStore: {
+        append: () => undefined,
+      },
+      sessionArtifactStore: {
+        appendOutput: () => undefined,
+        appendToolCall: () => undefined,
+        replaceDiffs: () => undefined,
+      },
+      sessionTimelineStore: {
+        list: () => persistedTimeline,
+        replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+          persistedTimeline = entries;
+          return entries;
+        },
+      },
+    } as any),
+    resolveStoredSessionWorktree: () => worktree,
+    buildResumeInfo: () => ({
+      mode: "same-provider",
+      state: "resume-available",
+      reason: "load",
+      checkedAt: "2026-06-18T14:00:00.000Z",
+      runtimeSessionId: "runtime-claude-tail",
+      restoreMethod: "session/load",
+    }),
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    persistRuntimeDescriptor: () => undefined,
+    handleRuntimeEvent: () => undefined,
+    logConnectionLifecycle: () => undefined,
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  await service.startSessionResume(sessionId);
+
+  assert.deepEqual(
+    persistedTimeline.map((entry) => [entry.kind, entry.id]),
+    [
+      ["assistant_message", "assistant-after-compaction"],
+      ["user_message", "user-after-compaction"],
+      ["context_compaction", `compaction:${sessionId}:runtime-summary`],
+    ],
+  );
+});
+
+test("session restore prefers ACP-reported config over persisted values", async () => {
+  const sessionId = "session-stale-model";
+  const summary: SessionSummary = {
+    id: sessionId,
+    title: "旧会话",
+    status: "idle",
+    projectId: "project-1",
+    projectName: "Tiller",
+    helmId: "helm-1",
+    agentId: "claude-code",
+    agentName: "Claude Code",
+    cwd: "D:/repo",
+    createdAt: "2026-07-06T00:00:00.000Z",
+    updatedAt: "2026-07-06T00:00:00.000Z",
+    messageCount: 4,
+    runtimeSessionId: "runtime-old",
+    model: "opus",
+    reasoningEffort: "high",
+    modelOptions: [{ id: "opus", name: "Opus" }],
+  };
+  const worktree: WorktreeSummary = {
+    name: "main",
+    path: "D:/repo",
+  };
+  const stored = { summary: undefined as SessionSummary | undefined };
+  let createRuntimeInput: { sessionConfig?: unknown } | undefined;
+  let configureCalls = 0;
+  const configOptions = [{
+    id: "thought_level",
+    name: "Reasoning",
+    category: "thought_level",
+    currentValue: "medium",
+    options: [
+      { value: "medium", label: "Medium" },
+      { value: "high", label: "High" },
+    ],
+  }];
+
+  const service = createSessionResumeService({
+    sessions: new Map(),
+    sessionStore: {
+      get: () => summary,
+      list: () => [summary],
+      upsert: (next: SessionSummary) => {
+        stored.summary = next;
+      },
+    },
+    sessionMessageStore: { list: () => [], replace: () => undefined },
+    sessionArtifactStore: { remove: () => undefined },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "claude-code",
+        runtimeSessionId: "runtime-old",
+        capabilities: { sessionResume: true },
+        lastSeenAt: summary.updatedAt,
+        state: "resumeable",
+      }),
+    },
+    providerLifecycle: {
+      createRuntime: async (input: { sessionConfig?: unknown }) => {
+        createRuntimeInput = input;
+        return {
+          runtimeSessionId: "runtime-new",
+          sessionCapabilities: { sessionResume: true },
+          sessionConfigState: { model: "default", reasoningEffort: "medium" },
+          sessionModelState: {
+            currentModelId: "default",
+            options: [{ id: "default", name: "Default" }, { id: "opus", name: "Opus" }],
+          },
+          sessionConfigOptions: configOptions,
+          prompt: async () => undefined,
+          configure: async () => {
+            configureCalls += 1;
+            throw new Error("restore must not configure ACP");
+          },
+          cancel: () => undefined,
+        };
+      },
+    },
+    providerHistory: {
+      hasHistoryContent: () => false,
+      applyAuthoritativeProviderHistory: () => undefined,
+      refreshAuthoritativeSessionHistory: async () => undefined,
+    } as any,
+    getAgents: () => [{
+      id: "claude-code",
+      name: "Claude Code",
+      command: "claude-code",
+      transport: "stdio",
+      protocol: "acp",
+    }],
+    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+    createHandlerContext: () => ({
+      sessionMessageStore: { append: () => undefined },
+      sessionArtifactStore: {
+        appendOutput: () => undefined,
+        appendToolCall: () => undefined,
+        replaceDiffs: () => undefined,
+      },
+    } as any),
+    resolveStoredSessionWorktree: () => worktree,
+    buildResumeInfo: () => ({
+      mode: "same-process",
+      state: "resume-available",
+      reason: "resume",
+      checkedAt: "2026-07-06T00:00:00.000Z",
+      runtimeSessionId: "runtime-new",
+      restoreMethod: "session/resume",
+    }),
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    persistRuntimeDescriptor: () => undefined,
+    handleRuntimeEvent: () => undefined,
+    logConnectionLifecycle: () => undefined,
+    logger: { debug: () => undefined, error: () => undefined } as any,
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  const result = await service.startSessionResume(sessionId);
+
+  assert.equal(result.ok, true);
+  assert.equal(configureCalls, 0);
+  assert.equal("sessionConfig" in (createRuntimeInput ?? {}), false);
+  assert.equal(result.session?.model, "default");
+  assert.equal(result.session?.reasoningEffort, "medium");
+  assert.deepEqual(result.session?.modelOptions, [
+    { id: "default", name: "Default" },
+    { id: "opus", name: "Opus" },
+  ]);
+  assert.equal(stored.summary?.model, "default");
+  assert.equal(stored.summary?.reasoningEffort, "medium");
+});
+
+test("session restore falls back to persisted config when ACP reports no current config", async () => {
+  const sessionId = "session-unsupported-model";
+  const summary: SessionSummary = {
+    id: sessionId,
+    title: "旧会话",
+    status: "idle",
+    projectId: "project-1",
+    projectName: "Tiller",
+    helmId: "helm-1",
+    agentId: "claude-code",
+    agentName: "Claude Code",
+    cwd: "D:/repo",
+    createdAt: "2026-07-06T00:00:00.000Z",
+    updatedAt: "2026-07-06T00:00:00.000Z",
+    messageCount: 4,
+    runtimeSessionId: "runtime-old",
+    model: "removed-model",
+    reasoningEffort: "high",
+  };
+  const stored = { summary: undefined as SessionSummary | undefined };
+  let createRuntimeInput: { sessionConfig?: unknown } | undefined;
+  let configureCalls = 0;
+
+  const service = createSessionResumeService({
+    sessions: new Map(),
+    sessionStore: {
+      get: () => summary,
+      upsert: (next: SessionSummary) => {
+        stored.summary = next;
+      },
+    },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "claude-code",
+        runtimeSessionId: "runtime-old",
+        capabilities: { sessionResume: true },
+        lastSeenAt: summary.updatedAt,
+        state: "resumeable",
+      }),
+    },
+    providerLifecycle: {
+      createRuntime: async (input: { sessionConfig?: unknown }) => {
+        createRuntimeInput = input;
+        return {
+          runtimeSessionId: "runtime-new",
+          sessionCapabilities: { sessionResume: true },
+          sessionConfigState: {},
+          configure: async () => {
+            configureCalls += 1;
+            throw new Error("restore must not configure ACP");
+          },
+        };
+      },
+    },
+    getAgents: () => [{
+      id: "claude-code",
+      name: "Claude Code",
+      command: "claude-code",
+      transport: "stdio",
+      protocol: "acp",
+    }],
+    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+    resolveStoredSessionWorktree: () => ({ name: "main", path: "D:/repo" }),
+    buildResumeInfo: () => ({
+      mode: "same-process",
+      state: "resume-available",
+      reason: "resume",
+      checkedAt: "2026-07-06T00:00:00.000Z",
+      runtimeSessionId: "runtime-new",
+      restoreMethod: "session/resume",
+    }),
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    persistRuntimeDescriptor: () => undefined,
+    handleRuntimeEvent: () => undefined,
+    logConnectionLifecycle: () => undefined,
+    logger: { debug: () => undefined, error: () => undefined },
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  const result = await service.startSessionResume(sessionId);
+
+  assert.equal(result.ok, true);
+  assert.equal(configureCalls, 0);
+  assert.equal("sessionConfig" in (createRuntimeInput ?? {}), false);
+  assert.equal(result.session?.model, "removed-model");
+  assert.equal(result.session?.reasoningEffort, "high");
+  assert.equal(stored.summary?.model, "removed-model");
+  assert.equal(stored.summary?.reasoningEffort, "high");
 });

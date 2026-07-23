@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createSessionPromptQueueManager } from "./prompt-queue";
+import {
+  createSessionPromptQueueManager,
+  MAX_PROMPT_QUEUE_ITEM_BYTES,
+  PROMPT_QUEUE_CAPACITY_ERROR_CODE,
+} from "./prompt-queue";
 
 test("prompt queue enqueues behind an in-flight prompt", () => {
   const manager = createSessionPromptQueueManager();
@@ -51,4 +55,68 @@ test("prompt queue pops FIFO after clearing in-flight", () => {
 
   assert.equal(next?.text, "second");
   assert.equal(manager.snapshot("session-1").queued[0]?.text, "third");
+});
+
+test("prompt queue enforces the queued prompt count and byte limits", () => {
+  const manager = createSessionPromptQueueManager();
+  for (let index = 0; index < 32; index += 1) {
+    manager.enqueue({
+      sessionId: "session-1",
+      text: `prompt-${index}`,
+      clientMessageId: `client-${index}`,
+    });
+  }
+  assert.throws(
+    () => manager.enqueue({ sessionId: "session-1", text: "overflow", clientMessageId: "overflow" }),
+    (error: unknown) => (error as { code?: string }).code === PROMPT_QUEUE_CAPACITY_ERROR_CODE,
+  );
+
+  const byteManager = createSessionPromptQueueManager();
+  assert.throws(
+    () => byteManager.enqueue({
+      sessionId: "session-2",
+      text: "image",
+      clientMessageId: "oversized",
+      content: [{
+        type: "image",
+        mimeType: "image/png",
+        attachmentId: "attachment-1",
+        byteSize: MAX_PROMPT_QUEUE_ITEM_BYTES + 1,
+      }],
+    }),
+    (error: unknown) => (error as { code?: string }).code === PROMPT_QUEUE_CAPACITY_ERROR_CODE,
+  );
+
+  const totalManager = createSessionPromptQueueManager();
+  const image = (id: string) => [{
+    type: "image" as const,
+    mimeType: "image/png",
+    attachmentId: id,
+    byteSize: 12 * 1024 * 1024,
+  }];
+  totalManager.enqueue({ sessionId: "session-3", text: "one", clientMessageId: "one", content: image("one") });
+  totalManager.enqueue({ sessionId: "session-3", text: "two", clientMessageId: "two", content: image("two") });
+  assert.throws(
+    () => totalManager.enqueue({ sessionId: "session-3", text: "three", clientMessageId: "three", content: image("three") }),
+    (error: unknown) => (error as { code?: string }).code === PROMPT_QUEUE_CAPACITY_ERROR_CODE,
+  );
+});
+
+test("prompt queue has non-creating reads and releases all transient state", () => {
+  const manager = createSessionPromptQueueManager();
+  assert.deepEqual(manager.snapshot("missing"), { sessionId: "missing", queued: [] });
+  assert.deepEqual(manager.sessionIds(), []);
+
+  const inFlight = manager.markInFlight({
+    sessionId: "session-1",
+    text: "first",
+    clientMessageId: "client-1",
+  });
+  const queued = manager.enqueue({
+    sessionId: "session-1",
+    text: "second",
+    clientMessageId: "client-2",
+  });
+  assert.deepEqual(manager.remove("session-1").map((item) => item.id).sort(), [inFlight.id, queued.id].sort());
+  assert.deepEqual(manager.sessionIds(), []);
 });

@@ -1,9 +1,12 @@
 import type { AgentPromptContent, SessionSummary } from "@tiller/shared";
+import { wasAcpPromptFailureReported } from "@tiller/acp-runtime";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifications";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "../../runtime/session/config-options";
+import { publishCanonicalSessionStateEvent } from "../../runtime/events";
+import { createSessionBootstrapEvents } from "../../runtime/session/event/bootstrap";
 import { sendPromptToSession } from "../../runtime/session/router";
 import type { HelmHandlerContext } from "../context";
 
@@ -61,7 +64,13 @@ async function promptRuntimeDraft(
 ) {
   const draft = context.takeRuntimeDraft(params.draftId);
   if (!draft) {
-    throw new Error("Runtime draft is not available. Create a new session and retry.");
+    const message = "Runtime draft is not available. Create a new session and retry.";
+    broadcastErrorRaised(context, {
+      code: "ACP_DRAFT_NOT_AVAILABLE",
+      message,
+      source: "session",
+    });
+    throw new Error(message);
   }
 
   const sessionId = `session-${Date.now()}`;
@@ -117,6 +126,9 @@ async function promptRuntimeDraft(
   });
   context.sessionStore.upsert(summary);
   context.persistRuntimeDescriptor(summary, draft.agent, draft.runtime.sessionCapabilities);
+  for (const event of createSessionBootstrapEvents(summary)) {
+    context.handleRuntimeEvent(sessionId, event);
+  }
   broadcastSessionUpdate(context, sessionId, { kind: "session_updated", session: summary });
   logSessionInfo(context, "runtime.draft.activated", {
     draftId: params.draftId,
@@ -180,10 +192,8 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
     updatedAt: new Date().toISOString(),
     lastMessagePreview: "Prompt failed",
   }));
-  broadcastErrorRaised(context, { sessionId, message });
-  broadcastSessionUpdate(context, sessionId, {
-    kind: "status_change",
-    status: "error",
-    message,
-  });
+  if (!wasAcpPromptFailureReported(error)) {
+    broadcastErrorRaised(context, { sessionId, message, source: "session" });
+  }
+  publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
 }

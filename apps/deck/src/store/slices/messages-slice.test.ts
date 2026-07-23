@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentMessage, CommandChunk, AgentToolCall, FileDiffSummary } from "@tiller/shared";
+import type {
+  AgentMessage,
+  CommandChunk,
+  AgentToolCall,
+  FileDiffSummary,
+  LegacyEvidenceAvailability,
+} from "@tiller/shared";
 import { createStore } from "zustand/vanilla";
 import { createMessagesSlice, type MessagesSlice } from "./messages-slice.js";
 
@@ -54,4 +60,20 @@ test("messages slice stores dismissed completed plan keys by session id", () => 
     s1: "plan-key",
     s2: "other-plan-key",
   });
+});
+
+test("messages slice keeps legacy evidence outside canonical conversation maps", () => {
+  const store = createTestStore();
+  const availability: LegacyEvidenceAvailability = {
+    sessionId: "s1",
+    available: true,
+    counts: { message: 2, tool_call: 1, output: 0 },
+  };
+
+  store.getState().setSessionLegacyEvidence({
+    s1: { availability, pages: {}, loading: {} },
+  });
+
+  assert.deepEqual(store.getState().sessionLegacyEvidence.s1?.availability, availability);
+  assert.deepEqual(store.getState().sessionTimeline, {});
 });

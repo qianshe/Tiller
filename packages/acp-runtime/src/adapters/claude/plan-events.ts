@@ -21,10 +21,10 @@ type ClaudeLivePlanState = {
   toolCallTaskIds: Map<string, string>;
 };
 
-export function createClaudePlanUpdateMapper() {
+export function createClaudePlanUpdateProjector() {
   const sessions = new Map<string, ClaudeLivePlanState>();
 
-  return (
+  const mapUpdate = (
     context: AcpSessionUpdateProjectionContext,
   ): AcpSessionUpdateProjection | null => {
     if (context.updateType !== "tool_call" && context.updateType !== "tool_call_update") {
@@ -67,6 +67,31 @@ export function createClaudePlanUpdateMapper() {
         updatedAt: context.now ?? new Date().toISOString(),
       },
     };
+  };
+
+  return {
+    mapUpdate,
+    reconcileTaskUpdates: (
+      sessionId: string,
+      toolCalls: readonly AgentToolCall[],
+    ) => {
+      const state = sessions.get(sessionId);
+      if (state?.tasks.size) {
+        return reconcileTaskUpdates(state, toolCalls);
+      }
+      const restored = restoreLatestTaskBatch(toolCalls);
+      if (!restored) {
+        return null;
+      }
+      sessions.set(sessionId, restored.state);
+      return {
+        entries: liveTaskEntries(restored.state),
+        updatedAt: restored.updatedAt,
+      };
+    },
+    disposeSession: (sessionId: string) => {
+      sessions.delete(sessionId);
+    },
   };
 }
 
@@ -272,6 +297,86 @@ function liveTaskEntries(state: ClaudeLivePlanState): AgentPlan["entries"] {
   return [...state.tasks.values()]
     .sort((left, right) => left.order - right.order)
     .map(({ content, priority, status }) => ({ content, priority, status }));
+}
+
+function reconcileTaskUpdates(
+  state: ClaudeLivePlanState | undefined,
+  toolCalls: readonly AgentToolCall[],
+): AgentPlan | null {
+  if (!state) {
+    return null;
+  }
+  const latestUpdates = new Map<string, { status: AgentPlanEntryStatus }>();
+  let updatedAt = "";
+  for (const toolCall of toolCalls) {
+    if (normalizeToolName(toolCall.title) !== "taskupdate") {
+      continue;
+    }
+    const input = recordFrom(parsePayload(toolCall.input));
+    const taskId = firstString(input.taskId, input.task_id, input.id);
+    if (!taskId || !state.tasks.has(taskId)) {
+      continue;
+    }
+    latestUpdates.set(taskId, { status: normalizeStatus(input.status) });
+    updatedAt = resolveToolUpdatedAt(toolCall);
+  }
+
+  let changed = false;
+  for (const [taskId, update] of latestUpdates) {
+    const current = state.tasks.get(taskId);
+    if (!current || current.status === update.status) {
+      continue;
+    }
+    state.tasks.set(taskId, { ...current, status: update.status });
+    changed = true;
+  }
+  return changed
+    ? {
+        entries: liveTaskEntries(state),
+        updatedAt: updatedAt || new Date().toISOString(),
+      }
+    : null;
+}
+
+function restoreLatestTaskBatch(toolCalls: readonly AgentToolCall[]) {
+  let firstTaskCreateIndex = -1;
+  for (let index = toolCalls.length - 1; index >= 0; index -= 1) {
+    if (normalizeToolName(toolCalls[index]!.title) !== "taskcreate") {
+      continue;
+    }
+    firstTaskCreateIndex = index;
+    while (
+      firstTaskCreateIndex > 0 &&
+      normalizeToolName(toolCalls[firstTaskCreateIndex - 1]!.title) === "taskcreate"
+    ) {
+      firstTaskCreateIndex -= 1;
+    }
+    break;
+  }
+  if (firstTaskCreateIndex < 0) {
+    return null;
+  }
+
+  const state: ClaudeLivePlanState = {
+    tasks: new Map(),
+    toolCallTaskIds: new Map(),
+  };
+  let updatedAt = "";
+  for (const toolCall of toolCalls.slice(firstTaskCreateIndex)) {
+    const toolName = normalizeToolName(toolCall.title);
+    const input = recordFrom(parsePayload(toolCall.input));
+    const changed = toolName === "taskcreate"
+      ? applyTaskCreate(state, input, toolCall.output ?? "", toolCall.id)
+      : toolName === "taskupdate"
+        ? applyTaskUpdate(state, input)
+        : false;
+    if (changed) {
+      updatedAt = resolveToolUpdatedAt(toolCall);
+    }
+  }
+  return state.tasks.size
+    ? { state, updatedAt: updatedAt || new Date().toISOString() }
+    : null;
 }
 
 function resolveCreatedTaskId(

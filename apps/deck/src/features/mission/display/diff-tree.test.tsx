@@ -33,6 +33,10 @@ test("diff patch renders hunk lines with semantic colors and horizontal scrollin
   assert.match(html, /max-w-full/);
   assert.match(html, /min-w-0/);
   assert.match(html, /overflow-x-auto/);
+  assert.match(html, /mission-diff-content[^\"]*w-max[^\"]*min-w-full/);
+  assert.match(html, /mission-diff-line[^\"]*w-full/);
+  assert.doesNotMatch(html, /mission-diff-line[^\"]*min-w-max/);
+  assert.match(html, /mission-diff-patch[^\"]*overflow-x-auto/);
   assert.doesNotMatch(html, /diff --git/);
   assert.doesNotMatch(html, /index 111\.\.222/);
   assert.doesNotMatch(html, /diff-line-meta/);

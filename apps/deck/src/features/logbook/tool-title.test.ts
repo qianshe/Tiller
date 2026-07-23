@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import type { AgentToolCall } from "@tiller/shared";
 import { groupToolCalls } from "./timeline.js";
 import { resolveToolCallTone } from "./tool-call-tone.js";
 
@@ -58,6 +57,26 @@ test("groupToolCalls shows MCP titles without the generic Tool prefix", () => {
   assert.equal(grouped[1]?.title, "sanshu/zhi");
 });
 
+test("groupToolCalls prefers explicit MCP metadata over legacy provider titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-claude-mcp",
+      kind: "mcp",
+      title: "mcpServers_search_context",
+      mcp: {
+        toolName: "search_context",
+        source: "provider-title",
+        rawTitle: "mcpServers_search_context",
+      },
+      status: "completed",
+      timestamp: "2026-04-30T13:22:48.627Z",
+      updatedAt: "2026-04-30T13:22:48.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "search_context");
+});
+
 test("groupToolCalls removes duplicated read and write verbs from titles", () => {
   const grouped = groupToolCalls([
     {
@@ -82,8 +101,8 @@ test("groupToolCalls removes duplicated read and write verbs from titles", () =>
   assert.equal(grouped[1]?.title, "docs\\bug\\BUG-004.md");
 });
 
-test("resolveToolCallTone distinguishes read and write kinds", () => {
-  assert.deepEqual(resolveToolCallTone("read", "apps\\deck\\src\\features\\logbook\\message-history.ts"), {
+test("resolveToolCallTone trusts explicit read and write kinds for persisted file paths", () => {
+  assert.deepEqual(resolveToolCallTone("read", "docs/superpowers/plans/2026-07-07-mobile-composer-density-and-commit-button.md"), {
     label: "Read",
     className: "tool-call-read",
     icon: "◫",
@@ -95,12 +114,227 @@ test("resolveToolCallTone distinguishes read and write kinds", () => {
   });
 });
 
-test("resolveToolCallTone prioritizes MCP titles over generic search classification", () => {
+test("resolveToolCallTone trusts explicit search kind over title heuristics", () => {
   assert.deepEqual(resolveToolCallTone("search", "mcp__morph__codebase_search"), {
-    label: "MCP",
+    label: "Search",
     className: "tool-call-mcp",
-    icon: "◇",
+    icon: "⌕",
   });
+});
+
+test("resolveToolCallTone renders explicit diagnostics and keeps legacy read compatibility", () => {
+  assert.deepEqual(
+    resolveToolCallTone(
+      "diagnostics",
+      "Diagnostics: packages/acp-runtime/src/adapters/opencode/tool-calls.ts",
+    ),
+    {
+      label: "Diagnostics",
+      className: "tool-call-read",
+      icon: "!",
+    },
+  );
+  assert.deepEqual(
+    resolveToolCallTone(
+      "read",
+      "Diagnostics: packages/acp-runtime/src/adapters/opencode/tool-calls.ts",
+    ),
+    {
+      label: "Diagnostics",
+      className: "tool-call-read",
+      icon: "!",
+    },
+  );
+  assert.deepEqual(
+    resolveToolCallTone(
+      "tool",
+      "Diagnostics: packages/shared/src/types.ts",
+    ),
+    {
+      label: "Diagnostics",
+      className: "tool-call-read",
+      icon: "!",
+    },
+  );
+});
+
+test("groupToolCalls preserves long shell commands for the row tooltip", () => {
+  const command = [
+    "pnpm --filter @tiller/deck test",
+    "-- --test-name-pattern",
+    '"keeps the complete shell command available instead of truncating after seventy two characters"',
+  ].join(" ");
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-long",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({ command }),
+      timestamp: "2026-07-14T00:00:00.000Z",
+      updatedAt: "2026-07-14T00:00:01.000Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, command);
+});
+
+test("groupToolCalls prefers the parsed Codex command over the PowerShell wrapper", () => {
+  const command = "$target = Get-ChildItem -LiteralPath 'apps\\helm\\src' -Recurse -File -Filter '*.ts' | Select-Object -First 1 -ExpandProperty FullName; Write-Output \"FOUND=$target\"; Get-Content -LiteralPath $target -TotalCount 5";
+  const grouped = groupToolCalls([
+    {
+      id: "call-codex-pwsh-wrapper",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({
+        command: [
+          "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.3.0_x64__8wekyb3d8bbwe\\pwsh.exe",
+          "-Command",
+          command,
+        ],
+        parsed_cmd: [{ type: "unknown", cmd: command }],
+      }),
+      timestamp: "2026-07-17T11:53:02.385Z",
+      updatedAt: "2026-07-17T11:53:04.635Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "shell");
+  assert.equal(grouped[0]?.title, command);
+});
+
+test("groupToolCalls presents Codex apply_patch shell commands as file writes", () => {
+  const command = "$patch = \"*** Begin Patch`n*** Update File: .codex-native-edit-test.txt`n@@`n-phase=create`n+phase=edited`n*** End Patch\"; & 'F:\\devData\\codex-acp.exe' --codex-run-as-apply-patch $patch";
+  const grouped = groupToolCalls([
+    {
+      id: "call-codex-apply-patch",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({
+        command: [
+          "C:\\Program Files\\WindowsApps\\Microsoft.PowerShell_7.6.3.0_x64__8wekyb3d8bbwe\\pwsh.exe",
+          "-Command",
+          command,
+        ],
+        parsed_cmd: [{ type: "unknown", cmd: command }],
+      }),
+      timestamp: "2026-07-17T12:04:39.728Z",
+      updatedAt: "2026-07-17T12:04:40.822Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "write");
+  assert.equal(grouped[0]?.title, ".codex-native-edit-test.txt");
+});
+
+test("groupToolCalls recognizes direct apply_patch add and delete commands", () => {
+  const commands = [
+    {
+      id: "call-direct-apply-patch-add",
+      command: "@'\n*** Begin Patch\n*** Add File: docs/new-note.md\n+hello\n*** End Patch\n'@ | apply_patch",
+      path: "docs/new-note.md",
+    },
+    {
+      id: "call-direct-apply-patch-delete",
+      command: "$patch = \"*** Begin Patch`n*** Delete File: docs/old-note.md`n*** End Patch\"; apply_patch $patch",
+      path: "docs/old-note.md",
+    },
+  ];
+
+  for (const item of commands) {
+    const grouped = groupToolCalls([
+      {
+        id: item.id,
+        kind: "shell",
+        title: "Shell",
+        status: "completed",
+        input: JSON.stringify({
+          command: ["pwsh.exe", "-Command", item.command],
+          parsed_cmd: [{ type: "unknown", cmd: item.command }],
+        }),
+        timestamp: "2026-07-17T12:05:00.000Z",
+        updatedAt: "2026-07-17T12:05:01.000Z",
+      },
+    ]);
+
+    assert.equal(grouped[0]?.toolKind, "write");
+    assert.equal(grouped[0]?.title, item.path);
+  }
+});
+
+test("groupToolCalls repairs persisted Claude search calls classified as shell", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-native-grep",
+      kind: "shell",
+      title: "Search",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "toolTitle|tool-title",
+        path: "apps/deck/src/features/logbook",
+        glob: "**/*.ts",
+      }),
+      timestamp: "2026-07-17T00:00:00.000Z",
+      updatedAt: "2026-07-17T00:00:01.000Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "search");
+  assert.equal(grouped[0]?.title, "Grep: toolTitle|tool-title");
+});
+
+test("groupToolCalls never renders structured JSON as a shell command", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-without-command",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({ path: "D:/repo", output_mode: "files" }),
+      timestamp: "2026-07-17T00:00:00.000Z",
+      updatedAt: "2026-07-17T00:00:01.000Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Shell");
+});
+
+test("groupToolCalls does not render partial structured input as a changing running title", () => {
+  const running = groupToolCalls([
+    {
+      id: "call-running-shell",
+      kind: "shell",
+      title: "Shell",
+      status: "running",
+      input: JSON.stringify({ command: "pnpm --filter @tiller/de" }),
+      timestamp: "2026-07-14T00:00:00.000Z",
+      updatedAt: "2026-07-14T00:00:01.000Z",
+    },
+    {
+      id: "call-running-search",
+      kind: "search",
+      title: "Search",
+      status: "running",
+      input: JSON.stringify({ pattern: "normalizeOpenCode" }),
+      timestamp: "2026-07-14T00:00:02.000Z",
+      updatedAt: "2026-07-14T00:00:03.000Z",
+    },
+    {
+      id: "call-running-read",
+      kind: "read",
+      title: "Read",
+      status: "running",
+      input: JSON.stringify({ filePath: "packages/acp-runtime/src/even" }),
+      timestamp: "2026-07-14T00:00:04.000Z",
+      updatedAt: "2026-07-14T00:00:05.000Z",
+    },
+  ]);
+
+  assert.equal(running[0]?.title, "Shell");
+  assert.equal(running[1]?.title, "Search");
+  assert.equal(running[2]?.title, "Read");
 });
 
 
@@ -130,6 +364,67 @@ test("groupToolCalls uses structured file paths for read and write titles", () =
   assert.equal(grouped[1]?.title, "apps/deck/src/features/logbook/activity-log-panel.tsx");
 });
 
+test("groupToolCalls appends requested line ranges to read titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-read-offset",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      input: JSON.stringify({
+        file_path: "apps/deck/src/features/logbook/timeline.ts",
+        offset: 200,
+        limit: 101,
+      }),
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+    {
+      id: "call-read-explicit",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      input: JSON.stringify({
+        filePath: "apps/deck/src/features/logbook/tool-title.ts",
+        start_line: 640,
+        end_line: 649,
+      }),
+      timestamp: "2026-04-30T13:22:47.627Z",
+      updatedAt: "2026-04-30T13:22:47.630Z",
+    },
+    {
+      id: "call-read-without-limit",
+      kind: "read",
+      title: "Read",
+      status: "completed",
+      input: JSON.stringify({
+        file_path: "apps/deck/src/features/logbook/timeline.ts",
+        offset: 200,
+      }),
+      timestamp: "2026-04-30T13:22:48.627Z",
+      updatedAt: "2026-04-30T13:22:48.630Z",
+    },
+    {
+      id: "call-write-with-range",
+      kind: "write",
+      title: "Edit",
+      status: "completed",
+      input: JSON.stringify({
+        file_path: "apps/deck/src/features/logbook/timeline.ts",
+        offset: 200,
+        limit: 101,
+      }),
+      timestamp: "2026-04-30T13:22:49.627Z",
+      updatedAt: "2026-04-30T13:22:49.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "apps/deck/src/features/logbook/timeline.ts · L200-300");
+  assert.equal(grouped[1]?.title, "apps/deck/src/features/logbook/tool-title.ts · L640-649");
+  assert.equal(grouped[2]?.title, "apps/deck/src/features/logbook/timeline.ts");
+  assert.equal(grouped[3]?.title, "apps/deck/src/features/logbook/timeline.ts");
+});
+
 
 test("groupToolCalls summarizes search tools from structured query inputs", () => {
   const grouped = groupToolCalls([
@@ -157,6 +452,100 @@ test("groupToolCalls summarizes search tools from structured query inputs", () =
   assert.equal(grouped[1]?.title, "Glob: apps/deck/**/*.tsx");
 });
 
+test("groupToolCalls restores Grep and Glob prefixes from generic Search titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-generic-grep",
+      kind: "search",
+      title: "Search",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "toolTitle|tool-title",
+        output_mode: "content",
+      }),
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+    {
+      id: "call-generic-glob",
+      kind: "search",
+      title: "Search",
+      status: "completed",
+      input: JSON.stringify({
+        path: "D:/repo",
+        pattern: "apps/deck/src/features/logbook/tool-title*",
+      }),
+      timestamp: "2026-04-30T13:22:47.627Z",
+      updatedAt: "2026-04-30T13:22:47.630Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "Grep: toolTitle|tool-title");
+  assert.equal(
+    grouped[1]?.title,
+    "Glob: apps/deck/src/features/logbook/tool-title*",
+  );
+});
+
+test("groupToolCalls uses structured file paths for diagnostics titles", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-diagnostics",
+      kind: "diagnostics",
+      title: "Diagnostics",
+      status: "completed",
+      input: JSON.stringify({
+        filePath: "D:\\myProject\\tools\\Tiller\\packages\\acp-runtime\\src\\events.ts",
+      }),
+      timestamp: "2026-07-14T00:00:00.000Z",
+      updatedAt: "2026-07-14T00:00:01.000Z",
+    },
+  ]);
+
+  assert.equal(
+    grouped[0]?.title,
+    "Diagnostics: packages/acp-runtime/src/events.ts",
+  );
+});
+
+test("groupToolCalls preserves the server-assigned shell kind for structured Grep payloads", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-grep",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "Tiller",
+        glob: "**/README.md",
+        output_mode: "files_with_matches",
+      }),
+      timestamp: "2026-07-07T08:06:52.322Z",
+      updatedAt: "2026-07-07T08:06:53.266Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "shell");
+});
+
+test("groupToolCalls preserves the server-assigned shell kind for structured Find payloads", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "call-shell-find",
+      kind: "shell",
+      title: "Find `**/AGENTS.md`",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "**/AGENTS.md",
+      }),
+      timestamp: "2026-07-07T14:42:00.952Z",
+      updatedAt: "2026-07-07T14:42:02.458Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "shell");
+});
+
 test("resolveToolCallTone displays todo as a generic built-in activity", () => {
   assert.deepEqual(resolveToolCallTone("todo", "0 todos"), {
     label: "Todo",
@@ -170,6 +559,14 @@ test("resolveToolCallTone trusts explicit kinds over subagent-like titles", () =
     label: "Search",
     className: "tool-call-mcp",
     icon: "⌕",
+  });
+});
+
+test("resolveToolCallTone does not infer MCP from bare router-style tool names", () => {
+  assert.deepEqual(resolveToolCallTone("tool", "search_context"), {
+    label: "Tool",
+    className: "tool-call-generic",
+    icon: "·",
   });
 });
 

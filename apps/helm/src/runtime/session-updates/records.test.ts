@@ -12,25 +12,25 @@ function at(sequence: number) {
   return new Date(BASE_TIME + sequence * 1000).toISOString();
 }
 
-function message(id: string, role: AgentMessage["role"], text: string, timelineSequence: number): AgentMessage {
+function message(id: string, role: AgentMessage["role"], text: string, sequence: number): AgentMessage {
   return {
     id,
     role,
     text,
-    timestamp: at(timelineSequence),
-    timelineSequence,
+    timestamp: at(sequence),
+    sequence,
   };
 }
 
-function toolCall(id: string, status: AgentToolCall["status"], timelineSequence: number): AgentToolCall {
+function toolCall(id: string, status: AgentToolCall["status"], sequence: number): AgentToolCall {
   return {
     id,
     kind: "shell",
     title: "Shell",
     status,
-    timestamp: at(timelineSequence),
-    updatedAt: at(timelineSequence),
-    timelineSequence,
+    timestamp: at(sequence),
+    updatedAt: at(sequence),
+    sequence,
   };
 }
 

@@ -2,9 +2,11 @@ import type {
   AgentPlan,
   AgentMessage,
   AgentToolCall,
+  LegacyEvidenceSource,
   PermissionDecision,
   PermissionRequest,
   SessionPromptQueueSnapshot,
+  SessionSubagentDetail,
   SessionSummary,
   SessionTimelineEntry,
 } from "@tiller/shared";
@@ -15,16 +17,27 @@ import type {
   RefObject,
   UIEventHandler,
 } from "react";
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
+import { useDeckStore, type SessionLegacyEvidenceState } from "../../../store";
 import { MissionMessageTimeline } from "./message-timeline";
+import { LegacyEvidencePanel } from "./legacy-evidence-panel";
 import { MissionPermissionDrawer } from "./permission-drawer";
 import { MissionQueuedPrompts } from "./queued-prompts";
 import type { MissionToolLoadingState } from "./tool-loading";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
-import { resolveSessionStreamContentLength, splitMissionToolCalls } from "./chat-pane-model";
+import {
+  hasSessionBodyScrollSnapshotChanged,
+  pruneSessionCardScrollState,
+  resolveSessionBodyStickToBottom,
+  resolveSessionConversationDisplayMode,
+  resolveSessionStreamContentLength,
+  shouldAutoScrollSessionBody,
+  splitMissionToolCalls,
+} from "./chat-pane-model";
+import { deriveToolCallsFromTimeline } from "../utils/timeline-activity";
 import { resolveChatSessionToolLoading } from "./chat-session-state";
 import {
   createAgentPlanDismissalKey,
@@ -49,14 +62,26 @@ type MissionProjectOption = {
 
 // 距底部小于该像素阈值时视为"贴底"，流式与工具加载才自动跟随；超过则尊重用户上滑。
 const STICK_TO_BOTTOM_THRESHOLD = 80;
+const PLAIN_HISTORY_REVEAL_LOCK_DATASET_KEY = "plainHistoryRevealLock";
 const EMPTY_MESSAGES: AgentMessage[] = [];
 const EMPTY_TIMELINE_ITEMS: SessionTimelineEntry[] = [];
 const EMPTY_TOOL_CALLS: AgentToolCall[] = [];
 const EMPTY_PENDING_APPROVALS: MissionPendingApproval[] = [];
 
+function isPlainHistoryRevealLocked(body: HTMLElement | null) {
+  return body?.dataset[PLAIN_HISTORY_REVEAL_LOCK_DATASET_KEY] === "true";
+}
+
 type HistoryState = {
   hasMore: boolean;
   loading: boolean;
+};
+
+type SessionBodyScrollSnapshot = {
+  messageCount: number;
+  toolCallCount: number;
+  contentLength: number;
+  historyLoading: boolean;
 };
 
 type MissionPendingApproval = {
@@ -69,6 +94,8 @@ type MissionChatPaneProps = {
   className: string;
   style: CSSProperties;
   isMissionMobile: boolean;
+  isPaneResizing?: boolean;
+  paneResizeVersion?: number;
   chatMainRef: RefObject<HTMLDivElement | null>;
   onChatMainScroll: UIEventHandler<HTMLDivElement>;
   helmConnected: boolean;
@@ -81,6 +108,7 @@ type MissionChatPaneProps = {
   activeSessionMessages: AgentMessage[];
   sessionMessagesById: Record<string, AgentMessage[] | undefined>;
   sessionTimelineById: Record<string, SessionTimelineEntry[] | undefined>;
+  sessionLegacyEvidenceById: Record<string, SessionLegacyEvidenceState | undefined>;
   activeSessionPlan?: AgentPlan | null;
   sessionPlansById: Record<string, AgentPlan | undefined>;
   dismissedCompletedSessionPlanKeys?: Record<string, string | undefined>;
@@ -96,9 +124,11 @@ type MissionChatPaneProps = {
   ) => void;
   expandedMessageIds: ReadonlySet<string>;
   messageHistoryState: Record<string, HistoryState | undefined>;
-  activityHistoryState: Record<string, HistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
+  onLoadLegacyEvidence: (sessionId: string, source: LegacyEvidenceSource, after?: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
+  onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
   activityLoading: MissionToolActivity | null;
   pendingToolPresent: boolean;
   pendingApprovals: ReadonlyArray<{
@@ -144,6 +174,8 @@ export function MissionChatPane({
   className,
   style,
   isMissionMobile,
+  isPaneResizing = false,
+  paneResizeVersion = 0,
   chatMainRef,
   onChatMainScroll,
   helmConnected,
@@ -155,6 +187,7 @@ export function MissionChatPane({
   activeSessionMessages,
   sessionMessagesById,
   sessionTimelineById,
+  sessionLegacyEvidenceById,
   activeSessionPlan,
   sessionPlansById,
   dismissedCompletedSessionPlanKeys = {},
@@ -167,9 +200,11 @@ export function MissionChatPane({
   openSessions,
   expandedMessageIds,
   messageHistoryState,
-  activityHistoryState,
   onLoadOlderMessages,
+  onLoadLegacyEvidence,
   onToggleExpandedMessage,
+  subagentDetails = {},
+  onToggleSubagentDetail,
   activityLoading,
   pendingToolPresent,
   pendingApprovals,
@@ -210,7 +245,9 @@ export function MissionChatPane({
   const [menuOpen, setMenuOpen] = useState(false);
   const [parallelGridSingleRow, setParallelGridSingleRow] = useState(false);
   const canCreateTask = projectOptions.length > 0;
+  const canCreateTaskDirectly = projectOptions.length === 1;
   const activeSessionId = activeSession?.id ?? null;
+  const messageHistoryStateRef = useRef(messageHistoryState);
   const handleSelectSessionView = useStableEvent(onSelectSessionView);
   const handleRenameSession = useStableEvent(onRenameSession);
   const handleCloseSessionView = useStableEvent(onCloseSessionView);
@@ -242,8 +279,11 @@ export function MissionChatPane({
   });
   const singleSession = openSessions[0];
   const visibleSessionStreamCounts = openSessions
-    .map((session) => `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionTimelineById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}`)
+    .map((session) =>
+      `${session.id}:${sessionMessagesById[session.id]?.length ?? 0}:${sessionTimelineById[session.id]?.length ?? 0}:${sessionToolCallsById[session.id]?.length ?? 0}`
+    )
     .join("|");
+  const observedSessionIdsKey = openSessions.map((session) => session.id).join("\u0000");
   const [dragOver, setDragOver] = useState(false);
   const sessionDragType = "application/x-tiller-session-id";
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
@@ -276,6 +316,10 @@ export function MissionChatPane({
   };
 
   useEffect(() => {
+    messageHistoryStateRef.current = messageHistoryState;
+  }, [messageHistoryState]);
+
+  useEffect(() => {
     const grid = sessionGridRef.current;
     const cardCount = openSessions.length + (draftWindow ? 1 : 0);
     if (!grid || cardCount <= 2) {
@@ -284,6 +328,9 @@ export function MissionChatPane({
     }
 
     const updateSingleRowState = () => {
+      if (isPaneResizing) {
+        return;
+      }
       const cards = Array.from(grid.children).filter(
         (child): child is HTMLElement => child instanceof HTMLElement,
       );
@@ -298,6 +345,9 @@ export function MissionChatPane({
       );
     };
 
+    if (isPaneResizing) {
+      return;
+    }
     updateSingleRowState();
     const ResizeObserverCtor = window.ResizeObserver;
     if (!ResizeObserverCtor) {
@@ -308,7 +358,7 @@ export function MissionChatPane({
     observer.observe(grid);
     Array.from(grid.children).forEach((child) => observer.observe(child));
     return () => observer.disconnect();
-  }, [draftWindow, openSessions.length]);
+  }, [draftWindow, isPaneResizing, openSessions.length, paneResizeVersion]);
 
   useEffect(() => {
     if (!menuOpen && !projectMenuOpen) {
@@ -357,17 +407,103 @@ export function MissionChatPane({
     };
   }, [chatMainRef, openSessions.length, shouldLockChatMainScroll]);
 
-  const sessionBodyScrollSnapshotRef = useRef<Record<string, { messageCount: number; toolCallCount: number; contentLength: number }>>({});
+  const sessionBodyScrollSnapshotRef = useRef<Record<string, SessionBodyScrollSnapshot>>({});
   const sessionBodyScrollPositionRef = useRef<Record<string, { scrollTop: number; scrollHeight: number }>>({});
   const sessionBodyStickToBottomRef = useRef<Record<string, boolean>>({});
+  const sessionBodyInitialScrollRef = useRef<Record<string, boolean>>({});
+  useEffect(() => {
+    const openSessionIds = openSessions.map((session) => session.id);
+    sessionBodyScrollSnapshotRef.current = pruneSessionCardScrollState(
+      sessionBodyScrollSnapshotRef.current,
+      openSessionIds,
+    );
+    sessionBodyScrollPositionRef.current = pruneSessionCardScrollState(
+      sessionBodyScrollPositionRef.current,
+      openSessionIds,
+    );
+    sessionBodyStickToBottomRef.current = pruneSessionCardScrollState(
+      sessionBodyStickToBottomRef.current,
+      openSessionIds,
+    );
+    sessionBodyInitialScrollRef.current = pruneSessionCardScrollState(
+      sessionBodyInitialScrollRef.current,
+      openSessionIds,
+    );
+  }, [openSessions]);
   const recordSessionBodyScroll = useCallback((sessionId: string, body: HTMLDivElement) => {
+    if (isPlainHistoryRevealLocked(body)) {
+      return;
+    }
+    const previous = sessionBodyScrollPositionRef.current[sessionId];
     sessionBodyScrollPositionRef.current[sessionId] = {
       scrollTop: body.scrollTop,
       scrollHeight: body.scrollHeight,
     };
-    sessionBodyStickToBottomRef.current[sessionId] =
-      body.scrollHeight - body.scrollTop - body.clientHeight <= STICK_TO_BOTTOM_THRESHOLD;
+    sessionBodyStickToBottomRef.current[sessionId] = resolveSessionBodyStickToBottom({
+      current: body,
+      previous,
+      previousStickToBottom: sessionBodyStickToBottomRef.current[sessionId],
+      threshold: STICK_TO_BOTTOM_THRESHOLD,
+    });
   }, []);
+  const scrollSessionBodiesToBottom = useCallback((
+    sessionIds: readonly string[],
+    nextSnapshot: Record<string, SessionBodyScrollSnapshot>,
+    previousSnapshot: Record<string, SessionBodyScrollSnapshot> = {},
+  ) => {
+    const chatMain = chatMainRef.current;
+    if (!chatMain) {
+      return;
+    }
+    sessionIds.forEach((sessionId) => {
+      const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
+      if (!body) {
+        return;
+      }
+      const current = nextSnapshot[sessionId];
+      const previous = previousSnapshot[sessionId];
+      const allowAfterInitialHistoryLoad = Boolean(
+        previous?.historyLoading &&
+        !current?.historyLoading &&
+        (previous.messageCount ?? 0) === 0 &&
+        (previous.toolCallCount ?? 0) === 0 &&
+        (previous.contentLength ?? 0) === 0 &&
+        (
+          (current?.messageCount ?? 0) > 0 ||
+          (current?.toolCallCount ?? 0) > 0 ||
+          (current?.contentLength ?? 0) > 0
+        ),
+      );
+      const forceInitialScroll = Boolean(
+        !sessionBodyInitialScrollRef.current[sessionId] &&
+        !current?.historyLoading &&
+        (
+          (current?.messageCount ?? 0) > 0 ||
+          (current?.toolCallCount ?? 0) > 0 ||
+          (current?.contentLength ?? 0) > 0
+        ),
+      );
+      if (!shouldAutoScrollSessionBody({
+        stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
+        forceInitialScroll,
+        historyLoading: current?.historyLoading,
+        historyRevealLocked: isPlainHistoryRevealLocked(body),
+        previousHistoryLoading: previous?.historyLoading,
+        allowAfterInitialHistoryLoad,
+      })) {
+        return;
+      }
+      body.scrollTop = body.scrollHeight;
+      sessionBodyScrollPositionRef.current[sessionId] = {
+        scrollTop: body.scrollTop,
+        scrollHeight: body.scrollHeight,
+      };
+      sessionBodyStickToBottomRef.current[sessionId] = true;
+      if (forceInitialScroll) {
+        sessionBodyInitialScrollRef.current[sessionId] = true;
+      }
+    });
+  }, [chatMainRef]);
   const draftCard = draftWindow ? (
     <DraftSessionCard
       draftWindow={draftWindow}
@@ -378,82 +514,133 @@ export function MissionChatPane({
       onClose={onCloseDraftWindow}
     />
   ) : null;
+  const projectCreateMenu = projectOptions.length > 1 ? (
+    <div
+      role="menu"
+      className="absolute right-0 top-[calc(100%+4px)] z-50 w-[220px] overflow-hidden rounded-[8px] py-1"
+      style={{
+        background: "var(--popover-glass)",
+        backdropFilter: "blur(20px)",
+        boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
+        animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
+      }}
+    >
+      {projectOptions.map((project) => (
+        <MenuItem
+          key={project.id}
+          icon="folder"
+          onClick={() => {
+            onCreateTask(project.id);
+            setProjectMenuOpen(false);
+          }}
+        >
+          {project.name}
+        </MenuItem>
+      ))}
+    </div>
+  ) : null;
+  const handleCreateTaskFromEmptyState = () => {
+    if (!canCreateTask) {
+      return;
+    }
+    if (canCreateTaskDirectly) {
+      onCreateTask(projectOptions[0]!.id);
+      setProjectMenuOpen(false);
+      return;
+    }
+    setProjectMenuOpen((current) => !current);
+    setMenuOpen(false);
+  };
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const chatMain = chatMainRef.current;
     if (!chatMain) {
       return;
     }
     const changedSessionIds: string[] = [];
-    const nextSnapshot: Record<string, { messageCount: number; toolCallCount: number; contentLength: number }> = {};
+    const previousSnapshot = sessionBodyScrollSnapshotRef.current;
+    const nextSnapshot: Record<string, SessionBodyScrollSnapshot> = {};
 
     openSessions.forEach((session) => {
+      const sessionTimelineItems = sessionTimelineById[session.id];
       const sessionMessages =
         sessionMessagesById[session.id] ??
         (session.id === activeSessionId ? activeSessionMessages : undefined);
       const sessionToolCalls =
         sessionToolCallsById[session.id] ??
-        (session.id === activeSessionId ? activeSessionToolCalls : undefined);
-      const timelineCount = sessionTimelineById[session.id]?.length ?? 0;
+        (session.id === activeSessionId ? activeSessionToolCalls : undefined) ??
+        deriveToolCallsFromTimeline(sessionTimelineItems);
+      const timelineCount = sessionTimelineItems?.length ?? 0;
       const messageCount = sessionMessages?.length ?? 0;
       const toolCallCount = sessionToolCalls?.length ?? 0;
+      const historyLoading = Boolean(messageHistoryState[session.id]?.loading);
       const contentLength = resolveSessionStreamContentLength({
         messages: sessionMessages,
-        timeline: sessionTimelineById[session.id],
+        timeline: sessionTimelineItems,
         toolCalls: sessionToolCalls,
       });
-      const previous = sessionBodyScrollSnapshotRef.current[session.id];
-      nextSnapshot[session.id] = { messageCount: Math.max(messageCount, timelineCount), toolCallCount, contentLength };
+      const previous = previousSnapshot[session.id];
+      const current: SessionBodyScrollSnapshot = {
+        messageCount: Math.max(messageCount, timelineCount),
+        toolCallCount,
+        contentLength,
+        historyLoading,
+      };
+      nextSnapshot[session.id] = current;
       if (!previous) {
         if (messageCount > 0 || timelineCount > 0 || toolCallCount > 0) {
           changedSessionIds.push(session.id);
         }
         return;
       }
-      if (
-        previous.messageCount !== Math.max(messageCount, timelineCount) ||
-        previous.toolCallCount !== toolCallCount ||
-        previous.contentLength !== contentLength
-      ) {
+      if (hasSessionBodyScrollSnapshotChanged(previous, current)) {
         changedSessionIds.push(session.id);
       }
     });
 
     sessionBodyScrollSnapshotRef.current = nextSnapshot;
-    if (!changedSessionIds.length) {
+    if (isPaneResizing || !changedSessionIds.length) {
       return;
     }
 
     const scrollChangedBodies = () => {
-      changedSessionIds.forEach((sessionId) => {
-        const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
-        if (!body) {
-          return;
-        }
-        // 仅当用户当前贴底（未手动上滑）时才跟随到最新内容。
-        if (sessionBodyStickToBottomRef.current[sessionId] === false) {
-          return;
-        }
-        body.scrollTop = body.scrollHeight;
-        sessionBodyScrollPositionRef.current[sessionId] = {
-          scrollTop: body.scrollTop,
-          scrollHeight: body.scrollHeight,
-        };
-        sessionBodyStickToBottomRef.current[sessionId] = true;
-      });
+      scrollSessionBodiesToBottom(changedSessionIds, nextSnapshot, previousSnapshot);
     };
 
     scrollChangedBodies();
     const frame = window.requestAnimationFrame(scrollChangedBodies);
     const timeout = window.setTimeout(scrollChangedBodies, 180);
+    const lateTimeout = window.setTimeout(scrollChangedBodies, 900);
     return () => {
       window.cancelAnimationFrame(frame);
       window.clearTimeout(timeout);
+      window.clearTimeout(lateTimeout);
     };
-  }, [activeSessionId, activeSessionMessages, activeSessionToolCalls, chatMainRef, openSessions, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
+  }, [activeSessionId, activeSessionMessages, activeSessionToolCalls, chatMainRef, isPaneResizing, messageHistoryState, openSessions, scrollSessionBodiesToBottom, sessionMessagesById, sessionTimelineById, sessionToolCallsById, visibleSessionStreamCounts]);
 
   useEffect(() => {
-    if (!shouldAnchorActiveParallelCard || !activeSessionId) {
+    if (isPaneResizing || paneResizeVersion === 0 || openSessions.length === 0) {
+      return;
+    }
+    const reconcileBodyScroll = () => {
+      scrollSessionBodiesToBottom(
+        openSessions.map((session) => session.id),
+        sessionBodyScrollSnapshotRef.current,
+      );
+    };
+    reconcileBodyScroll();
+    const frame = window.requestAnimationFrame(reconcileBodyScroll);
+    const timeout = window.setTimeout(reconcileBodyScroll, 160);
+    const lateTimeout = window.setTimeout(reconcileBodyScroll, 800);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(timeout);
+      window.clearTimeout(lateTimeout);
+    };
+  }, [isPaneResizing, openSessions, paneResizeVersion, scrollSessionBodiesToBottom]);
+
+  useEffect(() => {
+    if (isPaneResizing || !shouldAnchorActiveParallelCard || !activeSessionId) {
       return;
     }
     const anchorActiveCard = () => {
@@ -480,7 +667,87 @@ export function MissionChatPane({
       window.clearTimeout(timeout);
       window.clearTimeout(lateTimeout);
     };
-  }, [activeSessionId, chatMainRef, openSessions.length, shouldAnchorActiveParallelCard]);
+  }, [activeSessionId, chatMainRef, isPaneResizing, openSessions.length, paneResizeVersion, shouldAnchorActiveParallelCard]);
+
+  useEffect(() => {
+    const chatMain = chatMainRef.current;
+    const ResizeObserverCtor = window.ResizeObserver;
+    const MutationObserverCtor = window.MutationObserver;
+    if (!chatMain || (!ResizeObserverCtor && !MutationObserverCtor) || isPaneResizing) {
+      return;
+    }
+    const followSessionBody = (sessionId: string) => {
+      if (isPaneResizing) {
+        return;
+      }
+      const body = chatMain.querySelector<HTMLElement>(`[data-session-card-body="${CSS.escape(sessionId)}"]`);
+      if (!body) {
+        return;
+      }
+      const historyLoading = Boolean(messageHistoryStateRef.current[sessionId]?.loading);
+      if (!shouldAutoScrollSessionBody({
+        stickToBottom: sessionBodyStickToBottomRef.current[sessionId],
+        historyLoading,
+        historyRevealLocked: isPlainHistoryRevealLocked(body),
+      })) {
+        return;
+      }
+      body.scrollTop = body.scrollHeight;
+      sessionBodyScrollPositionRef.current[sessionId] = {
+        scrollTop: body.scrollTop,
+        scrollHeight: body.scrollHeight,
+      };
+      sessionBodyStickToBottomRef.current[sessionId] = true;
+    };
+    const resizeObserver = ResizeObserverCtor
+      ? new ResizeObserverCtor((entries) => {
+          for (const entry of entries) {
+            const content = entry.target;
+            if (!(content instanceof HTMLElement)) {
+              continue;
+            }
+            const sessionId = content.dataset.sessionCardContent;
+            if (sessionId) {
+              followSessionBody(sessionId);
+            }
+          }
+        })
+      : null;
+    const mutationObserver = MutationObserverCtor
+      ? new MutationObserverCtor((records) => {
+          const changedSessionIds = new Set<string>();
+          for (const record of records) {
+            const target = record.target instanceof HTMLElement
+              ? record.target
+              : record.target.parentElement;
+            const content = target?.closest<HTMLElement>("[data-session-card-content]");
+            const sessionId = content?.dataset.sessionCardContent;
+            if (sessionId) {
+              changedSessionIds.add(sessionId);
+            }
+          }
+          changedSessionIds.forEach(followSessionBody);
+        })
+      : null;
+    const observedSessionIds = observedSessionIdsKey
+      ? observedSessionIdsKey.split("\u0000")
+      : [];
+    observedSessionIds.forEach((sessionId) => {
+      const content = chatMain.querySelector<HTMLElement>(`[data-session-card-content="${CSS.escape(sessionId)}"]`);
+      if (content) {
+        resizeObserver?.observe(content);
+        mutationObserver?.observe(content, {
+          characterData: true,
+          childList: true,
+          subtree: true,
+        });
+      }
+    });
+    return () => {
+      resizeObserver?.disconnect();
+      mutationObserver?.disconnect();
+    };
+  }, [chatMainRef, isPaneResizing, observedSessionIdsKey, paneResizeVersion]);
 
   return (
     <div className={className} style={style} data-mission-mobile-pane="chat" data-testid="mission-chat-pane">
@@ -525,31 +792,7 @@ export function MissionChatPane({
             >
               <Icon name="plus" size={12} />
             </button>
-            {projectMenuOpen ? (
-              <div
-                role="menu"
-                className="absolute right-0 top-[calc(100%+4px)] z-50 w-[220px] overflow-hidden rounded-[8px] py-1"
-                style={{
-                  background: "var(--popover-glass)",
-                  backdropFilter: "blur(20px)",
-                  boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 18px 38px rgb(0 0 0 / 0.32)",
-                  animation: "sb-pop 180ms cubic-bezier(0.34, 1.56, 0.64, 1)",
-                }}
-              >
-                {projectOptions.map((project) => (
-                  <MenuItem
-                    key={project.id}
-                    icon="folder"
-                    onClick={() => {
-                      onCreateTask(project.id);
-                      setProjectMenuOpen(false);
-                    }}
-                  >
-                    {project.name}
-                  </MenuItem>
-                ))}
-              </div>
-            ) : null}
+            {projectMenuOpen ? projectCreateMenu : null}
           </div>
           <div ref={menuRef} className="relative">
             <button
@@ -662,13 +905,13 @@ export function MissionChatPane({
                     (session.id === activeSessionId ? activeSessionMessages : EMPTY_MESSAGES)
                   }
                   timelineItems={sessionTimelineById[session.id] ?? EMPTY_TIMELINE_ITEMS}
+                  legacyEvidenceState={sessionLegacyEvidenceById[session.id]}
                   sessionToolCalls={
                     sessionToolCallsById[session.id] ??
                     (session.id === activeSessionId ? activeSessionToolCalls : EMPTY_TOOL_CALLS)
                   }
                   pendingApprovals={pendingApprovalsBySession[session.id] ?? EMPTY_PENDING_APPROVALS}
                   messageHistoryState={messageHistoryState[session.id]}
-                  activityHistoryState={activityHistoryState[session.id]}
                   bodyScrollSnapshot={sessionBodyScrollPositionRef.current[session.id]}
                   onBodyScroll={recordSessionBodyScroll}
                   onFocus={handleSelectSessionView}
@@ -699,15 +942,50 @@ export function MissionChatPane({
                   showThinking={showThinking}
                   showPermissionWorktree={showPermissionWorktree}
                   onLoadOlderMessages={handleLoadOlderMessages}
+                  onLoadLegacyEvidence={onLoadLegacyEvidence}
                   onToggleExpandedMessage={handleToggleExpandedMessage}
+                  subagentDetails={subagentDetails}
+                  onToggleSubagentDetail={onToggleSubagentDetail}
                   onUpdateQueuedPrompt={onUpdateQueuedPrompt}
                   onDeleteQueuedPrompt={onDeleteQueuedPrompt}
                   onRespondToPermission={handleRespondToPermission}
                   showThinkingToggle={isMissionMobile}
                   onToggleThinking={onToggleThinking}
+                  showCreateTaskAction={isMissionMobile}
+                  onCreateTask={onCreateTask}
                 />
               ))}
             </div>
+        ) : isMissionMobile ? (
+          <div className="flex min-h-full items-center justify-center px-6 py-10">
+            <div ref={projectMenuRef} className="relative">
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition",
+                  canCreateTask
+                    ? "border-primary/30 bg-primary-soft/15 text-primary hover:border-primary/50 hover:bg-primary-soft/25"
+                    : "cursor-not-allowed border-border-ghost bg-surface-sunken text-muted-foreground/60",
+                )}
+                disabled={!canCreateTask}
+                aria-haspopup={canCreateTaskDirectly ? undefined : "menu"}
+                aria-expanded={canCreateTaskDirectly ? undefined : projectMenuOpen}
+                aria-label="新建会话"
+                title={
+                  !canCreateTask
+                    ? "没有可用项目"
+                    : canCreateTaskDirectly
+                      ? "在当前项目中新建会话"
+                      : "选择项目创建会话"
+                }
+                onClick={handleCreateTaskFromEmptyState}
+              >
+                <Icon name="plus" size={14} />
+                <span>新建会话</span>
+              </button>
+              {projectMenuOpen ? projectCreateMenu : null}
+            </div>
+          </div>
         ) : null}{" "}
       </div>{" "}
       {children}
@@ -717,7 +995,6 @@ export function MissionChatPane({
 
 type MissionChatSessionCardProps = {
   active: boolean;
-  activityHistoryState?: HistoryState;
   activityLoading: MissionToolActivity | null;
   bodyScrollSnapshot?: { scrollTop: number; scrollHeight: number };
   canHandoffAssistantMessage?: boolean;
@@ -727,16 +1004,21 @@ type MissionChatSessionCardProps = {
   expandedMessageIds: ReadonlySet<string>;
   flat?: boolean;
   isRuntimeActive: boolean;
+  legacyEvidenceState: SessionLegacyEvidenceState | undefined;
   messageHistoryState?: HistoryState;
   onBodyScroll: (sessionId: string, body: HTMLDivElement) => void;
   onClear: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
+  onCreateTask: (projectId: string) => void;
   onDismissCompletedPlan: (sessionId: string, planKey: string) => void;
   onFocus: (sessionId: string) => void;
   onLoadOlderMessages: (sessionId: string) => void;
+  onLoadLegacyEvidence: (sessionId: string, source: LegacyEvidenceSource, after?: string) => void;
   onRename: (session: SessionSummary) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
+  onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
   onUpdateQueuedPrompt: (sessionId: string, queueItemId: string, text: string) => void;
   onDeleteQueuedPrompt: (sessionId: string, queueItemId: string) => void;
   onHandoffAssistantMessage?: (
@@ -757,12 +1039,12 @@ type MissionChatSessionCardProps = {
   showPermissionWorktree: boolean;
   showThinking: boolean;
   showThinkingToggle: boolean;
+  showCreateTaskAction: boolean;
   timelineItems: SessionTimelineEntry[];
 };
 
 const MissionChatSessionCard = memo(function MissionChatSessionCard({
   active,
-  activityHistoryState,
   activityLoading,
   bodyScrollSnapshot,
   canHandoffAssistantMessage = false,
@@ -772,16 +1054,21 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   expandedMessageIds,
   flat = false,
   isRuntimeActive,
+  legacyEvidenceState,
   messageHistoryState,
   onBodyScroll,
   onClear,
   onClose,
+  onCreateTask,
   onDismissCompletedPlan,
   onFocus,
   onLoadOlderMessages,
+  onLoadLegacyEvidence,
   onRename,
   onRespondToPermission,
   onToggleExpandedMessage,
+  subagentDetails,
+  onToggleSubagentDetail,
   onUpdateQueuedPrompt,
   onDeleteQueuedPrompt,
   onHandoffAssistantMessage,
@@ -798,19 +1085,16 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   showPermissionWorktree,
   showThinking,
   showThinkingToggle,
+  showCreateTaskAction,
   timelineItems,
 }: MissionChatSessionCardProps) {
   const sessionTimeline = useMemo(
-    () => splitMissionToolCalls(sessionToolCalls),
-    [sessionToolCalls],
+    () => splitMissionToolCalls(sessionToolCalls, timelineItems),
+    [sessionToolCalls, timelineItems],
   );
   const historyStateBySession = useMemo(
     () => ({ [session.id]: messageHistoryState }),
     [messageHistoryState, session.id],
-  );
-  const activityHistoryStateBySession = useMemo(
-    () => ({ [session.id]: activityHistoryState }),
-    [activityHistoryState, session.id],
   );
   const handleBodyScroll = useCallback<UIEventHandler<HTMLDivElement>>(
     (event) => onBodyScroll(session.id, event.currentTarget),
@@ -857,7 +1141,13 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       onDelete={onDeleteQueuedPrompt}
     />
   ) : null;
-  const hasSessionContent = sessionMessages.length > 0 || timelineItems.length > 0;
+  const conversationDisplayMode = resolveSessionConversationDisplayMode({
+    sessionId: session.id,
+    sessionMessages,
+    sessionStatus: session.status,
+    timelineItemsLength: timelineItems.length,
+  });
+  const hasSessionContent = conversationDisplayMode === "conversation";
 
   return (
     <SessionCard
@@ -869,6 +1159,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       onRename={onRename}
       onClear={onClear}
       onClose={onClose}
+      onCreateTask={onCreateTask}
       onDismissCompletedPlan={onDismissCompletedPlan}
       restoreNotice={restoreNotice}
       toolLoading={toolLoading}
@@ -880,6 +1171,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       showThinkingToggle={showThinkingToggle}
       showThinking={showThinking}
       onToggleThinking={onToggleThinking}
+      showCreateTaskAction={showCreateTaskAction}
     >
       {hasSessionContent ? (
         <MissionMessageTimeline
@@ -902,13 +1194,22 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
           }
           expandedMessageIds={expandedMessageIds}
           historyStateBySession={historyStateBySession}
-          activityHistoryStateBySession={activityHistoryStateBySession}
           onLoadOlderMessages={onLoadOlderMessages}
           onToggleExpandedMessage={onToggleExpandedMessage}
+          subagentDetails={subagentDetails}
+          onToggleSubagentDetail={onToggleSubagentDetail}
         />
       ) : (
-        <SessionPreviewMessages session={session} restoring={isRuntimeActive} />
+        <SessionPreviewMessages
+          session={session}
+          restoring={isRuntimeActive}
+          historyLoading={conversationDisplayMode === "history-loading"}
+        />
       )}
+      <LegacyEvidencePanel
+        state={legacyEvidenceState}
+        onLoad={(source, after) => onLoadLegacyEvidence(session.id, source, after)}
+      />
     </SessionCard>
   );
 });

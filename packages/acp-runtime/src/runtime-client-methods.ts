@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
 import * as acp from "@agentclientprotocol/sdk";
-import { mapSessionUpdateNotification } from "./events";
+import { mapSessionUpdateNotificationBatch } from "./events";
 import { terminateChildProcess } from "./process";
 import { writeProtocolLog, type ProtocolLogSink } from "./protocol-logging";
 import { mapSdkPermissionRequest } from "./sdk-helpers";
@@ -89,18 +89,24 @@ export function createRuntimeClientMethods({
   return {
     async sessionUpdate(params: any) {
       const sessionToken = getSessionToken();
-      const mapped = mapSessionUpdateNotification(
+      const mapped = mapSessionUpdateNotificationBatch(
         { method: "session/update", params },
-        { provider: options.agent, providerId: options.agent.id },
+        {
+          provider: options.agent,
+          providerId: options.agent.id,
+          sessionCwd: options.worktree.path,
+        },
       );
       if (!mapped || (sessionToken && mapped.sessionId !== sessionToken)) {
         return;
       }
-      if (mapped.event.type === "config-options") {
-        setCurrentConfigOptions(mapped.event.options);
-      }
       writeProtocolLog(protocolLog, "stdout", { method: "session/update", params });
-      options.onEvent(mapped.event);
+      for (const event of mapped.events) {
+        if (event.type === "config-options") {
+          setCurrentConfigOptions(event.options);
+        }
+        options.onEvent(event);
+      }
     },
     async requestPermission(params: any) {
       const mapped = mapSdkPermissionRequest(params, nextPermissionRequestId("sdk-permission"), launchCwd);

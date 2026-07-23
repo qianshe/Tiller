@@ -44,7 +44,7 @@ test("mission display panel focuses on diff detail with single-layer tabs", () =
 
   assert.match(html, /mission-v5\.html/);
   assert.match(html, /docs\/redesign\/mission-v5\.html/);
-  assert.match(html, /Graph/);
+  assert.doesNotMatch(html, />Graph</);
   assert.doesNotMatch(html, /Git 状态/);
   assert.doesNotMatch(html, /自定义/);
   assert.doesNotMatch(html, /新增展示页/);
@@ -129,19 +129,65 @@ test("mission display panel keeps diff tabs visible while graph is selected", ()
   );
 
   assert.match(html, /Graph/);
+  assert.match(html, /关闭 Graph/);
   assert.match(html, /app\.tsx/);
   assert.match(html, /git-graph-panel/);
-  assert.equal((html.match(/bg-surface-emphasis text-foreground/g) ?? []).length, 1);
 });
 
-test("mission display panel keeps the v6 empty diff viewer chrome", () => {
+test("mission display panel keeps graph tab visible after history has been opened", () => {
+  const html = renderToStaticMarkup(
+    createElement(MissionDisplayPanel, {
+      style: {},
+      pages: [{ id: "graph", title: "Graph" }],
+      selectedPage: { id: "diff:apps/deck/src/app.tsx", title: "app.tsx" },
+      openedDiffFilePaths: ["apps/deck/src/app.tsx"],
+      overviewItems: [],
+      runtimeOverviewItems: [],
+      selectedDiffFilePath: "apps/deck/src/app.tsx",
+      diffs: [
+        {
+          path: "apps/deck/src/app.tsx",
+          status: "modified",
+          additions: 3,
+          deletions: 1,
+          patch: "diff --git a/apps/deck/src/app.tsx b/apps/deck/src/app.tsx",
+        },
+      ],
+      gitGraph: {
+        projectId: "project-1",
+        cwd: "D:/repo",
+        commits: [],
+        loading: false,
+        message: "",
+      },
+      noDiffSummary: "未选择文件。",
+      onAddPage: noop,
+      onSelectPage: noop,
+      onDragStart: noop,
+      onDrop: noop,
+      onRenamePage: noop,
+      onMovePage: noop,
+      onDeletePage: noop,
+      onOpenDiffDetail: noop,
+      onCloseDiffFile: noop,
+      onCollapse: noop,
+    }),
+  );
+
+  assert.match(html, />Graph</);
+  assert.match(html, /关闭 Graph/);
+  assert.match(html, /app\.tsx/);
+  assert.doesNotMatch(html, /git-graph-panel/);
+});
+
+test("mission display panel keeps the v6 empty diff viewer chrome by default", () => {
   const html = renderToStaticMarkup(
     createElement(MissionDisplayPanel, {
       style: {},
       pages: [
-        { id: "graph", title: "Graph" },
+        { id: "diff-detail", title: "Diff 详情" },
       ],
-      selectedPage: { id: "graph", title: "Graph" },
+      selectedPage: { id: "diff-detail", title: "Diff 详情" },
       openedDiffFilePaths: [],
       overviewItems: [],
       runtimeOverviewItems: [],
@@ -164,7 +210,8 @@ test("mission display panel keeps the v6 empty diff viewer chrome", () => {
   assert.match(html, /展示栏/);
   assert.doesNotMatch(html, /mission-v5\.html/);
   assert.doesNotMatch(html, /docs\/redesign\/mission-v5\.html/);
-  assert.match(html, /Graph/);
+  assert.doesNotMatch(html, />Graph</);
+  assert.match(html, /还没有文件变更/);
   assert.doesNotMatch(html, /Git 状态/);
   assert.doesNotMatch(html, /自定义/);
   assert.doesNotMatch(html, /新增展示页/);
@@ -277,7 +324,7 @@ test("mission display panel renders diff tabs when diff selected", () => {
     }),
   );
 
-  assert.match(html, /Graph/);
+  assert.doesNotMatch(html, />Graph</);
   assert.match(html, /app\.tsx/);
   assert.match(html, /const y = 3/);
   assert.doesNotMatch(html, /Git 状态/);

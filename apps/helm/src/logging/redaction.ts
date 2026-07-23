@@ -1,4 +1,4 @@
-const REDACTED_FIELD_PATTERN = /^(text|content|output|patch|prompt|stdout|stderr)$/iu;
+const REDACTED_FIELD_PATTERN = /^(text|content|output|patch|prompt|stdout|stderr|command|arguments|rawInput|rawOutput|reason|payload|providerPayload)$/iu;
 
 export function redactLogFields(value: unknown): unknown {
   if (Array.isArray(value)) {

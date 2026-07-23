@@ -16,6 +16,7 @@ export type RpcMethodFamily =
   | "error"
   | "helm"
   | "logging"
+  | "notification"
   | "permission"
   | "project"
   | "session";
@@ -65,6 +66,7 @@ function isRpcMethodFamily(value: string | undefined): value is RpcMethodFamily 
     value === "error" ||
     value === "helm" ||
     value === "logging" ||
+    value === "notification" ||
     value === "permission" ||
     value === "project" ||
     value === "session"

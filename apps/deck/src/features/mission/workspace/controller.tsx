@@ -1,10 +1,18 @@
-import type { AgentMessage, FileDiffSummary, SessionSummary } from "@tiller/shared";
-import { useState, useCallback, useEffect } from "react";
+import {
+  sortSessionTimelineEntries,
+  type AgentMessage,
+  type FileDiffSummary,
+  type LegacyEvidenceSource,
+  type SessionSubagentDetail,
+  type SessionSummary,
+} from "@tiller/shared";
+import { useState, useCallback, useEffect, useRef } from "react";
 import {
   canGenerateAssistantHandoff,
   generateAssistantHandoffDraft,
 } from "../../prompt-enhancer";
 import { MissionChatPane } from "../conversation";
+import { useDeckStore } from "../../../store";
 import { MissionComposer } from "../composer";
 import { MissionDiffPanel, MissionDisplaySection } from "../display";
 import { MissionInspector } from "../inspector";
@@ -18,6 +26,7 @@ import { useChatWindowActions } from "./chat-window-actions";
 import { MissionPage } from "./page";
 import {
   buildDraftPreparingMessage,
+  buildComposerPromptPlaceholder,
   buildMissionChatRestoreNotice,
   resolveMissionChatSelectedSessionId,
 } from "./chat-composition";
@@ -41,6 +50,8 @@ import {
   formatInspectorWorktreeSummaryLabel,
 } from "./worktree-summary";
 import { joinClassNames } from "../utils/session-render-state";
+import { shouldRefreshModelPickerOptions } from "../utils/model-picker-refresh";
+import { reconcileMissionDiffs, shouldPrimeGitGraphLoad } from "./git-sync";
 
 export function MissionWorktree(props: any) {
   const {
@@ -61,6 +72,7 @@ export function MissionWorktree(props: any) {
     selectedAgentId,
     activeSession,
     diffs,
+    historicalDiffIncompleteBySession = {},
     outputs,
     messages,
     sessionTimeline,
@@ -128,6 +140,8 @@ export function MissionWorktree(props: any) {
     toggleMissionProjectNode,
     startMissionPaneResize,
     nudgeMissionPane,
+    isMissionPaneResizing,
+    missionPaneResizeVersion,
     missionChatPaneStyle,
     chatMainRef,
     handleChatMainScroll,
@@ -224,8 +238,140 @@ export function MissionWorktree(props: any) {
     openedMissionDiffFilePaths = [],
     closeMissionDiffFile,
   } = props;
+  const sessionLegacyEvidence = useDeckStore((state) => state.sessionLegacyEvidence);
+  const setSessionLegacyEvidence = useDeckStore((state) => state.setSessionLegacyEvidence);
+  const sessionSubagentDetails = useDeckStore((state) => state.sessionSubagentDetails);
+  const setSessionSubagentDetails = useDeckStore((state) => state.setSessionSubagentDetails);
+  const subagentDetailGenerationsRef = useRef(new Map<string, number>());
+  const previousActiveSessionIdRef = useRef<string | null>(activeSessionId ?? null);
+
+  const loadSubagentDetail = useCallback((sessionId: string, parentToolCallId: string) => {
+    const client = rpcClientRef.current;
+    const key = `${sessionId}\0${parentToolCallId}`;
+    if (!client || client.socket.readyState !== WebSocket.OPEN) {
+      setSessionSubagentDetails((current) => ({
+        ...current,
+        [key]: {
+          ...(current[key] ?? {
+            sessionId,
+            parentToolCallId,
+            throughSequence: 0,
+            entries: [],
+          }),
+          loading: false,
+          failed: true,
+        },
+      }));
+      return;
+    }
+    const generation = (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1;
+    subagentDetailGenerationsRef.current.set(key, generation);
+    setSessionSubagentDetails((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] ?? {
+          sessionId,
+          parentToolCallId,
+          throughSequence: 0,
+          entries: [],
+        }),
+        loading: true,
+        failed: false,
+      },
+    }));
+    void client.request("session/get_subagent_detail", { sessionId, parentToolCallId })
+      .then((result: unknown) => {
+        if (subagentDetailGenerationsRef.current.get(key) !== generation) return;
+        const snapshot = result as SessionSubagentDetail;
+        setSessionSubagentDetails((current) => {
+          if (!current[key]) return current;
+          return {
+            ...current,
+            [key]: {
+              ...mergeSubagentDetailSnapshot(snapshot, current[key]),
+              loading: false,
+              failed: false,
+            },
+          };
+        });
+      })
+      .catch(() => {
+        if (subagentDetailGenerationsRef.current.get(key) !== generation) return;
+        setSessionSubagentDetails((current) => {
+          const existing = current[key];
+          return existing
+            ? { ...current, [key]: { ...existing, loading: false, failed: true } }
+            : current;
+        });
+      });
+  }, [rpcClientRef, setSessionSubagentDetails]);
+
+  const toggleSubagentDetail = useCallback((sessionId: string, parentToolCallId: string, open: boolean) => {
+    const key = `${sessionId}\0${parentToolCallId}`;
+    if (open) {
+      loadSubagentDetail(sessionId, parentToolCallId);
+      return;
+    }
+    subagentDetailGenerationsRef.current.set(
+      key,
+      (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1,
+    );
+    setSessionSubagentDetails((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }, [loadSubagentDetail, setSessionSubagentDetails]);
+  const pendingLegacyEvidenceRequestsRef = useRef(new Set<string>());
+  const loadSessionLegacyEvidence = useCallback((
+    sessionId: string,
+    source: LegacyEvidenceSource,
+    after?: string,
+  ) => {
+    const requestKey = `${sessionId}:${source}:${after ?? ""}`;
+    if (pendingLegacyEvidenceRequestsRef.current.has(requestKey)) {
+      return;
+    }
+    const client = rpcClientRef.current;
+    if (!client) {
+      return;
+    }
+    pendingLegacyEvidenceRequestsRef.current.add(requestKey);
+    setSessionLegacyEvidence((current) => {
+      const existing = current[sessionId];
+      return {
+        ...current,
+        [sessionId]: {
+          availability: existing?.availability,
+          pages: existing?.pages ?? {},
+          loading: { ...existing?.loading, [source]: true },
+        },
+      };
+    });
+    void dispatch(client, "session/list_legacy_evidence", { sessionId, source, limit: 50, after })
+      .catch(() => {
+        setSessionLegacyEvidence((current) => {
+          const existing = current[sessionId];
+          if (!existing) {
+            return current;
+          }
+          return {
+            ...current,
+            [sessionId]: {
+              ...existing,
+              loading: { ...existing.loading, [source]: false },
+            },
+          };
+        });
+      })
+      .finally(() => {
+        pendingLegacyEvidenceRequestsRef.current.delete(requestKey);
+      });
+  }, [dispatch, rpcClientRef, setSessionLegacyEvidence]);
   const [selectedCommitDiffPaths, setSelectedCommitDiffPaths] = useState<Set<string>>(() => new Set());
   const [assistantHandoffBusy, setAssistantHandoffBusy] = useState(false);
+  const modelPickerRefreshBySessionRef = useRef<Record<string, string | null>>({});
   const canHandoffAssistantMessage =
     canGenerateAssistantHandoff(deckPreferences.promptEnhancer) &&
     typeof setPrompt === "function" &&
@@ -266,13 +412,70 @@ export function MissionWorktree(props: any) {
     }
   };
   const {
+    focusedRealSessionId,
+    persistedOpenChatSessionIds,
+    visibleChatSessionIds,
+    openSessions,
+    openSessionIdSet,
+    focusedDraftWindow,
+    selectedComposerSession,
+  } = buildChatWindowModel({
+    sessions: sessions as SessionSummary[],
+    activeSessionId,
+    activeSession,
+    openChatSessionIds: openChatSessionIds as string[],
+    focusedChatWindowId,
+    draftChatWindow,
+    isMissionMobile,
+  });
+  const composerSession = selectedComposerSession ?? activeSession;
+  const handleOpenModelPicker = useCallback(() => {
+    if (!composerSession?.id) {
+      return;
+    }
+
+    const lastRefreshedRuntimeSessionId =
+      modelPickerRefreshBySessionRef.current[composerSession.id];
+
+    if (!shouldRefreshModelPickerOptions({
+      activeSessionId: composerSession.id,
+      runtimeSessionId: composerSession.runtimeSessionId,
+      lastRefreshedRuntimeSessionId,
+    })) {
+      return;
+    }
+
+    modelPickerRefreshBySessionRef.current[composerSession.id] =
+      composerSession.runtimeSessionId ?? null;
+
+    updateSessionDraftPreferences({
+      agentMode: effectiveDraftAgentMode,
+      model: resolveCombinedModelValue(
+        effectiveDraftModelBase,
+        effectiveDraftReasoningEffort,
+        draftAllModelOptions,
+      ),
+      reasoningEffort: effectiveDraftReasoningEffort,
+    });
+  }, [
+    composerSession,
+    updateSessionDraftPreferences,
+    effectiveDraftAgentMode,
+    effectiveDraftModelBase,
+    effectiveDraftReasoningEffort,
+    draftAllModelOptions,
+    resolveCombinedModelValue,
+  ]);
+  const {
     canSend,
     activeSessionRestoreGate,
+    composerSessionRestoreGate,
     activeMissionHelm,
     activeDiffs,
     activeOutputs,
     activeToolCalls,
     activeSessionStatus,
+    composerSessionStatus,
     pendingToolActivity,
     missionActivityLoading,
     missionDiffCount: sessionMissionDiffCount,
@@ -293,17 +496,25 @@ export function MissionWorktree(props: any) {
     visibleProjectFiles,
     sessionExecutionPending,
     composerModelLoading,
-  } = buildMissionWorktreeModel(props);
+    composerSessionRestoring,
+  } = buildMissionWorktreeModel({
+    ...props,
+    composerSession,
+  });
   const activeGitProjectId = activeSessionProjectId ?? selectedProjectId;
   const activeGitCwd = selectedCwd ?? activeSession?.cwd;
   const currentGitStatus = activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined;
-  const diffEmptyText = currentGitStatus
+  const historicalDiffIncomplete = Boolean(
+    activeSessionId && historicalDiffIncompleteBySession[activeSessionId],
+  );
+  const diffEmptyText = historicalDiffIncomplete
+    ? "历史快照不完整：未保存 Diff patch。"
+    : currentGitStatus
     ? copy.noDiffSummary
     : "请先刷新 Git 获取当前文件树。";
-  const syncedMissionDiffs = reconcileMissionDiffs(
-    activeDiffs,
-    currentGitStatus?.files,
-  );
+  const syncedMissionDiffs: FileDiffSummary[] = historicalDiffIncomplete
+    ? activeDiffs
+    : reconcileMissionDiffs(activeDiffs, currentGitStatus?.files);
   const missionDiffCount = syncedMissionDiffs.length;
   const hasWorktreeScope = Boolean(activeSession || selectedProjectId);
   const toggleMissionThinking = () => {
@@ -312,23 +523,6 @@ export function MissionWorktree(props: any) {
       !technicalPanels.showMissionThinking,
     );
   };
-  const {
-    focusedRealSessionId,
-    persistedOpenChatSessionIds,
-    visibleChatSessionIds,
-    openSessions,
-    openSessionIdSet,
-    focusedDraftWindow,
-    selectedComposerSession,
-  } = buildChatWindowModel({
-    sessions: sessions as SessionSummary[],
-    activeSessionId,
-    activeSession,
-    openChatSessionIds: openChatSessionIds as string[],
-    focusedChatWindowId,
-    draftChatWindow,
-    isMissionMobile,
-  });
   const hydrateOpenSessionStreams = useOpenSessionStreams({
     pairingState,
     connection,
@@ -337,14 +531,9 @@ export function MissionWorktree(props: any) {
     openSessions,
     sessions: sessions as SessionSummary[],
     messageHistoryState,
-    activityHistoryState,
     messagesBySession: messages,
     sessionTimelineBySession: sessionTimeline,
-    outputsBySession: outputs,
-    toolCallsBySession: toolCalls,
-    sessionPlansBySession: sessionPlans,
     setMessageHistoryState,
-    setActivityHistoryState,
   });
   const effectiveSelectedAgentId = focusedDraftWindow?.agentId ?? selectedAgentId;
   const effectiveSelectedCwd = focusedDraftWindow?.cwd ?? selectedCwd;
@@ -498,15 +687,18 @@ export function MissionWorktree(props: any) {
           projectId: activeGitProjectId,
           cwd: activeGitCwd,
         });
-        void dispatch(rpcClientRef.current, "project/git/graph", {
-          projectId: activeGitProjectId,
-          cwd: activeGitCwd,
-        });
+        const currentGraph = gitGraphByWorktree[activeGitCwd];
+        if (currentGraph) {
+          void dispatch(rpcClientRef.current, "project/git/graph", {
+            projectId: activeGitProjectId,
+            cwd: activeGitCwd,
+          });
+        }
       } catch (error) {
         console.error("Commit failed:", error);
       }
     },
-    [activeGitProjectId, activeGitCwd, dispatch],
+    [activeGitProjectId, activeGitCwd, dispatch, gitGraphByWorktree],
   );
 
   const handleGenerateDescription = useCallback(async (): Promise<string> => {
@@ -562,10 +754,12 @@ export function MissionWorktree(props: any) {
       projectId: activeGitProjectId,
       cwd: activeGitCwd,
     });
-    void dispatch(rpcClientRef.current, "project/git/graph", {
-      projectId: activeGitProjectId,
-      cwd: activeGitCwd,
-    });
+    if (currentGraph) {
+      void dispatch(rpcClientRef.current, "project/git/graph", {
+        projectId: activeGitProjectId,
+        cwd: activeGitCwd,
+      });
+    }
   }, [activeGitProjectId, activeGitCwd, dispatch, gitStatusByWorktree, gitGraphByWorktree]);
   const handleOpenGraph = useCallback(() => {
     setSelectedMissionDisplayTabId("graph");
@@ -653,6 +847,7 @@ export function MissionWorktree(props: any) {
       selectedDiffFilePath={selectedMissionDiffFilePath}
       diffs={syncedMissionDiffs}
       noDiffSummary={diffEmptyText}
+      historicalDiffIncomplete={historicalDiffIncomplete}
       collapsedDiffDirectories={collapsedMissionDiffDirectories}
       selectedCommitDiffPaths={selectedCommitDiffPaths}
       onToggleCommitDiff={toggleCommitDiffPath}
@@ -665,7 +860,7 @@ export function MissionWorktree(props: any) {
     "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-canvas",
     !activeSession && "mission-draft-chat",
   ]);
-  const resolvedMissionMobilePane = selectedMissionMobilePane ?? (activeSession ? "chat" : "project");
+  const resolvedMissionMobilePane = selectedMissionMobilePane ?? ((activeSession || draftChatWindow) ? "chat" : "project");
   const currentMobilePaneIndex = MISSION_MOBILE_PANE_ORDER.indexOf(resolvedMissionMobilePane);
   useEffect(() => {
     const visiblePaths = new Set(syncedMissionDiffs.map((diff) => diff.path));
@@ -692,11 +887,7 @@ export function MissionWorktree(props: any) {
     }
 
     const currentGraph = gitGraphByWorktree[activeGitCwd];
-    if (
-      currentGraph?.loading ||
-      currentGraph?.lastUpdated ||
-      (currentGraph && currentGraph.commits.length > 0)
-    ) {
+    if (!shouldPrimeGitGraphLoad(currentGraph)) {
       return;
     }
 
@@ -797,14 +988,42 @@ export function MissionWorktree(props: any) {
     name: agent.name ?? agent.id,
   }));
   const helmConnected = pairingState === "paired";
+  useEffect(() => {
+    const previousSessionId = previousActiveSessionIdRef.current;
+    const nextSessionId = activeSessionId ?? null;
+    previousActiveSessionIdRef.current = nextSessionId;
+    if (!previousSessionId || previousSessionId === nextSessionId) return;
+    const prefix = `${previousSessionId}\0`;
+    for (const key of subagentDetailGenerationsRef.current.keys()) {
+      if (key.startsWith(prefix)) {
+        subagentDetailGenerationsRef.current.set(
+          key,
+          (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1,
+        );
+      }
+    }
+    setSessionSubagentDetails((current) => Object.fromEntries(
+      Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
+    ));
+  }, [activeSessionId, setSessionSubagentDetails]);
+  useEffect(() => {
+    if (!helmConnected) return;
+    for (const detail of Object.values(useDeckStore.getState().sessionSubagentDetails)) {
+      if (detail) loadSubagentDetail(detail.sessionId, detail.parentToolCallId);
+    }
+  }, [helmConnected, loadSubagentDetail]);
   const shouldShowComposer = Boolean(helmConnected && (activeSession || draftChatWindow));
   const shouldShowDraftPreparing = Boolean(helmConnected && !activeSession && selectedAgentId && !selectedDraftConnection);
   const shouldShowRestoreGateNotice = Boolean(
     helmConnected && activeSession && !activeSessionRestoreGate.canChat && activeSessionRestoreGate.message,
   );
-  const composerPromptPlaceholder = shouldShowRestoreGateNotice
-    ? activeSessionRestoreGate.message
-    : draftPromptPlaceholder;
+  const composerPromptPlaceholder = buildComposerPromptPlaceholder({
+    showRestoreNotice: shouldShowRestoreGateNotice,
+    state: activeSessionRestoreGate.state,
+    message: activeSessionRestoreGate.message,
+    isMobile: isMissionMobile,
+    draftPromptPlaceholder,
+  });
   const missionChatSelectedSessionId = resolveMissionChatSelectedSessionId({
     focusedDraftWindow: Boolean(focusedDraftWindow),
     focusedRealSessionId,
@@ -841,44 +1060,45 @@ export function MissionWorktree(props: any) {
             className="h-full min-w-0"
           >
             <MissionSidebar
-          effectiveSidebarCollapsed={isMissionMobile ? false : effectiveSidebarCollapsed}
-          missionSidebarCollapsed={missionSidebarCollapsed}
-          missionSidebarPaneStyle={missionSidebarPaneStyle}
-          handleMissionTreeScroll={handleMissionTreeScroll}
-          setMissionSidebarCollapsed={setMissionSidebarCollapsed}
-          missionHelms={missionHelms}
-          effectiveMissionHelmId={effectiveMissionHelmId}
-          expandedMissionHelmIds={expandedMissionHelmIds}
-          projects={projects}
-          helmConnectionStates={helmConnectionStates}
-          activeProfileId={activeProfileId}
-          connection={connection}
-          toggleMissionHelmNode={toggleMissionHelmNode}
-          missionSelectedProjectId={missionSelectedProjectId}
-          expandedMissionProjectIds={expandedMissionProjectIds}
-          sessions={sessions}
-          sessionCountsByProject={sessionCountsByProject}
-          currentGitBranch={currentGitBranch}
-          missionDiffCount={missionDiffCount}
-          runtimeOverviewItems={runtimeOverviewItems}
-          setActiveSessionId={setActiveSessionId}
-          statuses={statuses}
-          copy={copy}
-          activeSessionId={activeSessionId}
-          highlightedSessionId={focusedRealSessionId ?? activeSessionId}
-          openSessionIds={openSessionIdSet}
-          openSession={openChatSession}
-          renderMissionAgentIcon={renderMissionAgentIcon}
-          resolveDisplaySessionTitle={resolveDisplaySessionTitle}
-          regenerateSessionTitle={regenerateSessionTitle}
-          regeneratingIds={regeneratingIds}
-          formatRelativeTime={formatRelativeTime}
-          setPendingSessionCleanup={setPendingSessionCleanup}
-          sessionHistoryState={sessionHistoryState}
-          toggleMissionProjectNode={toggleMissionProjectNode}
-          setSelectedMissionMobilePane={setSelectedMissionMobilePane}
-          resizer={null}
-        />{" "}
+              effectiveSidebarCollapsed={isMissionMobile ? false : effectiveSidebarCollapsed}
+              missionSidebarCollapsed={missionSidebarCollapsed}
+              missionSidebarPaneStyle={missionSidebarPaneStyle}
+              handleMissionTreeScroll={handleMissionTreeScroll}
+              setMissionSidebarCollapsed={setMissionSidebarCollapsed}
+              missionHelms={missionHelms}
+              effectiveMissionHelmId={effectiveMissionHelmId}
+              expandedMissionHelmIds={expandedMissionHelmIds}
+              projects={projects}
+              helmConnectionStates={helmConnectionStates}
+              activeProfileId={activeProfileId}
+              connection={connection}
+              toggleMissionHelmNode={toggleMissionHelmNode}
+              missionSelectedProjectId={missionSelectedProjectId}
+              expandedMissionProjectIds={expandedMissionProjectIds}
+              sessions={sessions}
+              sessionCountsByProject={sessionCountsByProject}
+              currentGitBranch={currentGitBranch}
+              missionDiffCount={missionDiffCount}
+              runtimeOverviewItems={runtimeOverviewItems}
+              setActiveSessionId={setActiveSessionId}
+              statuses={statuses}
+              copy={copy}
+              activeSessionId={activeSessionId}
+              highlightedSessionId={focusedRealSessionId ?? activeSessionId}
+              openSessionIds={openSessionIdSet}
+              openSession={openChatSession}
+              renderMissionAgentIcon={renderMissionAgentIcon}
+              resolveDisplaySessionTitle={resolveDisplaySessionTitle}
+              regenerateSessionTitle={regenerateSessionTitle}
+              regeneratingIds={regeneratingIds}
+              formatRelativeTime={formatRelativeTime}
+              setPendingSessionCleanup={setPendingSessionCleanup}
+              sessionHistoryState={sessionHistoryState}
+              toggleMissionProjectNode={toggleMissionProjectNode}
+              setSelectedMissionMobilePane={setSelectedMissionMobilePane}
+              isMobile={isMissionMobile}
+              resizer={null}
+            />{" "}
           </ResizablePanel>
         ) : null}
         {!isMissionMobile && !effectiveSidebarCollapsed ? (
@@ -897,6 +1117,8 @@ export function MissionWorktree(props: any) {
           className={chatPaneClassName}
           style={missionChatPaneStyle}
           isMissionMobile={isMissionMobile}
+          isPaneResizing={isMissionPaneResizing}
+          paneResizeVersion={missionPaneResizeVersion}
           chatMainRef={chatMainRef}
           onChatMainScroll={handleChatMainScroll}
           helmConnected={helmConnected}
@@ -921,6 +1143,7 @@ export function MissionWorktree(props: any) {
           activeSessionMessages={activeSessionMessages}
           sessionMessagesById={messages ?? {}}
             sessionTimelineById={sessionTimeline ?? {}}
+            sessionLegacyEvidenceById={sessionLegacyEvidence}
             activeSessionPlan={activeSessionPlan}
             sessionPlansById={sessionPlans ?? {}}
             dismissedCompletedSessionPlanKeys={dismissedCompletedSessionPlanKeys}
@@ -932,9 +1155,11 @@ export function MissionWorktree(props: any) {
           onHandoffAssistantMessage={handleAssistantHandoff}
           expandedMessageIds={expandedMessageIds}
           messageHistoryState={messageHistoryState}
-          activityHistoryState={activityHistoryState}
           onLoadOlderMessages={loadOlderMessages}
+          onLoadLegacyEvidence={loadSessionLegacyEvidence}
           onToggleExpandedMessage={toggleExpandedMessage}
+          subagentDetails={sessionSubagentDetails}
+          onToggleSubagentDetail={toggleSubagentDetail}
           activityLoading={missionActivityLoading}
           pendingToolPresent={Boolean(pendingToolActivity)}
           pendingApprovals={pendingApprovals}
@@ -974,7 +1199,7 @@ export function MissionWorktree(props: any) {
           ) : null}
           {shouldShowComposer ? (
             <MissionComposer
-              activeSession={activeSession}
+              activeSession={composerSession}
               contextSession={selectedComposerSession}
               isMobile={isMissionMobile}
               worktreePickerRef={worktreePickerRef}
@@ -1028,7 +1253,8 @@ export function MissionWorktree(props: any) {
               draftModelPickerLabel={draftModelPickerLabel}
               draftModelLoading={composerModelLoading}
               draftModelConfigReady={draftModelConfigReady}
-              modelSettingsLocked={Boolean(activeSession && !activeSessionRestoreGate.canChat)}
+              modelSettingsLocked={Boolean(composerSession && !composerSessionRestoreGate.canChat)}
+              sessionRestoring={composerSessionRestoring}
               draftModelBaseOptions={draftModelBaseOptions}
               resolveReasoningOptionsForModel={resolveReasoningOptionsForModel}
               draftAllModelOptions={draftAllModelOptions}
@@ -1043,8 +1269,9 @@ export function MissionWorktree(props: any) {
               enhancePromptDraft={enhancePromptDraft}
               promptEnhancerBusy={promptEnhancerBusy}
               promptEnhancerStatus={props.promptEnhancerStatus || ""}
-              sessionCanCancel={sessionExecutionPending && activeSessionStatus !== "starting"}
+              sessionCanCancel={sessionExecutionPending && composerSessionStatus !== "starting"}
               cancelSession={cancelSession}
+              onOpenModelPicker={handleOpenModelPicker}
               canSend={canSend}
             />
           ) : null}{" "}
@@ -1074,6 +1301,7 @@ export function MissionWorktree(props: any) {
             selectedDiffFilePath={selectedMissionDiffFilePath}
             diffs={syncedMissionDiffs}
             noDiffSummary={diffEmptyText}
+            historicalDiffIncomplete={historicalDiffIncomplete}
             onReconnectRuntime={reconnectAcpRuntime}
             gitGraph={activeGitCwd ? gitGraphByWorktree[activeGitCwd] : undefined}
             onAddPage={() => {}}
@@ -1153,54 +1381,25 @@ export function MissionWorktree(props: any) {
   );
 }
 
-function reconcileMissionDiffs(
-  sessionDiffs: FileDiffSummary[],
-  gitStatusFiles:
-    | Array<{
-        path: string;
-        indexStatus: string;
-        worktreeStatus: string;
-      }>
-    | undefined,
-) {
-  if (!gitStatusFiles) {
-    return [];
+function mergeSubagentDetailSnapshot(
+  snapshot: SessionSubagentDetail,
+  buffered: SessionSubagentDetail | undefined,
+): SessionSubagentDetail {
+  if (!buffered || buffered.throughSequence <= snapshot.throughSequence) {
+    if (!buffered) return snapshot;
+    const snapshotKeys = new Set(snapshot.entries.map((entry) => `${entry.kind}:${entry.id}`));
+    const missingBufferedEntries = buffered.entries.filter(
+      (entry) => !snapshotKeys.has(`${entry.kind}:${entry.id}`),
+    );
+    return missingBufferedEntries.length === 0
+      ? snapshot
+      : { ...snapshot, entries: sortSessionTimelineEntries([...snapshot.entries, ...missingBufferedEntries]) };
   }
-  if (!gitStatusFiles.length) {
-    return [];
-  }
-
-  const diffsByPath = new Map(
-    sessionDiffs.map((diff) => [normalizeMissionDiffPath(diff.path), diff] as const),
-  );
-
-  return gitStatusFiles.map((file) => {
-    const normalizedPath = normalizeMissionDiffPath(file.path);
-    const existingDiff = diffsByPath.get(normalizedPath);
-    if (existingDiff) {
-      return existingDiff;
-    }
-    return {
-      path: file.path,
-      status: mapGitStatusToDiffStatus(file.indexStatus, file.worktreeStatus),
-      additions: 0,
-      deletions: 0,
-      patch: "",
-    } satisfies FileDiffSummary;
-  });
-}
-
-function mapGitStatusToDiffStatus(indexStatus: string, worktreeStatus: string): FileDiffSummary["status"] {
-  const combinedStatus = `${indexStatus}${worktreeStatus}`;
-  if (combinedStatus.includes("A") || combinedStatus.includes("?")) {
-    return "added";
-  }
-  if (combinedStatus.includes("D")) {
-    return "deleted";
-  }
-  return "modified";
-}
-
-function normalizeMissionDiffPath(path: string) {
-  return path.replace(/\\/g, "/");
+  const entries = new Map(snapshot.entries.map((entry) => [`${entry.kind}:${entry.id}`, entry]));
+  for (const entry of buffered.entries) entries.set(`${entry.kind}:${entry.id}`, entry);
+  return {
+    ...snapshot,
+    throughSequence: buffered.throughSequence,
+    entries: sortSessionTimelineEntries([...entries.values()]),
+  };
 }

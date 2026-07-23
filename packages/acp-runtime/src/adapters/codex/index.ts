@@ -1,9 +1,15 @@
 import type { AcpAgentAdapter } from "../types";
 import { isCommandNamed, resolveDefaultLaunch } from "../shared";
 import { applyCodexSessionLaunchArgs } from "../session-config";
-import { mapCodexPlanUpdate } from "./plan-events";
+import { expandCodexRuntimeEvent, mapCodexCompactionUpdate, summarizeCodexCompactionSignal } from "./compaction-events";
+import { extractCodexPlanFromToolCall, isCodexPlanToolCall, mapCodexPlanUpdate } from "./plan-events";
+import { createCodexPromptToolCallObserver } from "./prompt-tool-calls";
+import { collectCodexToolEvidence } from "./evidence";
+import { promptEventsToToolObservations } from "../../tool-recognition";
+import { readCodexTranscriptCompactionSummaryFromDisk } from "./transcript/history";
 
 export function createCodexAcpAdapter(): AcpAgentAdapter {
+  const promptToolCalls = createCodexPromptToolCallObserver();
   return {
     id: "codex",
     isMatch: (provider) => provider.id === "codex" || isCommandNamed(provider.command, "codex-acp"),
@@ -20,6 +26,20 @@ export function createCodexAcpAdapter(): AcpAgentAdapter {
       providerId: provider.id,
       message: "Codex ACP does not expose remote session deletion yet.",
     }),
-    mapSessionUpdate: mapCodexPlanUpdate,
+    mapMessageUpdate: mapCodexCompactionUpdate,
+    mapToolCallUpdate: mapCodexPlanUpdate,
+    beginPromptObservation: (context) => promptToolCalls.begin(context),
+    pollPromptToolObservations: (context) => promptEventsToToolObservations(
+      promptToolCalls.poll(context),
+      { providerId: "codex", sessionId: context.runtimeSessionId, cwd: context.cwd },
+    ),
+    disposeSession: (sessionId) => promptToolCalls.dispose(sessionId),
+    expandRuntimeEvent: expandCodexRuntimeEvent,
+    collectToolEvidence: collectCodexToolEvidence,
+    extractPlanFromToolCall: extractCodexPlanFromToolCall,
+    isPlanToolCall: isCodexPlanToolCall,
+    summarizeCompactionSignal: summarizeCodexCompactionSignal,
+    resolveCompactionSummary: (context) =>
+      readCodexTranscriptCompactionSummaryFromDisk(context),
   };
 }

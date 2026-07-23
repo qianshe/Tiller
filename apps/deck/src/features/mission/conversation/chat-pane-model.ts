@@ -4,6 +4,10 @@ import type {
   SessionSummary,
   SessionTimelineEntry,
 } from "@tiller/shared";
+import {
+  deriveToolCallsFromTimeline,
+  mergeHistoricalAndLiveToolCalls,
+} from "../utils/timeline-activity";
 
 /**
  * Measures the total streamed character volume of a session so callers can
@@ -26,7 +30,9 @@ export function resolveSessionStreamContentLength(sources: {
       }
     } else if (entry.kind === "tool_call") {
       length += (entry.toolCall.output?.length ?? 0) + (entry.toolCall.input?.length ?? 0);
-    } else if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
+    } else if (entry.kind === "command_output") {
+      length += entry.output.text?.length ?? 0;
+    } else if (entry.kind === "context_compaction" || entry.kind === "history_gap") {
       // Transcript events don't contribute to character count
       continue;
     } else {
@@ -39,12 +45,95 @@ export function resolveSessionStreamContentLength(sources: {
   return length;
 }
 
-export function splitMissionToolCalls(toolCalls: AgentToolCall[]) {
+export function splitMissionToolCalls(
+  toolCalls: AgentToolCall[],
+  timelineItems?: SessionTimelineEntry[],
+) {
+  const effectiveToolCalls = mergeHistoricalAndLiveToolCalls(
+    deriveToolCallsFromTimeline(timelineItems),
+    toolCalls,
+  );
   return {
-    thinkingToolCalls: toolCalls.filter((toolCall) => toolCall.kind === "think"),
-    timelineToolCalls: toolCalls.filter((toolCall) => toolCall.kind !== "think"),
-    boundaryTimestamps: toolCalls.map((toolCall) => toolCall.timestamp),
+    thinkingToolCalls: effectiveToolCalls.filter((toolCall) => toolCall.kind === "think"),
+    timelineToolCalls: effectiveToolCalls.filter((toolCall) => toolCall.kind !== "think"),
+    boundaryTimestamps: effectiveToolCalls.map((toolCall) => toolCall.timestamp),
   };
+}
+
+export function shouldAutoScrollSessionBody({
+  stickToBottom,
+  forceInitialScroll = false,
+  historyLoading = false,
+  historyRevealLocked = false,
+  previousHistoryLoading = false,
+  allowAfterInitialHistoryLoad = false,
+}: {
+  stickToBottom?: boolean;
+  forceInitialScroll?: boolean;
+  historyLoading?: boolean;
+  historyRevealLocked?: boolean;
+  previousHistoryLoading?: boolean;
+  allowAfterInitialHistoryLoad?: boolean;
+}) {
+  return (forceInitialScroll || stickToBottom !== false) &&
+    !historyLoading &&
+    !historyRevealLocked &&
+    (!previousHistoryLoading || allowAfterInitialHistoryLoad || forceInitialScroll);
+}
+
+export function hasSessionBodyScrollSnapshotChanged(
+  previous: {
+    messageCount: number;
+    toolCallCount: number;
+    contentLength: number;
+    historyLoading: boolean;
+  },
+  current: {
+    messageCount: number;
+    toolCallCount: number;
+    contentLength: number;
+    historyLoading: boolean;
+  },
+) {
+  return previous.messageCount !== current.messageCount ||
+    previous.toolCallCount !== current.toolCallCount ||
+    previous.contentLength !== current.contentLength ||
+    previous.historyLoading !== current.historyLoading;
+}
+
+export function resolveSessionBodyStickToBottom({
+  current,
+  previous,
+  previousStickToBottom,
+  threshold,
+}: {
+  current: { scrollTop: number; scrollHeight: number; clientHeight: number };
+  previous?: { scrollTop: number; scrollHeight: number };
+  previousStickToBottom?: boolean;
+  threshold: number;
+}) {
+  // A growing stream can fire a scroll event before the follow-to-bottom write.
+  // Preserve the existing sticky intent so layout growth is not mistaken for a
+  // user-initiated upward scroll. A later real scroll event (without growth)
+  // still disables auto-follow when the user moves away from the bottom.
+  if (
+    previousStickToBottom !== false &&
+    previous &&
+    current.scrollHeight > previous.scrollHeight
+  ) {
+    return true;
+  }
+  return current.scrollHeight - current.scrollTop - current.clientHeight <= threshold;
+}
+
+export function pruneSessionCardScrollState<T>(
+  state: Record<string, T>,
+  openSessionIds: ReadonlyArray<string>,
+) {
+  const openIds = new Set(openSessionIds);
+  return Object.fromEntries(
+    Object.entries(state).filter(([sessionId]) => openIds.has(sessionId)),
+  ) as Record<string, T>;
 }
 
 export function resolveSessionStatusTone(status: SessionSummary["status"]): "active" | "idle" | "warning" | "danger" | "primary" {
@@ -80,6 +169,49 @@ export function resolveSessionStatusLabel(status: SessionSummary["status"]): str
     default:
       return "空闲";
   }
+}
+
+export function resolveSessionConversationDisplayMode({
+  sessionId,
+  sessionMessages,
+  sessionStatus,
+  timelineItemsLength,
+}: {
+  sessionId: string;
+  sessionMessages?: AgentMessage[];
+  sessionStatus: SessionSummary["status"];
+  timelineItemsLength: number;
+}): "conversation" | "history-loading" | "preview" {
+  const messages = sessionMessages ?? [];
+  const canUseOptimisticFallback =
+    sessionStatus === "starting" ||
+    sessionStatus === "running" ||
+    sessionStatus === "waiting_for_permission";
+  if (timelineItemsLength > 0) {
+    return "conversation";
+  }
+  if (canUseOptimisticFallback && hasOptimisticConversationMessages(sessionId, messages)) {
+    return "conversation";
+  }
+  if (messages.length > 0) {
+    return "history-loading";
+  }
+  return "preview";
+}
+
+function hasOptimisticConversationMessages(
+  sessionId: string,
+  sessionMessages: AgentMessage[],
+) {
+  return sessionMessages.some((message) => {
+    if (message.role === "user") {
+      return (
+        message.id === `${sessionId}-user-pending` ||
+        message.id.startsWith(`${sessionId}-user-`)
+      );
+    }
+    return message.role === "assistant" && message.streaming === true;
+  });
 }
 
 export function formatSessionPreviewTime(value: string | undefined) {

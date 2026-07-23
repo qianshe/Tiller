@@ -107,3 +107,24 @@ test("sqlite attachment store removes metadata and files for a session", () => {
     rmSync(tempDir, { force: true, recursive: true });
   }
 });
+
+test("sqlite attachment store removes one unused queued attachment without deleting shared bytes", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-attachment-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const rootPath = join(tempDir, "attachments");
+  const store = createSqliteSessionAttachmentStore({ dbPath, rootPath });
+
+  try {
+    const first = store.put({ sessionId: "session-1", messageId: "queued-1", mimeType: "image/png", dataBase64: PNG_BASE64 });
+    const second = store.put({ sessionId: "session-2", messageId: "message-2", mimeType: "image/png", dataBase64: PNG_BASE64 });
+    store.remove(first.id);
+
+    assert.equal(store.get(first.id), undefined);
+    assert.equal(existsSync(join(rootPath, first.storageKey)), true);
+    store.remove(second.id);
+    assert.equal(existsSync(join(rootPath, second.storageKey)), false);
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});

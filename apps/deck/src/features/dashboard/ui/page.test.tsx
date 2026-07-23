@@ -5,6 +5,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+import {
+  copyNotificationReport,
+  DashboardNotificationList,
+  formatNotificationReport,
+} from "./notification-list";
 import { DashboardPage } from "./page";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -47,6 +52,18 @@ const commonProps = {
       worktreeName: "feature/0.1.6",
     },
   ],
+  notifications: [
+    {
+      id: "notification-1",
+      kind: "error" as const,
+      message: "ACP connection closed",
+      source: "runtime",
+      code: "ACP_PROMPT_FAILED",
+      sessionId: "session-1",
+      sessionName: "Plan review",
+      createdAt: "2026-06-02T00:00:00.000Z",
+    },
+  ],
   onNavigateAgents: () => undefined,
 };
 
@@ -58,6 +75,7 @@ test("DashboardPage renders the v6 KPI, activity, Helm matrix, and approvals lay
   assert.match(html, /活动流/);
   assert.match(html, /Helm 矩阵/);
   assert.match(html, /待审批/);
+  assert.match(html, /通知/);
   assert.match(html, /计划/);
   assert.match(html, /1\/2 进行中/);
   assert.match(html, /overview-activity-row/);
@@ -197,6 +215,48 @@ test("DashboardPage links session activities back to mission sessions", () => {
   assert.match(activityStreamSource, /disabled=\{!activity\.sessionId \|\| !onOpenSession\}/);
 });
 
+test("DashboardPage routes conversation notifications to a clickable table", () => {
+  const html = renderToStaticMarkup(createElement(DashboardNotificationList, {
+    notifications: commonProps.notifications,
+    onOpenSession: () => undefined,
+  }));
+
+  assert.match(pageSource, /notifications=\{notifications\}/);
+  assert.match(activityStreamSource, /activeTab === "通知"/);
+  assert.match(html, /Conversation/);
+  assert.match(html, /打开会话/);
+  assert.match(html, /Plan review/);
+  assert.match(html, /ACP connection closed/);
+  assert.match(html, /复制通知/);
+});
+
+test("notification reports preserve the diagnostics needed for feedback", () => {
+  assert.equal(formatNotificationReport(commonProps.notifications[0]!), [
+    "Tiller 错误通知",
+    "时间: 2026-06-02T00:00:00.000Z",
+    "来源: runtime",
+    "错误码: ACP_PROMPT_FAILED",
+    "会话: Plan review (session-1)",
+    "消息: ACP connection closed",
+  ].join("\n"));
+});
+
+test("copyNotificationReport writes the complete report to the clipboard", async () => {
+  const writes: string[] = [];
+
+  await copyNotificationReport(commonProps.notifications[0]!, {
+    writeText: async (text: string) => {
+      writes.push(text);
+    },
+  });
+
+  assert.deepEqual(writes, [formatNotificationReport(commonProps.notifications[0]!)]);
+  await assert.rejects(
+    copyNotificationReport(commonProps.notifications[0]!, undefined),
+    /Clipboard API is unavailable/,
+  );
+});
+
 test("DashboardPage delegates activity rendering to the activity stream component", () => {
   assert.match(pageSource, /DashboardActivityStream/);
   assert.doesNotMatch(pageSource, /ACTIVITY_GRID_COLUMNS/);
@@ -217,9 +277,10 @@ test("DashboardPage keeps the ACP column content-sized and left-aligned", () => 
   assert.doesNotMatch(activityStreamSource, /justify-self-end/);
 });
 
-test("DashboardPage keeps activity filters focused on recent, permissions, and old items", () => {
-  assert.match(activityStreamSource, /\(\["最近", "权限", "7天前"\] as const\)/);
+test("DashboardPage keeps activity filters focused on recent, permissions, notifications, and old items", () => {
+  assert.match(activityStreamSource, /\(\["最近", "权限", "通知", "7天前"\] as const\)/);
   assert.doesNotMatch(activityStreamSource, /\(\["全部", "会话", "权限"\] as const\)/);
+  assert.match(activityStreamSource, /activeTab === "通知"/);
   assert.match(activityStreamSource, /activeTab === "7天前"/);
   assert.match(activityStreamSource, /ACTIVITY_OLD_MS = 7 \* 24 \* HOUR_MS/);
 });
@@ -245,6 +306,23 @@ test("DashboardPage keeps permission activity details compact", () => {
   assert.match(html, /权限: MCP · sanshu\/zhi\. 等待审批\. Codex\. Tiller\. feature\/0\.1\.6\. 待处理/);
   assert.doesNotMatch(html, /Approve MCP tool call with a long permission reason/);
 });
+
+test("DashboardPage puts desktop notifications after the permission tab and keeps mobile notifications after approvals", () => {
+  const desktopHtml = renderToStaticMarkup(createElement(DashboardPage, commonProps));
+  const mobileHtml = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
+
+  assert.match(desktopHtml, /最近[\s\S]*权限[\s\S]*通知[\s\S]*7天前/);
+  assert.match(mobileHtml, /待审批[\s\S]*通知[\s\S]*Helm 矩阵/);
+  assert.match(mobileHtml, /ACP connection closed/);
+  assert.match(mobileHtml, /ACP_PROMPT_FAILED/);
+  assert.match(activityStreamSource, /notifications=\{notifications\}/);
+  assert.match(activityStreamSource, /onOpenSession=\{onOpenSession\}/);
+  assert.match(htmlOrSourceForNotifications(), /NOTIFICATION_GRID_COLUMNS/);
+});
+
+function htmlOrSourceForNotifications() {
+  return readFileSync(resolve(currentDir, "notification-list.tsx"), "utf8");
+}
 
 test("DashboardPage limits the recent activity stream to the latest 15 items", () => {
   const sessions = Array.from({ length: 18 }, (_, index) => ({

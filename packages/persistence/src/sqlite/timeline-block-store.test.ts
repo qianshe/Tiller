@@ -8,6 +8,18 @@ import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/
 import { createSqliteSessionTimelineStore } from "./timeline-store";
 import { createSqliteTimelineBlockStore } from "./timeline-block-store";
 
+type InternalTimelineBlockStore = ReturnType<typeof createSqliteTimelineBlockStore> & {
+  append(sessionId: string, entry: SessionTimelineEntry): SessionTimelineEntry[];
+  upsertMessage(sessionId: string, message: AgentMessage): SessionTimelineEntry | undefined;
+  upsertToolCall(sessionId: string, toolCall: AgentToolCall): SessionTimelineEntry | undefined;
+};
+
+type InternalTimelineRowStore = ReturnType<typeof createSqliteSessionTimelineStore> & {
+  append(sessionId: string, entry: SessionTimelineEntry): SessionTimelineEntry[];
+  upsertMessage(sessionId: string, message: AgentMessage): SessionTimelineEntry | undefined;
+  upsertToolCall(sessionId: string, toolCall: AgentToolCall): SessionTimelineEntry | undefined;
+};
+
 const BASE_TIME = "2026-06-01T00:00:00.000Z";
 const { DatabaseSync } = createRequire(import.meta.url)(
   "node:sqlite",
@@ -21,31 +33,31 @@ function assistantEntry(index: number): SessionTimelineEntry {
   return {
     id: `assistant-${index}`,
     kind: "assistant_message",
-    chunks: [{ id: `assistant-${index}:content`, kind: "content", text: `message ${index}`, timestamp: at(index), timelineSequence: index }],
+    chunks: [{ id: `assistant-${index}:content`, kind: "content", text: `message ${index}`, timestamp: at(index), sequence: index }],
     timestamp: at(index),
     updatedAt: at(index),
-    timelineSequence: index,
+    sequence: index,
   };
 }
 
-function message(overrides: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role" | "text" | "timelineSequence">): AgentMessage {
+function message(overrides: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role" | "text" | "sequence">): AgentMessage {
   return {
-    timestamp: at(overrides.timelineSequence ?? 0),
+    timestamp: at(overrides.sequence ?? 0),
     ...overrides,
   };
 }
 
 function toolCall(
-  overrides: Partial<AgentToolCall> & Pick<AgentToolCall, "id" | "kind" | "status" | "title" | "timelineSequence">,
+  overrides: Partial<AgentToolCall> & Pick<AgentToolCall, "id" | "kind" | "status" | "title" | "sequence">,
 ): AgentToolCall {
   return {
-    timestamp: at(overrides.timelineSequence ?? 0),
-    updatedAt: at(overrides.timelineSequence ?? 0),
+    timestamp: at(overrides.sequence ?? 0),
+    updatedAt: at(overrides.sequence ?? 0),
     ...overrides,
   };
 }
 
-function withStore(run: (params: { store: ReturnType<typeof createSqliteTimelineBlockStore>; dbPath: string; blockRootPath: string }) => void) {
+function withStore(run: (params: { store: InternalTimelineBlockStore; dbPath: string; blockRootPath: string }) => void) {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-block-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
   const blockRootPath = join(tempDir, "timeline-blocks");
@@ -54,7 +66,7 @@ function withStore(run: (params: { store: ReturnType<typeof createSqliteTimeline
     blockRootPath,
     maxBlockBytes: 4096,
     maxBlockEntries: 2,
-  });
+  }) as InternalTimelineBlockStore;
   try {
     run({ store, dbPath, blockRootPath });
   } finally {
@@ -97,7 +109,7 @@ test("timeline block store seals by byte threshold", () => {
     blockRootPath: join(tempDir, "timeline-blocks"),
     maxBlockBytes: 1,
     maxBlockEntries: 100,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
     store.append("session-1", assistantEntry(0));
@@ -126,10 +138,10 @@ test("timeline block store updates an existing entry without duplicating or movi
     const updated: SessionTimelineEntry = {
       id: "assistant-0",
       kind: "assistant_message",
-      chunks: [{ id: "assistant-0:content", kind: "content", text: "updated", timestamp: at(99), timelineSequence: 99 }],
+      chunks: [{ id: "assistant-0:content", kind: "content", text: "updated", timestamp: at(99), sequence: 99 }],
       timestamp: at(99),
       updatedAt: at(99),
-      timelineSequence: 99,
+      sequence: 99,
     };
     store.append("session-1", updated);
 
@@ -165,7 +177,7 @@ test("timeline block store paginates older entries within the same block", () =>
     blockRootPath: join(tempDir, "timeline-blocks"),
     maxBlockBytes: 4096,
     maxBlockEntries: 10,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
     for (let index = 0; index < 5; index += 1) {
@@ -188,9 +200,186 @@ test("timeline block store paginates older entries within the same block", () =>
   }
 });
 
+test("timeline block store message-window keeps context_compaction attached to the following assistant group", () => {
+  withStore(({ store }) => {
+    store.replace("session-1", [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-1:content",
+          kind: "content",
+          text: "answer",
+          timestamp: at(30),
+          sequence: 276,
+        }],
+        timestamp: at(30),
+        updatedAt: at(30),
+        sequence: 276,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText: "continued from previous conversation",
+        detailsVisibility: "expandable",
+        timestamp: at(40),
+        updatedAt: at(40),
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-2",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-2:content",
+          kind: "content",
+          text: "follow-up",
+          timestamp: at(50),
+          sequence: 277,
+        }],
+        timestamp: at(50),
+        updatedAt: at(50),
+        sequence: 277,
+      },
+    ]);
+
+    const page = store.listPage("session-1", { limit: 1, window: "message" });
+
+    assert.deepEqual(
+      page.entries.map((entry) => entry.id),
+      ["compaction-1", "assistant-2"],
+    );
+  });
+});
+
+test("timeline block store message-window keeps context_compaction attached across a thinking-only assistant segment", () => {
+  withStore(({ store }) => {
+    store.replace("session-1", [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-1:content",
+          kind: "content",
+          text: "older answer",
+          timestamp: at(30),
+          sequence: 276,
+        }],
+        timestamp: at(30),
+        updatedAt: at(30),
+        sequence: 276,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText: "continued from previous conversation",
+        detailsVisibility: "expandable",
+        timestamp: at(40),
+        updatedAt: at(40),
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-2",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-2:thinking",
+          kind: "thinking",
+          text: "reasoning",
+          title: "Thinking",
+          status: "running",
+          timestamp: at(41),
+          updatedAt: at(41),
+          sequence: 277,
+        }],
+        timestamp: at(41),
+        updatedAt: at(41),
+        sequence: 277,
+      },
+      {
+        id: "assistant-2#p1",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-2:content",
+          kind: "content",
+          text: "follow-up",
+          timestamp: at(42),
+          sequence: 278,
+        }],
+        timestamp: at(42),
+        updatedAt: at(42),
+        sequence: 278,
+      },
+    ]);
+
+    const page = store.listPage("session-1", { limit: 1, window: "message" });
+
+    assert.deepEqual(
+      page.entries.map((entry) => entry.id),
+      ["compaction-1", "assistant-2", "assistant-2#p1"],
+    );
+  });
+});
+
+test("timeline block store list preserves compaction-only transcript order", () => {
+  withStore(({ store }) => {
+    store.replace("session-1", [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-1:content",
+          kind: "content",
+          text: "answer",
+          timestamp: at(30),
+          sequence: 276,
+        }],
+        timestamp: at(30),
+        updatedAt: at(30),
+        sequence: 276,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText: "continued from previous conversation",
+        detailsVisibility: "expandable",
+        timestamp: at(40),
+        updatedAt: at(40),
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-2",
+        kind: "assistant_message",
+        chunks: [{
+          id: "assistant-2:content",
+          kind: "content",
+          text: "follow-up",
+          timestamp: at(50),
+          sequence: 277,
+        }],
+        timestamp: at(50),
+        updatedAt: at(50),
+        sequence: 277,
+      },
+    ]);
+
+    assert.deepEqual(
+      store.list("session-1").map((entry) => entry.id),
+      ["assistant-1", "compaction-1", "assistant-2"],
+    );
+  });
+});
+
 test("timeline block store upsertToolCall merges thinking into an assistant entry", () => {
   withStore(({ store }) => {
-    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", timelineSequence: 2 }));
+    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", sequence: 2 }));
     store.upsertToolCall("session-1", toolCall({
       id: "assistant-1:thinking",
       commandId: "assistant-1:thinking",
@@ -198,7 +387,7 @@ test("timeline block store upsertToolCall merges thinking into an assistant entr
       output: "reasoning",
       status: "completed",
       title: "Thinking",
-      timelineSequence: 1,
+      sequence: 1,
     }));
 
     const entries = store.list("session-1");
@@ -232,10 +421,10 @@ test("timeline block store recovers when an indexed block file is missing", () =
     blockRootPath,
     maxBlockBytes: 4096,
     maxBlockEntries: 2,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
-    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "first", timelineSequence: 1 }));
+    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "first", sequence: 1 }));
     const db = new DatabaseSync(dbPath);
     try {
       const row = db.prepare("SELECT storage_key FROM session_timeline_blocks WHERE session_id = ? LIMIT 1").get("session-1") as { storage_key: string };
@@ -244,7 +433,7 @@ test("timeline block store recovers when an indexed block file is missing", () =
       db.close();
     }
 
-    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "recovered", timelineSequence: 2 }));
+    store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "recovered", sequence: 2 }));
 
     const entries = store.list("session-1");
     assert.deepEqual(entries.map((entry) => entry.id), ["assistant-1"]);
@@ -264,7 +453,7 @@ test("timeline block store keeps previous session data when replace fails while 
     blockRootPath,
     maxBlockBytes: 4096,
     maxBlockEntries: 1,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
     store.replace("session-1", [assistantEntry(0)]);
@@ -276,7 +465,7 @@ test("timeline block store keeps previous session data when replace fails while 
       maxBlockBytes: 4096,
       maxBlockEntries: 1,
       testFailureAfterTempBlockWrites: 1,
-    });
+    }) as InternalTimelineBlockStore;
     try {
       assert.throws(
         () => failingStore.replace("session-1", [assistantEntry(1), assistantEntry(2)]),
@@ -295,15 +484,55 @@ test("timeline block store keeps previous session data when replace fails while 
   }
 });
 
+test("timeline block store normalizes legacy tool call entries when reading", () => {
+  withStore(({ store }) => {
+    store.replace("session-1", [{
+      id: "tool:call-1",
+      kind: "tool_call",
+      toolCall: toolCall({
+        id: "call-1",
+        kind: "tool",
+        status: "completed",
+        title: "Tool call call-1",
+        input: JSON.stringify({
+          server: "sanshu",
+          tool: "zhi",
+          arguments: { message: "review" },
+        }),
+        sequence: 1,
+      }),
+      timestamp: at(1),
+      updatedAt: at(1),
+      sequence: 1,
+    }]);
+
+    const entries = store.list("session-1");
+    const page = store.listPage("session-1", { limit: 10 });
+
+    assert.equal(entries[0]?.kind, "tool_call");
+    assert.equal(entries[0]?.kind === "tool_call" ? entries[0].toolCall.kind : undefined, "mcp");
+    assert.equal(
+      entries[0]?.kind === "tool_call" ? entries[0].toolCall.title : undefined,
+      "Tool: sanshu/zhi",
+    );
+    assert.equal(page.entries[0]?.kind, "tool_call");
+    assert.equal(page.entries[0]?.kind === "tool_call" ? page.entries[0].toolCall.kind : undefined, "mcp");
+    assert.equal(
+      page.entries[0]?.kind === "tool_call" ? page.entries[0].toolCall.title : undefined,
+      "Tool: sanshu/zhi",
+    );
+  });
+});
+
 test("timeline block store matches sqlite row store page contract", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-block-contract-"));
-  const rowStore = createSqliteSessionTimelineStore(join(tempDir, "rows.sqlite"));
+  const rowStore = createSqliteSessionTimelineStore(join(tempDir, "rows.sqlite")) as InternalTimelineRowStore;
   const blockStore = createSqliteTimelineBlockStore({
     dbPath: join(tempDir, "blocks.sqlite"),
     blockRootPath: join(tempDir, "timeline-blocks"),
     maxBlockBytes: 4096,
     maxBlockEntries: 2,
-  });
+  }) as InternalTimelineBlockStore;
 
   try {
     const entries = Array.from({ length: 5 }, (_, index) => assistantEntry(index));

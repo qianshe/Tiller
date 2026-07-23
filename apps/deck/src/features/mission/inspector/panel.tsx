@@ -241,19 +241,19 @@ export function MissionInspector({
                 </div>
               ) : null}
             </div>
-            <div className="relative">
+            <div className="mission-inspector-commit-editor relative min-w-0 w-full">
               <textarea
                 rows={4}
                 value={commitMessage}
                 onChange={(event) => setCommitMessage(event.currentTarget.value)}
-                className="min-h-[96px] w-full resize-none overflow-y-auto rounded-none border border-border-ghost bg-surface-sunken/35 px-2 py-2 pb-11 text-section leading-5 shadow-none placeholder:text-muted-foreground focus:bg-surface-sunken/50 focus:outline-none"
+                className="min-h-[96px] w-full resize-none overflow-y-auto rounded-none border border-border-ghost bg-surface-sunken/35 px-2 py-2 pb-10 text-section leading-5 shadow-none placeholder:text-muted-foreground focus:bg-surface-sunken/50 focus:outline-none"
                 placeholder="提交信息(必填) · 描述本次变更"
                 aria-label="提交信息"
                 disabled={committing}
               />
               <button
                 type="button"
-                className="absolute bottom-2.5 right-2.5 flex h-7 min-w-[108px] items-center justify-center gap-1.5 rounded-full border border-border-ghost bg-surface-elevated/95 px-3 text-section font-medium text-foreground shadow-lg shadow-black/20 backdrop-blur disabled:opacity-50"
+                className="mission-inspector-commit-submit absolute bottom-2 right-2 flex h-7 min-w-[108px] items-center justify-center gap-1.5 rounded-full border border-border-ghost bg-surface-elevated/95 px-3 text-section font-medium text-foreground shadow-lg shadow-black/20 backdrop-blur disabled:opacity-50"
                 disabled={commitDisabled}
                 onClick={handleCommit}
               >

@@ -11,3 +11,9 @@ test("app shell keeps approval toast overlay but does not mount global approval 
   assert.match(rootSource, /ApprovalToastStackContainer/);
   assert.doesNotMatch(rootSource, /GlobalApprovalPanelContainer/);
 });
+
+test("app shell drives slash command context from the focused composer session", () => {
+  assert.match(rootSource, /const composerSlashSession = missionView\.selectedComposerSession \?\? missionView\.activeSession;/);
+  assert.match(rootSource, /activeSessionId: composerSlashSession\?\.id \?\? deckData\.activeSessionId/);
+  assert.match(rootSource, /activeSessionAgentId: composerSlashSession\?\.agentId \?\? runtimeState\.selectedAgentId/);
+});

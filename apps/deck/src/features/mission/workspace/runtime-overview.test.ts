@@ -131,3 +131,57 @@ test("buildRuntimeOverviewItems adds disconnected agents as connectable", () => 
     },
   ]);
 });
+
+test("buildRuntimeOverviewItems marks failed ACP restore as disconnected", () => {
+  const items = buildRuntimeOverviewItems({
+    agentConnectionInventory: [],
+    agents: [{ id: "codex", name: "Codex" }],
+    worktrees: [],
+    sessions: [],
+    projects: [],
+    statuses: {},
+    statusLabels: {},
+    pendingAcpReconnects: {},
+    activeSession: {
+      id: "session-1",
+      agentId: "codex",
+      agentName: "Codex",
+      cwd: "D:/repo",
+      status: "idle",
+    },
+    activeSessionRestoreGate: { canChat: false, state: "failed" },
+  });
+
+  assert.equal(items[0]?.status, "未连接");
+  assert.equal(items[0]?.canReconnect, true);
+});
+
+test("buildRuntimeOverviewItems marks a ready connection without the failed session as disconnected", () => {
+  const items = buildRuntimeOverviewItems({
+    agentConnectionInventory: [{
+      providerId: "codex",
+      cwd: "D:/repo",
+      status: "ready",
+      activeSessionCount: 0,
+      sessions: [],
+    }],
+    agents: [{ id: "codex", name: "Codex" }],
+    worktrees: [],
+    sessions: [],
+    projects: [],
+    statuses: {},
+    statusLabels: {},
+    pendingAcpReconnects: {},
+    activeSession: {
+      id: "session-1",
+      agentId: "codex",
+      agentName: "Codex",
+      cwd: "D:/repo",
+      status: "idle",
+    },
+    activeSessionRestoreGate: { canChat: false, state: "failed" },
+  });
+
+  assert.equal(items[0]?.status, "未连接");
+  assert.equal(items[0]?.canReconnect, true);
+});

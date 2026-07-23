@@ -1,14 +1,17 @@
 import { memo, useCallback } from "react";
-import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionTimelineEntry,
+  SessionSubagentDetail,
+} from "@tiller/shared";
 import { resolveConversationHistoryFlags } from "../history/model";
 import { PlainMessages } from "./plain-messages";
 
 type MessageHistoryState = {
-  canLoadMore?: boolean;
   nextCursor?: string;
   hasMore: boolean;
-  timelineNextCursor?: string;
-  timelineHasMore?: boolean;
+  canLoadMore?: boolean;
   loading: boolean;
 };
 
@@ -30,9 +33,10 @@ type MissionMessageTimelineProps = {
   expandedMessageIds: ReadonlySet<string>;
   boundaryTimestamps?: string[];
   historyStateBySession: Record<string, MessageHistoryState | undefined>;
-  activityHistoryStateBySession?: Record<string, MessageHistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
+  onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
 };
 
 /**
@@ -52,9 +56,10 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   expandedMessageIds,
   boundaryTimestamps = [],
   historyStateBySession,
-  activityHistoryStateBySession = {},
   onLoadOlderMessages,
   onToggleExpandedMessage,
+  subagentDetails,
+  onToggleSubagentDetail,
 }: MissionMessageTimelineProps) {
   const loadOlderMessages = useCallback(() => {
     if (sessionId) {
@@ -64,7 +69,6 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
 
   const historyState = resolveConversationHistoryState(
     sessionId ? historyStateBySession[sessionId] : undefined,
-    sessionId ? activityHistoryStateBySession[sessionId] : undefined,
   );
 
   return (
@@ -84,14 +88,15 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       historyState={historyState}
       onLoadOlderMessages={loadOlderMessages}
       onToggleExpandedMessage={onToggleExpandedMessage}
+      subagentDetails={subagentDetails}
+      onToggleSubagentDetail={onToggleSubagentDetail}
     />
   );
 });
 
 export function resolveConversationHistoryState(
   messageHistoryState?: MessageHistoryState,
-  activityHistoryState?: MessageHistoryState,
 ): MessageHistoryState | undefined {
-  return resolveConversationHistoryFlags(messageHistoryState, activityHistoryState) as
+  return resolveConversationHistoryFlags(messageHistoryState) as
     MessageHistoryState | undefined;
 }

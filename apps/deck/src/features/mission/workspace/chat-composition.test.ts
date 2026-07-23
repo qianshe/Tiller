@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildComposerPromptPlaceholder,
   buildDraftPreparingMessage,
   buildMissionChatRestoreNotice,
   resolveMissionChatSelectedSessionId,
@@ -45,6 +46,29 @@ test("buildMissionChatRestoreNotice maps restore gate states to user-facing noti
   assert.equal(
     buildMissionChatRestoreNotice({ show: false, state: "restoring", message: "ignored" }),
     undefined,
+  );
+});
+
+test("buildComposerPromptPlaceholder hides restore failure details from the input", () => {
+  assert.equal(
+    buildComposerPromptPlaceholder({
+      showRestoreNotice: true,
+      state: "failed",
+      message: "ACP connection closed: provider config error",
+      isMobile: false,
+      draftPromptPlaceholder: "输入消息",
+    }),
+    "输入消息",
+  );
+  assert.equal(
+    buildComposerPromptPlaceholder({
+      showRestoreNotice: true,
+      state: "restoring",
+      message: "正在恢复 ACP 会话，恢复成功后即可继续对话。",
+      isMobile: false,
+      draftPromptPlaceholder: "输入消息",
+    }),
+    "正在恢复 ACP 会话，恢复成功后即可继续对话。",
   );
 });
 

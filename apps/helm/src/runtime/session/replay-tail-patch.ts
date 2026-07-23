@@ -96,7 +96,7 @@ function resolveContinuationSummaryBoundary(messages: AgentMessage[]) {
   }
   for (let index = markerIndex + 1; index < messages.length; index += 1) {
     const message = messages[index];
-    if (message && typeof message.timelineSequence === "number") {
+    if (message && typeof message.sequence === "number") {
       return {
         summaryMessage: messages[markerIndex]!,
         resumedMessage: message,
@@ -115,11 +115,11 @@ function findMessageAnchorIndex(messages: AgentMessage[], anchorMessage: AgentMe
     return idMatches[0]!;
   }
 
-  if (typeof anchorMessage.timelineSequence === "number") {
+  if (typeof anchorMessage.sequence === "number") {
     const sequenceMatches = messages
       .map((message, index) =>
         message.role === anchorMessage.role &&
-          message.timelineSequence === anchorMessage.timelineSequence
+          message.sequence === anchorMessage.sequence
           ? index
           : -1)
       .filter((index) => index !== -1);
@@ -149,7 +149,7 @@ function findTimelineAnchorIndex(entries: SessionTimelineEntry[], message: Agent
     return idMatches[0]!;
   }
 
-  if (typeof message.timelineSequence === "number") {
+  if (typeof message.sequence === "number") {
     const sequenceMatches = entries
       .map((entry, index) => timelineEntryMatchesSequence(entry, message) ? index : -1)
       .filter((index) => index !== -1);
@@ -175,17 +175,17 @@ function timelineEntryMatchesId(entry: SessionTimelineEntry, messageId: string) 
 }
 
 function timelineEntryMatchesSequence(entry: SessionTimelineEntry, message: AgentMessage) {
-  if (!timelineEntryMatchesRole(entry, message.role) || typeof message.timelineSequence !== "number") {
+  if (!timelineEntryMatchesRole(entry, message.role) || typeof message.sequence !== "number") {
     return false;
   }
   if (entry.kind === "assistant_message") {
-    return entry.timelineSequence === message.timelineSequence ||
-      entry.chunks.some((chunk) => chunk.kind === "content" && chunk.timelineSequence === message.timelineSequence);
+    return entry.sequence === message.sequence ||
+      entry.chunks.some((chunk) => chunk.kind === "content" && chunk.sequence === message.sequence);
   }
   if (isTranscriptOrToolEntry(entry)) {
     return false;
   }
-  return (entry.message.timelineSequence ?? entry.timelineSequence) === message.timelineSequence;
+  return (entry.message.sequence ?? entry.sequence) === message.sequence;
 }
 
 function timelineEntryMatchesText(entry: SessionTimelineEntry, message: AgentMessage) {
@@ -238,8 +238,8 @@ function resolveAssistantComparableTexts(
 
 function isTranscriptOrToolEntry(entry: SessionTimelineEntry) {
   return entry.kind === "tool_call" ||
+    entry.kind === "command_output" ||
     entry.kind === "context_compaction" ||
-    entry.kind === "session_resumed" ||
     entry.kind === "history_gap";
 }
 

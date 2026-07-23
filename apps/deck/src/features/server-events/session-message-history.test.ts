@@ -115,12 +115,14 @@ test("replaceInitialMessageHistory keeps earlier repeated local user prompts whe
       role: "user",
       text: "继续",
       timestamp: "2026-05-29T10:00:00.000Z",
+      sequence: 1,
     }),
     message({
       id: "local-user-2",
       role: "user",
       text: "继续",
       timestamp: "2026-05-29T10:00:03.000Z",
+      sequence: 3,
     }),
   ];
   const loaded = [
@@ -129,6 +131,7 @@ test("replaceInitialMessageHistory keeps earlier repeated local user prompts whe
       role: "user",
       text: "继续",
       timestamp: "2026-05-29T10:00:03.000Z",
+      sequence: 3,
     }),
   ];
 
@@ -137,5 +140,124 @@ test("replaceInitialMessageHistory keeps earlier repeated local user prompts whe
   assert.deepEqual(
     merged.map((item) => item.id),
     ["local-user-1", "provider-user-2"],
+  );
+});
+
+test("replaceInitialMessageHistory preserves local assistant segments when loaded history only restores surrounding users", () => {
+  const current = [
+    message({
+      id: "local-user-1",
+      role: "user",
+      text: "先看一下",
+      timestamp: "2026-05-29T10:00:00.000Z",
+      sequence: 1,
+    }),
+    message({
+      id: "local-assistant-1",
+      role: "assistant",
+      text: "先读相关文件。",
+      timestamp: "2026-05-29T10:00:01.000Z",
+      sequence: 2,
+    }),
+    message({
+      id: "local-assistant-2",
+      role: "assistant",
+      text: "再跑一轮测试。",
+      timestamp: "2026-05-29T10:00:02.000Z",
+      sequence: 3,
+    }),
+    message({
+      id: "local-user-2",
+      role: "user",
+      text: "继续",
+      timestamp: "2026-05-29T10:00:03.000Z",
+      sequence: 4,
+    }),
+  ];
+  const loaded = [
+    message({
+      id: "provider-user-1",
+      role: "user",
+      text: "先看一下",
+      timestamp: "2026-05-29T10:00:00.000Z",
+      sequence: 1,
+    }),
+    message({
+      id: "provider-user-2",
+      role: "user",
+      text: "继续",
+      timestamp: "2026-05-29T10:00:03.000Z",
+      sequence: 4,
+    }),
+  ];
+
+  const merged = replaceInitialMessageHistory(current, loaded);
+
+  assert.deepEqual(
+    merged.map((item) => item.id),
+    ["provider-user-1", "local-assistant-1", "local-assistant-2", "provider-user-2"],
+  );
+});
+
+test("replaceInitialMessageHistory drops later replay duplicate assistant messages already represented by loaded history", () => {
+  const current = [
+    message({
+      id: "session-1-msg-000001",
+      role: "assistant",
+      text: "我来看看项目结构和相关代码。",
+      timestamp: "2026-06-28T12:42:44.452Z",
+      sequence: 40,
+    }),
+    message({
+      id: "provider-assistant-1",
+      role: "assistant",
+      text: "我来看看项目结构和相关代码。",
+      timestamp: "2026-06-28T12:44:23.973Z",
+      sequence: 3,
+    }),
+  ];
+  const loaded = [
+    message({
+      id: "session-1-msg-000001",
+      role: "assistant",
+      text: "我来看看项目结构和相关代码。",
+      timestamp: "2026-06-28T12:42:44.452Z",
+      sequence: 40,
+    }),
+  ];
+
+  const merged = replaceInitialMessageHistory(current, loaded);
+
+  assert.deepEqual(
+    merged.map((item) => item.id),
+    ["session-1-msg-000001"],
+  );
+});
+
+test("replaceInitialMessageHistory matches equivalent assistant text after normalization", () => {
+  const current = [
+    message({
+      id: "local-assistant-1",
+      role: "assistant",
+      text: "我来看看项目结构和相关代码。",
+      timestamp: "2026-06-28T12:42:44.452Z",
+      sequence: 40,
+    }),
+  ];
+  const loaded = [
+    message({
+      id: "provider-assistant-1",
+      role: "assistant",
+      text: "我来看看项目结构和相关代码。  ",
+      timestamp: "2026-06-28T12:42:45.000Z",
+      sequence: 40,
+    }),
+  ];
+
+  const merged = replaceInitialMessageHistory(current, loaded);
+
+  assert.deepEqual(
+    merged.map((item) => item.id),
+    ["provider-assistant-1"],
   );
 });

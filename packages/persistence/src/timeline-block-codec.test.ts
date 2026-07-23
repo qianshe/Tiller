@@ -9,10 +9,10 @@ function entry(id: string, position: number): PositionedSessionTimelineEntry {
   const payload: SessionTimelineEntry = {
     id,
     kind: "assistant_message",
-    chunks: [{ id: `${id}:content`, kind: "content", text: id, timestamp: BASE_TIME, timelineSequence: position }],
+    chunks: [{ id: `${id}:content`, kind: "content", text: id, timestamp: BASE_TIME, sequence: position }],
     timestamp: BASE_TIME,
     updatedAt: BASE_TIME,
-    timelineSequence: position,
+    sequence: position,
   };
   return {
     position,

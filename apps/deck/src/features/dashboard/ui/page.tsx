@@ -5,6 +5,10 @@ import {
   type DashboardActivityApproval,
   type DashboardActivitySession,
 } from "./activity-stream";
+import {
+  DashboardNotificationList,
+} from "./notification-list";
+import type { DashboardNotification } from "../orchestration/dashboard-view-model";
 
 type DashboardHelm = {
   id: string;
@@ -39,9 +43,11 @@ export type DashboardPageProps = {
   sessions?: DashboardSession[];
   helms?: DashboardHelm[];
   approvals?: DashboardApproval[];
+  notifications?: DashboardNotification[];
   onNavigateAgents: () => void;
   onOpenSession?: (sessionId: string) => void;
   onRespondApproval?: (approvalRequestId: string, decision: PermissionDecision) => void;
+  onClearNotifications?: () => void;
   isMobile?: boolean;
 };
 
@@ -116,9 +122,11 @@ export function DashboardPage({
   sessions = [],
   helms = [],
   approvals = [],
+  notifications = [],
   onNavigateAgents,
   onOpenSession,
   onRespondApproval,
+  onClearNotifications,
   isMobile = false,
 }: DashboardPageProps) {
   const approvalRows = approvals;
@@ -188,6 +196,14 @@ export function DashboardPage({
           </ul>
         </section>
 
+        <div className="mb-3">
+          <DashboardNotificationList
+            notifications={notifications}
+            onOpenSession={onOpenSession}
+            onClear={onClearNotifications}
+          />
+        </div>
+
         {/* Helm 矩阵 */}
         <section className="wb-pane mb-3">
           <div className="wb-pane-head min-h-9">
@@ -252,7 +268,9 @@ export function DashboardPage({
           approvals={approvals}
           planSessionCount={planSessionCount}
           toolCallCount={toolCallCount}
+          notifications={notifications}
           onOpenSession={onOpenSession}
+          onClearNotifications={onClearNotifications}
         />
 
         <aside className="flex flex-col gap-3">
@@ -299,6 +317,7 @@ export function DashboardPage({
               ))}
             </ul>
           </section>
+
         </aside>
       </div>
     </section>

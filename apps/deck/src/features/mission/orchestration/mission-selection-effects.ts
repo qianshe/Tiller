@@ -46,6 +46,8 @@ export function useMissionSelectionEffects(source: any) {
     setWorktreeGitByProject,
     gitStatusByWorktree,
     setGitStatusByWorktree,
+    gitGraphByWorktree,
+    setGitGraphByWorktree,
     dispatch,
     selectedAgentId,
     filteredAgents,

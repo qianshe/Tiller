@@ -39,6 +39,12 @@ const statusEvent: SessionRuntimeEvent = {
   message: "ready",
 };
 
+const replayErrorEvent: SessionRuntimeEvent = {
+  type: "error",
+  code: "ACP_AGENT_API_ERROR",
+  message: "Failed to authenticate. API Error: 403 预扣费额度失败",
+};
+
 const replayToolCallEvent: SessionRuntimeEvent = {
   type: "tool-call",
   toolCall: {
@@ -86,6 +92,15 @@ const replayPlanEvent: SessionRuntimeEvent = {
   },
 };
 
+const replayCompactionEvent: SessionRuntimeEvent = {
+  type: "compaction",
+  phase: "completed",
+  source: "heuristic",
+  timestamp: "2026-06-08T01:00:01.000Z",
+  summaryText: "恢复时重放的历史压缩摘要",
+  messageId: "compact-summary-1",
+};
+
 test("restore replay sink suppresses historical message replay until the restored session receives a new prompt", () => {
   const forwarded: SessionRuntimeEvent[] = [];
   const suppressed: SessionRuntimeEvent[] = [];
@@ -98,15 +113,27 @@ test("restore replay sink suppresses historical message replay until the restore
   sink.setSuppressing(true);
   sink.onEvent(assistantReplayEvent);
   sink.onEvent(userReplayEvent);
+  sink.onEvent(replayErrorEvent);
   sink.onEvent(statusEvent);
   sink.onEvent(assistantReplayEvent);
   sink.onEvent(unknownAssistantEvent);
 
   sink.setSuppressing(false);
   sink.onEvent(assistantReplayEvent);
+  sink.onEvent(replayErrorEvent);
 
-  assert.deepEqual(forwarded, [statusEvent, unknownAssistantEvent, assistantReplayEvent]);
-  assert.deepEqual(suppressed, [assistantReplayEvent, userReplayEvent, assistantReplayEvent]);
+  assert.deepEqual(forwarded, [
+    statusEvent,
+    unknownAssistantEvent,
+    assistantReplayEvent,
+    replayErrorEvent,
+  ]);
+  assert.deepEqual(suppressed, [
+    assistantReplayEvent,
+    userReplayEvent,
+    replayErrorEvent,
+    assistantReplayEvent,
+  ]);
 });
 
 test("restore replay sink suppresses replay artifacts until prompt boundary", () => {
@@ -123,6 +150,8 @@ test("restore replay sink suppresses replay artifacts until prompt boundary", ()
   sink.onEvent(replayCommandOutputEvent);
   sink.onEvent(replayDiffEvent);
   sink.onEvent(replayPlanEvent);
+  sink.onEvent(replayCompactionEvent);
+  sink.onEvent(replayErrorEvent);
 
   assert.deepEqual(forwarded, []);
   assert.deepEqual(suppressed, [
@@ -130,10 +159,14 @@ test("restore replay sink suppresses replay artifacts until prompt boundary", ()
     replayCommandOutputEvent,
     replayDiffEvent,
     replayPlanEvent,
+    replayCompactionEvent,
+    replayErrorEvent,
   ]);
 
   sink.setSuppressing(false);
   sink.onEvent(replayToolCallEvent);
-  assert.deepEqual(forwarded, [replayToolCallEvent]);
+  sink.onEvent(replayCompactionEvent);
+  sink.onEvent(replayErrorEvent);
+  assert.deepEqual(forwarded, [replayToolCallEvent, replayCompactionEvent, replayErrorEvent]);
 });
 

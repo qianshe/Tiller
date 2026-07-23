@@ -35,7 +35,7 @@ test("mission loading renders stable ACP running copy without tool wording", () 
   assert.doesNotMatch(html, /等待 ACP 运行中 返回结果/);
 });
 
-test("mission tool loading title shows compact state without command detail", () => {
+test("mission tool loading title reports the session as running without tool wording", () => {
   const html = renderToStaticMarkup(
     createElement(MissionToolLoadingTitle, {
       activity: { title: "Tool: mcp_router/search_context" },
@@ -44,6 +44,7 @@ test("mission tool loading title shows compact state without command detail", ()
   );
 
   assert.match(html, /role=\"status\"/);
-  assert.match(html, /工具执行中/);
+  assert.match(html, /运行中/);
+  assert.doesNotMatch(html, /工具执行中/);
   assert.doesNotMatch(html, />等待 mcp_router\/search_context 返回结果/);
 });

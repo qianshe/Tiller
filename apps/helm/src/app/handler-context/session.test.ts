@@ -6,15 +6,20 @@ test("handler session context groups runtime dependencies and preserves queue dr
   const calls: unknown[] = [];
   const sessions = new Map();
   const permissionIndex = new Map();
+  const sessionTimelineFlushScheduler = { id: "sessionTimelineFlushScheduler" };
   const factory = createHandlerSessionContextFactory<{ socketId: string | undefined }>({
     sessions,
     permissionIndex,
     sessionStore: { id: "sessionStore" },
     sessionMessageStore: { id: "sessionMessageStore" },
     sessionArtifactStore: { id: "sessionArtifactStore" },
+    sessionLegacyEvidenceStore: { id: "sessionLegacyEvidenceStore" },
     sessionAttachmentStore: { id: "sessionAttachmentStore" },
+    sessionOutputBodyStore: { id: "sessionOutputBodyStore" },
     sessionRuntimeStore: { id: "sessionRuntimeStore" },
+    sessionPlanStore: { id: "sessionPlanStore" },
     sessionTimelineStore: { id: "sessionTimelineStore" },
+    sessionTimelineFlushScheduler,
     sessionUpdateStore: { id: "sessionUpdateStore" },
     liveMessageBuffer: { id: "liveMessageBuffer" },
     promptQueue: { id: "promptQueue" },
@@ -39,14 +44,11 @@ test("handler session context groups runtime dependencies and preserves queue dr
     startSessionResume: async () => ({ ok: true }),
     handleRuntimeEvent: () => undefined,
     hydrateSessionSummary: (summary) => summary,
-    migrateStoredSessionSummary: (summary) => summary,
     buildResumeInfo: () => ({}),
     persistRuntimeDescriptor: () => undefined,
-    refreshAuthoritativeSessionHistory: async () => undefined,
     updateSessionSummary: () => undefined,
     persistSessionMessage: () => undefined,
     publishDiffUpdate: async () => undefined,
-    reimportSessionHistory: async () => ({}),
     hydrateDiffsFromWorktreeGit: async (_sessionId, files) => files,
     clearPermissionRequestsForSession: () => undefined,
     deleteLocalSessionData: () => undefined,
@@ -59,6 +61,10 @@ test("handler session context groups runtime dependencies and preserves queue dr
   assert.equal(context.permissionIndex, permissionIndex);
   assert.equal(context.approvalIndex, permissionIndex);
   assert.deepEqual(context.sessionAttachmentStore, { id: "sessionAttachmentStore" });
+  assert.deepEqual(context.sessionOutputBodyStore, { id: "sessionOutputBodyStore" });
+  assert.deepEqual(context.sessionLegacyEvidenceStore, { id: "sessionLegacyEvidenceStore" });
+  assert.deepEqual(context.sessionPlanStore, { id: "sessionPlanStore" });
   assert.deepEqual(context.sessionUpdateStore, { id: "sessionUpdateStore" });
+  assert.equal(context.sessionTimelineFlushScheduler, sessionTimelineFlushScheduler);
   assert.deepEqual(calls, [{ sessionId: "session-1", context: { socketId: "socket-a" } }]);
 });

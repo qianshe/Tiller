@@ -1,4 +1,11 @@
-import type { AgentToolCall, CommandChunk } from "@tiller/shared";
+import {
+  formatAgentToolCallMcpTitle,
+  resolveAgentToolCallMcp,
+  resolveStructuredToolName,
+  type AgentToolCall,
+  type CommandChunk,
+} from "@tiller/shared";
+import { classifyStructuredFileOperation } from "./tool-recognition/file-operation";
 
 function timestamp() {
   return new Date().toISOString();
@@ -11,14 +18,18 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
   }
 
   const source = update.toolCall ?? update.tool_call ?? update.tool ?? update.terminal ?? update;
+  const rawToolInput = resolveRawToolInput(source, update);
+  const rawToolOutput = resolveRawToolOutput(source, update);
+  const parsedToolInput = parseToolInput(rawToolInput);
   const id = stringFrom(source.id ?? source.toolCallId ?? source.tool_call_id ?? source.callId ?? update.id) ?? `${sessionId}-tool-${Date.now()}`;
   const commandId = stringFrom(source.commandId ?? source.command_id ?? source.terminalId ?? update.commandId);
-  const toolName = extractToolName(source, update);
+  const toolName = extractToolName(source, update, parsedToolInput);
   const rawTitle = stringFrom(source.title ?? source.label ?? source.displayName ?? source.display_name ?? source.name ?? source.toolName ?? source.tool_name ?? source.tool ?? source.command ?? update.title ?? update.name);
-  const output = stringifyToolPayload(source.output ?? source.result ?? source.rawOutput ?? source.raw_output ?? source.content ?? source.text ?? source.state?.output);
-  const input = stringifyToolPayload(source.input ?? source.arguments ?? source.args ?? source.params ?? source.command ?? source.rawInput ?? source.raw_input ?? source.state?.input);
-  const kind = inferToolCallKind(type, source);
-  const title = resolveToolTitle(rawTitle, toolName, commandId, id, input, kind);
+  const output = stringifyToolPayload(rawToolOutput);
+  const input = stringifyToolPayload(rawToolInput);
+  const mcp = resolveAgentToolCallMcp({ input: parsedToolInput, toolName, rawTitle });
+  const kind = inferToolCallKind(type, source, rawTitle, rawToolInput);
+  const title = resolveToolTitle(rawTitle, toolName, commandId, id, input, kind, mcp);
   const now = timestamp();
 
   return {
@@ -26,6 +37,7 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
     kind,
     title,
     status: inferToolCallStatus(type, source.status ?? source.state ?? update.status ?? update.state),
+    ...(mcp ? { mcp } : {}),
     ...(commandId ? { commandId } : {}),
     ...(input ? { input } : {}),
     ...(output ? { output } : {}),
@@ -49,7 +61,18 @@ export function mapCommandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
   };
 }
 
-function resolveToolTitle(rawTitle: string | undefined, toolName: string | undefined, commandId: string | undefined, id: string, input?: string, kind?: AgentToolCall["kind"]) {
+function resolveToolTitle(
+  rawTitle: string | undefined,
+  toolName: string | undefined,
+  commandId: string | undefined,
+  id: string,
+  input: string | undefined,
+  kind: AgentToolCall["kind"] | undefined,
+  mcp: AgentToolCall["mcp"] | undefined,
+) {
+  if (mcp) {
+    return formatAgentToolCallMcpTitle(mcp);
+  }
   if (isInformativeToolTitle(rawTitle, id)) {
     return rawTitle!;
   }
@@ -74,10 +97,9 @@ function shortOpaqueToolCallId(id: string) {
   return id.length > 12 ? `${id.slice(0, 9)}…` : id;
 }
 
-function extractToolName(source: any, update: any) {
+function extractToolName(source: any, update: any, parsedToolInput?: unknown) {
   return (
-    toolNameFromToolInput(source.rawInput ?? source.raw_input ?? update.rawInput ?? update.raw_input) ??
-    toolNameFromToolInput(source.input ?? source.arguments ?? source.args ?? source.params ?? source.state?.input ?? update.input ?? update.arguments ?? update.args ?? update.params) ??
+    toolNameFromToolInput(parsedToolInput) ??
     primitiveStringFrom(
       source.toolName ??
         source.tool_name ??
@@ -98,7 +120,7 @@ function extractToolName(source: any, update: any) {
 }
 
 function toolNameFromToolInput(input: unknown) {
-  return toolNameFromRawInput(parseToolInput(input));
+  return resolveStructuredToolName(parseToolInput(input));
 }
 
 function parseToolInput(input: unknown): unknown {
@@ -114,48 +136,6 @@ function parseToolInput(input: unknown): unknown {
   } catch {
     return input;
   }
-}
-
-function toolNameFromRawInput(rawInput: unknown) {
-  if (!rawInput || typeof rawInput !== "object") {
-    return undefined;
-  }
-  const record = rawInput as Record<string, unknown>;
-  const request = record.request && typeof record.request === "object"
-    ? record.request as Record<string, unknown>
-    : undefined;
-  const server = primitiveStringFrom(record.server ?? record.server_name ?? record.serverName);
-  const tool = primitiveStringFrom(
-    record.tool ??
-      record.name ??
-      record.toolName ??
-      record.tool_name ??
-      request?.name ??
-      request?.tool ??
-      request?.toolName ??
-      request?.tool_name,
-  );
-  if (server && tool) {
-    return `${server}/${tool}`;
-  }
-  return tool ?? server ?? inferToolNameFromStructuredPayload(record);
-}
-
-function inferToolNameFromStructuredPayload(record: Record<string, unknown>) {
-  if (typeof record.code === "string" && ("timeout_ms" in record || "timeoutMs" in record)) {
-    return "node_repl/js";
-  }
-  if (
-    typeof record.project_root_path === "string" &&
-    typeof record.message === "string" &&
-    Array.isArray(record.predefined_options)
-  ) {
-    return "sanshu/zhi";
-  }
-  if (typeof record.project_path === "string" && typeof record.action === "string") {
-    return "sanshu/ji";
-  }
-  return undefined;
 }
 
 function stringifyToolPayload(value: unknown): string | undefined {
@@ -190,10 +170,17 @@ function primitiveStringFrom(value: unknown): string | undefined {
   return undefined;
 }
 
-function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind"] {
-  const toolInput = parseToolInput(source.rawInput ?? source.raw_input ?? source.input ?? source.arguments ?? source.args ?? source.params ?? source.state?.input);
-  const toolName = toolNameFromRawInput(toolInput);
+function inferToolCallKind(
+  updateType: string,
+  source: any,
+  rawTitle?: string,
+  rawToolInput?: unknown,
+): AgentToolCall["kind"] {
+  const toolInput = parseToolInput(rawToolInput ?? resolveRawToolInput(source, source));
+  const toolName = toolNameFromToolInput(toolInput);
+  const structuredKind = inferKindFromStructuredInput(toolInput);
   const explicitKind = resolveExplicitToolCallKind(source);
+  const mcp = resolveAgentToolCallMcp({ input: toolInput, toolName, rawTitle });
   const descriptorRaw = [
     source.name,
     source.toolName,
@@ -225,8 +212,13 @@ function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind
     .toLowerCase();
 
   if (explicitKind === "subagent") return "subagent";
+  if (/\b(?:lsp[_-]?)?diagnostics?\b/u.test(descriptorRaw)) return "diagnostics";
+  if (/\b(?:todo[_-]?write|todowrite)\b/u.test(descriptorRaw)) return "todo";
+  if (explicitKind === "shell" && structuredKind === "search") return "search";
+  if (explicitKind && explicitKind !== "tool" && explicitKind !== "unknown") return explicitKind;
   if (isSkillToolInput(toolInput) || /(^|[_-])skill(s)?($|[_-])|execute_skill|load_skill/u.test(raw)) return "skill";
-  if (toolName?.includes("/")) return "mcp";
+  if (mcp) return "mcp";
+  if (structuredKind === "shell") return "shell";
   if (/\b(?:read|view|list|glob)\b/u.test(raw)) return "read";
   if (/edit|delete|move|diff|patch|write|file/u.test(raw)) return "write";
   if (/search|grep/u.test(raw)) return "search";
@@ -234,7 +226,6 @@ function inferToolCallKind(updateType: string, source: any): AgentToolCall["kind
   if (/fetch/u.test(raw)) return "fetch";
   if (/think/u.test(raw)) return "think";
   if (/\btodo/u.test(raw)) return "todo";
-  const structuredKind = inferKindFromStructuredInput(toolInput);
   if (structuredKind) return structuredKind;
   if (looksLikePathTitle(source.title)) return "read";
   if (/tool/u.test(raw)) return "tool";
@@ -252,6 +243,8 @@ function resolveExplicitToolCallKind(source: any): AgentToolCall["kind"] | undef
     mcp: "mcp",
     skill: "skill",
     read: "read",
+    diagnostic: "diagnostics",
+    diagnostics: "diagnostics",
     write: "write",
     search: "search",
     shell: "shell",
@@ -282,13 +275,8 @@ function isSkillToolInput(rawInput: unknown) {
 function inferKindFromStructuredInput(toolInput: unknown): AgentToolCall["kind"] | undefined {
   if (!toolInput || typeof toolInput !== "object") return undefined;
   const record = toolInput as Record<string, unknown>;
-  const hasFilePath = typeof record.file_path === "string" || typeof record.relative_path === "string" || typeof record.path === "string" || typeof record.filePath === "string";
-  if (hasFilePath) {
-    if ("old_string" in record || "new_string" in record || "content" in record || "body" in record || "code_edit" in record || "repl" in record || "new_name" in record) {
-      return "write";
-    }
-    return "read";
-  }
+  const fileOperation = classifyStructuredFileOperation(record);
+  if (fileOperation) return fileOperation.kind;
   if (typeof record.notebook_path === "string") return "write";
   if (typeof record.command === "string") return "shell";
   if ("substring_pattern" in record || "search_string" in record) return "search";
@@ -309,13 +297,64 @@ function looksLikePathTitle(title: unknown): boolean {
 function extractPathFromInput(input: string | undefined): string | undefined {
   if (!input) return undefined;
   const parsed = parseToolInput(input);
-  if (!parsed || typeof parsed !== "object") return undefined;
-  const record = parsed as Record<string, unknown>;
-  return primitiveStringFrom(record.file_path) ?? primitiveStringFrom(record.relative_path) ?? primitiveStringFrom(record.path) ?? primitiveStringFrom(record.filePath);
+  return classifyStructuredFileOperation(parsed)?.path;
+}
+
+function resolveRawToolInput(source: any, update: any) {
+  const rawInput = source.rawInput ?? source.raw_input ?? update.rawInput ?? update.raw_input;
+  const fallbackInput =
+    source.input ??
+    source.arguments ??
+    source.args ??
+    source.params ??
+    source.command ??
+    source.state?.input ??
+    update.input ??
+    update.arguments ??
+    update.args ??
+    update.params ??
+    update.command;
+  return resolvePreferredToolPayload(rawInput, fallbackInput);
+}
+
+function resolveRawToolOutput(source: any, update: any) {
+  const rawOutput = source.rawOutput ?? source.raw_output ?? update.rawOutput ?? update.raw_output;
+  const fallbackOutput =
+    source.output ??
+    source.result ??
+    source.content ??
+    source.text ??
+    source.state?.output ??
+    update.output ??
+    update.result ??
+    update.content ??
+    update.text ??
+    update.state?.output;
+  return resolvePreferredToolPayload(rawOutput, fallbackOutput);
+}
+
+function resolvePreferredToolPayload(primary: unknown, fallback: unknown) {
+  return hasMeaningfulToolPayload(primary) ? primary : fallback ?? primary;
+}
+
+function hasMeaningfulToolPayload(value: unknown) {
+  if (value === undefined || value === null) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  return true;
 }
 
 const KIND_TITLES: Record<string, string> = {
-  read: "Read", write: "Write", shell: "Shell", search: "Search",
+  read: "Read", diagnostics: "Diagnostics", write: "Write", shell: "Shell", search: "Search",
   fetch: "Fetch", skill: "Skill", think: "Thinking", todo: "Todo",
 };
 
@@ -324,23 +363,34 @@ function kindAsTitle(kind: AgentToolCall["kind"] | undefined): string | undefine
 }
 
 function inferToolCallStatus(updateType: string, status: unknown): AgentToolCall["status"] {
-  const raw = String(status ?? updateType).toLowerCase();
-  if (/fail|error|reject/u.test(raw)) {
+  const rawStatus = status && typeof status === "object"
+    ? (status as { status?: unknown; state?: unknown }).status ??
+      (status as { state?: unknown }).state ??
+      status
+    : status;
+  const tokens = new Set(
+    String(rawStatus ?? updateType).toLowerCase().split(/[^a-z]+/u).filter(Boolean),
+  );
+  if (hasAnyStatusToken(tokens, "fail", "failed", "failure", "error", "errored", "reject", "rejected")) {
     return "failed";
   }
-  if (/cancel/u.test(raw)) {
+  if (hasAnyStatusToken(tokens, "cancel", "canceled", "cancelled")) {
     return "cancelled";
   }
-  if (/wait|permission|confirm/u.test(raw)) {
+  if (hasAnyStatusToken(tokens, "wait", "waiting", "permission", "confirm", "confirmation")) {
     return "waiting_for_permission";
   }
-  if (/complete|done|success|finished|end/u.test(raw)) {
+  if (hasAnyStatusToken(tokens, "complete", "completed", "done", "success", "successful", "succeeded", "finished", "end", "ended")) {
     return "completed";
   }
-  if (/pending|start/u.test(raw)) {
+  if (hasAnyStatusToken(tokens, "pending", "queued", "start", "started")) {
     return "pending";
   }
   return "running";
+}
+
+function hasAnyStatusToken(tokens: Set<string>, ...candidates: string[]) {
+  return candidates.some((candidate) => tokens.has(candidate));
 }
 
 function stringFrom(value: unknown): string | undefined {

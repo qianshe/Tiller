@@ -201,6 +201,12 @@ pnpm install
 pnpm dev
 ```
 
+Development entry points:
+
+- `pnpm dev`: run Deck Vite dev server and Helm runtime together. Use this when you are actively changing the front-end UI.
+- `pnpm --filter @tiller/helm dev`: run only the Helm backend runtime.
+- `pnpm --filter @tiller/deck dev`: run only the standalone Deck Vite dev server.
+
 Common checks:
 
 ```bash

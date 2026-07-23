@@ -26,9 +26,11 @@ import * as sessionNew from "./session/new";
 import * as sessionDraft from "./session/draft";
 import * as sessionDiscardDraft from "./session/discard-draft";
 import * as sessionList from "./session/list";
-import * as sessionListMessages from "./session/list-messages";
-import * as sessionListUpdates from "./session/list-updates";
+import * as sessionListTimeline from "./session/list-timeline";
+import * as sessionRepairTimeline from "./session/repair-timeline";
+import * as sessionListLegacyEvidence from "./session/list-legacy-evidence";
 import * as sessionGetArtifacts from "./session/get-artifacts";
+import * as sessionGetSubagentDetail from "./session/get-subagent-detail";
 import * as sessionCheckResume from "./session/check-resume";
 import * as sessionResume from "./session/resume";
 import * as sessionPrompt from "./session/prompt";
@@ -39,7 +41,6 @@ import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionConfigure from "./session/configure";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
-import * as debugReimportHistory from "./debug/reimport-history";
 import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
 import * as approvalListPending from "./approval/list-pending";
@@ -55,6 +56,7 @@ import * as sessionRename from "./session/rename";
 import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
+import * as notificationRaised from "./notification/raised";
 
 type AnyDescriptor =
   | RequestDescriptor<string, z.ZodType, z.ZodType>
@@ -87,9 +89,11 @@ const METHOD_DESCRIPTORS = {
   [sessionDraft.method]: sessionDraft.descriptor,
   [sessionDiscardDraft.method]: sessionDiscardDraft.descriptor,
   [sessionList.method]: sessionList.descriptor,
-  [sessionListMessages.method]: sessionListMessages.descriptor,
-  [sessionListUpdates.method]: sessionListUpdates.descriptor,
+  [sessionListTimeline.method]: sessionListTimeline.descriptor,
+  [sessionRepairTimeline.method]: sessionRepairTimeline.descriptor,
+  [sessionListLegacyEvidence.method]: sessionListLegacyEvidence.descriptor,
   [sessionGetArtifacts.method]: sessionGetArtifacts.descriptor,
+  [sessionGetSubagentDetail.method]: sessionGetSubagentDetail.descriptor,
   [sessionCheckResume.method]: sessionCheckResume.descriptor,
   [sessionResume.method]: sessionResume.descriptor,
   [sessionPrompt.method]: sessionPrompt.descriptor,
@@ -101,7 +105,6 @@ const METHOD_DESCRIPTORS = {
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
-  [debugReimportHistory.method]: debugReimportHistory.descriptor,
   [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [approvalListPending.method]: approvalListPending.descriptor,
@@ -116,6 +119,7 @@ const METHOD_DESCRIPTORS = {
   [sessionCancel.method]: sessionCancel.descriptor,
   [sessionUpdate.method]: sessionUpdate.descriptor,
   [errorRaised.method]: errorRaised.descriptor,
+  [notificationRaised.method]: notificationRaised.descriptor,
 } as const;
 
 export const METHODS: typeof METHOD_DESCRIPTORS &
@@ -150,9 +154,11 @@ export const CLIENT_REQUEST_METHODS = [
   sessionDraft.method,
   sessionDiscardDraft.method,
   sessionList.method,
-  sessionListMessages.method,
-  sessionListUpdates.method,
+  sessionListTimeline.method,
+  sessionRepairTimeline.method,
+  sessionListLegacyEvidence.method,
   sessionGetArtifacts.method,
+  sessionGetSubagentDetail.method,
   sessionCheckResume.method,
   sessionResume.method,
   sessionPrompt.method,
@@ -164,7 +170,6 @@ export const CLIENT_REQUEST_METHODS = [
   sessionSetConfigOption.method,
   sessionRename.method,
   sessionCleanup.method,
-  debugReimportHistory.method,
   permissionListPending.method,
   permissionRespond.method,
   approvalListPending.method,
@@ -181,6 +186,7 @@ export const CLIENT_NOTIFICATION_METHODS = [sessionCancel.method] as const;
 export const SERVER_NOTIFICATION_METHODS = [
   sessionUpdate.method,
   errorRaised.method,
+  notificationRaised.method,
   approvalCreated.method,
   approvalResolved.method,
 ] as const;
@@ -189,3 +195,5 @@ export type ClientRequestMethod = (typeof CLIENT_REQUEST_METHODS)[number];
 export type ClientNotificationMethod =
   (typeof CLIENT_NOTIFICATION_METHODS)[number];
 export type ServerNotificationMethod = (typeof SERVER_NOTIFICATION_METHODS)[number];
+
+export type NotificationRaisedParams = notificationRaised.Params;

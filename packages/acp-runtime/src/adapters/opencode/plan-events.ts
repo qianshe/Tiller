@@ -13,13 +13,14 @@ export function mapOpenCodePlanUpdate(
     return null;
   }
   const source = sourceFrom(context.update);
-  const toolName = stringFrom(source.tool ?? source.toolName ?? source.tool_name ?? source.name).toLowerCase();
-  if (!/todo[_-]?write|todo[_-]?read|todos?/u.test(toolName)) {
+  const toolName = resolveOpenCodePlanToolName(source);
+  const todos = extractTodoList(source);
+  const todoToolFrame = isOpenCodePlanToolName(toolName) || isCountOnlyTodoUpdate(source);
+  if (!todoToolFrame && !todos) {
     return null;
   }
-  const todos = extractTodoList(source);
   if (!todos) {
-    return isCountOnlyTodoUpdate(source) ? SUPPRESS_SESSION_UPDATE : null;
+    return SUPPRESS_SESSION_UPDATE;
   }
   const plan = extractOpenCodePlanFromSource(source, context.now ?? new Date().toISOString());
   if (!plan) {
@@ -32,13 +33,18 @@ export function mapOpenCodePlanUpdate(
 }
 
 export function extractOpenCodePlanFromToolCall(toolCall: AgentToolCall): AgentPlan | null {
-  if (toolCall.kind !== "todo") {
-    return null;
-  }
   return extractOpenCodePlanFromSource({
     input: toolCall.input,
     output: toolCall.output,
+    title: toolCall.title,
   }, toolCall.updatedAt ?? toolCall.timestamp);
+}
+
+export function isOpenCodePlanToolCall(toolCall: AgentToolCall) {
+  return toolCall.kind === "todo" ||
+    isCountOnlyTodoUpdate({ title: toolCall.title }) ||
+    isOpenCodePlanToolName(toolCall.title) ||
+    Boolean(extractOpenCodePlanFromToolCall(toolCall));
 }
 
 function extractOpenCodePlanFromSource(
@@ -70,6 +76,23 @@ function isCountOnlyTodoUpdate(source: Record<string, unknown>) {
   return /^\d+\s+todos?$/iu.test(title);
 }
 
+function isOpenCodePlanToolName(value: string) {
+  return /todo[_-]?write|todo[_-]?read|todos?/u.test(value.trim().toLowerCase());
+}
+
+function resolveOpenCodePlanToolName(source: Record<string, unknown>) {
+  return stringFrom(
+    source.tool ??
+      source.toolName ??
+      source.tool_name ??
+      source.name ??
+      source.title ??
+      source.label ??
+      source.displayName ??
+      source.display_name,
+  ).toLowerCase();
+}
+
 function sourceFrom(update: unknown): Record<string, unknown> {
   if (!update || typeof update !== "object") {
     return {};
@@ -84,6 +107,8 @@ function sourceFrom(update: unknown): Record<string, unknown> {
 function extractTodoList(source: Record<string, unknown>): Array<Record<string, unknown>> | null {
   const input = parseInput(
     nestedInput(source.state) ??
+      source.rawInput ??
+      source.raw_input ??
       source.input ??
       source.arguments ??
       source.args ??
@@ -94,6 +119,7 @@ function extractTodoList(source: Record<string, unknown>): Array<Record<string, 
       input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).todos : null,
       input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>).items : null,
       parseInput(source.output),
+      nestedMetadataTodos(source.rawOutput ?? source.raw_output),
       source.todos,
     ];
   for (const candidate of candidates) {
@@ -104,6 +130,17 @@ function extractTodoList(source: Record<string, unknown>): Array<Record<string, 
     }
   }
   return null;
+}
+
+function nestedMetadataTodos(value: unknown): unknown {
+  const output = parseInput(value);
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    return undefined;
+  }
+  const metadata = parseInput((output as Record<string, unknown>).metadata);
+  return metadata && typeof metadata === "object" && !Array.isArray(metadata)
+    ? (metadata as Record<string, unknown>).todos
+    : undefined;
 }
 
 function nestedInput(value: unknown): unknown {

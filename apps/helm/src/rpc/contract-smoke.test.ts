@@ -37,7 +37,6 @@ function createProviderFreeContext(): HelmHandlerContext {
     loadAvailableAgents: () => agents,
     setAgents: () => undefined,
     sessionStore: { list: () => sessions },
-    migrateStoredSessionSummary: (summary: SessionSummary) => summary,
     logInfo: () => undefined,
   } as unknown as HelmHandlerContext;
 }

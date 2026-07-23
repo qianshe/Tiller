@@ -6,6 +6,7 @@ import * as loggingGet from "./logging/get";
 import * as loggingSave from "./logging/save";
 import * as agentTest from "./agent/test";
 import * as deviceRevoke from "./device/revoke";
+import * as sessionListLegacyEvidence from "./session/list-legacy-evidence";
 
 test("R1 descriptor parses empty params and array result", () => {
   assert.equal(helmList.method, "helm/list");
@@ -52,5 +53,34 @@ test("logging descriptors parse current settings and patches", () => {
   assert.throws(
     () => loggingSave.ParamsSchema.parse({ logging: { level: "verbose" } }),
     /Invalid option/,
+  );
+});
+
+test("legacy evidence descriptor pages one raw source without timeline entities", () => {
+  assert.equal(sessionListLegacyEvidence.method, "session/list_legacy_evidence");
+  assert.deepEqual(
+    sessionListLegacyEvidence.ParamsSchema.parse({
+      sessionId: "session-1",
+      source: "message",
+      limit: 20,
+      after: "12",
+    }),
+    { sessionId: "session-1", source: "message", limit: 20, after: "12" },
+  );
+  assert.deepEqual(
+    sessionListLegacyEvidence.ResultSchema.parse({
+      sessionId: "session-1",
+      source: "message",
+      items: [{ source: "message", sourcePosition: 12, entity: { id: "legacy-message" } }],
+      issues: [],
+      hasMore: false,
+    }),
+    {
+      sessionId: "session-1",
+      source: "message",
+      items: [{ source: "message", sourcePosition: 12, entity: { id: "legacy-message" } }],
+      issues: [],
+      hasMore: false,
+    },
   );
 });

@@ -1,6 +1,13 @@
-import type { AgentToolCall } from "@tiller/shared";
+import {
+  formatAgentToolCallMcpName,
+  isStructuredSearchToolCallInput,
+  resolveAgentToolCallMcp,
+  type AgentToolCall,
+} from "@tiller/shared";
 
 export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
+  const displayKind = resolveDisplayToolKind(call);
+
   // Codex reports SKILL.md reads as a generic `tool` kind with the shell command
   // stuffed into title/input — so always probe for a skill name first.
   const skillNameFromCommand = extractSkillNameFromCommandSources(call);
@@ -8,7 +15,7 @@ export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
     return `Skill: ${skillNameFromCommand}`;
   }
 
-  if (call.kind !== "shell") {
+  if (displayKind !== "shell") {
     const openCodeSkillName = extractOpenCodeSkillNameFromToolOutput(
       call.output,
     );
@@ -17,24 +24,99 @@ export function resolveDisplayToolTitle(call: AgentToolCall, fallback: string) {
     }
   }
 
-  if (call.kind === "shell") {
-    return summarizeCommand(call.input ?? call.title ?? fallback);
+  const title = isInformativeToolTitle(call.title, call.id) ? call.title : fallback;
+  if (displayKind === "shell") {
+    if (shouldHoldInputDerivedTitle(call, title, displayKind)) {
+      return stripToolPrefix(title);
+    }
+    return summarizeCommand(call.input) ?? stripToolPrefix(title);
   }
 
-  const title = isInformativeToolTitle(call.title, call.id) ? call.title : fallback;
-  if (call.kind === "mcp") {
-    return stripToolPrefix(title);
+  const mcp = resolveAgentToolCallMcp({
+    existing: call.mcp,
+    input: call.input,
+    title: call.title,
+  });
+  if (mcp) {
+    return formatAgentToolCallMcpName(mcp);
   }
+
   if (isNamespacedToolTitle(title)) {
     return stripToolPrefix(title);
   }
-  if (call.kind === "read" || call.kind === "write") {
-    return extractFilePathFromStructuredInput(parseToolCallInputObject(call.input)) ?? stripLeadingActionVerb(title, call.kind);
+  if (displayKind === "read" || displayKind === "write") {
+    if (shouldHoldInputDerivedTitle(call, title, displayKind)) {
+      return stripLeadingActionVerb(title, displayKind);
+    }
+    const parsedInput = parseToolCallInputObject(call.input);
+    const displayTitle = extractApplyPatchFilePath(call.input) ??
+      extractFilePathFromStructuredInput(parsedInput) ??
+      stripLeadingActionVerb(title, displayKind);
+    return displayKind === "read"
+      ? appendReadLineRange(displayTitle, parsedInput)
+      : displayTitle;
   }
-  if (call.kind === "search") {
+  if (displayKind === "diagnostics") {
+    if (shouldHoldInputDerivedTitle(call, title, displayKind)) {
+      return title;
+    }
+    const path = extractFilePathFromStructuredInput(parseToolCallInputObject(call.input));
+    return path ? `Diagnostics: ${path}` : title;
+  }
+  if (displayKind === "search") {
+    if (shouldHoldInputDerivedTitle(call, title, displayKind)) {
+      return title;
+    }
     return summarizeSearchInput(title, parseToolCallInputObject(call.input)) ?? title;
   }
   return title;
+}
+
+export function resolveDisplayToolKind(
+  call: AgentToolCall,
+): AgentToolCall["kind"] {
+  if (call.kind === "shell" && extractApplyPatchFilePath(call.input)) {
+    return "write";
+  }
+  if (
+    call.kind === "shell" &&
+    /^(?:Search|Grep|Glob)$/iu.test(stripToolPrefix(call.title).trim()) &&
+    isStructuredSearchToolCallInput(call.input)
+  ) {
+    return "search";
+  }
+  return call.kind;
+}
+
+function shouldHoldInputDerivedTitle(
+  call: AgentToolCall,
+  title: string,
+  displayKind: AgentToolCall["kind"],
+) {
+  if (call.status !== "pending" && call.status !== "running") {
+    return false;
+  }
+  if (
+    title === call.id ||
+    /^call_[A-Za-z0-9_]+$/u.test(title) ||
+    /^Tool call\b/iu.test(title)
+  ) {
+    return true;
+  }
+  const normalized = stripToolPrefix(title).trim().toLowerCase();
+  if (displayKind === "search") {
+    return normalized === "search";
+  }
+  if (displayKind === "diagnostics") {
+    return normalized === "diagnostics";
+  }
+  if (displayKind === "read") {
+    return normalized === "read";
+  }
+  if (displayKind === "write") {
+    return normalized === "write" || normalized === "edit";
+  }
+  return displayKind === "shell" && (normalized === "shell" || normalized === "bash");
 }
 
 function extractSkillNameFromCommandSources(call: AgentToolCall) {
@@ -120,8 +202,92 @@ function extractFilePathFromStructuredInput(
   return typeof candidate === "string" && candidate.trim() ? compactDisplayPath(candidate.trim()) : undefined;
 }
 
+function appendReadLineRange(
+  title: string,
+  parsed: Record<string, unknown> | null,
+) {
+  const range = extractReadLineRange(parsed);
+  return range ? `${title} · ${range}` : title;
+}
+
+function extractReadLineRange(parsed: Record<string, unknown> | null) {
+  if (!parsed) {
+    return undefined;
+  }
+
+  const start = extractPositiveInteger(
+    parsed.start_line ?? parsed.startLine ?? parsed.offset,
+  );
+  if (start === undefined) {
+    return undefined;
+  }
+
+  const end = extractPositiveInteger(parsed.end_line ?? parsed.endLine);
+  if (end !== undefined) {
+    return end >= start ? `L${start}-${end}` : undefined;
+  }
+
+  const limit = extractPositiveInteger(parsed.limit);
+  return limit === undefined ? undefined : `L${start}-${start + limit - 1}`;
+}
+
+function extractPositiveInteger(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
+}
+
 function summarizeSearchInput(
   title: string,
+  parsed: Record<string, unknown> | null,
+) {
+  const query = extractStructuredSearchQuery(parsed);
+  if (!query) {
+    return undefined;
+  }
+  const normalizedTitle = stripToolPrefix(title).trim();
+  if (searchTitleAlreadyContainsQuery(normalizedTitle, query)) {
+    return normalizedTitle;
+  }
+  const prefix = resolveSearchTitlePrefix(normalizedTitle, parsed, query);
+  return `${prefix}: ${truncateInline(query, 56)}`;
+}
+
+function resolveSearchTitlePrefix(
+  title: string,
+  parsed: Record<string, unknown> | null,
+  query: string,
+) {
+  if (isInformativeSearchTitle(title) && !/^Search$/iu.test(title)) {
+    return title;
+  }
+  if (/^Search$/iu.test(title)) {
+    return inferGenericSearchTitle(parsed, query);
+  }
+  return "Search";
+}
+
+function inferGenericSearchTitle(
+  parsed: Record<string, unknown> | null,
+  query: string,
+) {
+  const grepSpecificKeys = [
+    "-n",
+    "context",
+    "glob",
+    "head_limit",
+    "headLimit",
+    "output_mode",
+    "outputMode",
+    "type",
+  ];
+  if (parsed && grepSpecificKeys.some((key) => parsed[key] !== undefined)) {
+    return "Grep";
+  }
+  return /[*?\[\]{}]/u.test(query) ? "Glob" : "Grep";
+}
+
+function extractStructuredSearchQuery(
   parsed: Record<string, unknown> | null,
 ) {
   if (!parsed) {
@@ -134,12 +300,22 @@ function summarizeSearchInput(
     parsed.searchString ??
     parsed.substring_pattern ??
     parsed.substringPattern;
-  if (typeof query !== "string" || !query.trim()) {
-    return undefined;
-  }
-  const normalizedTitle = stripToolPrefix(title).trim();
-  const prefix = normalizedTitle && !/^Tool call\b/u.test(normalizedTitle) ? normalizedTitle : "Search";
-  return `${prefix}: ${truncateInline(query.trim(), 56)}`;
+  return typeof query === "string" && query.trim() ? query.trim() : undefined;
+}
+
+function isInformativeSearchTitle(title: string) {
+  return Boolean(
+    title &&
+    !/^Tool call\b/u.test(title) &&
+    !/^(shell|tool|unknown)$/iu.test(title),
+  );
+}
+
+function searchTitleAlreadyContainsQuery(title: string, query: string) {
+  const normalizedTitle = title.toLowerCase();
+  const normalizedQuery = query.toLowerCase();
+  return normalizedTitle.includes(normalizedQuery) ||
+    normalizedTitle.includes(`\`${normalizedQuery}\``);
 }
 
 function compactDisplayPath(path: string) {
@@ -190,10 +366,13 @@ function stripLeadingActionVerb(title: string, kind: "read" | "write") {
   return title.replace(new RegExp(`^${verb}\\s+`, "iu"), "").trim() || title;
 }
 
-function summarizeCommand(input: string) {
+function summarizeCommand(input: string | undefined) {
+  if (!input) {
+    return undefined;
+  }
   const command = extractCommandFromInput(input).replace(/\s+/g, " ").trim();
   if (!command) {
-    return "Shell command";
+    return undefined;
   }
 
   const skillName = extractSkillNameFromCommand(command);
@@ -201,7 +380,17 @@ function summarizeCommand(input: string) {
     return `Skill: ${skillName}`;
   }
 
-  return command.length > 72 ? `${command.slice(0, 72)}…` : command;
+  return command;
+}
+
+function extractApplyPatchFilePath(input: string | undefined) {
+  const command = extractCommandFromInput(input ?? "");
+  if (!command || !/(?:^|[\s;&|])apply_patch(?:\.bat)?\b|--codex-run-as-apply-patch\b/iu.test(command)) {
+    return undefined;
+  }
+  const normalized = command.replace(/`r`n|`n|`r/gu, "\n");
+  const match = normalized.match(/^\*\*\* (?:Add|Update|Delete) File:\s*(.+?)\s*$/mu);
+  return match?.[1] ? compactDisplayPath(match[1].trim()) : undefined;
 }
 
 function extractSkillNameFromCommand(command: string) {
@@ -285,9 +474,7 @@ function extractCommandFromInput(input: string) {
   const parsed = parseToolCallInputObject(input);
   if (parsed) {
     const command = extractCommandFromParsedInput(parsed);
-    if (command !== undefined) {
-      return command;
-    }
+    return command ?? "";
   }
 
   return input;
@@ -299,13 +486,15 @@ function extractCommandFromParsedInput(
   const parsedCommand = Array.isArray(parsed.parsed_cmd)
     ? parsed.parsed_cmd[0]
     : undefined;
+  const parsedCommandText = isRecord(parsedCommand) ? parsedCommand.cmd : undefined;
   const command =
+    parsedCommandText ??
     parsed.command ??
     parsed.cmd ??
     parsed.script ??
     parsed.shell ??
     parsed.args ??
-    (isRecord(parsedCommand) ? parsedCommand.cmd : undefined);
+    undefined;
 
   if (Array.isArray(command)) {
     return command.map((item) => String(item)).join(" ");

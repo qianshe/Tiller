@@ -17,7 +17,7 @@ const baseMessage: AgentMessage = {
   timestamp: "2026-04-28T10:00:02.000Z",
 };
 
-test("sortAgentMessagesByTimeline orders messages by timestamp and preserves source order for ties", () => {
+test("sortAgentMessagesByTimeline preserves notification order despite timestamps", () => {
   const messages: AgentMessage[] = [
     {
       ...baseMessage,
@@ -43,11 +43,11 @@ test("sortAgentMessagesByTimeline orders messages by timestamp and preserves sou
 
   assert.deepEqual(
     sorted.map((message) => message.id),
-    ["msg-b", "msg-a", "msg-c"],
+    ["msg-c", "msg-b", "msg-a"],
   );
 });
 
-test("sortAgentMessagesByTimeline orders mixed timeline sequences by timestamp", () => {
+test("sortAgentMessagesByTimeline preserves source order when a legacy row has no sequence", () => {
   const messages: AgentMessage[] = [
     {
       id: "legacy-user",
@@ -60,17 +60,17 @@ test("sortAgentMessagesByTimeline orders mixed timeline sequences by timestamp",
       id: "provider-assistant",
       text: "Provider 回复",
       timestamp: "2026-04-28T10:00:01.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   ];
 
   assert.deepEqual(
     sortAgentMessagesByTimeline(messages).map((message) => message.id),
-    ["provider-assistant", "legacy-user"],
+    ["legacy-user", "provider-assistant"],
   );
 });
 
-test("buildConversationTimeline interleaves messages and tool calls by timestamp", () => {
+test("buildConversationTimeline preserves source order when no sequence is available", () => {
   const toolCall: AgentToolCall = {
     id: "tool-1",
     kind: "shell",
@@ -85,8 +85,8 @@ test("buildConversationTimeline interleaves messages and tool calls by timestamp
 
   const timeline = buildConversationTimeline([baseMessage], [], [toolCall]);
 
-  assert.equal(timeline[0]?.kind, "tool");
-  assert.equal(timeline[1]?.kind, "message");
+  assert.equal(timeline[0]?.kind, "message");
+  assert.equal(timeline[1]?.kind, "tool");
 });
 
 test("buildConversationTimeline preserves runtime event order when timestamps collide", () => {
@@ -96,7 +96,7 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     id: "msg-seq-3",
     text: "具体回复",
     timestamp,
-    timelineSequence: 3,
+    sequence: 3,
   } as AgentMessage;
   const thinking = {
     id: "think-seq-1",
@@ -106,7 +106,7 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     output: "先思考",
     timestamp,
     updatedAt: timestamp,
-    timelineSequence: 1,
+    sequence: 1,
   } as AgentToolCall;
   const toolCall = {
     id: "tool-seq-2",
@@ -116,7 +116,7 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     output: "PASS",
     timestamp,
     updatedAt: timestamp,
-    timelineSequence: 2,
+    sequence: 2,
   } as AgentToolCall;
 
   const timeline = buildConversationTimeline([message], [], [toolCall, thinking]);
@@ -127,7 +127,7 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
   );
 });
 
-test("buildConversationTimeline orders mixed sequence legacy prompts by timestamp", () => {
+test("buildConversationTimeline preserves source order for mixed sequence legacy prompts", () => {
   const userMessage: AgentMessage = {
     id: "legacy-user",
     role: "user",
@@ -144,14 +144,14 @@ test("buildConversationTimeline orders mixed sequence legacy prompts by timestam
     stream: "stdout",
     timestamp: "2026-04-28T10:00:02.000Z",
     updatedAt: "2026-04-28T10:00:02.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
 
   const timeline = buildConversationTimeline([userMessage], [], [toolCall]);
 
   assert.deepEqual(
     timeline.map((item) => item.kind === "message" ? item.message.id : item.id),
-    ["tool-seq-2", "legacy-user"],
+    ["legacy-user", "tool-seq-2"],
   );
 });
 
@@ -189,7 +189,7 @@ test("groupToolCalls merges chunks for the same command id", () => {
   assert.deepEqual(grouped[0]?.streams, ["stdout", "stderr"]);
 });
 
-test("groupToolCalls keeps the first timestamp for timeline placement", () => {
+test("groupToolCalls keeps the first arrival metadata for timeline placement", () => {
   const grouped = groupToolCalls([
     {
       id: "tool-1",
@@ -294,6 +294,53 @@ test("mergeToolCallHistory appends output for existing tool calls", () => {
   assert.equal(merged[0]?.status, "completed");
 });
 
+test("mergeToolCallHistory deduplicates overlapping thinking snapshots for the same tool call", () => {
+  const merged = mergeToolCallHistory(
+    [
+      {
+        id: "think-1",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        commandId: "think-1",
+        output: [
+          "Line 1",
+          "Line 2",
+          "Line 3",
+        ].join("\n"),
+        timestamp: "2026-04-28T10:00:01.000Z",
+        updatedAt: "2026-04-28T10:00:01.000Z",
+      },
+    ],
+    [
+      {
+        id: "think-1",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        commandId: "think-1",
+        output: [
+          "Line 2",
+          "Line 3",
+          "Line 4",
+        ].join("\n"),
+        timestamp: "2026-04-28T10:00:02.000Z",
+        updatedAt: "2026-04-28T10:00:02.000Z",
+      },
+    ],
+  );
+
+  assert.equal(
+    merged[0]?.output,
+    [
+      "Line 1",
+      "Line 2",
+      "Line 3",
+      "Line 4",
+    ].join("\n"),
+  );
+});
+
 test("mergeToolCallHistory replaces duplicate completed tool snapshots", () => {
   const current: AgentToolCall[] = [
     {
@@ -326,7 +373,7 @@ test("mergeToolCallHistory replaces duplicate completed tool snapshots", () => {
   assert.equal(merged[0]?.output, "new result");
 });
 
-test("mergeToolCallHistory keeps the earliest start timestamp across replay merges", () => {
+test("mergeToolCallHistory keeps the first arrival timestamp across replay merges", () => {
   const current: AgentToolCall[] = [
     {
       id: "tool-1",
@@ -356,25 +403,25 @@ test("mergeToolCallHistory keeps the earliest start timestamp across replay merg
   assert.equal(merged[0]?.updatedAt, "2026-04-30T13:22:46.678Z");
 });
 
-test("mergeToolCallHistory orders tools by start timestamp instead of latest update time", () => {
+test("mergeToolCallHistory preserves source order instead of timestamps", () => {
   const merged = mergeToolCallHistory(
     [
       {
-        id: "tool-started-first",
+        id: "tool-arrived-first",
         kind: "read",
-        title: "Read early",
+        title: "Read later timestamp",
         status: "completed",
-        timestamp: "2026-05-29T10:00:00.000Z",
+        timestamp: "2026-05-29T10:00:05.000Z",
         updatedAt: "2026-05-29T10:00:10.000Z",
       },
     ],
     [
       {
-        id: "tool-started-second",
+        id: "tool-arrived-second",
         kind: "shell",
-        title: "Run later",
+        title: "Run earlier timestamp",
         status: "completed",
-        timestamp: "2026-05-29T10:00:05.000Z",
+        timestamp: "2026-05-29T10:00:00.000Z",
         updatedAt: "2026-05-29T10:00:06.000Z",
       },
     ],
@@ -382,7 +429,7 @@ test("mergeToolCallHistory orders tools by start timestamp instead of latest upd
 
   assert.deepEqual(
     merged.map((toolCall) => toolCall.id),
-    ["tool-started-first", "tool-started-second"],
+    ["tool-arrived-first", "tool-arrived-second"],
   );
 });
 
@@ -419,6 +466,74 @@ test("mergeToolCallHistory preserves strong metadata when sparse updates arrive"
   assert.equal(merged[0]?.status, "completed");
   assert.equal(merged[0]?.output, "found");
   assert.equal(grouped[0]?.toolKind, "search");
-  assert.equal(grouped[0]?.title, "Search: composer");
+  assert.equal(grouped[0]?.title, "Grep: composer");
 });
 
+test("mergeToolCallHistory repairs an early shell classification for structured Grep payloads", () => {
+  const current: AgentToolCall[] = [
+    {
+      id: "toolu_01Grep",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({ pattern: "Tiller", glob: "**/README.md", output_mode: "files_with_matches" }),
+      output: "Found 2 files",
+      timestamp: "2026-07-07T08:06:52.322Z",
+      updatedAt: "2026-07-07T08:06:52.900Z",
+    },
+  ];
+  const incoming: AgentToolCall[] = [
+    {
+      id: "toolu_01Grep",
+      kind: "search",
+      title: "Grep",
+      status: "completed",
+      input: JSON.stringify({ pattern: "Tiller", glob: "**/README.md", output_mode: "files_with_matches" }),
+      output: "Found 2 files",
+      timestamp: "2026-07-07T08:06:52.322Z",
+      updatedAt: "2026-07-07T08:06:53.266Z",
+    },
+  ];
+
+  const merged = mergeToolCallHistory(current, incoming);
+
+  assert.equal(merged[0]?.kind, "search");
+  assert.equal(merged[0]?.title, "Grep");
+});
+
+test("groupToolCalls keeps the first classified search display when later shell-shaped updates reuse the same command", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "toolu_01Grep",
+      commandId: "toolu_01Grep",
+      kind: "search",
+      title: "Grep",
+      status: "running",
+      input: JSON.stringify({
+        pattern: "Tiller",
+        glob: "**/README.md",
+        output_mode: "files_with_matches",
+      }),
+      timestamp: "2026-07-07T08:06:52.322Z",
+      updatedAt: "2026-07-07T08:06:52.322Z",
+    },
+    {
+      id: "toolu_01Grep",
+      commandId: "toolu_01Grep",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      input: JSON.stringify({
+        pattern: "Tiller",
+        glob: "**/README.md",
+        output_mode: "files_with_matches",
+      }),
+      output: "Found 2 files",
+      timestamp: "2026-07-07T08:06:52.322Z",
+      updatedAt: "2026-07-07T08:06:53.266Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.toolKind, "search");
+  assert.equal(grouped[0]?.title, "Grep: Tiller");
+});

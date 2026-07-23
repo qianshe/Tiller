@@ -16,7 +16,7 @@ type RuntimeOverviewParams = {
   selectedProjectId?: string | null;
   selectedCwd?: string | null;
   activeSession?: any;
-  activeSessionRestoreGate?: { canChat?: boolean };
+  activeSessionRestoreGate?: { canChat?: boolean; state?: string };
   agentModelOptions?: Record<string, any>;
   draftWorktreeOptions?: any[];
 };
@@ -48,6 +48,12 @@ export function buildRuntimeOverviewItems({
     );
     const runtimeSessions = connection.sessions ?? [];
     const sessionCount = Math.max(connection.activeSessionCount ?? 0, runtimeSessions.length);
+    const restoreFailedForActiveSession =
+      activeSessionRestoreGate.state === "failed" || activeSessionRestoreGate.state === "history-only";
+    const activeSessionRestoreMissing = restoreFailedForActiveSession &&
+      connection.providerId === activeSession?.agentId &&
+      normalizeWorktreePath(connection.cwd) === normalizeWorktreePath(activeSession?.cwd) &&
+      !runtimeSessions.some((session: any) => session.tillerSessionId === activeSession?.id);
     const children = groupRuntimeSessionsByProject({
       runtimeSessions,
       sessionById,
@@ -68,7 +74,9 @@ export function buildRuntimeOverviewItems({
       cwd: connection.cwd,
       label: agent?.name ?? connection.providerId ?? "ACP",
       meta: reconnectPending ? "等待重新连接成功" : connection.lastError ?? worktree?.name ?? connection.cwd ?? "Worktree",
-      status: reconnectPending ? "未连接" : formatAcpConnectionStatus(connection.status),
+      status: reconnectPending || activeSessionRestoreMissing
+        ? "未连接"
+        : formatAcpConnectionStatus(connection.status),
       runtimeSessionId: formatRuntimeSessionCount(sessionCount, activeSessionCount),
       sessionCount,
       activeSessionCount,
@@ -91,6 +99,8 @@ export function buildRuntimeOverviewItems({
       (item: any) => normalizeWorktreePath(item.path) === normalizeWorktreePath(activeSession.cwd),
     );
     const status = statuses[activeSession.id] ?? activeSession.status;
+    const restoreFailed = activeSessionRestoreGate.state === "failed" ||
+      activeSessionRestoreGate.state === "history-only";
     items.push({
       id: `acp:${activeSession.agentId}:${activeSession.cwd}:active-session`,
       agentId: activeSession.agentId,
@@ -98,7 +108,11 @@ export function buildRuntimeOverviewItems({
       cwd: activeSession.cwd,
       label: agent?.name ?? activeSession.agentName ?? activeSession.agentId ?? "ACP",
       meta: worktree?.name ?? activeSession.worktreeName ?? activeSession.cwd,
-      status: activeSessionRestoreGate.canChat ? "已连接" : "连接中",
+      status: activeSessionRestoreGate.canChat
+        ? "已连接"
+        : restoreFailed
+          ? "未连接"
+          : "连接中",
       runtimeSessionId: formatRuntimeSessionCount(1, activeSessionRestoreGate.canChat ? 1 : 0),
       sessionCount: 1,
       activeSessionCount: activeSessionRestoreGate.canChat ? 1 : 0,

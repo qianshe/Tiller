@@ -67,6 +67,9 @@ export function createSqliteSessionAttachmentStore(options: SqliteSessionAttachm
       const attachment = getAttachment(db, id);
       return attachment ? readFileSync(join(rootPath, attachment.storageKey)) : undefined;
     },
+    remove(id: string) {
+      removeAttachment(db, rootPath, id);
+    },
     close() {
       db.close();
     },
@@ -166,6 +169,26 @@ function removeSessionAttachments(db: DatabaseSync, rootPath: string, sessionId:
     if (existsSync(filePath)) {
       unlinkSync(filePath);
     }
+  }
+}
+
+function removeAttachment(db: DatabaseSync, rootPath: string, id: string) {
+  const attachment = getAttachment(db, id);
+  if (!attachment) {
+    return;
+  }
+  runTransaction(db, () => {
+    db.prepare("DELETE FROM session_attachments WHERE id = ?").run(id);
+  });
+  const remaining = db
+    .prepare("SELECT 1 FROM session_attachments WHERE storage_key = ? LIMIT 1")
+    .get(attachment.storageKey);
+  if (remaining) {
+    return;
+  }
+  const filePath = join(rootPath, attachment.storageKey);
+  if (existsSync(filePath)) {
+    unlinkSync(filePath);
   }
 }
 

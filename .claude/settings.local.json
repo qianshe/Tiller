@@ -2,7 +2,6 @@
   "permissions": {
     "allow": [
       "mcp__mcp-router__list_dir",
-      "mcp__morph__codebase_search",
       "Skill(update-config)",
       "Skill(update-config:*)",
       "Bash(py --version)",

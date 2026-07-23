@@ -23,12 +23,6 @@ function resolveMissionToolLoadingLabel({
   return pendingToolPresent ? "正在执行工具" : activity.title;
 }
 
-function resolveMissionToolLoadingTitleLabel({
-  pendingToolPresent,
-}: MissionToolLoadingState) {
-  return pendingToolPresent ? "工具执行中" : "执行中";
-}
-
 /**
  * Inline status shown while the active mission is still producing tool output.
  */
@@ -65,7 +59,6 @@ export function MissionToolLoadingTitle({
   pendingToolPresent,
 }: MissionToolLoadingState) {
   const detail = formatMissionToolLoadingDetail({ activity, pendingToolPresent });
-  const label = resolveMissionToolLoadingTitleLabel({ activity, pendingToolPresent });
 
   return (
     <div
@@ -79,7 +72,7 @@ export function MissionToolLoadingTitle({
         aria-hidden="true"
       />
       <strong className="shrink-0 text-2xs font-semibold">
-        {label}
+        运行中
       </strong>
     </div>
   );

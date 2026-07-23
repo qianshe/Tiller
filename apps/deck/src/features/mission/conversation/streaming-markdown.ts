@@ -8,6 +8,8 @@ type StreamingMarkdownSegment = {
   tail: string;
 };
 
+const OPEN_MERMAID_FENCE_LINE = /^[ \t]{0,3}(`{3,}|~{3,})[ \t]*mermaid(?:[ \t].*)?$/iu;
+
 export function splitStreamingMarkdown(text: string): StreamingMarkdownSegment | null {
   const splitIndex = findStreamingMarkdownSplitIndex(text);
   if (splitIndex === null) {
@@ -33,8 +35,13 @@ function findStreamingMarkdownSplitIndex(text: string) {
     if (!line) {
       break;
     }
+    const lineContent = line.replace(/\r?\n$/u, "");
+    const lineStart = match.index;
     const lineEnd = match.index + line.length;
-    const marker = /^[ \t]*(`{3,}|~{3,})/u.exec(line)?.[1];
+    if (!fence && OPEN_MERMAID_FENCE_LINE.test(lineContent)) {
+      return splitIndex ?? (lineStart > 0 ? lineStart : null);
+    }
+    const marker = /^[ \t]*(`{3,}|~{3,})/u.exec(lineContent)?.[1];
     if (marker) {
       const markerKind = marker[0] as "`" | "~";
       if (fence && fence.marker === markerKind && marker.length >= fence.length) {

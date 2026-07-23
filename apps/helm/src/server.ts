@@ -49,7 +49,10 @@ import { createHelmServerStores } from "./app/server/composition";
 import { createHelmServerEnvironment } from "./app/server/environment";
 import { createHelmContextState } from "./app/server/context";
 import { createHelmRuntimeComposition } from "./app/runtime-composition";
-import { attachHelmRpcConnection } from "./app/transport-composition";
+import {
+  attachHelmRpcConnection,
+  createHelmOutboundConnectionRegistry,
+} from "./app/transport-composition";
 import { createStaticDeckHandler } from "./app/static-deck-handler";
 import { createHelmAuthComposition } from "./app/auth-composition";
 import { createHandlerCatalogContext } from "./app/handler-context/catalog";
@@ -67,6 +70,7 @@ import { createSessionTopicRegistry } from "./runtime/session/topics";
 import { resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
 import { createTillerLogger } from "./logging/logger";
+import { createRuntimeMetrics } from "./logging/runtime-metrics";
 import { resolveLoggingOptions } from "./logging/options";
 import { createSocketState } from "./state/socket";
 import { TILLER_VERSION } from "./cli";
@@ -107,16 +111,24 @@ const logger = createTillerLogger({
   consoleOutput: loggingOptions.format === "pretty",
 });
 const { logInfo, logDebug, logWarn, logError } = logger;
+const runtimeMetrics = createRuntimeMetrics({ logger });
 const TILLER_LOG_FILE = logger.logFile;
 
 const {
   sessionStore,
   sessionMessageStore,
   sessionArtifactStore,
+  sessionLegacyEvidenceStore,
   sessionAttachmentStore,
+  sessionDiffBodyStore,
+  sessionOutputBodyStore,
   sessionRuntimeStore,
+  sessionPlanStore,
   sessionTimelineStore,
   sessionUpdateStore,
+  sessionStateStore,
+  sessionApprovalStore,
+  sessionSubagentDetailStore,
   trustedDeviceStore,
 } = createHelmServerStores({
   environment: serverEnvironment,
@@ -139,8 +151,11 @@ const {
 const socketState = createSocketState<WebSocket>();
 const { registry: authenticatedSockets, getSocketId } = socketState;
 const sessionTopics = createSessionTopicRegistry();
+const outboundConnections = createHelmOutboundConnectionRegistry();
 const handlerNotificationContext = createHandlerNotificationContext({
   authenticatedSockets,
+  getSocketId,
+  outboundConnections,
   sessionTopics,
 });
 const { broadcastNotification } = handlerNotificationContext;
@@ -166,9 +181,15 @@ const runtimeComposition = createHelmRuntimeComposition({
   sessionMessageStore,
   sessionArtifactStore,
   sessionAttachmentStore,
+  sessionDiffBodyStore,
+  sessionOutputBodyStore,
   sessionRuntimeStore,
+  sessionPlanStore,
   sessionTimelineStore,
   sessionUpdateStore,
+  sessionStateStore,
+  sessionApprovalStore,
+  sessionSubagentDetailStore,
   getAgents: contextState.getAgents,
   getProjects: contextState.getProjects,
   getWorktrees: contextState.getWorktrees,
@@ -187,7 +208,6 @@ const {
   handleRuntimeEvent,
   hydrateDiffsFromWorktreeGit,
   hydrateSessionSummary,
-  migrateStoredSessionSummary,
   configureRuntimeDraft,
   createRuntimeDraft,
   discardRuntimeDraft,
@@ -195,10 +215,15 @@ const {
   persistRuntimeDescriptor,
   persistSessionMessage,
   publishDiffUpdate,
-  reimportSessionHistory,
-  refreshAuthoritativeSessionHistory,
-  readSessionPlan,
+  readSessionLiveState,
   scheduleDeckClientDraftDiscard,
+  sessionLiveStateStore,
+  sessionApprovalStateStore,
+  sessionRuntimeEventState,
+  sessionSubagentDetailService,
+  sessionTimelineDispatcher,
+  sessionTimelineFlushScheduler,
+  sessionTimelineWorkers,
   startSessionResume,
   takeRuntimeDraft,
   updateSessionSummary,
@@ -209,9 +234,20 @@ const handlerSessionContextFactory = createHandlerSessionContextFactory({
   sessionStore,
   sessionMessageStore,
   sessionArtifactStore,
+  sessionLegacyEvidenceStore,
   sessionAttachmentStore,
+  sessionDiffBodyStore,
+  sessionOutputBodyStore,
   sessionRuntimeStore,
+  sessionPlanStore,
   sessionTimelineStore,
+  sessionTimelineWorkers,
+  sessionTimelineDispatcher,
+  sessionTimelineFlushScheduler,
+  sessionLiveStateStore,
+  sessionApprovalStateStore,
+  sessionRuntimeEventState,
+  sessionSubagentDetailService,
   sessionUpdateStore,
   liveMessageBuffer,
   promptQueue,
@@ -234,15 +270,12 @@ const handlerSessionContextFactory = createHandlerSessionContextFactory({
   startSessionResume,
   handleRuntimeEvent,
   hydrateSessionSummary,
-  migrateStoredSessionSummary,
   buildResumeInfo,
   persistRuntimeDescriptor,
-  refreshAuthoritativeSessionHistory,
-  readSessionPlan,
+  readSessionLiveState,
   updateSessionSummary,
   persistSessionMessage,
   publishDiffUpdate,
-  reimportSessionHistory,
   hydrateDiffsFromWorktreeGit,
   clearPermissionRequestsForSession,
   deleteLocalSessionData,
@@ -275,6 +308,8 @@ function showPairingCode() {
 const handleHttpRequest = createStaticDeckHandler({
   deckStaticDir: DECK_STATIC_DIR,
   sessionAttachmentStore,
+  sessionDiffBodyStore,
+  sessionOutputBodyStore,
   logError,
 });
 
@@ -326,7 +361,7 @@ server.on("connection", (socket) => {
   socket.on("close", () => {
     const socketId = getSocketId(socket);
     logger.debug("websocket.client.disconnected", { socketId });
-    sessionTopics.removeSocket(socketId);
+    handlerNotificationContext.removeSocketSessionTopics(socketId);
     authenticatedSockets.remove(socketId);
   });
 
@@ -370,7 +405,10 @@ async function shutdownHelm(reason: NodeJS.Signals | "rpc") {
   server.close();
   httpServer.close();
   await disposeAcpConnections();
+  sessionServices.dispose();
   logger.info("server.shutdown.completed", { reason });
+  runtimeMetrics.dispose();
+  await logger.close();
   process.exit(0);
 }
 
@@ -407,8 +445,11 @@ function attachRpcConnection(socket: WebSocket) {
   attachHelmRpcConnection({
     socket,
     getSocketId,
+    outboundConnections,
     createHandlerContext,
+    logInfo,
     logError,
+    runtimeMetrics,
   });
 }
 
@@ -426,6 +467,7 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
     logWarn,
     logError,
     logger,
+    runtimeMetrics,
     requestShutdown: (reason) => {
       setTimeout(() => {
         void shutdownHelm(reason);

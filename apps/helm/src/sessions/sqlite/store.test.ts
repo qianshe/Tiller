@@ -42,8 +42,12 @@ function createMessage(id: string, timestamp: string, text = id): AgentMessage {
   return { id, role: "assistant", text, timestamp };
 }
 
-function createOutput(id: string, timestamp: string): CommandChunk {
-  return { id, commandId: `cmd-${id}`, text: `output-${id}`, stream: "stdout", timestamp };
+function createOutput(
+  id: string,
+  timestamp: string,
+  overrides: Partial<CommandChunk> = {},
+): CommandChunk {
+  return { id, commandId: `cmd-${id}`, text: `output-${id}`, stream: "stdout", timestamp, ...overrides };
 }
 
 function createToolCall(
@@ -83,10 +87,8 @@ test("sqlite session store initializes repeatedly and preserves summary ordering
         store.list().map((item) => item.id),
         ["new", "old"],
       );
-      assert.deepEqual(
-        store.remove("new").map((item) => item.id),
-        ["old"],
-      );
+      store.remove("new");
+      assert.deepEqual(store.list().map((item) => item.id), ["old"]);
     } finally {
       store.close();
     }
@@ -272,6 +274,28 @@ test("sqlite message store preserves insertion order and defaults to twenty-mess
   }
 });
 
+test("sqlite message store ignores unmatched legacy timestamp cursors", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-legacy-cursor-"));
+  try {
+    const store = createSqliteSessionMessageStore(join(tempRoot, "sessions.sqlite"));
+    try {
+      store.append("session-1", createMessage("arrived-first", "2026-04-30T10:10:00.000Z"));
+      store.append("session-1", createMessage("arrived-second", "2026-04-30T10:00:00.000Z"));
+
+      assert.deepEqual(
+        store
+          .listPage("session-1", { limit: 1, before: "2026-04-30T10:05:00.000Z\tmissing" })
+          .messages.map((item) => item.id),
+        ["arrived-second"],
+      );
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("sqlite artifact store normalizes historical MCP tool calls from persisted input", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-tool-kind-"));
   try {
@@ -392,6 +416,44 @@ test("sqlite artifact store preserves strong tool metadata when sparse updates a
   }
 });
 
+test("sqlite artifact store repairs shell placeholders with structured search details", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-search-repair-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.appendToolCall(
+        "session-1",
+        createToolCall("toolu_search_repair", "2026-07-07T10:00:00.000Z", {
+          kind: "shell",
+          title: "grep -l \"tool-call-repair\"",
+          input: "{\"output_mode\":\"files_with_matches\",\"pattern\":\"tool-call-repair\"}",
+          status: "completed",
+          updatedAt: "2026-07-07T10:00:00.000Z",
+        }),
+      );
+      store.appendToolCall(
+        "session-1",
+        createToolCall("toolu_search_repair", "2026-07-07T10:00:00.000Z", {
+          kind: "search",
+          title: "Grep",
+          input: "{\"output_mode\":\"files_with_matches\",\"pattern\":\"tool-call-repair\"}",
+          status: "completed",
+          updatedAt: "2026-07-07T10:00:01.000Z",
+        }),
+      );
+
+      const [toolCall] = store.get("session-1").toolCalls;
+      assert.equal(toolCall?.kind, "search");
+      assert.equal(toolCall?.title, "Grep");
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
 test("sqlite artifact store replaces cumulative thinking output instead of appending duplicates", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-thinking-output-"));
   try {
@@ -433,6 +495,47 @@ test("sqlite artifact store replaces cumulative thinking output instead of appen
       );
 
       assert.equal(store.get("session-1").toolCalls[0]?.output, "分析 A\n分析 B");
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("sqlite artifact store merges overlapping thinking snapshots without duplicating lines", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-thinking-overlap-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.appendToolCall(
+        "session-1",
+        createToolCall("session-1-msg-s1:thinking", "2026-05-23T10:00:00.000Z", {
+          commandId: "session-1-msg-s1:thinking",
+          kind: "think",
+          title: "Thinking",
+          output: "Line 1\nLine 2\nLine 3",
+          status: "running",
+          updatedAt: "2026-05-23T10:00:01.000Z",
+        }),
+      );
+      store.appendToolCall(
+        "session-1",
+        createToolCall("session-1-msg-s1:thinking", "2026-05-23T10:00:00.000Z", {
+          commandId: "session-1-msg-s1:thinking",
+          kind: "think",
+          title: "Thinking",
+          output: "Line 2\nLine 3\nLine 4",
+          status: "completed",
+          updatedAt: "2026-05-23T10:00:02.000Z",
+        }),
+      );
+
+      assert.equal(
+        store.get("session-1").toolCalls[0]?.output,
+        "Line 1\nLine 2\nLine 3\nLine 4",
+      );
     } finally {
       store.close();
     }
@@ -493,6 +596,49 @@ test("sqlite artifact store paginates outputs/tool calls and replaces diffs/tool
       );
       store.remove("session-1");
       assert.deepEqual(store.get("session-1"), { outputs: [], diffs: [], toolCalls: [] });
+    } finally {
+      store.close();
+    }
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("sqlite artifact store orders canonical sequences and preserves first-write fallback order", () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-order-"));
+  try {
+    const dbPath = join(tempRoot, "sessions.sqlite");
+    const store = createSqliteSessionArtifactStore(dbPath);
+    try {
+      store.replaceOutputs("sequenced", [
+        createOutput("output-2", "2026-04-30T10:00:01.000Z", { sequence: 2 }),
+        createOutput("output-1", "2026-04-30T10:00:02.000Z", { sequence: 1 }),
+      ]);
+      store.replaceToolCalls("sequenced", [
+        createToolCall("tool-2", "2026-04-30T10:00:01.000Z", { sequence: 2 }),
+        createToolCall("tool-1", "2026-04-30T10:00:02.000Z", { sequence: 1 }),
+      ]);
+
+      assert.deepEqual(store.get("sequenced").outputs.map((item) => item.id), ["output-1", "output-2"]);
+      assert.deepEqual(store.get("sequenced").toolCalls.map((item) => item.id), ["tool-1", "tool-2"]);
+
+      store.appendOutput("fallback", createOutput("output-first", "2026-04-30T10:00:02.000Z"));
+      store.appendOutput("fallback", createOutput("output-second", "2026-04-30T10:00:01.000Z"));
+      store.appendOutput("fallback", createOutput("output-first", "2026-04-30T10:00:03.000Z", {
+        text: "updated output",
+      }));
+      store.appendToolCall("fallback", createToolCall("tool-first", "2026-04-30T10:00:02.000Z"));
+      store.appendToolCall("fallback", createToolCall("tool-second", "2026-04-30T10:00:01.000Z"));
+      store.appendToolCall("fallback", createToolCall("tool-first", "2026-04-30T10:00:03.000Z", {
+        status: "completed",
+        updatedAt: "2026-04-30T10:00:03.000Z",
+      }));
+
+      const fallback = store.get("fallback");
+      assert.deepEqual(fallback.outputs.map((item) => item.id), ["output-first", "output-second"]);
+      assert.equal(fallback.outputs[0]?.text, "updated output");
+      assert.deepEqual(fallback.toolCalls.map((item) => item.id), ["tool-first", "tool-second"]);
+      assert.equal(fallback.toolCalls[0]?.status, "completed");
     } finally {
       store.close();
     }

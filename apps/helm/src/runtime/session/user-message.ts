@@ -18,7 +18,7 @@ export function createUserPromptMessage(
     role: "user" as const,
     text: item.text,
     timestamp: item.timestamp,
-    timelineSequence: allocateTimelineSequence(item.sessionId),
+    sequence: allocateTimelineSequence(item.sessionId),
     ...(imageAttachments.length ? { attachments: imageAttachments } : {}),
   };
 }

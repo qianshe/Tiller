@@ -1,12 +1,18 @@
-import { memo, useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { createPortal } from "react-dom";
-import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentPromptImageContent,
+  AgentToolCall,
+  SessionSubagentDetail,
+} from "@tiller/shared";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
 import { Badge, Button, Icon } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import type { ConversationToolCallItem } from "../../logbook";
 import { resolveToolCallTone } from "../../logbook/tool-call-tone";
 import { cn } from "../../../shared/utils/cn";
+import { copyTextToClipboard } from "../../../shared/utils/clipboard";
 import {
   formatToolInputPreview,
   isActiveToolStatus,
@@ -14,13 +20,24 @@ import {
   resolveToolStatusLabel,
 } from "./plain-tool-model";
 import { splitStreamingMarkdown } from "./streaming-markdown";
+import {
+  resolveToolCallChangeStats,
+  resolveToolCallDiff,
+} from "./tool-call-change-stats";
+import { ToolCallDiffPreview } from "./tool-call-diff-preview";
+import { resolveCodexSubagentPresentation } from "./codex-subagent-presentation";
 
 const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
 const COLLAPSED_MESSAGE_LINE_LIMIT = 3;
 const COLLAPSED_MESSAGE_CHAR_LIMIT = 300;
+const THINKING_SUMMARY_PREVIEW_MAX_CHARS = 72;
+const THINKING_SCROLL_LINE_THRESHOLD = 12;
+const THINKING_SCROLL_CHAR_THRESHOLD = 640;
+const ASSISTANT_MESSAGE_FRAME_CLASS = "mr-auto w-[calc(100%-0.625rem)] max-w-[calc(100%-0.625rem)]";
 const ASSISTANT_MESSAGE_RAIL_CLASS = "grid-cols-[0.375rem_minmax(0,1fr)] gap-x-1";
 const USER_MESSAGE_RAIL_CLASS = "w-fit max-w-[min(56rem,76%)]";
+const TOOL_CATEGORY_SLOT_CLASS_NAME = "min-w-[3.25rem]";
 
 type MessageImageSourceEnvironment = {
   location?: Pick<Location, "protocol" | "hostname" | "port">;
@@ -288,7 +305,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         isSystem
           ? "mr-auto grid w-full max-w-full items-start"
           : isAssistant
-            ? `mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start`
+            ? `${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start`
             : "ml-auto grid w-full justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
@@ -459,10 +476,7 @@ export async function writeClipboardText(
   text: string,
   clipboard: Pick<Clipboard, "writeText"> | undefined,
 ) {
-  if (!text.trim() || !clipboard?.writeText) {
-    throw new Error("Clipboard unavailable");
-  }
-  await clipboard.writeText(text);
+  await copyTextToClipboard(text, clipboard);
 }
 
 function resolveCopyLabel(
@@ -512,6 +526,13 @@ export function PlainThinkingItem({
 }) {
   const isRunning = item.status === "pending" || item.status === "running";
   const text = item.output?.trim() || item.input?.trim() || "暂无 Thinking 内容";
+  const preview = resolveThinkingSummaryPreview(text);
+  const contentRef = useRef<HTMLDivElement | null>(null);
+  const shouldFollowStreamRef = useRef(true);
+  const contentClassName = resolveThinkingContentClassName({
+    isRunning,
+    text,
+  });
   // Thinking 缺乏可靠的完成事件（status 可能长期停留在 running），因此一旦其后出现新内容即视为已结束并折叠。
   const shouldAutoOpen = isRunning && !hasNewerContent;
   const [open, setOpen] = useState(shouldAutoOpen);
@@ -520,8 +541,36 @@ export function PlainThinkingItem({
     setOpen(shouldAutoOpen);
   }, [shouldAutoOpen]);
 
+  useEffect(() => {
+    if (!open) {
+      shouldFollowStreamRef.current = true;
+    }
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !isRunning || !shouldFollowStreamRef.current) {
+      return;
+    }
+    const content = contentRef.current;
+    if (!content) {
+      return;
+    }
+    const frame = requestAnimationFrame(() => {
+      content.scrollTop = content.scrollHeight;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [isRunning, open, text]);
+
+  function handleThinkingScroll(event: UIEvent<HTMLDivElement>) {
+    shouldFollowStreamRef.current = isThinkingScrollNearBottom({
+      scrollTop: event.currentTarget.scrollTop,
+      clientHeight: event.currentTarget.clientHeight,
+      scrollHeight: event.currentTarget.scrollHeight,
+    });
+  }
+
   return (
-    <div className={`plain-thinking-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
+    <div className={`plain-thinking-row ${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
       <span aria-hidden="true" />
       <details
         className="plain-thinking min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
@@ -532,12 +581,20 @@ export function PlainThinkingItem({
           className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起 Thinking" : "展开 Thinking"}
         >
-          <span aria-hidden="true" className="shrink-0 text-primary">
+          <span
+            aria-hidden="true"
+            className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-violet-500/10 text-violet-700 dark:bg-violet-300/10 dark:text-violet-300"
+          >
             <PlainThinkingIcon />
           </span>
-          <span className="min-w-0 truncate font-medium">
+          <span className="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium text-violet-700 dark:text-violet-300">
             Thinking
           </span>
+          {preview ? (
+            <span className="inline-flex h-4 min-w-0 flex-1 items-center truncate leading-none text-muted-foreground/70">
+              {preview}
+            </span>
+          ) : null}
           <Icon
             name="chevronDown"
             size={12}
@@ -547,12 +604,52 @@ export function PlainThinkingItem({
             )}
           />
         </summary>
-        <div className="plain-thinking-content ml-1.5 border-l border-primary/25 pl-3.5 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
-          <MarkdownMessage text={text} />
-        </div>
+        {open ? (
+          <div ref={contentRef} className={contentClassName} onScroll={handleThinkingScroll}>
+            <div className="plain-thinking-text whitespace-pre-wrap [overflow-wrap:anywhere]">
+              {text}
+            </div>
+          </div>
+        ) : null}
       </details>
     </div>
   );
+}
+
+export function resolveThinkingContentClassName(
+  input: { isRunning: boolean; text: string },
+) {
+  const shouldLimitHeight = shouldLimitThinkingHeight(input.text);
+  return cn(
+    "plain-thinking-content pt-1 pr-1 text-[12.5px] leading-[1.5] overflow-y-auto overscroll-contain text-muted-foreground [overflow-wrap:anywhere] [scrollbar-gutter:stable] [overflow-anchor:none]",
+    shouldLimitHeight ? "max-h-64" : undefined,
+  );
+}
+
+function shouldLimitThinkingHeight(text: string) {
+  const lineCount = text.split(/\r?\n/u).length;
+  return lineCount > THINKING_SCROLL_LINE_THRESHOLD ||
+    text.length > THINKING_SCROLL_CHAR_THRESHOLD;
+}
+
+function resolveThinkingSummaryPreview(text: string) {
+  const firstMeaningfulLine = text
+    .split(/\r?\n/u)
+    .map((line) => line.trim())
+    .find(Boolean);
+  if (!firstMeaningfulLine) {
+    return "";
+  }
+  return firstMeaningfulLine.length <= THINKING_SUMMARY_PREVIEW_MAX_CHARS
+    ? firstMeaningfulLine
+    : `${firstMeaningfulLine.slice(0, THINKING_SUMMARY_PREVIEW_MAX_CHARS - 1)}…`;
+}
+
+export function isThinkingScrollNearBottom(
+  metrics: { scrollTop: number; clientHeight: number; scrollHeight: number },
+  threshold = 24,
+) {
+  return metrics.scrollHeight - metrics.clientHeight - metrics.scrollTop <= threshold;
 }
 
 type PlainToolGroupItemProps = {
@@ -628,7 +725,7 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
   }, [group.length, open]);
 
   return (
-    <div className={`plain-tool-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
+    <div className={`plain-tool-row ${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
       <span aria-hidden="true" />
       <details
         className="plain-tool-group min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
@@ -637,11 +734,16 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary
-          className="flex w-full cursor-pointer list-none items-center gap-1.5 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? "收起工具调用" : "展开工具调用"}
         >
-          <Icon name="hammer" size={12} className="text-primary" />
-          <span className="whitespace-nowrap font-medium text-muted-foreground">
+          <span
+            aria-hidden="true"
+            className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-sky-500/10 text-sky-700 dark:bg-sky-300/10 dark:text-sky-300"
+          >
+            <Icon name="hammer" size={12} />
+          </span>
+          <span className="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium leading-none text-sky-700 dark:text-sky-300">
             工具调用 · {group.length} 项
           </span>
           <span className="min-w-0 truncate text-muted-foreground/70">
@@ -664,11 +766,14 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
         </summary>
         <div
           ref={contentRef}
-          className="plain-tool-group-content ml-1.5 grid max-h-36 gap-1 overflow-y-auto border-l border-primary/25 pl-3.5 pr-1 text-[12.5px] text-muted-foreground"
+          className="plain-tool-group-content flex max-h-[min(22rem,55vh)] min-w-0 flex-col divide-y divide-border-ghost/70 overflow-y-auto pr-1 text-[12.5px] text-muted-foreground [&::-webkit-scrollbar-button]:hidden"
           data-mission-swipe-lock="true"
         >
           {group.map((item) => (
-            <PlainToolCallItem key={item.id} item={item} />
+            <PlainToolCallItem
+              key={item.id}
+              item={item}
+            />
           ))}
         </div>
       </details>
@@ -679,24 +784,48 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
 export function PlainSubagentItem({
   item,
   hasNewerContent = false,
+  detail,
+  detailContent,
+  onToggleDetail,
 }: {
   item: ConversationToolCallItem;
   hasNewerContent?: boolean;
+  detail?: SessionSubagentDetail & { loading?: boolean; failed?: boolean };
+  detailContent?: ReactNode;
+  onToggleDetail?: (open: boolean) => void;
 }) {
+  const codexPresentation = resolveCodexSubagentPresentation(item);
   const isRunning = isActiveToolStatus(item.status);
   const shouldAutoOpen = isRunning && !hasNewerContent;
   const [open, setOpen] = useState(shouldAutoOpen);
-  const text = item.text.trim() || formatToolInputPreview(item.input) || "暂无 Subagent 内容";
-  const summary = resolveSubagentSummary(item);
-  const label = resolveSubagentLabel(item);
-  const statusBadge = resolveSubagentStatusBadge(item);
+  const lastDetailOpenRef = useRef<boolean | undefined>(undefined);
+  const fallbackText = codexPresentation?.text ||
+    resolveSubagentOutput(item.text) ||
+    resolveSubagentPrompt(item.input) ||
+    "暂无 Subagent 内容";
+  const summary = codexPresentation?.summary ?? resolveSubagentSummary(item);
+  const label = codexPresentation?.label ?? resolveSubagentLabel(item);
+  const statusBadge = codexPresentation?.statusBadge ?? resolveSubagentStatusBadge(item);
 
   useEffect(() => {
     setOpen(shouldAutoOpen);
   }, [shouldAutoOpen]);
 
+  useEffect(() => {
+    if (lastDetailOpenRef.current === undefined && !open) {
+      lastDetailOpenRef.current = false;
+      return;
+    }
+    if (lastDetailOpenRef.current === open) return;
+    lastDetailOpenRef.current = open;
+    onToggleDetail?.(open);
+  }, [onToggleDetail, open]);
+
+  const hasDetail = (detail?.entries.length ?? 0) > 0;
+  const isDetailLoading = Boolean(onToggleDetail && (!detail || detail.loading)) && !hasDetail;
+
   return (
-    <div className={`plain-subagent-row mr-auto grid w-full max-w-full ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
+    <div className={`plain-subagent-row ${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
       <span aria-hidden="true" />
       <details
         className="plain-subagent min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 text-muted-foreground shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]"
@@ -705,37 +834,58 @@ export function PlainSubagentItem({
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary
-          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-0.5 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? `收起 ${label}` : `展开 ${label}`}
         >
-          <Icon name="message" size={12} className="shrink-0 text-primary" />
-          <span className="shrink-0 font-medium">
-            {label}
-          </span>
-          <span className="min-w-0 truncate text-muted-foreground/70">
-            {summary}
+          <span className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-amber-500/10 text-amber-700 dark:bg-amber-300/10 dark:text-amber-300">
+              <Icon name="message" size={12} className="shrink-0" />
+            </span>
+            <span className="inline-flex h-4 shrink-0 items-center font-medium leading-none text-amber-700 dark:text-amber-300">
+              {label}
+            </span>
+            {summary ? (
+              <span className="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground/70">
+                {summary}
+              </span>
+            ) : null}
           </span>
           {statusBadge ? (
-            <span className={cn("ml-auto shrink-0 rounded-sm px-1.5 py-0.5 text-2xs font-semibold", statusBadge.className)}>
+            <span className={cn("inline-flex h-4 shrink-0 items-center rounded-sm px-1.5 py-0.5 text-2xs font-semibold leading-none", statusBadge.className)}>
               {statusBadge.label}
             </span>
           ) : null}
-          <Icon
-            name="chevronDown"
-            size={12}
+          <span
             className={cn(
-              "text-muted-foreground/60 transition-transform duration-150",
-              statusBadge ? "ml-1.5" : "ml-auto",
+              "inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground/60 transition-transform duration-150",
               open && "rotate-180",
             )}
-          />
+          >
+            <Icon name="chevronDown" size={12} />
+          </span>
         </summary>
-        <div className="plain-subagent-content ml-1.5 border-l border-primary/25 pl-3.5 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
-          <MarkdownMessage text={text} />
+        <div
+          className="plain-subagent-content max-h-[min(22rem,55vh)] min-w-0 overflow-y-auto overscroll-contain pr-1 pt-1 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [scrollbar-gutter:stable] [&::-webkit-scrollbar-button]:hidden [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground"
+          data-mission-swipe-lock="true"
+        >
+          {hasDetail ? (
+            detailContent
+          ) : isDetailLoading ? (
+            <span className="text-muted-foreground/70">正在加载 Subagent 会话…</span>
+          ) : detail?.failed ? (
+            <span className="text-muted-foreground/70">Subagent 会话加载失败，收起后可重试</span>
+          ) : (
+            <MarkdownMessage text={fallbackText} />
+          )}
         </div>
       </details>
     </div>
   );
+}
+
+function resolveSubagentPrompt(input: string) {
+  const metadata = parseSubagentMetadata(input);
+  return metadata.prompt ?? metadata.description ?? formatToolInputPreview(input);
 }
 
 function resolveSubagentLabel(item: ConversationToolCallItem) {
@@ -781,6 +931,12 @@ function resolveSubagentStatusBadge(item: ConversationToolCallItem) {
       label: "已取消",
     };
   }
+  if (item.status === "completed") {
+    return {
+      className: "bg-success/10 text-success",
+      label: "已完成",
+    };
+  }
   if (isActiveToolStatus(item.status)) {
     return {
       className: "bg-accent/10 text-accent",
@@ -788,6 +944,31 @@ function resolveSubagentStatusBadge(item: ConversationToolCallItem) {
     };
   }
   return null;
+}
+
+function resolveSubagentOutput(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const parsed = parseJsonRecord(trimmed);
+  const output = typeof parsed?.output === "string" ? parsed.output : trimmed;
+  const taskOutput = output.match(/<output>\s*([\s\S]*?)\s*<\/output>/iu)?.[1]?.trim();
+  if (taskOutput) {
+    return taskOutput;
+  }
+  if (/<(?:retrieval_status|task_id|task_type|status)>/iu.test(output)) {
+    return "";
+  }
+  return output
+    .replace(/^Task completed in [^\r\n]+(?:\r?\n)+(?:Agent:[^\r\n]+(?:\r?\n)+)?---(?:\r?\n)+/iu, "")
+    .replace(/\r?\n?<!--\s*OMO_INTERNAL_INITIATOR\s*-->/giu, "")
+    .replace(/\r?\n*<task_metadata>[\s\S]*?<\/task_metadata>/giu, "")
+    .replace(/\r?\n*to continue:\s*task\([\s\S]*$/iu, "")
+    .replace(/(?:^|\r?\n)agentId:\s*\S+\s+\(use SendMessage[\s\S]*$/iu, "")
+    .replace(/(?:^|\r?\n)<usage>[\s\S]*?<\/usage>/giu, "")
+    .replace(/^\(Subagent completed but returned no output\.\)$/iu, "")
+    .trim();
 }
 
 function isBackgroundCancelSubagent(item: ConversationToolCallItem) {
@@ -822,6 +1003,13 @@ function parseSubagentMetadata(input: string) {
       "name",
       "label",
     ]);
+    const prompt = firstString(record, [
+      "prompt",
+      "message",
+      "query",
+      "instructions",
+      "task",
+    ]);
     const description = firstString(record, [
       "description",
       "task",
@@ -830,8 +1018,8 @@ function parseSubagentMetadata(input: string) {
       "message",
       "instructions",
     ]);
-    if (name || description) {
-      return { name, description };
+    if (name || description || prompt) {
+      return { name, description, prompt };
     }
   }
   return {};
@@ -865,38 +1053,111 @@ function firstString(record: Record<string, unknown>, keys: string[]) {
   return undefined;
 }
 
-function PlainToolCallItem({ item }: { item: ConversationToolCallItem }) {
+type PlainToolCallItemProps = {
+  item: ConversationToolCallItem;
+};
+
+export const PlainToolCallItem = memo(function PlainToolCallItem({
+  item,
+}: PlainToolCallItemProps) {
   const tone = resolveToolCallTone(item.toolKind, item.title);
   const preview = item.text.trim() || formatToolInputPreview(item.input);
+  const displayTitle = resolveToolCallDisplayTitle(tone.label, item.title);
+  const changeStats = resolveToolCallChangeStats(
+    item.toolKind,
+    item.input,
+    item.text,
+  );
+  const diff = changeStats
+    ? resolveToolCallDiff(item.toolKind, item.input, item.text)
+    : undefined;
   return (
     <details
-      className="plain-tool-call grid gap-0.5 py-0.5 text-muted-foreground"
+      className="plain-tool-call min-w-0 text-muted-foreground"
       data-tool-kind={tone.label.toLowerCase()}
     >
-      <summary className="flex min-w-0 cursor-pointer list-none items-start gap-1.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
-        <span aria-hidden="true" className={cn("grid size-3 shrink-0 self-start place-items-center rounded-sm", tone.className)}>
+      <summary className="flex min-w-0 cursor-pointer list-none items-center gap-1.5 py-0.5 text-2xs leading-4 [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true" className={cn("grid size-3 shrink-0 place-items-center rounded-sm", tone.className)}>
           <Icon name={resolveToolCallIconName(tone.label)} size={9} />
         </span>
-        <Badge
-          variant="secondary"
-          className={cn("h-4 shrink-0 self-start rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
+        <span className={cn("inline-flex shrink-0 items-center", TOOL_CATEGORY_SLOT_CLASS_NAME)}>
+          <Badge
+            variant="secondary"
+            className={cn("inline-flex h-4 shrink-0 items-center rounded-sm px-1.5 py-0 text-[10px] font-semibold leading-none", tone.className)}
+          >
+            {tone.label}
+          </Badge>
+        </span>
+        <strong
+          className="min-w-0 flex-1 truncate font-medium leading-4 text-foreground"
+          title={displayTitle}
         >
-          {tone.label}
-        </Badge>
-        <strong className="min-w-0 flex-1 truncate font-medium text-foreground">
-          {item.title}
+          {displayTitle}
         </strong>
-        <span className="ml-auto shrink-0 self-start text-2xs text-muted-foreground/60">
+        {changeStats ? (
+          <span
+            aria-label={`修改统计：新增 ${changeStats.additions} 行，删除 ${changeStats.deletions} 行`}
+            className="inline-flex shrink-0 items-center gap-1 font-mono text-2xs tabular-nums"
+          >
+            <span className={cn("tool-call-additions", resolveToolCallStatClass(changeStats.additions, "additions"))}>+{changeStats.additions}</span>
+            <span className="text-muted-foreground/50">/</span>
+            <span className={cn("tool-call-deletions", resolveToolCallStatClass(changeStats.deletions, "deletions"))}>-{changeStats.deletions}</span>
+          </span>
+        ) : null}
+        <span className="inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground/60">
           {resolveToolStatusLabel(item.status)}
         </span>
       </summary>
-      {preview ? (
-        <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words pl-8 font-mono text-xs leading-snug text-foreground/85" data-mission-swipe-lock="true">
+      {changeStats ? (
+        <ToolCallDiffPreview
+          diff={diff}
+        />
+      ) : preview ? (
+        <pre className="mt-0.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-muted-foreground/85" data-mission-swipe-lock="true">
           {preview}
         </pre>
       ) : null}
     </details>
   );
+}, arePlainToolCallItemPropsEqual);
+
+function arePlainToolCallItemPropsEqual(
+  previous: PlainToolCallItemProps,
+  next: PlainToolCallItemProps,
+) {
+  const previousItem = previous.item;
+  const nextItem = next.item;
+  return previousItem.id === nextItem.id &&
+    previousItem.title === nextItem.title &&
+    previousItem.status === nextItem.status &&
+    previousItem.toolKind === nextItem.toolKind &&
+    previousItem.text === nextItem.text &&
+    previousItem.input === nextItem.input &&
+    previousItem.streams.length === nextItem.streams.length &&
+    previousItem.streams.every((stream, index) => stream === nextItem.streams[index]);
+}
+
+export function resolveToolCallDisplayTitle(label: string, title: string) {
+  if (label === "Skill") {
+    return title.replace(/^Skill:\s*/iu, "").trim() || "Skill";
+  }
+  if (label === "MCP") {
+    return title.replace(/^Tool:\s*/iu, "").trim() || "MCP";
+  }
+  if (label === "Diagnostics") {
+    return title.replace(/^Diagnostics(?:\s*:)?\s*/iu, "").trim() || "Diagnostics";
+  }
+  return title;
+}
+
+function resolveToolCallStatClass(
+  value: number,
+  kind: "additions" | "deletions",
+) {
+  if (value === 0) {
+    return "text-muted-foreground/60";
+  }
+  return kind === "additions" ? "text-success" : "text-destructive";
 }
 
 function resolveToolGroupBadgeLabel(labels: string[]): string {
@@ -940,7 +1201,11 @@ function renderPlainMessageContent(
           className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden"
           data-mission-swipe-lock="true"
         >
-          <MarkdownMessage text={segmented.markdown} />
+          <MarkdownMessage
+            text={segmented.markdown}
+            renderMermaid={false}
+            plainCodeBlocks
+          />
         </div>
         {segmented.tail ? <PlainStreamingText text={segmented.tail} tail /> : null}
       </>
@@ -952,7 +1217,7 @@ function renderPlainMessageContent(
       className="min-w-0 [&_.markdown-table-scroll]:max-w-full [&_.markdown-table-scroll]:overflow-x-auto [&_.markdown-table-scroll]:overflow-y-hidden"
       data-mission-swipe-lock="true"
     >
-      <MarkdownMessage text={message.text} />
+      <MarkdownMessage text={message.text} repairMalformedTables />
     </div>
   );
 }

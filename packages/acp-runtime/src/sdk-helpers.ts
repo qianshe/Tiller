@@ -93,6 +93,7 @@ export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id
     denyOptionId,
     request: {
       id,
+      toolCallId: params.toolCall.toolCallId,
       command,
       reason,
       cwd,

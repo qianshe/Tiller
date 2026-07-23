@@ -37,6 +37,25 @@ export function buildMissionChatRestoreNotice({
   };
 }
 
+export function buildComposerPromptPlaceholder({
+  showRestoreNotice,
+  state,
+  message,
+  isMobile,
+  draftPromptPlaceholder,
+}: {
+  showRestoreNotice: boolean;
+  state: string;
+  message: string;
+  isMobile: boolean;
+  draftPromptPlaceholder: string;
+}) {
+  if (showRestoreNotice && state !== "failed") {
+    return message;
+  }
+  return isMobile ? "输入消息" : draftPromptPlaceholder;
+}
+
 export function buildDraftPreparingMessage({
   agentName,
   connectionMessage,

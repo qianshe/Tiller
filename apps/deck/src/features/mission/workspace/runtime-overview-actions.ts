@@ -34,7 +34,7 @@ export type UseRuntimeOverviewActionsOptions = {
   selectedProjectId: string | null | undefined;
   selectedCwd: string | null | undefined;
   activeSession: SessionSummary | null | undefined;
-  activeSessionRestoreGate: { canChat?: boolean } | undefined;
+  activeSessionRestoreGate: { canChat?: boolean; state?: string } | undefined;
   agentModelOptions: Record<string, any>;
   draftWorktreeOptions: any[];
 };

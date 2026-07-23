@@ -70,7 +70,6 @@ test("mission conversation implementation lives in the conversation subdomain", 
   for (const filename of [
     "chat-pane.tsx",
     "message-timeline.tsx",
-    "plain-messages.test.ts",
     "plain-messages.tsx",
     "plain-messages.test.tsx",
     "permission-drawer.tsx",

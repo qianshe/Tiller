@@ -5,6 +5,7 @@ import type {
   AgentMessage,
   AgentToolCall,
   SessionSummary,
+  SessionTimelineEntry,
   TrustedDeviceSummary,
 } from "@tiller/shared";
 import { useDeckStore } from "../../store";
@@ -41,6 +42,7 @@ function resetStore() {
     sessions: [],
     statuses: {},
     messages: {},
+    sessionTimeline: {},
     messageHistoryState: {},
     outputs: {},
     toolCalls: {},
@@ -190,6 +192,199 @@ test("live thinking tool calls update the chat tool-call store immediately", () 
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().toolCalls.s1, [thinkingToolCall]);
   assert.deepEqual(toolCallsRef.current.s1, [thinkingToolCall]);
+});
+
+test("settled regular tools keep their authoritative terminal status", () => {
+  resetStore();
+  const snapshots: AgentToolCall[] = [];
+  const previousRequestAnimationFrame = globalThis.requestAnimationFrame;
+  let scheduled = false;
+  globalThis.requestAnimationFrame = (() => {
+    scheduled = true;
+    return 1;
+  }) as typeof requestAnimationFrame;
+  try {
+    for (const status of ["completed", "failed", "cancelled"] as const) {
+      const handled = applyActivityUpdate(
+        {
+          sessionId: "s1",
+          update: {
+            kind: "tool_call",
+            toolCall: {
+              id: `todo-live-${status}`,
+              kind: "todo",
+              title: "Update todos",
+              status,
+              timestamp: "2026-05-04T01:00:00.000Z",
+              updatedAt: "2026-05-04T01:00:01.000Z",
+            },
+          },
+        },
+        {
+          toolCallsRef: { current: {} },
+          mergeSessionToolCalls: (_sessionId, incoming) => snapshots.push(...incoming),
+          appendSystemMessage: () => undefined,
+        },
+      );
+
+      assert.equal(handled, true);
+    }
+
+    assert.deepEqual(
+      snapshots.map((toolCall) => toolCall.status),
+      ["completed", "failed", "cancelled"],
+    );
+    assert.equal(scheduled, false);
+  } finally {
+    globalThis.requestAnimationFrame = previousRequestAnimationFrame;
+  }
+});
+
+test("settled subagent activity exposes a visible running state before its result", () => {
+  resetStore();
+  const snapshots: AgentToolCall[] = [];
+  let settleSubagent: (() => void) | undefined;
+  const subagentToolCall: AgentToolCall = {
+    id: "subagent-live",
+    kind: "subagent",
+    title: "Explore repository",
+    status: "completed",
+    output: "探索完成",
+    timestamp: "2026-05-04T01:00:00.000Z",
+    updatedAt: "2026-05-04T01:00:01.000Z",
+  };
+
+  const handled = applyActivityUpdate(
+    { sessionId: "s1", update: { kind: "tool_call", toolCall: subagentToolCall } },
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: (_sessionId, incoming) => snapshots.push(...incoming),
+      appendSystemMessage: () => undefined,
+      scheduleSubagentSettlement: (callback) => {
+        settleSubagent = callback;
+      },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(
+    snapshots.map((toolCall) => toolCall.status),
+    ["running"],
+  );
+  assert.equal(snapshots[0]?.output, undefined);
+
+  assert.ok(settleSubagent);
+  settleSubagent();
+  assert.deepEqual(
+    snapshots.map((toolCall) => toolCall.status),
+    ["running", "completed"],
+  );
+  assert.equal(snapshots[1]?.output, "探索完成");
+});
+
+test("activity tool overlays keep canonical timeline untouched", () => {
+  resetStore();
+  const existingTimeline: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:content",
+        kind: "content",
+        text: "existing",
+        timestamp: "2026-05-04T01:00:00.000Z",
+        sequence: 1,
+      }],
+      timestamp: "2026-05-04T01:00:00.000Z",
+      updatedAt: "2026-05-04T01:00:00.000Z",
+      sequence: 1,
+    },
+  ];
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = { current: {} };
+  useDeckStore.setState({
+    sessionTimeline: { s1: existingTimeline },
+  });
+
+  const toolCall: AgentToolCall = {
+    id: "tool-1",
+    kind: "read",
+    title: "Read",
+    status: "running",
+    timestamp: "2026-05-04T01:00:01.000Z",
+    updatedAt: "2026-05-04T01:00:01.000Z",
+    sequence: 2,
+  };
+  applyActivityUpdate(
+    { sessionId: "s1", update: { kind: "tool_call", toolCall } },
+    {
+      toolCallsRef,
+      mergeSessionToolCalls: (sessionId, incoming) => {
+        useDeckStore.getState().setToolCalls((current) => {
+          const next = {
+            ...current,
+            [sessionId]: [...(current[sessionId] ?? []), ...incoming],
+          };
+          toolCallsRef.current = next;
+          return next;
+        });
+      },
+      appendSystemMessage: () => undefined,
+    },
+  );
+
+  assert.equal(useDeckStore.getState().sessionTimeline.s1, existingTimeline);
+  assert.equal(useDeckStore.getState().outputs.s1, undefined);
+  assert.equal(useDeckStore.getState().toolCalls.s1?.length, 1);
+});
+
+test("timeline refresh clears a stale live running tool overlay", () => {
+  resetStore();
+  const runningTool: AgentToolCall = {
+    id: "todo-live",
+    kind: "todo",
+    title: "Update todos",
+    status: "running",
+    timestamp: "2026-07-19T14:12:45.768Z",
+    updatedAt: "2026-07-19T14:12:45.768Z",
+  };
+  const completedTool: AgentToolCall = {
+    ...runningTool,
+    status: "completed",
+    updatedAt: "2026-07-19T14:12:55.834Z",
+  };
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
+    current: { s1: [runningTool] },
+  };
+  useDeckStore.setState({ toolCalls: toolCallsRef.current });
+
+  const handled = applySessionResult(
+    "session/list_timeline",
+    {
+      sessionId: "s1",
+      entries: [{
+        id: "tool:todo-live",
+        kind: "tool_call",
+        toolCall: completedTool,
+        timestamp: completedTool.timestamp,
+        updatedAt: completedTool.updatedAt,
+      }],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    { toolCallsRef } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().toolCalls.s1, []);
+  assert.deepEqual(toolCallsRef.current.s1, []);
+  const timelineEntry = useDeckStore.getState().sessionTimeline.s1?.[0];
+  assert.equal(
+    timelineEntry?.kind === "tool_call"
+      ? timelineEntry.toolCall.status
+      : undefined,
+    "completed",
+  );
 });
 
 test("assistant message chunks clear active live thinking from the chat store", () => {

@@ -4,7 +4,8 @@ import * as sessionDraft from "./draft";
 import * as sessionDiscardDraft from "./discard-draft";
 import * as sessionNew from "./new";
 import * as sessionList from "./list";
-import * as sessionListMessages from "./list-messages";
+import * as sessionListTimeline from "./list-timeline";
+import * as sessionRepairTimeline from "./repair-timeline";
 import * as sessionGetArtifacts from "./get-artifacts";
 import * as sessionCheckResume from "./check-resume";
 import * as sessionResume from "./resume";
@@ -15,29 +16,10 @@ import * as sessionConfigure from "./configure";
 import * as sessionSetConfigOption from "./set-config-option";
 import * as sessionRename from "./rename";
 import * as sessionCleanup from "./cleanup";
-import * as debugReimportHistory from "../debug/reimport-history";
 
 test("session/new requires project cwd and agent", () => {
   assert.equal(sessionNew.method, "session/new");
   sessionNew.ParamsSchema.parse({ projectId: "p1", cwd: "D:/repo", agentId: "a1" });
-});
-
-test("session/list_messages accepts transcriptStatus metadata", () => {
-  const result = sessionListMessages.ResultSchema.parse({
-    sessionId: "session-1",
-    messages: [],
-    timeline: [],
-    transcriptStatus: {
-      source: "local",
-      replayCompleteness: "compacted",
-      integrity: "local-prefix-preserved",
-      runtimeRestoreState: "history-only",
-    },
-    hasMore: false,
-    timelineHasMore: false,
-  });
-
-  assert.equal(result.transcriptStatus?.integrity, "local-prefix-preserved");
 });
 
 test("session/draft returns runtime draft metadata", () => {
@@ -88,34 +70,59 @@ test("session/list returns paginated session summaries", () => {
   sessionList.ResultSchema.parse({ sessions: [] });
 });
 
-test("session/list_messages requires sessionId", () => {
-  assert.equal(sessionListMessages.method, "session/list_messages");
-  assert.throws(() => sessionListMessages.ParamsSchema.parse({}));
-  assert.deepEqual(
-    sessionListMessages.ParamsSchema.parse({
-      sessionId: "s1",
-      timelineBefore: "order\t1\ttimeline-1",
-    }),
-    { sessionId: "s1", timelineBefore: "order\t1\ttimeline-1" },
-  );
-  const result = sessionListMessages.ResultSchema.parse({
+test("session/list_timeline returns paginated canonical timeline entries", () => {
+  assert.equal(sessionListTimeline.method, "session/list_timeline");
+  assert.throws(() => sessionListTimeline.ParamsSchema.parse({}));
+  sessionListTimeline.ParamsSchema.parse({ sessionId: "s1" });
+  sessionListTimeline.ParamsSchema.parse({ sessionId: "s1", limit: 20, before: "order\t5\tentry-5" });
+  const result = sessionListTimeline.ResultSchema.parse({
     sessionId: "s1",
-    messages: [],
-    timeline: [
+    before: "order\t5\tentry-5",
+    entries: [
       {
-        id: "timeline-1",
+        id: "assistant-1",
         kind: "assistant_message",
         chunks: [],
-        timestamp: "2026-05-24T10:00:00.000Z",
-        updatedAt: "2026-05-24T10:00:00.000Z",
+        timestamp: "2026-06-29T10:00:01.000Z",
+        updatedAt: "2026-06-29T10:00:01.000Z",
+        sequence: 1,
       },
     ],
-    timelineNextCursor: "order\t1\ttimeline-1",
-    timelineHasMore: true,
-    timelineBefore: "order\t2\ttimeline-2",
+    nextCursor: "order\t1\tassistant-1",
+    hasMore: true,
+    liveState: {
+      promptQueue: {
+        sessionId: "s1",
+        queued: [],
+      },
+    },
   });
-  assert.equal(result.timeline?.[0]?.id, "timeline-1");
-  assert.equal(result.timelineHasMore, true);
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.hasMore, true);
+  assert.equal(result.liveState?.promptQueue?.sessionId, "s1");
+});
+
+test("session/repair_timeline defaults to dry-run and validates bounded results", () => {
+  assert.equal(sessionRepairTimeline.method, "session/repair_timeline");
+  assert.deepEqual(
+    sessionRepairTimeline.ParamsSchema.parse({ sessionId: "s1" }),
+    { sessionId: "s1" },
+  );
+  sessionRepairTimeline.ParamsSchema.parse({ sessionId: "s1", apply: true });
+  const result = sessionRepairTimeline.ResultSchema.parse({
+    sessionId: "s1",
+    repairable: true,
+    applied: false,
+    updateCount: 4,
+    beforeEntryCount: 2,
+    afterEntryCount: 3,
+    changedEntryCount: 3,
+  });
+  assert.equal(result.applied, false);
+  assert.throws(() => sessionRepairTimeline.ResultSchema.parse({
+    ...result,
+    reason: "unknown_reason",
+  }));
 });
 
 test("session/get_artifacts returns outputs/diffs/toolCalls arrays", () => {
@@ -125,14 +132,8 @@ test("session/get_artifacts returns outputs/diffs/toolCalls arrays", () => {
     outputs: [],
     diffs: [],
     toolCalls: [],
-    plan: {
-      updatedAt: "2026-06-02T13:37:09.663Z",
-      entries: [
-        { content: "恢复 OpenCode todo", priority: "high", status: "completed" },
-      ],
-    },
   });
-  assert.equal(parsed.plan?.entries[0]?.content, "恢复 OpenCode todo");
+  assert.deepEqual(parsed.toolCalls, []);
 });
 
 test("session/check_resume and session/resume share sessionId param", () => {
@@ -214,20 +215,4 @@ test("session/rename requires session id and title", () => {
 test("session/cleanup carries result payload", () => {
   assert.equal(sessionCleanup.method, "session/cleanup");
   sessionCleanup.ResultSchema.parse({ result: {} });
-});
-
-test("debug/reimport_history requires session id and returns replacement history", () => {
-  assert.equal(debugReimportHistory.method, "debug/reimport_history");
-  debugReimportHistory.ParamsSchema.parse({ sessionId: "s1", limit: 50 });
-  assert.throws(() => debugReimportHistory.ParamsSchema.parse({}));
-  debugReimportHistory.ResultSchema.parse({
-    sessionId: "s1",
-    messages: [],
-    outputs: [],
-    diffs: [],
-    toolCalls: [],
-    hasMore: false,
-    activityHasMore: false,
-    message: "History reimported.",
-  });
 });

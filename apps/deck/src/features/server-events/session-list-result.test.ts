@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { SessionSummary } from "@tiller/shared";
-import { deriveSessionListResult } from "./session-list-result.js";
+import {
+  deriveSessionListResult,
+  mergeSessionLifecycleSummary,
+} from "./session-list-result.js";
 
 function session(overrides: Partial<SessionSummary> & Pick<SessionSummary, "id" | "updatedAt">): SessionSummary {
   return {
@@ -50,4 +53,133 @@ test("deriveSessionListResult merges paged sessions and derives config and comma
   assert.ok(result.configOptionsBySession.incoming);
   assert.deepEqual(result.availableCommands.bySession.incoming, incoming.availableCommands);
   assert.deepEqual(result.availableCommands.byAgent.codex, incoming.availableCommands);
+});
+
+test("deriveSessionListResult keeps canonical live status over stale lifecycle inventory", () => {
+  const result = deriveSessionListResult({
+    currentSessions: [],
+    liveStatesBySession: {
+      resumed: {
+        sequence: 42,
+        status: {
+          runtimeStatus: "idle",
+          effectiveStatus: "idle",
+          pendingApprovalCount: 0,
+        },
+      },
+    },
+    payload: {
+      sessions: [session({
+        id: "resumed",
+        updatedAt: "2026-05-29T00:03:00.000Z",
+        status: "starting",
+      })],
+    },
+  });
+
+  assert.equal(result.nextSessions[0]?.status, "idle");
+  assert.equal(result.nextStatuses.resumed, "idle");
+});
+
+test("deriveSessionListResult keeps runtime-confirmed config over stale persisted selection", () => {
+  const runtimeConfigOptions = [
+    {
+      id: "model",
+      category: "model",
+      currentValue: "default",
+      options: [
+        { value: "default", label: "Default" },
+        { value: "opus", label: "Opus" },
+      ],
+    },
+    {
+      id: "thought_level",
+      category: "thought_level",
+      currentValue: "medium",
+      options: [{ value: "medium", label: "Medium" }],
+    },
+  ];
+  const result = deriveSessionListResult({
+    currentSessions: [],
+    liveStatesBySession: {
+      resumed: {
+        sequence: 43,
+        config: {
+          model: "default",
+          reasoningEffort: "medium",
+          configOptions: runtimeConfigOptions,
+          modelOptions: [{ id: "default", name: "Default" }],
+        },
+      },
+    },
+    payload: {
+      sessions: [session({
+        id: "resumed",
+        updatedAt: "2026-05-29T00:03:00.000Z",
+        model: "opus",
+        reasoningEffort: "high",
+      })],
+    },
+  });
+
+  assert.equal(result.nextSessions[0]?.model, "default");
+  assert.equal(result.nextSessions[0]?.reasoningEffort, "medium");
+  assert.deepEqual(result.nextSessions[0]?.configOptions, runtimeConfigOptions);
+});
+
+test("deriveSessionListResult preserves listed config when canonical config is uninitialized", () => {
+  const configOptions = [
+    {
+      id: "model",
+      name: "Model",
+      category: "model",
+      currentValue: "cpa-oai/gpt-5.5",
+      options: [{ value: "cpa-oai/gpt-5.5", label: "GPT-5.5" }],
+    },
+  ];
+  const result = deriveSessionListResult({
+    currentSessions: [],
+    liveStatesBySession: {
+      resumed: {
+        sequence: 1496,
+        config: { configOptions: [], modelOptions: [] },
+      },
+    },
+    payload: {
+      sessions: [session({
+        id: "resumed",
+        updatedAt: "2026-07-13T15:15:45.133Z",
+        model: "cpa-oai/gpt-5.5",
+        configOptions,
+      })],
+    },
+  });
+
+  assert.equal(result.nextSessions[0]?.model, "cpa-oai/gpt-5.5");
+  assert.deepEqual(result.nextSessions[0]?.configOptions, configOptions);
+  assert.deepEqual(result.configOptionsBySession.resumed, configOptions);
+});
+
+test("mergeSessionLifecycleSummary keeps a saved title over an ACP session title", () => {
+  const result = mergeSessionLifecycleSummary(
+    session({ id: "renamed", title: "发布计划", updatedAt: "2026-05-29T00:03:00.000Z" }),
+    {
+      sequence: 44,
+      sessionInfo: { title: "请检查发布计划" },
+    },
+  );
+
+  assert.equal(result.title, "发布计划");
+});
+
+test("mergeSessionLifecycleSummary fills an unnamed session title from ACP", () => {
+  const result = mergeSessionLifecycleSummary(
+    session({ id: "unnamed", title: undefined, updatedAt: "2026-05-29T00:03:00.000Z" }),
+    {
+      sequence: 45,
+      sessionInfo: { title: "请检查发布计划" },
+    },
+  );
+
+  assert.equal(result.title, "请检查发布计划");
 });

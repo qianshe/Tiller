@@ -399,7 +399,7 @@ export function App() {
   });
   const layout = useMissionLayout({
     activeView: route.activeView,
-    hasActiveSession: Boolean(missionView.activeSession),
+    hasActiveConversation: Boolean(missionView.activeSession || deckData.draftChatWindow),
   });
   const layoutContext = buildAppLayoutContext(layout);
   const panelContext = buildMissionPanelContext(panelPages);
@@ -431,9 +431,7 @@ export function App() {
     deckDeviceId,
   });
   const history = useHistoryPagination({
-    activeSessionId: deckData.activeSessionId,
     activityHistoryState: deckData.activityHistoryState,
-    chatMainRef: runtimeState.chatMainRef,
     dispatch,
     messageHistoryState: deckData.messageHistoryState,
     sessionHistoryState: deckData.sessionHistoryState,
@@ -487,22 +485,23 @@ export function App() {
     lastFilesScopeKeyRef,
   });
   appActionsRef.current = appActions;
-  const activeSessionSlashCommands = missionView.activeSession?.availableCommands ?? [];
+  const composerSlashSession = missionView.selectedComposerSession ?? missionView.activeSession;
+  const activeSessionSlashCommands = composerSlashSession?.availableCommands ?? [];
   const sessionAvailableCommandsForComposer = useMemo(
     () =>
-      missionView.activeSession && activeSessionSlashCommands.length
+      composerSlashSession && activeSessionSlashCommands.length
         ? {
             ...deckData.sessionAvailableCommands,
-            [missionView.activeSession.id]: activeSessionSlashCommands,
+            [composerSlashSession.id]: activeSessionSlashCommands,
           }
         : deckData.sessionAvailableCommands,
-    [deckData.sessionAvailableCommands, missionView.activeSession, activeSessionSlashCommands],
+    [deckData.sessionAvailableCommands, composerSlashSession, activeSessionSlashCommands],
   );
   const slash = useSlashCommands({
     prompt: runtimeState.prompt,
     setPrompt: runtimeState.setPrompt,
-    activeSessionId: deckData.activeSessionId,
-    activeSessionAgentId: missionView.activeSession?.agentId ?? runtimeState.selectedAgentId,
+    activeSessionId: composerSlashSession?.id ?? deckData.activeSessionId,
+    activeSessionAgentId: composerSlashSession?.agentId ?? runtimeState.selectedAgentId,
     sessionAvailableCommands: sessionAvailableCommandsForComposer,
     agentAvailableCommands: deckData.agentAvailableCommands,
     refreshAgentAvailableCommands: deckData.refreshAgentAvailableCommands,

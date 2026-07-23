@@ -1,4 +1,10 @@
-import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionTimelineBatch,
+  SessionTimelineEntry,
+  SessionUpdateRecord,
+} from "@tiller/shared";
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
@@ -8,19 +14,31 @@ import {
 } from "@tiller/shared";
 import { normalizePageLimit } from "../pagination";
 import {
+  buildSessionTimelineMessageGroupAnchors,
+  decodeSessionTimelineOrderCursor,
+  encodeSessionTimelineOrderCursor,
   pageSessionTimeline,
+  type SessionTimelinePositionedEntry,
   type SessionTimelinePageOptions,
 } from "../timeline-store";
+import { normalizeLegacyPersistedAgentToolCall } from "../normalize.js";
 import {
   openSessionDatabase,
   runTransaction,
   type DatabaseSync,
 } from "./core";
+import type { SessionTimelineStore } from "../session-stores";
+import { createSqliteTimelineMessageAnchorIndex } from "./timeline-message-anchor-index";
+import { createSessionUpdateInserter, maybeCompactSessionUpdates } from "./session-update-store";
 
-export function createSqliteSessionTimelineStore(dbPath: string) {
+export function createSqliteSessionTimelineStore(
+  dbPath: string,
+): SessionTimelineStore & { close(): void } {
   const db = openSessionDatabase(dbPath);
+  const anchorIndex = createSqliteTimelineMessageAnchorIndex(db);
+  const insertUpdate = createSessionUpdateInserter(db);
 
-  return {
+  const store = {
     append(sessionId: string, entry: SessionTimelineEntry) {
       upsertSessionTimelineEntry(db, sessionId, entry);
       return listSessionTimelineEntries(db, sessionId);
@@ -36,19 +54,62 @@ export function createSqliteSessionTimelineStore(dbPath: string) {
       replaceSessionTimelineEntries(db, sessionId, next);
       return next;
     },
+    applyBatch(sessionId: string, batch: SessionTimelineBatch) {
+      return applyTimelineBatch(db, sessionId, batch);
+    },
+    commitBatch(
+      sessionId: string,
+      batch: SessionTimelineBatch,
+      updates: SessionUpdateRecord[],
+    ) {
+      return runTransaction(db, () => {
+        for (const update of updates) {
+          insertUpdate(update);
+        }
+        const committed = applyTimelineBatch(db, sessionId, batch, { materializeResult: false });
+        const latestUpdate = updates.reduce<SessionUpdateRecord | undefined>(
+          (latest, update) => !latest || update.sequence > latest.sequence ? update : latest,
+          undefined,
+        );
+        if (latestUpdate) {
+          maybeCompactSessionUpdates(db, latestUpdate);
+        }
+        return committed;
+      });
+    },
     list(sessionId: string) {
       return listSessionTimelineEntries(db, sessionId);
     },
     listPage(sessionId: string, options: SessionTimelinePageOptions = {}) {
-      return listSessionTimelinePage(db, sessionId, options);
+      return listSessionTimelinePage(db, anchorIndex, sessionId, options);
     },
     remove(sessionId: string) {
-      db.prepare("DELETE FROM session_timeline_entries WHERE session_id = ?").run(sessionId);
+      runTransaction(db, () => {
+        db.prepare("DELETE FROM session_timeline_entries WHERE session_id = ?").run(sessionId);
+        anchorIndex.removeSession(sessionId);
+      });
     },
     close() {
       db.close();
     },
   };
+  return store as SessionTimelineStore & { close(): void };
+}
+
+function applyTimelineBatch(
+  db: DatabaseSync,
+  sessionId: string,
+  batch: SessionTimelineBatch,
+  options: { materializeResult?: boolean } = {},
+) {
+  if (batch.replace) {
+    replaceSessionTimelineEntries(db, sessionId, batch.entries);
+    return batch.entries;
+  }
+  upsertSessionTimelineEntries(db, sessionId, batch.entries);
+  return options.materializeResult === false
+    ? batch.entries
+    : listSessionTimelineEntries(db, sessionId);
 }
 
 const DEFAULT_TIMELINE_PAGE_LIMIT = 50;
@@ -63,6 +124,22 @@ type TimelineRow = {
 
 function listSessionTimelinePage(
   db: DatabaseSync,
+  anchorIndex: ReturnType<typeof createSqliteTimelineMessageAnchorIndex>,
+  sessionId: string,
+  options: SessionTimelinePageOptions,
+) {
+  if (options.window === "turn") {
+    return listSessionTimelineTurnWindowPage(db, anchorIndex, sessionId, options);
+  }
+  if (options.window === "message") {
+    return listSessionTimelineMessageWindowPage(db, anchorIndex, sessionId, options);
+  }
+  return listSessionTimelineEntryWindowPage(db, sessionId, options);
+}
+
+function listSessionTimelineTurnWindowPage(
+  db: DatabaseSync,
+  anchorIndex: ReturnType<typeof createSqliteTimelineMessageAnchorIndex>,
   sessionId: string,
   options: SessionTimelinePageOptions,
 ) {
@@ -71,24 +148,70 @@ function listSessionTimelinePage(
     DEFAULT_TIMELINE_PAGE_LIMIT,
     MAX_TIMELINE_PAGE_LIMIT,
   );
-  const entryLimit = options.window === "message"
-    ? normalizePageLimit(options.entryLimit, MAX_TIMELINE_PAGE_LIMIT, MAX_TIMELINE_PAGE_LIMIT)
-    : limit;
-  const candidateLimit = Math.max(limit, entryLimit);
-  const before = decodeOrderCursor(options.before);
-  const rows = queryTimelinePageRows(db, sessionId, before?.position, candidateLimit + 1);
-  const hasOlderRows = rows.length > candidateLimit;
-  const candidateRows = rows.slice(0, candidateLimit).reverse();
+  ensureSessionTimelineMessageAnchors(db, anchorIndex, sessionId);
+  const before = decodeSessionTimelineOrderCursor(options.before);
+  const currentAnchor = before
+    ? anchorIndex.getAnchor(sessionId, before.position, before.id)
+    : undefined;
+  const anchors = anchorIndex.listNewestUserAnchors(
+    sessionId,
+    before?.position,
+    limit + 1,
+  );
+  if (!anchors.length) {
+    return listSessionTimelineMessageWindowPage(db, anchorIndex, sessionId, {
+      ...options,
+      window: "message",
+    });
+  }
+  const hasMore = anchors.length > limit;
+  const selected = anchors.slice(0, limit);
+  const oldestAnchor = selected.at(-1);
+  if (!oldestAnchor) {
+    return { entries: [], hasMore: false };
+  }
+  const rows = queryTimelineRangeRows(
+    db,
+    sessionId,
+    oldestAnchor.startPosition,
+    currentAnchor?.startPosition,
+  );
+  return {
+    entries: rows
+      .map((row) => parseJson<SessionTimelineEntry>(row.payload_json))
+      .filter(isNotNull)
+      .map(normalizePersistedTimelineEntry),
+    nextCursor: hasMore
+      ? encodeSessionTimelineOrderCursor(oldestAnchor.anchorPosition, oldestAnchor.groupId)
+      : undefined,
+    hasMore,
+  };
+}
+
+function listSessionTimelineEntryWindowPage(
+  db: DatabaseSync,
+  sessionId: string,
+  options: SessionTimelinePageOptions,
+) {
+  const limit = normalizePageLimit(
+    options.limit,
+    DEFAULT_TIMELINE_PAGE_LIMIT,
+    MAX_TIMELINE_PAGE_LIMIT,
+  );
+  const before = decodeSessionTimelineOrderCursor(options.before);
+  const rows = queryTimelinePageRows(db, sessionId, before?.position, limit + 1);
+  const hasOlderRows = rows.length > limit;
+  const candidateRows = rows.slice(0, limit).reverse();
   const entries = candidateRows
     .map((row) => parseJson<SessionTimelineEntry>(row.payload_json))
     .filter(isNotNull)
     .map(normalizePersistedTimelineEntry);
-  const page = pageSessionTimeline(entries, { ...options, before: undefined });
-  const hasMore = hasOlderRows || page.hasMore;
   return {
-    entries: page.entries,
-    nextCursor: hasMore ? encodeOrderCursor(resolvePageStartRow(candidateRows, page.entries)) : undefined,
-    hasMore,
+    entries,
+    nextCursor: hasOlderRows
+      ? encodeSessionTimelineOrderCursor(candidateRows[0]?.position, candidateRows[0]?.id)
+      : undefined,
+    hasMore: hasOlderRows,
   };
 }
 
@@ -119,30 +242,93 @@ function queryTimelinePageRows(
   return db.prepare(sql).all(...params) as TimelineRow[];
 }
 
-function resolvePageStartRow(rows: TimelineRow[], entries: SessionTimelineEntry[]) {
-  const firstEntry = entries[0];
-  if (!firstEntry) {
-    return undefined;
+function listSessionTimelineMessageWindowPage(
+  db: DatabaseSync,
+  anchorIndex: ReturnType<typeof createSqliteTimelineMessageAnchorIndex>,
+  sessionId: string,
+  options: SessionTimelinePageOptions,
+) {
+  const limit = normalizePageLimit(
+    options.limit,
+    DEFAULT_TIMELINE_PAGE_LIMIT,
+    MAX_TIMELINE_PAGE_LIMIT,
+  );
+  ensureSessionTimelineMessageAnchors(db, anchorIndex, sessionId);
+  const before = decodeSessionTimelineOrderCursor(options.before);
+  const currentAnchor = before
+    ? anchorIndex.getAnchor(sessionId, before.position, before.id)
+    : undefined;
+  const anchors = anchorIndex.listNewestAnchors(sessionId, before?.position, limit + 1);
+  if (!anchors.length) {
+    return listSessionTimelineEntryWindowPage(db, sessionId, {
+      ...options,
+      window: "entry",
+      before: currentAnchor
+        ? encodeSessionTimelineOrderCursor(currentAnchor.startPosition, currentAnchor.groupId)
+        : options.before,
+    });
   }
-  return rows.find((row) => row.id === firstEntry.id);
+  const hasMore = anchors.length > limit;
+  const selected = anchors.slice(0, limit);
+  const oldestAnchor = selected.at(-1);
+  if (!oldestAnchor) {
+    return { entries: [], hasMore: false };
+  }
+  const rows = queryTimelineRangeRows(
+    db,
+    sessionId,
+    oldestAnchor.startPosition,
+    currentAnchor?.startPosition,
+  );
+  return {
+    entries: rows
+      .map((row) => parseJson<SessionTimelineEntry>(row.payload_json))
+      .filter(isNotNull)
+      .map(normalizePersistedTimelineEntry),
+    nextCursor: hasMore
+      ? encodeSessionTimelineOrderCursor(oldestAnchor.anchorPosition, oldestAnchor.groupId)
+      : undefined,
+    hasMore,
+  };
 }
 
-function encodeOrderCursor(row: TimelineRow | undefined) {
-  return row ? `${ORDER_CURSOR_PREFIX}\t${row.position}\t${row.id}` : undefined;
+function queryTimelineRangeRows(
+  db: DatabaseSync,
+  sessionId: string,
+  startInclusive: number,
+  beforeExclusive?: number,
+) {
+  const sql = beforeExclusive === undefined
+    ? `
+      SELECT id, position, payload_json
+      FROM session_timeline_entries
+      WHERE session_id = ? AND position >= ?
+      ORDER BY position ASC, id ASC
+    `
+    : `
+      SELECT id, position, payload_json
+      FROM session_timeline_entries
+      WHERE session_id = ? AND position >= ? AND position < ?
+      ORDER BY position ASC, id ASC
+    `;
+  const params = beforeExclusive === undefined
+    ? [sessionId, startInclusive]
+    : [sessionId, startInclusive, beforeExclusive];
+  return db.prepare(sql).all(...params) as TimelineRow[];
 }
 
-function decodeOrderCursor(cursor: string | undefined) {
-  if (!cursor) {
-    return null;
+function ensureSessionTimelineMessageAnchors(
+  db: DatabaseSync,
+  anchorIndex: ReturnType<typeof createSqliteTimelineMessageAnchorIndex>,
+  sessionId: string,
+) {
+  if (anchorIndex.isInitialized(sessionId)) {
+    return;
   }
-  const [prefix, position] = cursor.split("\t");
-  if (prefix !== ORDER_CURSOR_PREFIX || !position) {
-    return null;
-  }
-  const parsedPosition = Number.parseInt(position, 10);
-  return Number.isFinite(parsedPosition) && parsedPosition >= 0
-    ? { position: parsedPosition }
-    : null;
+  const anchors = buildSessionTimelineMessageGroupAnchors(
+    listPositionedSessionTimelineEntries(db, sessionId),
+  );
+  anchorIndex.replaceSessionAnchors(sessionId, anchors);
 }
 
 function listSessionTimelineEntries(db: DatabaseSync, sessionId: string) {
@@ -160,6 +346,31 @@ function listSessionTimelineEntries(db: DatabaseSync, sessionId: string) {
     .map((row) => parseJson<SessionTimelineEntry>(row.payload_json))
     .filter(isNotNull)
     .map(normalizePersistedTimelineEntry);
+}
+
+function listPositionedSessionTimelineEntries(
+  db: DatabaseSync,
+  sessionId: string,
+  fromPosition = 0,
+): SessionTimelinePositionedEntry[] {
+  const rows = db.prepare(
+    `
+      SELECT position, payload_json
+      FROM session_timeline_entries
+      WHERE session_id = ? AND position >= ?
+      ORDER BY position ASC, id ASC
+    `,
+  ).all(sessionId, fromPosition) as Array<{ position: number; payload_json: string }>;
+  return rows
+    .map((row) => ({
+      position: row.position,
+      entry: parseJson<SessionTimelineEntry>(row.payload_json),
+    }))
+    .filter((row): row is { position: number; entry: SessionTimelineEntry } => row.entry !== null)
+    .map((row) => ({
+      position: row.position,
+      entry: normalizePersistedTimelineEntry(row.entry),
+    }));
 }
 
 function upsertSessionTimelineMessage(
@@ -206,11 +417,11 @@ function findMessageTimelineEntry(entries: SessionTimelineEntry[], message: Agen
     return entries.find((entry) => entry.kind === kind && entry.id === message.id);
   }
 
-  if (typeof message.timelineSequence === "number") {
+  if (typeof message.sequence === "number") {
     const sequenced = entries.find((entry) =>
       entry.kind === "assistant_message" &&
       entry.chunks.some((chunk) =>
-        chunk.kind === "content" && chunk.timelineSequence === message.timelineSequence
+        chunk.kind === "content" && chunk.sequence === message.sequence
       )
     );
     if (sequenced) {
@@ -273,24 +484,24 @@ function hasToolCallBoundaryBeforeAssistantUpdate(
   existing: Extract<SessionTimelineEntry, { kind: "assistant_message" }>,
   message: AgentMessage,
 ) {
-  if (typeof message.timelineSequence !== "number") {
+  if (typeof message.sequence !== "number") {
     return false;
   }
-  const messageSequence = message.timelineSequence;
+  const messageSequence = message.sequence;
   const contentChunkId = `${message.id}:content`;
   return existing.chunks.some((chunk) => {
     if (
       chunk.kind !== "content" ||
       !matchesTimelineChunkId(chunk.id, contentChunkId) ||
-      typeof chunk.timelineSequence !== "number"
+      typeof chunk.sequence !== "number"
     ) {
       return false;
     }
-    const chunkSequence = chunk.timelineSequence;
+    const chunkSequence = chunk.sequence;
     return entries.some((entry) =>
       entry.kind === "tool_call" &&
-      typeof entry.timelineSequence === "number" &&
-      isSequenceBetween(entry.timelineSequence, chunkSequence, messageSequence)
+      typeof entry.sequence === "number" &&
+      isSequenceBetween(entry.sequence, chunkSequence, messageSequence)
     );
   });
 }
@@ -313,6 +524,7 @@ function upsertSessionTimelineEntry(
       .get(sessionId) as { position: number | null } | undefined;
     const position = existing?.position ?? ((maxPosition?.position ?? -1) + 1);
     insertSessionTimelineEntry(db, sessionId, entry, position);
+    refreshSessionTimelineMessageAnchorsFrom(db, sessionId, position);
   });
 }
 
@@ -336,7 +548,7 @@ function replaceSessionTimelineEntries(
       )
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    for (const [position, entry] of sortSessionTimelineEntries(entries).entries()) {
+    for (const [position, entry] of entries.entries()) {
       insert.run(
         sessionId,
         entry.id,
@@ -344,11 +556,48 @@ function replaceSessionTimelineEntries(
         entry.kind,
         entry.timestamp,
         resolveEntryUpdatedAt(entry),
-        isTranscriptEventEntry(entry) ? null : (entry.timelineSequence ?? null),
+        isTranscriptEventEntry(entry) ? null : (entry.sequence ?? null),
         JSON.stringify(entry),
       );
     }
+    replaceSessionTimelineMessageAnchors(db, sessionId);
   });
+}
+
+function upsertSessionTimelineEntries(
+  db: DatabaseSync,
+  sessionId: string,
+  entries: SessionTimelineEntry[],
+) {
+  if (entries.length === 0) {
+    return;
+  }
+  const findExistingPosition = db.prepare(
+    "SELECT position FROM session_timeline_entries WHERE session_id = ? AND id = ?",
+  );
+  const maxPosition = db.prepare(
+    "SELECT MAX(position) AS position FROM session_timeline_entries WHERE session_id = ?",
+  ).get(sessionId) as { position: number | null } | undefined;
+  let nextPosition = (maxPosition?.position ?? -1) + 1;
+  let firstAffectedPosition: number | undefined;
+  for (const entry of entries) {
+    const existing = findExistingPosition.get(sessionId, entry.id) as
+      | { position: number }
+      | undefined;
+    const position = existing?.position ?? nextPosition++;
+    firstAffectedPosition = firstAffectedPosition === undefined
+      ? position
+      : Math.min(firstAffectedPosition, position);
+    insertSessionTimelineEntry(
+      db,
+      sessionId,
+      entry,
+      position,
+    );
+  }
+  if (firstAffectedPosition !== undefined) {
+    refreshSessionTimelineMessageAnchorsFrom(db, sessionId, firstAffectedPosition);
+  }
 }
 
 function insertSessionTimelineEntry(
@@ -357,6 +606,7 @@ function insertSessionTimelineEntry(
   entry: SessionTimelineEntry,
   position: number,
 ) {
+  const resolvedEntry = mergeExistingTimelineToolCall(db, sessionId, entry);
   db.prepare(`
     INSERT OR REPLACE INTO session_timeline_entries(
       session_id,
@@ -371,17 +621,68 @@ function insertSessionTimelineEntry(
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     sessionId,
-    entry.id,
+    resolvedEntry.id,
     position,
-    entry.kind,
-    entry.timestamp,
-    resolveEntryUpdatedAt(entry),
-    isTranscriptEventEntry(entry) ? null : (entry.timelineSequence ?? null),
-    JSON.stringify(entry),
+    resolvedEntry.kind,
+    resolvedEntry.timestamp,
+    resolveEntryUpdatedAt(resolvedEntry),
+    isTranscriptEventEntry(resolvedEntry) ? null : (resolvedEntry.sequence ?? null),
+    JSON.stringify(resolvedEntry),
   );
 }
 
+function mergeExistingTimelineToolCall(
+  db: DatabaseSync,
+  sessionId: string,
+  incoming: SessionTimelineEntry,
+) {
+  if (incoming.kind !== "tool_call") return incoming;
+  const row = db.prepare(
+    "SELECT payload_json FROM session_timeline_entries WHERE session_id = ? AND id = ?",
+  ).get(sessionId, incoming.id) as { payload_json: string } | undefined;
+  const current = row
+    ? parseJson<SessionTimelineEntry>(row.payload_json)
+    : null;
+  if (current?.kind !== "tool_call") return incoming;
+  const entries: SessionTimelineEntry[] = [normalizePersistedTimelineEntry(current)];
+  appendToolCallToSessionTimeline(entries, incoming.toolCall);
+  return entries.find((entry) => entry.kind === "tool_call" && entry.id === current.id) ?? incoming;
+}
+
+function replaceSessionTimelineMessageAnchors(db: DatabaseSync, sessionId: string) {
+  const anchorIndex = createSqliteTimelineMessageAnchorIndex(db);
+  anchorIndex.replaceSessionAnchors(
+    sessionId,
+    buildSessionTimelineMessageGroupAnchors(listPositionedSessionTimelineEntries(db, sessionId)),
+  );
+}
+
+function refreshSessionTimelineMessageAnchorsFrom(
+  db: DatabaseSync,
+  sessionId: string,
+  affectedPosition: number,
+) {
+  const anchorIndex = createSqliteTimelineMessageAnchorIndex(db);
+  const previousAnchor = anchorIndex.getAnchorAtOrBefore(sessionId, affectedPosition);
+  const startPosition = previousAnchor?.startPosition ?? 0;
+  const anchors = buildSessionTimelineMessageGroupAnchors(
+    listPositionedSessionTimelineEntries(db, sessionId, startPosition),
+    { seenGroupIds: anchorIndex.listGroupIdsBefore(sessionId, startPosition) },
+  );
+  anchorIndex.replaceAnchorsFrom(sessionId, startPosition, anchors);
+}
+
 function normalizePersistedTimelineEntry(entry: SessionTimelineEntry): SessionTimelineEntry {
+  if (entry.kind === "tool_call") {
+    const normalizedToolCall = normalizeLegacyPersistedAgentToolCall(entry.toolCall) ?? entry.toolCall;
+    return normalizedToolCall === entry.toolCall
+      ? entry
+      : {
+        ...entry,
+        toolCall: normalizedToolCall,
+        updatedAt: normalizedToolCall.updatedAt,
+      };
+  }
   if (entry.kind !== "assistant_message") {
     return entry;
   }

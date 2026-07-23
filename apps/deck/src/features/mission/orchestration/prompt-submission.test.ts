@@ -20,7 +20,7 @@ function createDependencies(overrides: Record<string, unknown> = {}) {
     createClientUserMessageId: (sessionId: string) => `client-${sessionId}`,
     dispatch: (_client: unknown, method: string, params: unknown) => {
       dispatched.push({ method, params });
-      return Promise.resolve({});
+      return Promise.resolve({ accepted: "sent" });
     },
     appendExistingSessionPrompt: (
       sessionId: string,
@@ -105,7 +105,7 @@ test("submitPromptRequest prepares an existing image session before dispatching 
     dispatch: (_client: unknown, method: string, params: unknown) => {
       calls.push(`dispatch:${method}`);
       dispatched.push({ method, params });
-      return Promise.resolve({});
+      return Promise.resolve({ accepted: "sent" });
     },
   });
 
@@ -169,7 +169,7 @@ test("submitPromptRequest preserves the no-session create path", () => {
   assert.deepEqual(cleared, ["notice:", "prompt:", "images:0"]);
 });
 
-test("submitPromptRequest does not append user message when prompt is queued", async () => {
+test("submitPromptRequest does not add queued prompts to the conversation", async () => {
   const { dependencies, appended } = createDependencies({
     dispatch: () => Promise.resolve({ accepted: "queued" }),
   });
@@ -184,6 +184,7 @@ test("submitPromptRequest does not append user message when prompt is queued", a
   );
 
   assert.equal(submitted, true);
+  assert.deepEqual(appended, []);
   await flushPromises();
   assert.deepEqual(appended, []);
 });

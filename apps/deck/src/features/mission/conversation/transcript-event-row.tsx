@@ -1,35 +1,25 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   SessionTimelineContextCompactionEntry,
   SessionTimelineHistoryGapEntry,
-  SessionTimelineResumedEntry,
 } from "@tiller/shared";
-import { AlertTriangle, ChevronDown, FileText, PlayCircle } from "lucide-react";
+import { AlertTriangle, ChevronDown, FileText, LoaderCircle } from "lucide-react";
+import { Button, Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
+import { writeClipboardText } from "./plain-message-items";
 
 const TRANSCRIPT_ROW_CLASS =
   "plain-transcript-row mr-auto grid w-full max-w-full grid-cols-[0.375rem_minmax(0,1fr)] items-start gap-x-1 text-muted-foreground";
 const TRANSCRIPT_SURFACE_CLASS =
-  "min-w-0 rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]";
+  "min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]";
 
 export function TranscriptEventRow(props: {
   entry:
     | SessionTimelineContextCompactionEntry
-    | SessionTimelineResumedEntry
     | SessionTimelineHistoryGapEntry;
 }) {
   if (props.entry.kind === "context_compaction") {
     return <ContextCompactionRow entry={props.entry} />;
-  }
-
-  if (props.entry.kind === "session_resumed") {
-    return (
-      <StatusTranscriptRow
-        detail={`恢复方式 ${props.entry.restoreMethod}`}
-        icon={PlayCircle}
-        title="会话已恢复"
-      />
-    );
   }
 
   if (props.entry.kind === "history_gap") {
@@ -52,49 +42,124 @@ function ContextCompactionRow({
   entry: SessionTimelineContextCompactionEntry;
 }) {
   const [open, setOpen] = useState(false);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyResetTimeoutRef = useRef<number | null>(null);
+
+  useEffect(() => () => {
+    if (copyResetTimeoutRef.current !== null && typeof window !== "undefined") {
+      window.clearTimeout(copyResetTimeoutRef.current);
+    }
+  }, []);
+
+  if (entry.phase === "started") {
+    return (
+      <StatusTranscriptRow
+        detail="完成后会基于压缩后的上下文继续回复。"
+        icon={LoaderCircle}
+        title="正在压缩上下文..."
+      />
+    );
+  }
+
   const summaryText = entry.summaryText?.trim() ||
     "早期对话历史已压缩以节省上下文空间。";
+  const canExpandSummary = entry.detailsVisibility !== "hidden" && Boolean(entry.summaryText?.trim());
+  const copyLabel = copyState === "copied"
+    ? "已复制压缩摘要"
+    : copyState === "failed"
+      ? "复制压缩摘要失败"
+      : "复制压缩摘要";
+
+  function resetCopyStateAfter(delayMs: number) {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (copyResetTimeoutRef.current !== null) {
+      window.clearTimeout(copyResetTimeoutRef.current);
+    }
+    copyResetTimeoutRef.current = window.setTimeout(() => {
+      setCopyState("idle");
+      copyResetTimeoutRef.current = null;
+    }, delayMs);
+  }
+
+  async function copySummary() {
+    try {
+      await writeClipboardText(
+        summaryText,
+        typeof navigator === "undefined" ? undefined : navigator.clipboard,
+      );
+      setCopyState("copied");
+      resetCopyStateAfter(1400);
+    } catch {
+      setCopyState("failed");
+      resetCopyStateAfter(1800);
+    }
+  }
 
   return (
     <div className={TRANSCRIPT_ROW_CLASS}>
       <span aria-hidden="true" />
       <section className={TRANSCRIPT_SURFACE_CLASS}>
-        <div className="flex items-start gap-2">
-          <FileText className="mt-0.5 size-3.5 shrink-0 text-primary" />
-          <div className="min-w-0 flex-1">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0 text-xs font-medium text-foreground">
-                上下文已压缩
-              </span>
-              <span className="min-w-0 truncate text-[11px] text-muted-foreground/70">
-                早期对话已收敛为系统摘要
-              </span>
-            </div>
-            {open ? (
-              <div className="mt-1 whitespace-pre-wrap text-[12.5px] leading-[1.6] text-muted-foreground">
-                {summaryText}
-              </div>
-            ) : (
-              <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                {summarizeTranscriptPreview(summaryText)}
-              </p>
-            )}
+        <div className="relative flex min-h-6 items-center justify-center">
+          <div className="flex min-w-0 max-w-full items-center gap-2">
+            <FileText className="size-3.5 shrink-0 text-primary" />
+            <span className="shrink-0 text-xs font-medium text-foreground">
+              上下文已压缩
+            </span>
           </div>
-          <button
-            type="button"
-            className="flex shrink-0 items-center gap-1 rounded-sm px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
-            aria-label={open ? "收起摘要" : "展开摘要"}
-            onClick={() => setOpen((current) => !current)}
-          >
-            <span>{open ? "收起摘要" : "展开摘要"}</span>
-            <ChevronDown
-              className={cn(
-                "size-3 transition-transform duration-150",
-                open && "rotate-180",
-              )}
-            />
-          </button>
+          {canExpandSummary ? (
+            <button
+              type="button"
+              className="absolute right-0 top-1/2 flex -translate-y-1/2 items-center rounded-sm p-1 text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
+              aria-label={open ? "收起摘要" : "展开摘要"}
+              onClick={() => setOpen((current) => !current)}
+            >
+              <ChevronDown
+                className={cn(
+                  "size-3 transition-transform duration-150",
+                  open && "rotate-180",
+                )}
+              />
+            </button>
+          ) : null}
         </div>
+        {canExpandSummary && open ? (
+          <div className="relative mt-1 pb-6 text-[12.5px] leading-[1.6] text-muted-foreground">
+            <div className="whitespace-pre-wrap">{summaryText}</div>
+            <div className="compaction-summary-actions absolute bottom-0 right-0 flex items-center gap-0.5">
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="compaction-summary-collapse text-muted-foreground opacity-70 hover:opacity-100"
+                aria-label="收起摘要"
+                title="收起摘要"
+                onClick={() => setOpen(false)}
+              >
+                <Icon name="chevronDown" size={12} className="rotate-180" />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="compaction-summary-copy text-muted-foreground opacity-70 hover:opacity-100"
+                aria-label={copyLabel}
+                title={copyLabel}
+                onClick={() => void copySummary()}
+              >
+                <Icon name={copyState === "copied" ? "check" : "copy"} size={12} />
+              </Button>
+            </div>
+            <span className="sr-only" aria-live="polite">
+              {copyState === "copied"
+                ? "已复制压缩摘要"
+                : copyState === "failed"
+                  ? "复制压缩摘要失败"
+                  : ""}
+            </span>
+          </div>
+        ) : null}
       </section>
     </div>
   );
@@ -149,12 +214,4 @@ function StatusTranscriptRow({
       </section>
     </div>
   );
-}
-
-function summarizeTranscriptPreview(text: string) {
-  const normalized = text.replace(/\s+/gu, " ").trim();
-  if (normalized.length <= 160) {
-    return normalized;
-  }
-  return `${normalized.slice(0, 157).trimEnd()}...`;
 }

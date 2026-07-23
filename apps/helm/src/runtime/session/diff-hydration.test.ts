@@ -7,6 +7,23 @@ import test from "node:test";
 import type { FileDiffSummary, SessionSummary, WorktreeSummary } from "@tiller/shared";
 import { createSessionDiffHydrationService } from "./diff-hydration.js";
 
+const sessionDiffBodyStore = {
+  putText: () => ({
+    id: "diff-1",
+    sessionId: "session-1",
+    path: "file.txt",
+    mimeType: "text/plain; charset=utf-8" as const,
+    sha256: "sha256",
+    byteSize: 0,
+    storageKey: "storage-key",
+    uri: "/api/sessions/session-1/diffs/file.txt",
+    createdAt: new Date(0).toISOString(),
+  }),
+  get: () => undefined,
+  readText: () => undefined,
+  removeSession: () => undefined,
+};
+
 function createTempGitRepo() {
   const root = mkdtempSync(join(tmpdir(), "tiller-diff-"));
   execFileSync("git", ["init"], { cwd: root });
@@ -26,8 +43,9 @@ function cleanup(path: string) {
 test("diff hydration keeps incoming files when no worktree can be resolved", async () => {
   const service = createSessionDiffHydrationService({
     sessions: new Map(),
-    sessionStore: { list: () => [] },
+    sessionStore: { get: () => undefined },
     sessionArtifactStore: { replaceDiffs() {} },
+    sessionDiffBodyStore,
     getProjects: () => [],
     getWorktrees: () => [],
     createHandlerContext: () => ({
@@ -57,8 +75,9 @@ test("diff hydration fills additions deletions and patch from git diff", async (
       sessions: new Map([
         ["session-1", { worktree: { name: "main", path: root } }],
       ]),
-      sessionStore: { list: () => [] },
+      sessionStore: { get: () => undefined },
       sessionArtifactStore: { replaceDiffs() {} },
+      sessionDiffBodyStore,
       getProjects: () => [],
       getWorktrees: () => [{ name: "main", path: root } satisfies WorktreeSummary],
       createHandlerContext: () => ({
@@ -93,8 +112,9 @@ test("diff hydration returns git diffs when incoming files are empty", async () 
       sessions: new Map([
         ["session-1", { worktree: { name: "main", path: root } }],
       ]),
-      sessionStore: { list: () => [] },
+      sessionStore: { get: () => undefined },
       sessionArtifactStore: { replaceDiffs() {} },
+      sessionDiffBodyStore,
       getProjects: () => [],
       getWorktrees: () => [{ name: "main", path: root } satisfies WorktreeSummary],
       createHandlerContext: () => ({

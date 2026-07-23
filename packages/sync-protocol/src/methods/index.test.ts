@@ -34,9 +34,11 @@ const expectedRequests = [
   "session/draft",
   "session/discard_draft",
   "session/list",
-  "session/list_messages",
-  "session/list_updates",
+  "session/list_timeline",
+  "session/repair_timeline",
+  "session/list_legacy_evidence",
   "session/get_artifacts",
+  "session/get_subagent_detail",
   "session/check_resume",
   "session/resume",
   "session/prompt",
@@ -48,7 +50,6 @@ const expectedRequests = [
   "session/set_config_option",
   "session/rename",
   "session/cleanup",
-  "debug/reimport_history",
   "permission/list_pending",
   "permission/respond",
   "approval/list_pending",
@@ -68,6 +69,7 @@ test("METHODS contains every request and notification method", () => {
   assert.equal(METHODS["session/cancel"].kind, "notification");
   assert.equal(METHODS["session/update"].kind, "notification");
   assert.equal(METHODS["error/raised"].kind, "notification");
+  assert.equal(METHODS["notification/raised"].kind, "notification");
   assert.equal(METHODS["approval/created"].kind, "notification");
   assert.equal(METHODS["approval/resolved"].kind, "notification");
 });
@@ -77,6 +79,6 @@ test("method name lists are exhaustive and stable", () => {
   assert.deepEqual([...CLIENT_NOTIFICATION_METHODS], ["session/cancel"]);
   assert.deepEqual(
     [...SERVER_NOTIFICATION_METHODS],
-    ["session/update", "error/raised", "approval/created", "approval/resolved"],
+    ["session/update", "error/raised", "notification/raised", "approval/created", "approval/resolved"],
   );
 });

@@ -1,6 +1,24 @@
-import type { SessionConfigOption, SessionSummary } from "@tiller/shared";
+import type {
+  CanonicalSessionConfigState,
+  SessionConfigOption,
+  SessionSummary,
+} from "@tiller/shared";
 
 export type SessionConfigSelection = Pick<SessionSummary, "agentMode" | "model" | "reasoningEffort">;
+
+export function hasInitializedSessionConfig(
+  config: CanonicalSessionConfigState | undefined,
+) {
+  return Boolean(
+    config && (
+      config.agentMode !== undefined ||
+      config.model !== undefined ||
+      config.reasoningEffort !== undefined ||
+      config.configOptions.length > 0 ||
+      config.modelOptions.length > 0
+    ),
+  );
+}
 
 export function deriveConfigOptionMapsFromSessions(sessions: SessionSummary[]) {
   return Object.fromEntries(

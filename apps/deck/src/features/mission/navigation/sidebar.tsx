@@ -86,6 +86,7 @@ type MissionSidebarProps = {
   };
   toggleMissionProjectNode: (projectId: string) => void;
   setSelectedMissionMobilePane: Dispatch<SetStateAction<MissionMobilePane>>;
+  isMobile?: boolean;
   resizer: ReactNode;
 };
 export function MissionSidebar({
@@ -123,6 +124,7 @@ export function MissionSidebar({
   sessionHistoryState,
   toggleMissionProjectNode,
   setSelectedMissionMobilePane,
+  isMobile = false,
   resizer,
 }: MissionSidebarProps) {
   const [searchOpen, setSearchOpen] = useState(false);
@@ -310,6 +312,7 @@ export function MissionSidebar({
                               setSelectedMissionMobilePane={
                                 setSelectedMissionMobilePane
                               }
+                              isMobile={isMobile}
                             />
                           );
                         })}

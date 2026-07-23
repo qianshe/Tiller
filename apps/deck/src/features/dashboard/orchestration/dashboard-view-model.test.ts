@@ -91,6 +91,15 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
         },
       },
     },
+    notifications: [{
+      id: "notification-1",
+      kind: "error",
+      message: "ACP connection closed",
+      source: "runtime",
+      code: "ACP_PROMPT_FAILED",
+      sessionId: "session-1",
+      createdAt: "2026-05-29T10:01:00.000Z",
+    }],
     resolveDisplaySessionTitle: (session) => session.title ?? session.id,
   });
 
@@ -116,6 +125,9 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
   assert.equal(model.sessions[0]?.selected, true);
   assert.equal(model.sessions[0]?.projectName, "Tiller");
   assert.equal(model.sessions[0]?.worktreeName, "main");
+  assert.equal(model.notifications[0]?.message, "ACP connection closed");
+  assert.equal(model.notifications[0]?.code, "ACP_PROMPT_FAILED");
+  assert.equal(model.notifications[0]?.sessionName, "Review plan");
   assert.deepEqual(model.sessions[0]?.planSummary, {
     completed: 1,
     total: 2,

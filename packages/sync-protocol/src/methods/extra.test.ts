@@ -12,7 +12,6 @@ import * as agentSave from "./agent/save";
 import * as projectDelete from "./project/delete";
 import * as agentDelete from "./agent/delete";
 import * as permissionRespond from "./permission/respond";
-import * as sessionListUpdates from "./session/list-updates";
 
 test("project/list_files validates required projectId", () => {
   assert.equal(projectListFiles.method, "project/list_files");
@@ -71,7 +70,6 @@ test("project/git/create_worktree shares the list_branches result schema", () =>
 test("project/git/status validates params and returns worktree status", () => {
   assert.equal(projectGitStatus.method, "project/git/status");
 
-  // Params validation
   assert.deepEqual(
     projectGitStatus.ParamsSchema.parse({ projectId: "p1", cwd: "/repo" }),
     { projectId: "p1", cwd: "/repo" },
@@ -81,7 +79,6 @@ test("project/git/status validates params and returns worktree status", () => {
     { projectId: "p1" },
   );
 
-  // Result validation
   const result = projectGitStatus.ResultSchema.parse({
     ok: true,
     projectId: "p1",
@@ -101,7 +98,6 @@ test("project/git/status validates params and returns worktree status", () => {
 test("project/git/commit requires non-empty paths and returns commit hash", () => {
   assert.equal(projectGitCommit.method, "project/git/commit");
 
-  // Params validation
   assert.deepEqual(
     projectGitCommit.ParamsSchema.parse({
       projectId: "p1",
@@ -117,7 +113,6 @@ test("project/git/commit requires non-empty paths and returns commit hash", () =
     },
   );
 
-  // Empty paths should fail
   assert.throws(() =>
     projectGitCommit.ParamsSchema.parse({
       projectId: "p1",
@@ -127,7 +122,6 @@ test("project/git/commit requires non-empty paths and returns commit hash", () =
     }),
   );
 
-  // Result validation
   const result = projectGitCommit.ResultSchema.parse({
     ok: true,
     projectId: "p1",
@@ -147,7 +141,6 @@ test("project/git/commit requires non-empty paths and returns commit hash", () =
 test("project/git/graph validates params and returns commit graph", () => {
   assert.equal(projectGitGraph.method, "project/git/graph");
 
-  // Params validation
   assert.deepEqual(
     projectGitGraph.ParamsSchema.parse({ projectId: "p1", cwd: "/repo" }),
     { projectId: "p1", cwd: "/repo" },
@@ -157,7 +150,6 @@ test("project/git/graph validates params and returns commit graph", () => {
     { projectId: "p1" },
   );
 
-  // Result validation with commits and refs
   const result = projectGitGraph.ResultSchema.parse({
     ok: true,
     projectId: "p1",
@@ -248,44 +240,4 @@ test("permission/respond echoes id and decision", () => {
     }),
     { ok: true, permissionRequestId: "pr1", decision: { kind: "allow" } },
   );
-});
-
-test("session/list_updates validates paged raw update queries", () => {
-  assert.equal(sessionListUpdates.method, "session/list_updates");
-
-  const params = sessionListUpdates.ParamsSchema.parse({
-    sessionId: "session-1",
-    limit: 50,
-    before: "sequence\t100",
-  });
-  assert.deepEqual(params, {
-    sessionId: "session-1",
-    limit: 50,
-    before: "sequence\t100",
-  });
-
-  assert.throws(
-    () => sessionListUpdates.ParamsSchema.parse({ sessionId: "session-1", limit: 201 }),
-    /Too big|less than or equal to 200/u,
-  );
-
-  const result = sessionListUpdates.ResultSchema.parse({
-    ok: true,
-    sessionId: "session-1",
-    updates: [
-      {
-        sessionId: "session-1",
-        runtimeSessionId: "runtime-1",
-        providerId: "codex",
-        sequence: 99,
-        source: "acp_load_replay",
-        updateType: "message",
-        receivedAt: "2026-06-13T10:00:00.000Z",
-        payloadJson: "{\"type\":\"message\"}",
-      },
-    ],
-    nextCursor: "sequence\t98",
-    hasMore: true,
-  });
-  assert.equal(result.updates[0]?.sequence, 99);
 });

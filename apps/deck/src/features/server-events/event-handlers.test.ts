@@ -7,6 +7,7 @@ import type {
   AgentToolCall,
   PermissionRequest,
   SessionConfigOption,
+  SessionPromptQueueSnapshot,
   SessionSummary,
   SessionTimelineEntry,
   TrustedDeviceSummary,
@@ -47,11 +48,18 @@ function resetStore() {
     statuses: {},
     messages: {},
     sessionTimeline: {},
+    sessionTimelineDeliveryState: {},
+    sessionLegacyEvidence: {},
     messageHistoryState: {},
+    promptQueues: {},
+    sessionLiveStates: {},
+    sessionLiveStateSequences: {},
     outputs: {},
     toolCalls: {},
     sessionPlans: {},
     diffs: {},
+    historicalDiffIncompleteBySession: {},
+    sessionSubagentDetails: {},
     activityHistoryState: {},
     approvalItemsById: {},
     pendingApprovalIds: [],
@@ -59,9 +67,63 @@ function resetStore() {
     approvalToastQueue: [],
     trustedDevices: [],
     pairingFeedback: "",
-    transcriptStatusBySession: {},
   } as any);
 }
+
+test("subagent detail deltas update only expanded cached details and ignore stale sequences", () => {
+  resetStore();
+  const context = createSessionEventContext();
+  const update = (throughSequence: number, text: string) => ({
+    sessionId: "s1",
+    update: {
+      kind: "subagent_detail" as const,
+      delta: {
+        sessionId: "s1",
+        parentToolCallId: "root-1",
+        batch: {
+          replace: false,
+          deliverySequence: throughSequence,
+          lastSequence: throughSequence,
+          entries: [{
+            id: "reply-1",
+            kind: "assistant_message" as const,
+            chunks: [{
+              id: "reply-1:content",
+              kind: "content" as const,
+              text,
+              timestamp: "2026-07-22T00:00:00.000Z",
+              sequence: 1,
+            }],
+            timestamp: "2026-07-22T00:00:00.000Z",
+            updatedAt: "2026-07-22T00:00:00.000Z",
+            sequence: 1,
+          }],
+        },
+      },
+    },
+  });
+
+  assert.equal(applySessionUpdate(update(1, "ignored"), context), true);
+  assert.deepEqual(useDeckStore.getState().sessionSubagentDetails, {});
+
+  useDeckStore.getState().setSessionSubagentDetails({
+    ["s1\0root-1"]: {
+      sessionId: "s1",
+      parentToolCallId: "root-1",
+      throughSequence: 0,
+      entries: [],
+    },
+  });
+  applySessionUpdate(update(2, "latest"), context);
+  applySessionUpdate(update(1, "stale"), context);
+  const detail = useDeckStore.getState().sessionSubagentDetails["s1\0root-1"];
+  assert.equal(detail?.throughSequence, 2);
+  const reply = detail?.entries[0];
+  assert.equal(
+    reply?.kind === "assistant_message" ? reply.chunks[0]?.text : undefined,
+    "latest",
+  );
+});
 
 function createSessionEventContext(overrides: Record<string, unknown> = {}) {
   return {
@@ -79,6 +141,7 @@ function createSessionEventContext(overrides: Record<string, unknown> = {}) {
     requestSessionResumeStart: () => undefined,
     setResumeFeedback: () => undefined,
     resumeStartRequestsRef: { current: new Set<string>() },
+    setResumeStartRequestIds: () => undefined,
     ...overrides,
   };
 }
@@ -123,81 +186,119 @@ test("session creation results refresh ACP connection inventory when runtime is 
   assert.deepEqual(dispatched, ["agent/connections"]);
 });
 
-test("session/list_messages replaces initial loaded history instead of mixing with local fragments", () => {
-  resetStore();
-  const localFragment: AgentMessage = {
-    id: "session-1-msg-s0",
-    role: "assistant",
-    text: "本地 thinking replay 片段",
-    timestamp: "2026-05-17T10:00:00.000Z",
-  };
-  const loadedHistory: AgentMessage = {
-    id: "provider-1#p0",
-    role: "assistant",
-    text: "服务端历史消息",
-    timestamp: "2026-05-17T10:01:00.000Z",
-  };
-  useDeckStore.setState({
-    messages: { "session-1": [localFragment] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedHistory],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().messages["session-1"], [loadedHistory]);
-});
-
-test("session/list_messages replaces initial timeline instead of mixing stale entries", () => {
+test("session/list_timeline replaces the canonical timeline and applies live state", () => {
   resetStore();
   const staleEntry: SessionTimelineEntry = {
     id: "stale-assistant",
     kind: "assistant_message",
-    chunks: [
-      {
-        id: "stale-assistant:content",
-        kind: "content",
-        text: "刷新前残留回复",
-        timestamp: "2026-05-17T09:59:00.000Z",
-      },
-    ],
-    timestamp: "2026-05-17T09:59:00.000Z",
-    updatedAt: "2026-05-17T09:59:00.000Z",
+    chunks: [],
+    timestamp: "2026-06-29T09:59:00.000Z",
+    updatedAt: "2026-06-29T09:59:00.000Z",
+    sequence: 1,
   };
-  const loadedEntry: SessionTimelineEntry = {
+  const authoritativeEntry: SessionTimelineEntry = {
     id: "loaded-assistant",
     kind: "assistant_message",
     chunks: [
       {
         id: "loaded-assistant:content",
         kind: "content",
-        text: "刷新后权威回复",
-        timestamp: "2026-05-17T10:01:00.000Z",
+        text: "canonical reply",
+        timestamp: "2026-06-29T10:00:00.000Z",
+        sequence: 2,
       },
     ],
-    timestamp: "2026-05-17T10:01:00.000Z",
-    updatedAt: "2026-05-17T10:01:00.000Z",
+    timestamp: "2026-06-29T10:00:00.000Z",
+    updatedAt: "2026-06-29T10:00:00.000Z",
+    sequence: 2,
+  };
+  const livePlan: AgentPlan = {
+    entries: [{ content: "Review batch pipeline", priority: "medium", status: "in_progress" }],
+    updatedAt: "2026-06-29T10:00:01.000Z",
+  };
+  const livePromptQueue: SessionPromptQueueSnapshot = {
+    sessionId: "session-1",
+    queued: [{
+      id: "queued-1",
+      sessionId: "session-1",
+      text: "follow-up",
+      clientMessageId: "client-queued-1",
+      createdAt: "2026-06-29T10:00:02.000Z",
+      updatedAt: "2026-06-29T10:00:02.000Z",
+      status: "queued",
+    }],
   };
   useDeckStore.setState({
     sessionTimeline: { "session-1": [staleEntry] },
   });
 
   const handled = applySessionResult(
-    "session/list_messages",
+    "session/list_timeline",
     {
       sessionId: "session-1",
-      messages: [],
-      timeline: [loadedEntry],
-      timelineHasMore: false,
+      entries: [authoritativeEntry],
+      hasMore: false,
+      liveState: {
+        plan: livePlan,
+        promptQueue: livePromptQueue,
+      },
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.deepEqual(state.sessionTimeline["session-1"]?.map((entry) => entry.id), ["loaded-assistant"]);
+  assert.deepEqual(state.sessionPlans["session-1"], livePlan);
+  assert.deepEqual(state.promptQueues["session-1"], livePromptQueue);
+  assert.deepEqual(state.messageHistoryState["session-1"], {
+    nextCursor: undefined,
+    hasMore: false,
+    loading: false,
+  });
+  assert.deepEqual(state.activityHistoryState["session-1"], {
+    nextCursor: undefined,
+    hasMore: false,
+    loading: false,
+  });
+});
+
+test("legacy evidence metadata stays lazy until its source page is requested", () => {
+  resetStore();
+  const availability = {
+    sessionId: "session-1",
+    available: true,
+    counts: { message: 2, tool_call: 1, output: 0 },
+  } as const;
+
+  applySessionResult(
+    "session/list_timeline",
+    {
+      sessionId: "session-1",
+      entries: [],
+      hasMore: false,
+      legacyEvidence: availability,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.deepEqual(useDeckStore.getState().sessionLegacyEvidence["session-1"], {
+    availability,
+    pages: {},
+    loading: {},
+  });
+
+  applySessionResult(
+    "session/list_legacy_evidence",
+    {
+      sessionId: "session-1",
+      source: "message",
+      items: [{ source: "message", sourcePosition: 1, entity: { id: "legacy-message" } }],
+      issues: [],
       hasMore: false,
     },
     "helm-1",
@@ -205,59 +306,51 @@ test("session/list_messages replaces initial timeline instead of mixing stale en
     createSessionEventContext(),
   );
 
-  assert.equal(handled, true);
   assert.deepEqual(
-    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["loaded-assistant"],
+    useDeckStore.getState().sessionLegacyEvidence["session-1"]?.pages.message?.items,
+    [{ source: "message", sourcePosition: 1, entity: { id: "legacy-message" } }],
   );
 });
 
-test("session/list_messages keeps artifact tool calls when initial history returns late", () => {
+test("session/list_timeline prepends older canonical history pages", () => {
   resetStore();
-  const loadedEntry: SessionTimelineEntry = {
-    id: "loaded-assistant",
-    kind: "assistant_message",
-    chunks: [
-      {
-        id: "loaded-assistant:content",
-        kind: "content",
-        text: "服务端历史回复",
-        timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
-      },
-    ],
-    timestamp: "2026-05-17T10:00:00.000Z",
-    updatedAt: "2026-05-17T10:00:00.000Z",
-    timelineSequence: 1,
-  };
-  const artifactToolCall: SessionTimelineEntry = {
-    id: "tool:call-1",
-    kind: "tool_call",
-    toolCall: {
-      id: "call-1",
-      kind: "shell",
-      title: "Shell",
-      status: "completed",
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:01.000Z",
-      timelineSequence: 2,
+  const olderEntry: SessionTimelineEntry = {
+    id: "older-user",
+    kind: "user_message",
+    message: {
+      id: "older-user",
+      role: "user",
+      text: "older question",
+      timestamp: "2026-06-29T09:58:00.000Z",
+      sequence: 1,
     },
-    timestamp: "2026-05-17T10:00:01.000Z",
-    updatedAt: "2026-05-17T10:00:01.000Z",
-    timelineSequence: 2,
+    timestamp: "2026-06-29T09:58:00.000Z",
+    updatedAt: "2026-06-29T09:58:00.000Z",
+    sequence: 1,
+  };
+  const newerEntry: SessionTimelineEntry = {
+    id: "newer-assistant",
+    kind: "assistant_message",
+    chunks: [],
+    timestamp: "2026-06-29T10:00:00.000Z",
+    updatedAt: "2026-06-29T10:00:00.000Z",
+    sequence: 2,
   };
   useDeckStore.setState({
-    sessionTimeline: { "session-1": [loadedEntry, artifactToolCall] },
+    sessionTimeline: { "session-1": [newerEntry] },
+    messageHistoryState: {
+      "session-1": { nextCursor: "cursor-1", hasMore: true, loading: true },
+    },
   });
 
   const handled = applySessionResult(
-    "session/list_messages",
+    "session/list_timeline",
     {
       sessionId: "session-1",
-      messages: [],
-      timeline: [loadedEntry],
-      timelineHasMore: false,
-      hasMore: false,
+      before: "cursor-1",
+      entries: [olderEntry],
+      nextCursor: "cursor-2",
+      hasMore: true,
     },
     "helm-1",
     true,
@@ -267,12 +360,801 @@ test("session/list_messages keeps artifact tool calls when initial history retur
   assert.equal(handled, true);
   assert.deepEqual(
     useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["loaded-assistant", "tool:call-1"],
+    ["older-user", "newer-assistant"],
+  );
+  assert.deepEqual(useDeckStore.getState().messageHistoryState["session-1"], {
+    nextCursor: "cursor-2",
+    hasMore: true,
+    loading: false,
+  });
+  assert.deepEqual(useDeckStore.getState().activityHistoryState["session-1"], {
+    nextCursor: "cursor-2",
+    hasMore: true,
+    loading: false,
+  });
+});
+
+test("session/list_timeline clears a stale running overlay once history is terminal", () => {
+  resetStore();
+  useDeckStore.setState({
+    toolCalls: {
+      "session-1": [
+        {
+          id: "call-1",
+          kind: "shell",
+          title: "Shell",
+          status: "running",
+          input: "{\"pattern\":\"Tiller\",\"glob\":\"**/README.md\",\"output_mode\":\"files_with_matches\"}",
+          output: "Found 2 files",
+          timestamp: "2026-07-07T08:06:52.322Z",
+          updatedAt: "2026-07-07T08:06:52.900Z",
+        } as AgentToolCall,
+      ],
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/list_timeline",
+    {
+      sessionId: "session-1",
+      entries: [
+        {
+          id: "tool:call-1",
+          kind: "tool_call",
+          toolCall: {
+            id: "call-1",
+            kind: "search",
+            title: "Grep",
+            status: "completed",
+            input: "{\"pattern\":\"Tiller\",\"glob\":\"**/README.md\",\"output_mode\":\"files_with_matches\"}",
+            output: "Found 2 files",
+            timestamp: "2026-07-07T08:06:52.322Z",
+            updatedAt: "2026-07-07T08:06:53.266Z",
+            sequence: 1,
+          },
+          timestamp: "2026-07-07T08:06:52.322Z",
+          updatedAt: "2026-07-07T08:06:53.266Z",
+          sequence: 1,
+        },
+      ],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
+});
+
+test("session updates reject legacy user_message events after canonical cutover", () => {
+  resetStore();
+  const existingTimeline: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "existing",
+          timestamp: "2026-06-29T10:00:00.000Z",
+          sequence: 1,
+        },
+      ],
+      timestamp: "2026-06-29T10:00:00.000Z",
+      updatedAt: "2026-06-29T10:00:00.000Z",
+      sequence: 1,
+    },
+  ];
+  useDeckStore.setState({
+    sessionTimeline: { "session-1": existingTimeline },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "user_message",
+        message: {
+          id: "user-1",
+          role: "user",
+          text: "hello",
+          timestamp: "2026-06-29T10:00:01.000Z",
+          sequence: 2,
+        },
+      } as any,
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, false);
+  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], existingTimeline);
+  assert.equal(useDeckStore.getState().messages["session-1"], undefined);
+});
+
+test("session updates reject legacy user_message events before timeline delivery", () => {
+  resetStore();
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "user_message",
+        message: {
+          id: "user-1",
+          role: "user",
+          text: "hello",
+          timestamp: "2026-06-29T10:00:01.000Z",
+          sequence: 1,
+        },
+      } as any,
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, false);
+  assert.equal(useDeckStore.getState().messages["session-1"], undefined);
+  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], undefined);
+});
+
+test("session timeline_batch requests an authoritative reload when delivery sequence gaps", () => {
+  resetStore();
+  const dispatched: Array<{ method: string; params: unknown }> = [];
+  const context = createSessionEventContext({
+    rpcClientRef: { current: { socket: { readyState: 1 } } },
+    dispatch: async (_client: unknown, method: string, params: unknown) => {
+      dispatched.push({ method, params });
+    },
+  });
+
+  const firstHandled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: false,
+          deliverySequence: 1,
+          lastSequence: 1,
+          entries: [
+            {
+              id: "assistant-1",
+              kind: "assistant_message",
+              chunks: [],
+              timestamp: "2026-06-29T10:00:00.000Z",
+              updatedAt: "2026-06-29T10:00:00.000Z",
+              sequence: 1,
+            },
+          ],
+        },
+      },
+    },
+    context,
+  );
+  const gapHandled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: false,
+          deliverySequence: 3,
+          lastSequence: 3,
+          entries: [
+            {
+              id: "tool:1",
+              kind: "tool_call",
+              toolCall: {
+                id: "1",
+                kind: "read",
+                title: "Read",
+                status: "completed",
+                timestamp: "2026-06-29T10:00:01.000Z",
+                updatedAt: "2026-06-29T10:00:01.000Z",
+                sequence: 2,
+              },
+              timestamp: "2026-06-29T10:00:01.000Z",
+              updatedAt: "2026-06-29T10:00:01.000Z",
+              sequence: 2,
+            },
+          ],
+        },
+      },
+    },
+    context,
+  );
+
+  assert.equal(firstHandled, true);
+  assert.equal(gapHandled, true);
+  assert.deepEqual(
+    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
+    ["assistant-1"],
+  );
+  assert.deepEqual(dispatched, [
+    {
+      method: "session/list_timeline",
+      params: { sessionId: "session-1", limit: 20 },
+    },
+  ]);
+});
+
+test("terminal session timeline_batch removes matching live tool overlays", () => {
+  resetStore();
+  useDeckStore.setState({
+    toolCalls: {
+      "session-1": [
+        {
+          id: "call-1",
+          kind: "shell",
+          title: "Shell",
+          status: "running",
+          input: "{\"pattern\":\"tool-call-repair\",\"output_mode\":\"files_with_matches\"}",
+          output: "Found 4 files",
+          timestamp: "2026-07-07T09:10:38.372Z",
+          updatedAt: "2026-07-07T09:10:38.630Z",
+        } as AgentToolCall,
+      ],
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: false,
+          deliverySequence: 1,
+          lastSequence: 1,
+          entries: [
+            {
+              id: "tool:call-1",
+              kind: "tool_call",
+              toolCall: {
+                id: "call-1",
+                kind: "search",
+                title: "Grep",
+                status: "completed",
+                input: "{\"pattern\":\"tool-call-repair\",\"output_mode\":\"files_with_matches\"}",
+                output: "Found 4 files",
+                timestamp: "2026-07-07T09:10:38.372Z",
+                updatedAt: "2026-07-07T09:10:39.089Z",
+                sequence: 1,
+              },
+              timestamp: "2026-07-07T09:10:38.372Z",
+              updatedAt: "2026-07-07T09:10:39.089Z",
+              sequence: 1,
+            },
+          ],
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
+});
+
+test("compaction timeline_batch removes its matching live assistant overlay", () => {
+  resetStore();
+  useDeckStore.setState({
+    messages: {
+      "session-1": [
+        {
+          id: "opencode-compaction-summary",
+          role: "assistant",
+          text: "## Objective\n- Continue the task.",
+          timestamp: "2026-07-20T14:01:13.000Z",
+          streaming: true,
+        } as AgentMessage,
+      ],
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "timeline_batch",
+        batch: {
+          replace: false,
+          deliverySequence: 1,
+          lastSequence: 1,
+          entries: [
+            {
+              id: "compaction:opencode-compaction-summary",
+              kind: "context_compaction",
+              phase: "completed",
+              source: "provider",
+              summaryMessageId: "opencode-compaction-summary",
+              summaryText: "## Objective\n- Continue the task.",
+              timestamp: "2026-07-20T14:01:13.159Z",
+              updatedAt: "2026-07-20T14:01:13.159Z",
+              replayCompleteness: "compacted",
+              detailsVisibility: "expandable",
+            },
+          ],
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().messages["session-1"], []);
+});
+
+test("idle live_state clears stale non-terminal live tool overlays without terminal history", () => {
+  resetStore();
+  const toolCalls = {
+    "session-1": [
+      {
+        id: "subagent-1",
+        kind: "subagent",
+        title: "Read-only subagent",
+        status: "running",
+        timestamp: "2026-07-19T15:20:00.000Z",
+        updatedAt: "2026-07-19T15:20:01.000Z",
+      } as AgentToolCall,
+    ],
+  };
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = { current: toolCalls };
+  useDeckStore.setState({ toolCalls });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "live_state",
+        snapshot: {
+          sequence: 12,
+          status: { runtimeStatus: "idle", effectiveStatus: "idle", pendingApprovalCount: 0 },
+          config: { configOptions: [], modelOptions: [] },
+          availableCommands: [],
+          sessionInfo: {},
+          diffs: [],
+        },
+      } as any,
+    },
+    createSessionEventContext({ toolCallsRef }),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
+  assert.equal(toolCallsRef.current, useDeckStore.getState().toolCalls);
+});
+
+test("session live_state snapshots replace plan and prompt queue", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "running", model: "old-model" }],
+    statuses: { "session-1": "running" },
+    diffs: {
+      "session-1": [{ path: "src/current.ts", status: "modified", additions: 1, deletions: 0 }],
+    },
+    sessionPlans: {
+      "session-1": {
+        entries: [{ content: "Old plan", priority: "medium", status: "completed" }],
+        updatedAt: "2026-06-29T09:00:00.000Z",
+      },
+    },
+    promptQueues: {
+      "session-1": {
+        sessionId: "session-1",
+        queued: [{
+          id: "queued-old",
+          sessionId: "session-1",
+          text: "old",
+          clientMessageId: "client-queued-old",
+          createdAt: "2026-06-29T09:00:00.000Z",
+          updatedAt: "2026-06-29T09:00:00.000Z",
+          status: "queued",
+        }],
+      },
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "live_state",
+        snapshot: {
+          status: {
+            runtimeStatus: "idle",
+            effectiveStatus: "idle",
+            pendingApprovalCount: 0,
+          },
+          config: { model: "legacy-model", configOptions: [], modelOptions: [] },
+          diffs: [{ path: "src/legacy.ts", status: "modified", additions: 9, deletions: 0 }],
+          promptQueue: {
+            sessionId: "session-1",
+            queued: [{
+              id: "queued-new",
+              sessionId: "session-1",
+              text: "new",
+              clientMessageId: "client-queued-new",
+              createdAt: "2026-06-29T10:00:00.000Z",
+              updatedAt: "2026-06-29T10:00:00.000Z",
+              status: "queued",
+            }],
+          },
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessions[0]?.status, "running");
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "old-model");
+  assert.equal(useDeckStore.getState().diffs["session-1"]?.[0]?.path, "src/current.ts");
+  assert.deepEqual(useDeckStore.getState().sessionPlans["session-1"], {
+    entries: [{ content: "Old plan", priority: "medium", status: "completed" }],
+    updatedAt: "2026-06-29T09:00:00.000Z",
+  });
+  assert.deepEqual(useDeckStore.getState().promptQueues["session-1"], {
+    sessionId: "session-1",
+    queued: [{
+      id: "queued-new",
+      sessionId: "session-1",
+      text: "new",
+      clientMessageId: "client-queued-new",
+      createdAt: "2026-06-29T10:00:00.000Z",
+      updatedAt: "2026-06-29T10:00:00.000Z",
+      status: "queued",
+    }],
+  });
+});
+
+test("session live_state projects the full canonical snapshot", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "live_state",
+        snapshot: {
+          sequence: 8,
+          status: {
+            runtimeStatus: "running",
+            effectiveStatus: "waiting_for_permission",
+            pendingApprovalCount: 1,
+          },
+          config: {
+            agentMode: "plan",
+            model: "gpt-5",
+            reasoningEffort: "high",
+            configOptions: [{ id: "mode", label: "Mode", category: "mode" }],
+            modelOptions: [{ id: "gpt-5", name: "GPT-5", label: "GPT-5" }],
+          },
+          availableCommands: [{ name: "review", description: "Review changes" }],
+          usage: { used: 12, size: 100 },
+          sessionInfo: { title: "Canonical title", updatedAt: "2026-07-12T10:00:00.000Z" },
+          diffs: [{ path: "src/a.ts", status: "modified", additions: 2, deletions: 1 }],
+          plan: {
+            entries: [{ content: "Review", priority: "high", status: "in_progress" }],
+            updatedAt: "2026-07-12T10:00:00.000Z",
+          },
+        },
+      } as any,
+    },
+    createSessionEventContext(),
+  );
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.equal(state.statuses["session-1"], "waiting_for_permission");
+  assert.equal(state.sessions[0]?.status, "waiting_for_permission");
+  assert.equal(state.sessions[0]?.model, "gpt-5");
+  assert.equal(state.sessions[0]?.agentMode, "plan");
+  assert.equal(state.sessions[0]?.reasoningEffort, "high");
+  assert.equal(state.sessions[0]?.title, "Canonical title");
+  assert.equal(state.sessionConfigOptions["session-1"]?.[0]?.currentValue, "plan");
+  assert.equal(state.sessionAvailableCommands["session-1"]?.[0]?.name, "review");
+  assert.equal(state.agentAvailableCommands.a1?.[0]?.name, "review");
+  assert.equal(state.diffs["session-1"]?.[0]?.path, "src/a.ts");
+  assert.equal(state.sessionLiveStates["session-1"]?.usage?.used, 12);
+  assert.equal(state.sessionLiveStateSequences["session-1"], 8);
+});
+
+test("session live_state does not erase known config with an uninitialized canonical config", () => {
+  resetStore();
+  const configOptions = [{
+    id: "model",
+    name: "Model",
+    category: "model",
+    currentValue: "cpa-oai/gpt-5.5",
+    options: [{ value: "cpa-oai/gpt-5.5", label: "GPT-5.5" }],
+  }];
+  useDeckStore.setState({
+    sessions: [{
+      ...session("session-1"),
+      model: "cpa-oai/gpt-5.5",
+      configOptions,
+    }],
+    sessionConfigOptions: { "session-1": configOptions },
+  });
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 1496,
+        status: { runtimeStatus: "idle", effectiveStatus: "idle", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [] },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, createSessionEventContext());
+
+  const state = useDeckStore.getState();
+  assert.equal(state.sessions[0]?.model, "cpa-oai/gpt-5.5");
+  assert.deepEqual(state.sessions[0]?.configOptions, configOptions);
+  assert.deepEqual(state.sessionConfigOptions["session-1"], configOptions);
+  assert.equal(state.sessionLiveStateSequences["session-1"], 1496);
+});
+
+test("sequenced live_state applies one atomic Deck store update", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  let updates = 0;
+  const unsubscribe = useDeckStore.subscribe(() => {
+    updates += 1;
+  });
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 1,
+        status: { runtimeStatus: "running", effectiveStatus: "running", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [] },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+        plan: { entries: [], updatedAt: "2026-07-12T00:00:00.000Z" },
+        promptQueue: { sessionId: "session-1", queued: [] },
+      },
+    } as any,
+  }, createSessionEventContext());
+  unsubscribe();
+
+  assert.equal(updates, 1);
+});
+
+test("session live_state ignores an out-of-order canonical snapshot", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  const context = createSessionEventContext();
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 8,
+        status: { runtimeStatus: "running", effectiveStatus: "running", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [], model: "gpt-5" },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, context);
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 7,
+        status: { runtimeStatus: "error", effectiveStatus: "error", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [], model: "stale-model" },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, context);
+
+  const state = useDeckStore.getState();
+  assert.equal(state.statuses["session-1"], "running");
+  assert.equal(state.sessions[0]?.model, "gpt-5");
+  assert.equal(state.sessionLiveStateSequences["session-1"], 8);
+});
+
+test("session lifecycle updates cannot overwrite a canonical live snapshot", () => {
+  resetStore();
+  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  const context = createSessionEventContext();
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 8,
+        status: { runtimeStatus: "running", effectiveStatus: "waiting_for_permission", pendingApprovalCount: 1 },
+        config: { configOptions: [], modelOptions: [], model: "gpt-5" },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, context);
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: { kind: "session_updated", session: { ...session("session-1"), status: "idle", model: "stale-model" } },
+  }, context);
+
+  const state = useDeckStore.getState();
+  assert.equal(state.statuses["session-1"], "waiting_for_permission");
+  assert.equal(state.sessions[0]?.status, "waiting_for_permission");
+  assert.equal(state.sessions[0]?.model, "gpt-5");
+});
+
+test("session updates reject legacy transcript_event events", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessionTimeline: {
+      "session-1": [
+        {
+          id: "compaction-session-1",
+          kind: "context_compaction",
+          phase: "completed",
+          source: "provider",
+          summaryText: "Earlier compact summary",
+          timestamp: "2026-06-28T00:00:00.000Z",
+          updatedAt: "2026-06-28T00:00:00.000Z",
+          replayCompleteness: "compacted",
+          detailsVisibility: "expandable",
+        },
+      ],
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "transcript_event",
+        entry: {
+          id: "compaction-session-1",
+          kind: "context_compaction",
+          phase: "completed",
+          source: "provider",
+          summaryText: "Updated compact summary",
+          timestamp: "2026-06-28T00:00:00.000Z",
+          updatedAt: "2026-06-28T00:00:01.000Z",
+          replayCompleteness: "compacted",
+          detailsVisibility: "hidden",
+        },
+      } as any,
+    },
+    createSessionEventContext(),
+  );
+
+  const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
+  assert.equal(handled, false);
+  assert.equal(entry?.kind, "context_compaction");
+  assert.equal(entry?.kind === "context_compaction" ? entry.summaryText : undefined, "Earlier compact summary");
+  assert.equal(entry?.kind === "context_compaction" ? entry.detailsVisibility : undefined, "expandable");
+});
+
+test("session updates reject legacy transcript events without changing timeline anchors", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessionTimeline: {
+      "session-1": [
+        {
+          id: "user-1",
+          kind: "user_message",
+          message: {
+            id: "user-1",
+            role: "user",
+            text: "继续",
+            timestamp: "2026-06-28T00:00:00.000Z",
+            sequence: 1,
+          },
+          timestamp: "2026-06-28T00:00:00.000Z",
+          updatedAt: "2026-06-28T00:00:00.000Z",
+          sequence: 1,
+        },
+        {
+          id: "synthetic-compaction",
+          kind: "context_compaction",
+          phase: "completed",
+          source: "provider",
+          summaryMessageId: "compaction-completed-message",
+          timestamp: "2026-06-28T00:00:01.000Z",
+          updatedAt: "2026-06-28T00:00:01.000Z",
+          replayCompleteness: "compacted",
+        },
+        {
+          id: "assistant-1",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "assistant-1:content",
+              kind: "content",
+              text: "压缩后继续处理。",
+              timestamp: "2026-06-28T00:00:02.000Z",
+              sequence: 2,
+            },
+          ],
+          timestamp: "2026-06-28T00:00:02.000Z",
+          updatedAt: "2026-06-28T00:00:02.000Z",
+          sequence: 2,
+        },
+      ],
+    },
+  });
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "session-1",
+      update: {
+        kind: "transcript_event",
+        entry: {
+          id: "authoritative-compaction",
+          kind: "context_compaction",
+          phase: "completed",
+          source: "provider",
+          summaryMessageId: "compaction-summary-message",
+          summaryText: "This session is being continued from a previous conversation that ran out of context.",
+          timestamp: "2026-06-28T00:00:05.000Z",
+          updatedAt: "2026-06-28T00:00:05.000Z",
+          replayCompleteness: "compacted",
+          detailsVisibility: "expandable",
+        },
+      } as any,
+    },
+    createSessionEventContext(),
+  );
+
+  const timeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
+  const compactionEntries = timeline.filter((entry) => entry.kind === "context_compaction");
+  assert.equal(handled, false);
+  assert.equal(compactionEntries.length, 1);
+  assert.deepEqual(timeline.map((entry) => entry.id), [
+    "user-1",
+    "synthetic-compaction",
+    "assistant-1",
+  ]);
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction" ? compactionEntries[0].summaryText : undefined,
+    undefined,
   );
 });
 
-test("session/get_artifacts keeps existing timeline reference for unchanged tool calls", () => {
+test("session/get_artifacts preserves existing canonical timeline reference", () => {
   resetStore();
+  const toolCallsRef = { current: {} as Record<string, AgentToolCall[]> };
+  const mergeSessionToolCalls = (sessionId: string, incoming: AgentToolCall[]) => {
+    useDeckStore.getState().setToolCalls((current) => {
+      const nextSessionToolCalls = [...(current[sessionId] ?? [])];
+      for (const toolCall of incoming) {
+        const index = nextSessionToolCalls.findIndex((entry) => entry.id === toolCall.id);
+        if (index === -1) {
+          nextSessionToolCalls.push(toolCall);
+        } else {
+          nextSessionToolCalls[index] = toolCall;
+        }
+      }
+      const next = { ...current, [sessionId]: nextSessionToolCalls };
+      toolCallsRef.current = next;
+      return next;
+    });
+  };
   const toolCall: AgentToolCall = {
     id: "call-1",
     kind: "shell",
@@ -281,7 +1163,7 @@ test("session/get_artifacts keeps existing timeline reference for unchanged tool
     output: "stdout",
     timestamp: "2026-05-17T10:00:01.000Z",
     updatedAt: "2026-05-17T10:00:01.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
   const existingTimeline: SessionTimelineEntry[] = [{
     id: "tool:call-1",
@@ -289,7 +1171,7 @@ test("session/get_artifacts keeps existing timeline reference for unchanged tool
     toolCall,
     timestamp: toolCall.timestamp,
     updatedAt: toolCall.updatedAt,
-    timelineSequence: toolCall.timelineSequence,
+    sequence: toolCall.sequence,
   }];
   useDeckStore.setState({
     sessionTimeline: { "session-1": existingTimeline },
@@ -306,15 +1188,39 @@ test("session/get_artifacts keeps existing timeline reference for unchanged tool
     },
     "helm-1",
     true,
-    createSessionEventContext(),
+    createSessionEventContext({
+      toolCallsRef,
+      mergeSessionToolCalls,
+    }),
   );
 
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().sessionTimeline["session-1"], existingTimeline);
+  assert.deepEqual(
+    useDeckStore.getState().toolCalls["session-1"]?.map((entry) => entry.id),
+    ["call-1"],
+  );
 });
 
-test("session/get_artifacts waits for initial history before projecting tool calls", () => {
+test("session/get_artifacts updates live tool calls before initial canonical history finishes loading", () => {
   resetStore();
+  const toolCallsRef = { current: {} as Record<string, AgentToolCall[]> };
+  const mergeSessionToolCalls = (sessionId: string, incoming: AgentToolCall[]) => {
+    useDeckStore.getState().setToolCalls((current) => {
+      const nextSessionToolCalls = [...(current[sessionId] ?? [])];
+      for (const toolCall of incoming) {
+        const index = nextSessionToolCalls.findIndex((entry) => entry.id === toolCall.id);
+        if (index === -1) {
+          nextSessionToolCalls.push(toolCall);
+        } else {
+          nextSessionToolCalls[index] = toolCall;
+        }
+      }
+      const next = { ...current, [sessionId]: nextSessionToolCalls };
+      toolCallsRef.current = next;
+      return next;
+    });
+  };
   const toolCall: AgentToolCall = {
     id: "call-1",
     kind: "shell",
@@ -323,7 +1229,7 @@ test("session/get_artifacts waits for initial history before projecting tool cal
     output: "stdout",
     timestamp: "2026-05-17T10:00:01.000Z",
     updatedAt: "2026-05-17T10:00:01.000Z",
-    timelineSequence: 2,
+    sequence: 2,
   };
   useDeckStore.setState({
     messageHistoryState: {
@@ -342,914 +1248,39 @@ test("session/get_artifacts waits for initial history before projecting tool cal
     },
     "helm-1",
     true,
-    createSessionEventContext(),
+    createSessionEventContext({
+      toolCallsRef,
+      mergeSessionToolCalls,
+    }),
   );
 
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().sessionTimeline["session-1"], undefined);
-});
-
-test("session/list_messages preserves richer cached tool metadata", () => {
-  resetStore();
-  const richToolCall: AgentToolCall = {
-    id: "call-1",
-    kind: "shell",
-    title: "Shell",
-    status: "completed",
-    output: "stdout",
-    timestamp: "2026-05-17T10:00:01.000Z",
-    updatedAt: "2026-05-17T10:00:01.000Z",
-    timelineSequence: 2,
-  };
-  const rawToolCall: AgentToolCall = {
-    ...richToolCall,
-    kind: "tool",
-    title: "Tool call call-1",
-  };
-  useDeckStore.setState({
-    sessionTimeline: {
-      "session-1": [{
-        id: "tool:call-1",
-        kind: "tool_call",
-        toolCall: richToolCall,
-        timestamp: richToolCall.timestamp,
-        updatedAt: richToolCall.updatedAt,
-        timelineSequence: richToolCall.timelineSequence,
-      }],
-    },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: [{
-        id: "tool:call-1",
-        kind: "tool_call",
-        toolCall: rawToolCall,
-        timestamp: rawToolCall.timestamp,
-        updatedAt: rawToolCall.updatedAt,
-        timelineSequence: rawToolCall.timelineSequence,
-      }],
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
-
-  assert.equal(handled, true);
-  assert.equal(entry?.kind, "tool_call");
-  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "shell");
-  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.title : undefined, "Shell");
-});
-
-test("session/list_messages lets richer running tool metadata reopen a stale completed row", () => {
-  resetStore();
-  const currentToolCall: AgentToolCall = {
-    id: "call-1",
-    kind: "tool",
-    title: "Tool call call-1",
-    status: "completed",
-    timestamp: "2026-06-20T10:00:01.000Z",
-    updatedAt: "2026-06-20T10:00:01.000Z",
-    timelineSequence: 2,
-  };
-  const incomingToolCall: AgentToolCall = {
-    ...currentToolCall,
-    kind: "write",
-    title: "Write",
-    status: "running",
-    updatedAt: "2026-06-20T10:00:02.000Z",
-    input: JSON.stringify({
-      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
-    }),
-  };
-
-  useDeckStore.setState({
-    sessionTimeline: {
-      "session-1": [{
-        id: "tool:call-1",
-        kind: "tool_call",
-        toolCall: currentToolCall,
-        timestamp: currentToolCall.timestamp,
-        updatedAt: currentToolCall.updatedAt,
-        timelineSequence: currentToolCall.timelineSequence,
-      }],
-    },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: [{
-        id: "tool:call-1",
-        kind: "tool_call",
-        toolCall: incomingToolCall,
-        timestamp: incomingToolCall.timestamp,
-        updatedAt: incomingToolCall.updatedAt,
-        timelineSequence: incomingToolCall.timelineSequence,
-      }],
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  const [entry] = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
-
-  assert.equal(handled, true);
-  assert.equal(entry?.kind, "tool_call");
-  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.status : undefined, "running");
-  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "write");
-  assert.equal(
-    entry?.kind === "tool_call" ? entry.toolCall.input : undefined,
-    JSON.stringify({
-      file_path: "apps/deck/src/features/mission/conversation/plain-message-items.tsx",
-    }),
-  );
-});
-
-test("session/list_messages keeps richer split timeline when equivalent coarse history arrives later", () => {
-  resetStore();
-  const toolCall: AgentToolCall = {
-    id: "call-1",
-    kind: "shell",
-    title: "Shell",
-    status: "completed",
-    timestamp: "2026-05-17T10:00:02.000Z",
-    updatedAt: "2026-05-17T10:00:02.000Z",
-    timelineSequence: 3,
-  };
-  const splitTimeline: SessionTimelineEntry[] = [
-    {
-      id: "user-1",
-      kind: "user_message",
-      message: {
-        id: "user-1",
-        role: "user",
-        text: "开始",
-        timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
-      },
-      timestamp: "2026-05-17T10:00:00.000Z",
-      updatedAt: "2026-05-17T10:00:00.000Z",
-      timelineSequence: 1,
-    },
-    {
-      id: "assistant-1",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-1:content",
-        kind: "content",
-        text: "先检查。",
-        timestamp: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 2,
-      }],
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:01.000Z",
-      timelineSequence: 2,
-    },
-    {
-      id: "tool:call-1",
-      kind: "tool_call",
-      toolCall,
-      timestamp: "2026-05-17T10:00:02.000Z",
-      updatedAt: "2026-05-17T10:00:02.000Z",
-      timelineSequence: 3,
-    },
-    {
-      id: "assistant-1#p1",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-1:content:4",
-        kind: "content",
-        text: "再总结。",
-        timestamp: "2026-05-17T10:00:03.000Z",
-        timelineSequence: 4,
-      }],
-      timestamp: "2026-05-17T10:00:03.000Z",
-      updatedAt: "2026-05-17T10:00:03.000Z",
-      timelineSequence: 4,
-    },
-  ];
-  const coarseTimeline: SessionTimelineEntry[] = [
-    splitTimeline[0]!,
-    {
-      id: "assistant-1",
-      kind: "assistant_message",
-      chunks: [
-        ...(splitTimeline[1]!.kind === "assistant_message" ? splitTimeline[1]!.chunks : []),
-        ...(splitTimeline[3]!.kind === "assistant_message" ? splitTimeline[3]!.chunks : []),
-      ],
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:03.000Z",
-      timelineSequence: 2,
-    },
-    splitTimeline[2]!,
-  ];
-  useDeckStore.setState({
-    sessionTimeline: { "session-1": splitTimeline },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: coarseTimeline,
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], splitTimeline);
-});
-
-test("session/list_messages keeps split timeline when coarse history coalesces assistant text and drops tool sequences", () => {
-  resetStore();
-  const firstTool: AgentToolCall = {
-    id: "call-1",
-    kind: "shell",
-    title: "Shell 1",
-    status: "completed",
-    timestamp: "2026-05-17T10:00:02.000Z",
-    updatedAt: "2026-05-17T10:00:02.000Z",
-    timelineSequence: 3,
-  };
-  const secondTool: AgentToolCall = {
-    id: "call-2",
-    kind: "read",
-    title: "Read 2",
-    status: "completed",
-    timestamp: "2026-05-17T10:00:04.000Z",
-    updatedAt: "2026-05-17T10:00:04.000Z",
-    timelineSequence: 5,
-  };
-  const splitTimeline: SessionTimelineEntry[] = [
-    {
-      id: "user-1",
-      kind: "user_message",
-      message: {
-        id: "user-1",
-        role: "user",
-        text: "开始",
-        timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
-      },
-      timestamp: "2026-05-17T10:00:00.000Z",
-      updatedAt: "2026-05-17T10:00:00.000Z",
-      timelineSequence: 1,
-    },
-    {
-      id: "assistant-turn",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-turn:content",
-        kind: "content",
-        text: "先检查。",
-        timestamp: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 2,
-      }],
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:01.000Z",
-      timelineSequence: 2,
-    },
-    {
-      id: "tool:call-1",
-      kind: "tool_call",
-      toolCall: firstTool,
-      timestamp: firstTool.timestamp,
-      updatedAt: firstTool.updatedAt,
-      timelineSequence: firstTool.timelineSequence,
-    },
-    {
-      id: "assistant-turn#p1",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-turn:content:4",
-        kind: "content",
-        text: "再读取。",
-        timestamp: "2026-05-17T10:00:03.000Z",
-        timelineSequence: 4,
-      }],
-      timestamp: "2026-05-17T10:00:03.000Z",
-      updatedAt: "2026-05-17T10:00:03.000Z",
-      timelineSequence: 4,
-    },
-    {
-      id: "tool:call-2",
-      kind: "tool_call",
-      toolCall: secondTool,
-      timestamp: secondTool.timestamp,
-      updatedAt: secondTool.updatedAt,
-      timelineSequence: secondTool.timelineSequence,
-    },
-    {
-      id: "assistant-turn#p2",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-turn:content:6",
-        kind: "content",
-        text: "最后总结。",
-        timestamp: "2026-05-17T10:00:05.000Z",
-        timelineSequence: 6,
-      }],
-      timestamp: "2026-05-17T10:00:05.000Z",
-      updatedAt: "2026-05-17T10:00:05.000Z",
-      timelineSequence: 6,
-    },
-  ];
-  const coarseTimeline: SessionTimelineEntry[] = [
-    splitTimeline[0]!,
-    {
-      id: "assistant-turn",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-turn:content",
-        kind: "content",
-        text: "先检查。再读取。最后总结。",
-        timestamp: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 2,
-      }],
-      timestamp: "2026-05-17T10:00:01.000Z",
-      updatedAt: "2026-05-17T10:00:05.000Z",
-      timelineSequence: 2,
-    },
-    {
-      id: "tool:call-1",
-      kind: "tool_call",
-      toolCall: { ...firstTool, timelineSequence: undefined },
-      timestamp: firstTool.timestamp,
-      updatedAt: firstTool.updatedAt,
-    },
-    {
-      id: "tool:call-2",
-      kind: "tool_call",
-      toolCall: { ...secondTool, timelineSequence: undefined },
-      timestamp: secondTool.timestamp,
-      updatedAt: secondTool.updatedAt,
-    },
-  ];
-  useDeckStore.setState({
-    sessionTimeline: { "session-1": splitTimeline },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: coarseTimeline,
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessionTimeline["session-1"], splitTimeline);
-});
-
-test("session/list_messages preserves active local timeline entries when initial history returns late", () => {
-  resetStore();
-  const loadedEntry: SessionTimelineEntry = {
-    id: "loaded-assistant",
-    kind: "assistant_message",
-    chunks: [
-      {
-        id: "loaded-assistant:content",
-        kind: "content",
-        text: "服务端历史回复",
-        timestamp: "2026-05-17T10:01:00.000Z",
-      },
-    ],
-    timestamp: "2026-05-17T10:01:00.000Z",
-    updatedAt: "2026-05-17T10:01:00.000Z",
-  };
-  const liveEntry: SessionTimelineEntry = {
-    id: "live-assistant",
-    kind: "assistant_message",
-    chunks: [
-      {
-        id: "live-assistant:content",
-        kind: "content",
-        text: "实时流式回复",
-        timestamp: "2026-05-17T10:02:00.000Z",
-        streaming: true,
-      },
-    ],
-    timestamp: "2026-05-17T10:02:00.000Z",
-    updatedAt: "2026-05-17T10:02:00.000Z",
-    streaming: true,
-  };
-  useDeckStore.setState({
-    sessionTimeline: { "session-1": [liveEntry] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [],
-      timeline: [loadedEntry],
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
   assert.deepEqual(
-    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["loaded-assistant", "live-assistant"],
+    useDeckStore.getState().toolCalls["session-1"]?.map((entry) => entry.id),
+    ["call-1"],
   );
 });
 
-test("session/list_messages stores unified timeline entries when provided by Helm", () => {
+test("session/get_artifacts keeps canonical timeline untouched while refreshing live tool activity", () => {
   resetStore();
-  const loadedUser: AgentMessage = {
-    id: "user-1",
-    role: "user",
-    text: "开始",
-    timestamp: "2026-05-24T10:00:00.000Z",
-    timelineSequence: 1,
+  const toolCallsRef = { current: {} as Record<string, AgentToolCall[]> };
+  const mergeSessionToolCalls = (sessionId: string, incoming: AgentToolCall[]) => {
+    useDeckStore.getState().setToolCalls((current) => {
+      const nextSessionToolCalls = [...(current[sessionId] ?? [])];
+      for (const toolCall of incoming) {
+        const index = nextSessionToolCalls.findIndex((entry) => entry.id === toolCall.id);
+        if (index === -1) {
+          nextSessionToolCalls.push(toolCall);
+        } else {
+          nextSessionToolCalls[index] = toolCall;
+        }
+      }
+      const next = { ...current, [sessionId]: nextSessionToolCalls };
+      toolCallsRef.current = next;
+      return next;
+    });
   };
-  const timeline: SessionTimelineEntry[] = [
-    {
-      id: "user-1",
-      kind: "user_message",
-      message: loadedUser,
-      timestamp: loadedUser.timestamp,
-      updatedAt: loadedUser.timestamp,
-      timelineSequence: 1,
-    },
-    {
-      id: "assistant-1",
-      kind: "assistant_message",
-      chunks: [
-        {
-          id: "assistant-1:thinking",
-          kind: "thinking",
-          text: "先思考",
-          title: "Thinking",
-          status: "completed",
-          timestamp: "2026-05-24T10:00:01.000Z",
-          updatedAt: "2026-05-24T10:00:01.000Z",
-          timelineSequence: 2,
-        },
-        {
-          id: "assistant-1:content",
-          kind: "content",
-          text: "完成",
-          timestamp: "2026-05-24T10:00:02.000Z",
-          timelineSequence: 3,
-        },
-      ],
-      timestamp: "2026-05-24T10:00:01.000Z",
-      updatedAt: "2026-05-24T10:00:02.000Z",
-      timelineSequence: 2,
-    },
-  ];
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedUser],
-      timeline,
-      transcriptStatus: {
-        source: "local",
-        replayCompleteness: "compacted",
-        integrity: "local-prefix-preserved",
-        runtimeRestoreState: "history-only",
-      },
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(
-    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.kind),
-    ["user_message", "assistant_message"],
-  );
-  assert.deepEqual(
-    (useDeckStore.getState() as any).transcriptStatusBySession?.["session-1"],
-    {
-      source: "local",
-      replayCompleteness: "compacted",
-      integrity: "local-prefix-preserved",
-      runtimeRestoreState: "history-only",
-    },
-  );
-});
-
-test("session/list_messages preserves provided timeline order with partial sequence data", () => {
-  resetStore();
-  const loadedUser: AgentMessage = {
-    id: "user-1",
-    role: "user",
-    text: "开始",
-    timestamp: "2026-05-24T10:00:30.000Z",
-    timelineSequence: 1,
-  };
-  const timeline: SessionTimelineEntry[] = [
-    {
-      id: "user-1",
-      kind: "user_message",
-      message: loadedUser,
-      timestamp: loadedUser.timestamp,
-      updatedAt: loadedUser.timestamp,
-      timelineSequence: 1,
-    },
-    {
-      id: "assistant-1",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-1:thinking",
-        kind: "thinking",
-        text: "先思考",
-        title: "Thinking",
-        status: "completed",
-        timestamp: "2026-05-24T10:00:10.000Z",
-        updatedAt: "2026-05-24T10:00:10.000Z",
-      }],
-      timestamp: "2026-05-24T10:00:10.000Z",
-      updatedAt: "2026-05-24T10:00:10.000Z",
-    },
-    {
-      id: "tool:tool-1",
-      kind: "tool_call",
-      toolCall: {
-        id: "tool-1",
-        kind: "read",
-        title: "Read",
-        status: "completed",
-        timestamp: "2026-05-24T10:00:20.000Z",
-        updatedAt: "2026-05-24T10:00:20.000Z",
-      },
-      timestamp: "2026-05-24T10:00:20.000Z",
-      updatedAt: "2026-05-24T10:00:20.000Z",
-    },
-    {
-      id: "assistant-1#p0",
-      kind: "assistant_message",
-      chunks: [{
-        id: "assistant-1#p0:content",
-        kind: "content",
-        text: "完成",
-        timestamp: "2026-05-24T10:00:40.000Z",
-        timelineSequence: 2,
-      }],
-      timestamp: "2026-05-24T10:00:40.000Z",
-      updatedAt: "2026-05-24T10:00:40.000Z",
-      timelineSequence: 2,
-    },
-  ];
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedUser],
-      timeline,
-      timelineHasMore: false,
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(
-    useDeckStore.getState().sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["user-1", "assistant-1", "tool:tool-1", "assistant-1#p0"],
-  );
-});
-
-test("session/list_messages applies timeline-only pages without replacing legacy messages", () => {
-  resetStore();
-  const existingMessage: AgentMessage = {
-    id: "message-existing",
-    role: "assistant",
-    text: "当前正文",
-    timestamp: "2026-05-24T10:00:10.000Z",
-  };
-  const unexpectedMessage: AgentMessage = {
-    id: "message-unexpected",
-    role: "assistant",
-    text: "不应替换当前正文",
-    timestamp: "2026-05-24T10:00:20.000Z",
-  };
-  const timeline: SessionTimelineEntry[] = [
-    {
-      id: "older-assistant",
-      kind: "assistant_message",
-      chunks: [
-        {
-          id: "older-assistant:content",
-          kind: "content",
-          text: "更早的时间线正文",
-          timestamp: "2026-05-24T09:59:00.000Z",
-          timelineSequence: 1,
-        },
-      ],
-      timestamp: "2026-05-24T09:59:00.000Z",
-      updatedAt: "2026-05-24T09:59:00.000Z",
-      timelineSequence: 1,
-    },
-  ];
-  useDeckStore.setState({
-    messages: { "session-1": [existingMessage] },
-    messageHistoryState: {
-      "session-1": {
-        nextCursor: "legacy-message-cursor",
-        hasMore: false,
-        timelineNextCursor: "timeline-cursor-1",
-        timelineHasMore: true,
-        loading: true,
-      },
-    },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [unexpectedMessage],
-      timeline,
-      timelineBefore: "timeline-cursor-1",
-      timelineNextCursor: "timeline-cursor-0",
-      timelineHasMore: false,
-      nextCursor: "unexpected-message-cursor",
-      hasMore: true,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  const state = useDeckStore.getState();
-  assert.equal(handled, true);
-  assert.deepEqual(state.messages["session-1"], [existingMessage]);
-  assert.deepEqual(
-    state.sessionTimeline["session-1"]?.map((entry) => entry.id),
-    ["older-assistant"],
-  );
-  assert.deepEqual(state.messageHistoryState["session-1"], {
-    nextCursor: "legacy-message-cursor",
-    hasMore: false,
-    timelineNextCursor: "timeline-cursor-0",
-    timelineHasMore: false,
-    loading: false,
-  });
-});
-
-test("session/list_messages preserves local user prompts when loaded history omits users", () => {
-  resetStore();
-  const localUser: AgentMessage = {
-    id: "client-user-1",
-    role: "user",
-    text: "为什么 session 里看不到用户消息？",
-    timestamp: "2026-05-24T10:00:00.000Z",
-  };
-  const loadedAssistant: AgentMessage = {
-    id: "provider-assistant-1#p0",
-    role: "assistant",
-    text: "我来定位原因。",
-    timestamp: "2026-05-24T10:01:00.000Z",
-  };
-  useDeckStore.setState({
-    messages: { "session-1": [localUser] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedAssistant],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().messages["session-1"], [
-    localUser,
-    loadedAssistant,
-  ]);
-});
-
-test("session/list_messages prefers the authoritative compacted timeline over a richer local replay", () => {
-  resetStore();
-  useDeckStore.setState({
-    sessionTimeline: {
-      "session-1": [
-        {
-          id: "current-user",
-          kind: "user_message",
-          message: {
-            id: "current-user",
-            role: "user",
-            text: "结束任务",
-            timestamp: "2026-06-18T14:01:49.292Z",
-            timelineSequence: 256,
-          },
-          timestamp: "2026-06-18T14:01:49.292Z",
-          updatedAt: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
-        },
-        {
-          id: "assistant-part-1",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "assistant-part-1:content",
-              kind: "content",
-              text: "好的，我来完成剩余的",
-              timestamp: "2026-06-18T14:02:15.000Z",
-              timelineSequence: 275,
-            },
-          ],
-          timestamp: "2026-06-18T14:02:15.000Z",
-          updatedAt: "2026-06-18T14:02:15.000Z",
-          timelineSequence: 275,
-        },
-        {
-          id: "assistant-part-2",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "assistant-part-2:content",
-              kind: "content",
-              text: "两处改动然后收尾。",
-              timestamp: "2026-06-18T14:02:16.000Z",
-              timelineSequence: 276,
-            },
-          ],
-          timestamp: "2026-06-18T14:02:16.000Z",
-          updatedAt: "2026-06-18T14:02:16.000Z",
-          timelineSequence: 276,
-        },
-      ],
-    },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [
-        {
-          id: "compaction-summary",
-          role: "user",
-          text: "This session is being continued from a previous conversation that ran out of context.",
-          timestamp: "2026-06-18T14:05:25.193Z",
-        },
-        {
-          id: "previous-user",
-          role: "user",
-          text: "完成了嘛？",
-          timestamp: "2026-06-18T14:05:25.197Z",
-        },
-        {
-          id: "provider-current-user",
-          role: "user",
-          text: "结束任务",
-          timestamp: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
-        },
-        {
-          id: "provider-current-assistant",
-          role: "assistant",
-          text: "好的，我来完成剩余的两处改动然后收尾。",
-          timestamp: "2026-06-18T14:02:16.000Z",
-          timelineSequence: 276,
-        },
-      ],
-      timeline: [
-        {
-          id: "current-user",
-          kind: "user_message",
-          message: {
-            id: "current-user",
-            role: "user",
-            text: "结束任务",
-            timestamp: "2026-06-18T14:01:49.292Z",
-            timelineSequence: 256,
-          },
-          timestamp: "2026-06-18T14:01:49.292Z",
-          updatedAt: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
-        },
-        {
-          id: "provider-current-assistant",
-          kind: "assistant_message",
-          chunks: [
-            {
-              id: "provider-current-assistant:content",
-              kind: "content",
-              text: "好的，我来完成剩余的两处改动然后收尾。",
-              timestamp: "2026-06-18T14:02:16.000Z",
-              timelineSequence: 276,
-            },
-          ],
-          timestamp: "2026-06-18T14:02:16.000Z",
-          updatedAt: "2026-06-18T14:02:16.000Z",
-          timelineSequence: 276,
-        },
-      ],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  const nextTimeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
-  assert.equal(handled, true);
-  assert.deepEqual(nextTimeline.map((entry) => entry.id), [
-    "current-user",
-    "provider-current-assistant",
-  ]);
-});
-
-test("session/list_messages preserves local user attachments represented by provider history", () => {
-  resetStore();
-  const localUser: AgentMessage = {
-    id: "client-user-with-image",
-    role: "user",
-    text: "请看这张图",
-    timestamp: "2026-05-24T10:00:00.000Z",
-    timelineSequence: 1,
-    attachments: [
-      {
-        type: "image",
-        data: "aW1hZ2U=",
-        mimeType: "image/png",
-        name: "screenshot.png",
-      },
-    ],
-  };
-  const providerUser: AgentMessage = {
-    id: "provider-user-1",
-    role: "user",
-    text: "请看这张图",
-    timestamp: "2026-05-24T10:00:01.000Z",
-    timelineSequence: 1,
-  };
-  useDeckStore.setState({
-    messages: { "session-1": [localUser] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [providerUser],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().messages["session-1"], [
-    {
-      ...providerUser,
-      id: localUser.id,
-      timestamp: localUser.timestamp,
-      attachments: localUser.attachments,
-    },
-  ]);
-});
-
-test("session/get_artifacts projects active tool calls into the unified timeline", () => {
-  resetStore();
   const existingAssistant: SessionTimelineEntry = {
     id: "assistant-1",
     kind: "assistant_message",
@@ -1259,12 +1290,12 @@ test("session/get_artifacts projects active tool calls into the unified timeline
         kind: "content",
         text: "我先检查文件。",
         timestamp: "2026-05-24T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
     ],
     timestamp: "2026-05-24T10:00:00.000Z",
     updatedAt: "2026-05-24T10:00:00.000Z",
-    timelineSequence: 1,
+    sequence: 1,
   };
   useDeckStore.setState({
     sessionTimeline: { "session-1": [existingAssistant] },
@@ -1281,7 +1312,7 @@ test("session/get_artifacts projects active tool calls into the unified timeline
           text: "stdout",
           stream: "stdout",
           timestamp: "2026-05-24T10:00:02.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
       ],
       toolCalls: [
@@ -1293,7 +1324,7 @@ test("session/get_artifacts projects active tool calls into the unified timeline
           status: "running",
           timestamp: "2026-05-24T10:00:01.000Z",
           updatedAt: "2026-05-24T10:00:01.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
       ],
       diffs: [],
@@ -1301,19 +1332,24 @@ test("session/get_artifacts projects active tool calls into the unified timeline
     },
     "helm-1",
     true,
-    createSessionEventContext(),
+    createSessionEventContext({
+      toolCallsRef,
+      mergeSessionToolCalls,
+    }),
   );
 
   const timeline = useDeckStore.getState().sessionTimeline["session-1"] ?? [];
-  const toolEntries = timeline.filter((entry) => entry.kind === "tool_call");
+  const liveToolCalls = useDeckStore.getState().toolCalls["session-1"] ?? [];
+  const outputs = useDeckStore.getState().outputs["session-1"] ?? [];
   assert.equal(handled, true);
-  assert.deepEqual(timeline.map((entry) => entry.id), ["assistant-1", "tool:call-1"]);
-  assert.equal(toolEntries.length, 1);
-  assert.equal(toolEntries[0]?.kind === "tool_call" ? toolEntries[0].toolCall.status : undefined, "running");
-  assert.equal(toolEntries[0]?.kind === "tool_call" ? toolEntries[0].toolCall.output : undefined, "stdout");
+  assert.deepEqual(timeline.map((entry) => entry.id), ["assistant-1"]);
+  assert.deepEqual(outputs.map((output) => output.id), ["output-1"]);
+  assert.equal(outputs[0]?.text, "stdout");
+  assert.deepEqual(liveToolCalls.map((toolCall) => toolCall.id), ["call-1"]);
+  assert.equal(liveToolCalls.find((toolCall) => toolCall.id === "call-1")?.status, "running");
 });
 
-test("session/get_artifacts stores returned session plans", () => {
+test("session/get_artifacts no longer stores session plans", () => {
   resetStore();
   const plan = {
     updatedAt: "2026-06-02T13:37:09.663Z",
@@ -1331,7 +1367,6 @@ test("session/get_artifacts stores returned session plans", () => {
       outputs: [],
       toolCalls: [],
       diffs: [],
-      plan,
       hasMore: false,
     },
     "helm-1",
@@ -1340,10 +1375,32 @@ test("session/get_artifacts stores returned session plans", () => {
   );
 
   assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().sessionPlans["session-1"], plan);
+  assert.equal(useDeckStore.getState().sessionPlans["session-1"], undefined);
 });
 
-test("session/get_artifacts preserves existing session plans when plan is omitted", () => {
+test("session/get_artifacts records incomplete legacy diff snapshots", () => {
+  resetStore();
+
+  const handled = applySessionResult(
+    "session/get_artifacts",
+    {
+      sessionId: "legacy-diff-session",
+      outputs: [],
+      toolCalls: [],
+      diffs: [{ path: "src/legacy.ts", status: "modified", additions: 2, deletions: 1 }],
+      historicalDiffIncomplete: true,
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().historicalDiffIncompleteBySession["legacy-diff-session"], true);
+});
+
+test("session/get_artifacts preserves existing session plans because it no longer owns them", () => {
   resetStore();
   const plan: AgentPlan = {
     updatedAt: "2026-06-05T14:10:22.497Z",
@@ -1371,44 +1428,6 @@ test("session/get_artifacts preserves existing session plans when plan is omitte
 
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().sessionPlans["session-1"], plan);
-});
-
-test("session/list_messages preserves live streaming messages when initial history returns late", () => {
-  resetStore();
-  const loadedHistory: AgentMessage = {
-    id: "provider-1#p0",
-    role: "assistant",
-    text: "服务端历史消息",
-    timestamp: "2026-05-17T10:01:00.000Z",
-  };
-  const liveStreaming: AgentMessage = {
-    id: "session-1-msg-s1",
-    role: "assistant",
-    text: "实时流式消息",
-    timestamp: "2026-05-17T10:02:00.000Z",
-    streaming: true,
-  };
-  useDeckStore.setState({
-    messages: { "session-1": [liveStreaming] },
-  });
-
-  const handled = applySessionResult(
-    "session/list_messages",
-    {
-      sessionId: "session-1",
-      messages: [loadedHistory],
-      hasMore: false,
-    },
-    "helm-1",
-    true,
-    createSessionEventContext(),
-  );
-
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().messages["session-1"], [
-    loadedHistory,
-    liveStreaming,
-  ]);
 });
 
 test("session prompt creation clears consumed draft metadata from model options", () => {
@@ -1466,6 +1485,46 @@ test("runtime-ready session updates refresh ACP connection inventory", () => {
   assert.deepEqual(dispatched, ["agent/connections"]);
 });
 
+test("session_updated replaces stale model data on the active session summary", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessions: [
+      {
+        ...session("s1"),
+        projectId: "p1",
+        cwd: "D:/repo",
+        agentId: "claude-code",
+        model: "claude-sonnet-old",
+        modelOptions: [{ id: "claude-sonnet-old", name: "Claude Sonnet Old" }],
+      },
+    ],
+  });
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "session_updated",
+        session: {
+          ...session("s1"),
+          projectId: "p1",
+          cwd: "D:/repo",
+          agentId: "claude-code",
+          runtimeSessionId: "runtime-new",
+          model: "claude-sonnet-new",
+          modelOptions: [{ id: "claude-sonnet-new", name: "Claude Sonnet New" }],
+        },
+      },
+    },
+    createSessionEventContext(),
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "claude-sonnet-new");
+  assert.deepEqual(useDeckStore.getState().sessions[0]?.modelOptions, [
+    { id: "claude-sonnet-new", name: "Claude Sonnet New" },
+  ]);
+});
+
 test("activity RPC notifications append assistant messages without changing session prompt metadata", () => {
   resetStore();
   useDeckStore.setState({
@@ -1502,7 +1561,7 @@ test("activity RPC notifications append assistant messages without changing sess
   );
 });
 
-test("activity update stores ACP plan updates by session", () => {
+test("activity updates reject legacy plan_update events", () => {
   resetStore();
   const handled = applyActivityUpdate(
     {
@@ -1513,7 +1572,7 @@ test("activity update stores ACP plan updates by session", () => {
           entries: [{ content: "Render drawer", priority: "medium", status: "in_progress" }],
           updatedAt: "2026-06-02T00:00:00.000Z",
         },
-      },
+      } as any,
     },
     {
       toolCallsRef: { current: {} },
@@ -1522,13 +1581,11 @@ test("activity update stores ACP plan updates by session", () => {
     },
   );
 
-  assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().sessionPlans.s1?.entries, [
-    { content: "Render drawer", priority: "medium", status: "in_progress" },
-  ]);
+  assert.equal(handled, false);
+  assert.equal(useDeckStore.getState().sessionPlans.s1, undefined);
 });
 
-test("activity update clears completed plans when an empty plan update arrives", () => {
+test("activity updates reject legacy plan updates without changing stored plans", () => {
   resetStore();
   useDeckStore.setState({
     sessionPlans: {
@@ -1556,13 +1613,13 @@ test("activity update clears completed plans when an empty plan update arrives",
           entries: [],
           updatedAt: "2026-06-02T00:01:00.000Z",
         },
-      },
+      } as any,
     },
     context,
   );
 
-  assert.equal(emptyHandled, true);
-  assert.equal(useDeckStore.getState().sessionPlans.s1, undefined);
+  assert.equal(emptyHandled, false);
+  assert.equal(useDeckStore.getState().sessionPlans.s1?.entries.length, 2);
 
   const replacementHandled = applyActivityUpdate(
     {
@@ -1575,14 +1632,15 @@ test("activity update clears completed plans when an empty plan update arrives",
           ],
           updatedAt: "2026-06-02T00:02:00.000Z",
         },
-      },
+      } as any,
     },
     context,
   );
 
-  assert.equal(replacementHandled, true);
+  assert.equal(replacementHandled, false);
   assert.deepEqual(useDeckStore.getState().sessionPlans.s1?.entries, [
-    { content: "汇总 Diff 详情", priority: "medium", status: "in_progress" },
+    { content: "复核 Markdown 渲染", priority: "medium", status: "completed" },
+    { content: "检查权限审核抽屉", priority: "medium", status: "completed" },
   ]);
 });
 
@@ -2150,6 +2208,53 @@ test("session RPC results apply session list results and prune scoped maps", () 
   assert.deepEqual(dispatched, []);
 });
 
+test("session list clears stale resume requests for authoritative same-process sessions", () => {
+  resetStore();
+  const resumeStartRequestsRef = {
+    current: new Set(["same-process", "historical"]),
+  };
+  let resumeStartRequestIds = new Set(["same-process", "historical"]);
+
+  const handled = applySessionResult(
+    "session/list",
+    {
+      sessions: [
+        {
+          ...session("same-process"),
+          status: "idle" as const,
+          resume: {
+            state: "resume-available" as const,
+            mode: "same-process" as const,
+            restoreMethod: "client-reconnect" as const,
+          },
+        },
+        {
+          ...session("historical"),
+          status: "idle" as const,
+          resume: {
+            state: "resume-available" as const,
+            mode: "reconnect" as const,
+            restoreMethod: "session/load" as const,
+          },
+        },
+      ],
+      hasMore: false,
+    },
+    "helm-1",
+    true,
+    createSessionEventContext({
+      resumeStartRequestsRef,
+      setResumeStartRequestIds: (update: (current: Set<string>) => Set<string>) => {
+        resumeStartRequestIds = update(resumeStartRequestIds);
+      },
+    }),
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual([...resumeStartRequestsRef.current], ["historical"]);
+  assert.deepEqual([...resumeStartRequestIds], ["historical"]);
+});
+
 test("session RPC results hydrate config options from listed sessions", () => {
   resetStore();
   const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
@@ -2195,7 +2300,7 @@ test("session RPC results hydrate config options from listed sessions", () => {
   assert.deepEqual(useDeckStore.getState().sessionConfigOptions.s1, configOptions);
 });
 
-test("session config option display preserves session-bound model over provider defaults", () => {
+test("session updates reject legacy config option events", () => {
   resetStore();
   const configOptions: SessionConfigOption[] = [
     {
@@ -2228,6 +2333,7 @@ test("session config option display preserves session-bound model over provider 
       },
     ],
   });
+  const initialConfigOptions = useDeckStore.getState().sessionConfigOptions.s1;
 
   const handled = applySessionUpdate(
     {
@@ -2236,21 +2342,18 @@ test("session config option display preserves session-bound model over provider 
         kind: "config_options",
         state: { model: "gpt-5.5", reasoningEffort: "medium" },
         options: configOptions,
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
-  assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessions[0]?.model, "gpt-5.5");
-  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "medium");
-  assert.deepEqual(
-    useDeckStore.getState().sessionConfigOptions.s1?.map((option) => option.currentValue),
-    ["gpt-5.5", "medium"],
-  );
+  assert.equal(handled, false);
+  assert.equal(useDeckStore.getState().sessions[0]?.model, "gpt-5.4");
+  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "high");
+  assert.deepEqual(useDeckStore.getState().sessionConfigOptions.s1, initialConfigOptions);
 });
 
-test("session config option updates clear stale reasoning when options omit reasoning", () => {
+test("session updates reject legacy config option events without changing configuration", () => {
   resetStore();
   const configOptions: SessionConfigOption[] = [
     {
@@ -2270,6 +2373,7 @@ test("session config option updates clear stale reasoning when options omit reas
       },
     ],
   });
+  const initialConfigOptions = useDeckStore.getState().sessionConfigOptions.s1;
 
   const handled = applySessionUpdate(
     {
@@ -2278,21 +2382,18 @@ test("session config option updates clear stale reasoning when options omit reas
         kind: "config_options",
         state: { model: "claude-haiku-4-5" },
         options: configOptions,
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
-  assert.equal(handled, true);
+  assert.equal(handled, false);
   assert.equal(useDeckStore.getState().sessions[0]?.model, "claude-haiku-4-5");
-  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, undefined);
-  assert.deepEqual(
-    useDeckStore.getState().sessionConfigOptions.s1?.map((option) => option.currentValue),
-    ["claude-haiku-4-5"],
-  );
+  assert.equal(useDeckStore.getState().sessions[0]?.reasoningEffort, "medium");
+  assert.deepEqual(useDeckStore.getState().sessionConfigOptions.s1, initialConfigOptions);
 });
 
-test("arbitrary ACP config options stay scoped to their session", () => {
+test("session updates reject legacy arbitrary config option events", () => {
   resetStore();
   const approvalOption: SessionConfigOption = {
     id: "approval-mode",
@@ -2324,13 +2425,13 @@ test("arbitrary ACP config options stay scoped to their session", () => {
         kind: "config_options",
         state: {},
         options: approvalOptions,
-      },
+      } as any,
     },
     createSessionEventContext(),
   );
 
-  assert.equal(handled, true);
-  assert.equal(useDeckStore.getState().sessionConfigOptions.s1?.[0]?.currentValue, "on-request");
+  assert.equal(handled, false);
+  assert.equal(useDeckStore.getState().sessionConfigOptions.s1, undefined);
   assert.equal(useDeckStore.getState().sessionConfigOptions.s2?.[0]?.currentValue, "auto");
 });
 
@@ -2383,6 +2484,7 @@ test("session check resume auto starts provider restore", () => {
 test("successful session resume clears the pending restore request", () => {
   resetStore();
   const pendingRequests = new Set<string>(["s1"]);
+  let resumeStartRequestIds = new Set<string>(["s1"]);
   let feedback = "";
   const dispatched: string[] = [];
   useDeckStore.setState({ sessions: [session("s1")] });
@@ -2421,6 +2523,70 @@ test("successful session resume clears the pending restore request", () => {
         feedback = value;
       },
       resumeStartRequestsRef: { current: pendingRequests },
+      setResumeStartRequestIds: (update: (current: Set<string>) => Set<string>) => {
+        resumeStartRequestIds = update(resumeStartRequestIds);
+      },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(resumeStartRequestIds.has("s1"), false);
+  assert.equal(feedback, "已恢复");
+  assert.equal(useDeckStore.getState().sessions[0]?.runtimeSessionId, "runtime-s1");
+  assert.deepEqual(dispatched, ["agent/connections"]);
+});
+
+test("successful session/load resume reloads canonical timeline", () => {
+  resetStore();
+  const pendingRequests = new Set<string>(["s1"]);
+  let feedback = "";
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+  useDeckStore.setState({
+    sessions: [session("s1")],
+    messageHistoryState: {
+      s1: {
+        hasMore: true,
+        nextCursor: "cursor-1",
+        loading: false,
+      } as any,
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/resume",
+    {
+      sessionId: "s1",
+      ok: true,
+      message: "已恢复",
+      resume: {
+        state: "resume-available",
+        mode: "reconnect",
+        restoreMethod: "session/load",
+        runtimeSessionId: "runtime-s1",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async (_client, method, params) => {
+        dispatched.push({ method, params: (params ?? {}) as Record<string, unknown> });
+      },
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: (value: string) => {
+        feedback = value;
+      },
+      resumeStartRequestsRef: { current: pendingRequests },
     },
   );
 
@@ -2428,7 +2594,86 @@ test("successful session resume clears the pending restore request", () => {
   assert.equal(pendingRequests.has("s1"), false);
   assert.equal(feedback, "已恢复");
   assert.equal(useDeckStore.getState().sessions[0]?.runtimeSessionId, "runtime-s1");
-  assert.deepEqual(dispatched, ["agent/connections"]);
+  assert.deepEqual(dispatched, [
+    { method: "agent/connections", params: {} },
+    { method: "session/list_timeline", params: { sessionId: "s1", limit: 20 } },
+  ]);
+  assert.deepEqual(useDeckStore.getState().messageHistoryState.s1, {
+    hasMore: true,
+    nextCursor: "cursor-1",
+    loading: true,
+  });
+});
+
+test("successful client-reconnect resume reloads canonical timeline when no canonical entries are loaded yet", () => {
+  resetStore();
+  const pendingRequests = new Set<string>(["s1"]);
+  let feedback = "";
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+  useDeckStore.setState({
+    sessions: [session("s1")],
+    sessionTimeline: {
+      s1: [],
+    },
+    messageHistoryState: {
+      s1: {
+        hasMore: true,
+        nextCursor: "cursor-1",
+        loading: false,
+      },
+    },
+  });
+
+  const handled = applySessionResult(
+    "session/resume",
+    {
+      sessionId: "s1",
+      ok: true,
+      message: "已恢复",
+      resume: {
+        state: "resume-available",
+        mode: "reconnect",
+        restoreMethod: "client-reconnect",
+        runtimeSessionId: "runtime-s1",
+      },
+    },
+    "helm-1",
+    true,
+    {
+      setSelectedProjectId: () => undefined,
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: { socket: { readyState: 1 } } as any },
+      assignSessionTitleFromPrompt: () => undefined,
+      createClientUserMessageId: () => "m1",
+      appendUserMessage: () => undefined,
+      dispatch: async (_client, method, params) => {
+        dispatched.push({ method, params: (params ?? {}) as Record<string, unknown> });
+      },
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: (value: string) => {
+        feedback = value;
+      },
+      resumeStartRequestsRef: { current: pendingRequests },
+    },
+  );
+
+  assert.equal(handled, true);
+  assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(feedback, "已恢复");
+  assert.equal(useDeckStore.getState().sessions[0]?.runtimeSessionId, "runtime-s1");
+  assert.deepEqual(dispatched, [
+    { method: "agent/connections", params: {} },
+    { method: "session/list_timeline", params: { sessionId: "s1", limit: 20 } },
+  ]);
+  assert.deepEqual(useDeckStore.getState().messageHistoryState.s1, {
+    hasMore: true,
+    nextCursor: "cursor-1",
+    loading: true,
+  });
 });
 
 test("failed session resume marks stale available metadata as unavailable", () => {

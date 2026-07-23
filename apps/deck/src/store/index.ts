@@ -27,9 +27,20 @@ import {
   type PromptTraceSlice,
 } from "./slices/prompt-trace-slice";
 import {
+  createNotificationsSlice,
+  type NotificationsSlice,
+} from "./slices/notifications-slice";
+export type {
+  DeckNotification,
+  DeckNotificationInput,
+  DeckNotificationKind,
+} from "./slices/notifications-slice";
+import {
   createSessionsSlice,
   type SessionsSlice,
 } from "./slices/sessions-slice";
+
+export type { SessionLegacyEvidenceState } from "./slices/messages-slice";
 
 export type DeckStore = ActivitiesSlice &
   AgentsSlice &
@@ -41,6 +52,7 @@ export type DeckStore = ActivitiesSlice &
   PreferencesSlice &
   ProjectsSlice &
   PromptTraceSlice &
+  NotificationsSlice &
   SessionsSlice;
 
 export const useDeckStore = create<DeckStore>()(
@@ -57,6 +69,7 @@ export const useDeckStore = create<DeckStore>()(
         ...createPreferencesSlice(...args),
         ...createProjectsSlice(...args),
         ...createPromptTraceSlice(...args),
+        ...createNotificationsSlice(...args),
         ...createSessionsSlice(...args),
       }),
       createDeckStorePersistOptions(),

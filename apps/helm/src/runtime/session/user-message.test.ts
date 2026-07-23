@@ -22,7 +22,7 @@ test("createUserPromptMessage projects image content into attachments", () => {
 
   assert.equal(message.id, "client-1");
   assert.equal(message.role, "user");
-  assert.equal(message.timelineSequence, 42);
+  assert.equal(message.sequence, 42);
   assert.deepEqual(message.attachments, [content[1]]);
 });
 
@@ -39,5 +39,5 @@ test("createUserPromptMessage omits attachments when no images exist", () => {
   );
 
   assert.equal("attachments" in message, false);
-  assert.equal(message.timelineSequence, 7);
+  assert.equal(message.sequence, 7);
 });

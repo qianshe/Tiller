@@ -4,8 +4,11 @@ import type {
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
-  SessionTranscriptStatus,
+  LegacyEvidenceAvailability,
+  LegacyEvidencePage,
+  LegacyEvidenceSource,
   SessionTimelineEntry,
+  SessionSubagentDetail,
 } from "@tiller/shared";
 import type { StateCreator } from "zustand";
 
@@ -14,28 +17,48 @@ export type MessageHistoryState = Record<
   {
     nextCursor?: string;
     hasMore: boolean;
-    timelineNextCursor?: string;
-    timelineHasMore?: boolean;
     loading: boolean;
   }
 >;
 
 type Updater<T> = T | ((current: T) => T);
 
+export type SessionTimelineDeliveryState = {
+  latestDeliverySequence: number;
+  reloadRequired: boolean;
+};
+
+export type SessionLegacyEvidenceState = {
+  availability?: LegacyEvidenceAvailability;
+  pages: Partial<Record<LegacyEvidenceSource, LegacyEvidencePage>>;
+  loading: Partial<Record<LegacyEvidenceSource, boolean>>;
+};
+
+export type SessionSubagentDetailState = SessionSubagentDetail & {
+  loading?: boolean;
+  failed?: boolean;
+};
+
 export type MessagesSlice = {
   messages: Record<string, AgentMessage[]>;
   sessionTimeline: Record<string, SessionTimelineEntry[]>;
-  transcriptStatusBySession: Record<string, SessionTranscriptStatus | undefined>;
+  sessionTimelineDeliveryState: Record<string, SessionTimelineDeliveryState | undefined>;
+  sessionLegacyEvidence: Record<string, SessionLegacyEvidenceState | undefined>;
   messageHistoryState: MessageHistoryState;
   outputs: Record<string, CommandChunk[]>;
   toolCalls: Record<string, AgentToolCall[]>;
   sessionPlans: Record<string, AgentPlan>;
   dismissedCompletedSessionPlanKeys: Record<string, string>;
   diffs: Record<string, FileDiffSummary[]>;
+  historicalDiffIncompleteBySession: Record<string, boolean>;
+  sessionSubagentDetails: Record<string, SessionSubagentDetailState | undefined>;
   setMessages: (updater: Updater<Record<string, AgentMessage[]>>) => void;
   setSessionTimeline: (updater: Updater<Record<string, SessionTimelineEntry[]>>) => void;
-  setTranscriptStatusBySession: (
-    updater: Updater<Record<string, SessionTranscriptStatus | undefined>>,
+  setSessionTimelineDeliveryState: (
+    updater: Updater<Record<string, SessionTimelineDeliveryState | undefined>>,
+  ) => void;
+  setSessionLegacyEvidence: (
+    updater: Updater<Record<string, SessionLegacyEvidenceState | undefined>>,
   ) => void;
   setMessageHistoryState: (updater: Updater<MessageHistoryState>) => void;
   setOutputs: (updater: Updater<Record<string, CommandChunk[]>>) => void;
@@ -45,18 +68,27 @@ export type MessagesSlice = {
     updater: Updater<Record<string, string>>,
   ) => void;
   setDiffs: (updater: Updater<Record<string, FileDiffSummary[]>>) => void;
+  setHistoricalDiffIncompleteBySession: (
+    updater: Updater<Record<string, boolean>>,
+  ) => void;
+  setSessionSubagentDetails: (
+    updater: Updater<Record<string, SessionSubagentDetailState | undefined>>,
+  ) => void;
 };
 
 export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
   messages: {},
   sessionTimeline: {},
-  transcriptStatusBySession: {},
+  sessionTimelineDeliveryState: {},
+  sessionLegacyEvidence: {},
   messageHistoryState: {},
   outputs: {},
   toolCalls: {},
   sessionPlans: {},
   dismissedCompletedSessionPlanKeys: {},
   diffs: {},
+  historicalDiffIncompleteBySession: {},
+  sessionSubagentDetails: {},
   setMessages: (updater) =>
     set((state) => ({
       messages: typeof updater === "function" ? updater(state.messages) : updater,
@@ -66,11 +98,18 @@ export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
       sessionTimeline:
         typeof updater === "function" ? updater(state.sessionTimeline) : updater,
     })),
-  setTranscriptStatusBySession: (updater) =>
+  setSessionTimelineDeliveryState: (updater) =>
     set((state) => ({
-      transcriptStatusBySession:
+      sessionTimelineDeliveryState:
         typeof updater === "function"
-          ? updater(state.transcriptStatusBySession)
+          ? updater(state.sessionTimelineDeliveryState)
+          : updater,
+    })),
+  setSessionLegacyEvidence: (updater) =>
+    set((state) => ({
+      sessionLegacyEvidence:
+        typeof updater === "function"
+          ? updater(state.sessionLegacyEvidence)
           : updater,
     })),
   setMessageHistoryState: (updater) =>
@@ -102,5 +141,17 @@ export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
   setDiffs: (updater) =>
     set((state) => ({
       diffs: typeof updater === "function" ? updater(state.diffs) : updater,
+    })),
+  setHistoricalDiffIncompleteBySession: (updater) =>
+    set((state) => ({
+      historicalDiffIncompleteBySession:
+        typeof updater === "function"
+          ? updater(state.historicalDiffIncompleteBySession)
+          : updater,
+    })),
+  setSessionSubagentDetails: (updater) =>
+    set((state) => ({
+      sessionSubagentDetails:
+        typeof updater === "function" ? updater(state.sessionSubagentDetails) : updater,
     })),
 });

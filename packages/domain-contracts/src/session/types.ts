@@ -37,17 +37,6 @@ export type SessionSummary = {
   resume?: SessionResumeInfo;
 };
 
-export type SessionStatusUpdate = {
-  kind: "status_change";
-  status: SessionStatus;
-  message?: string;
-};
-
-export type SessionUserMessageUpdate<Message = unknown> = {
-  kind: "user_message";
-  message: Message;
-};
-
 export type SessionAgentMessageUpdate<Message = unknown> = {
   kind: "agent_message";
   message: Message;
@@ -59,71 +48,72 @@ export type SessionToolCallUpdate<ToolCall = unknown> = {
   toolCall: ToolCall;
 };
 
-export type SessionPlanUpdate<Plan = unknown> = {
-  kind: "plan_update";
-  plan: Plan;
-};
-
-export type SessionCommandOutputUpdate<CommandOutput = unknown> = {
-  kind: "command_output";
-  commandId: string;
-  chunk: CommandOutput;
-};
-
-export type SessionDiffUpdate<Diff = unknown> = {
-  kind: "diff_update";
-  files: Diff[];
-};
-
-export type SessionConfigOptionsUpdate<ConfigState = unknown, ConfigOption = unknown> = {
-  kind: "config_options";
-  state: ConfigState;
-  options: ConfigOption[];
-};
-
-export type SessionModelOptionsUpdate<ModelOption = unknown> = {
-  kind: "model_options";
-  currentModelId?: string;
-  options: ModelOption[];
-};
-
-export type SessionCommandsAvailableUpdate<Command = unknown> = {
-  kind: "commands_available";
-  commands: Command[];
-};
-
 export type SessionUpdatedUpdate<Summary = SessionSummary> = {
   kind: "session_updated";
   session: Summary;
 };
 
-export type SessionPromptQueueUpdate<Queue = unknown> = {
-  kind: "prompt_queue";
-  queue: Queue;
+export type SessionTimelineBatchUpdate<TimelineEntry = unknown> = {
+  kind: "timeline_batch";
+  batch: {
+    replace: boolean;
+    /** Per-connection, per-session send revision stamped by the outbound transport. */
+    deliverySequence: number;
+    lastSequence: number;
+    entries: TimelineEntry[];
+  };
 };
+
+export type SessionLiveStateUpdate<Snapshot = unknown> = {
+  kind: "live_state";
+  snapshot: Snapshot;
+};
+
+export type SessionSubagentDetailUpdate<Delta = unknown> = {
+  kind: "subagent_detail";
+  delta: Delta;
+};
+
+export const CANONICAL_CONVERSATION_UPDATE_KINDS = ["timeline_batch"] as const;
+
+export const COMPATIBILITY_CONVERSATION_UPDATE_KINDS = [
+  "agent_message",
+  "tool_call",
+] as const;
+
+export type CanonicalConversationUpdateKind =
+  (typeof CANONICAL_CONVERSATION_UPDATE_KINDS)[number];
+
+export type CompatibilityConversationUpdateKind =
+  (typeof COMPATIBILITY_CONVERSATION_UPDATE_KINDS)[number];
+
+export function isCanonicalConversationUpdateKind(
+  kind: string,
+): kind is CanonicalConversationUpdateKind {
+  return CANONICAL_CONVERSATION_UPDATE_KINDS.includes(
+    kind as CanonicalConversationUpdateKind,
+  );
+}
+
+export function isCompatibilityConversationUpdateKind(
+  kind: string,
+): kind is CompatibilityConversationUpdateKind {
+  return COMPATIBILITY_CONVERSATION_UPDATE_KINDS.includes(
+    kind as CompatibilityConversationUpdateKind,
+  );
+}
 
 export type SessionRealtimeUpdate<
   Message = unknown,
   ToolCall = unknown,
-  CommandOutput = unknown,
-  Diff = unknown,
-  ConfigState = unknown,
-  ConfigOption = unknown,
-  ModelOption = unknown,
-  Command = unknown,
   Summary = SessionSummary,
-  Queue = unknown,
-  Plan = unknown,
+  TimelineEntry = unknown,
+  LiveStateSnapshot = unknown,
+  SubagentDetailDelta = unknown,
 > =
-  | SessionStatusUpdate
-  | SessionUserMessageUpdate<Message>
   | SessionAgentMessageUpdate<Message>
   | SessionToolCallUpdate<ToolCall>
-  | SessionPlanUpdate<Plan>
-  | SessionCommandOutputUpdate<CommandOutput>
-  | SessionDiffUpdate<Diff>
-  | SessionConfigOptionsUpdate<ConfigState, ConfigOption>
-  | SessionModelOptionsUpdate<ModelOption>
-  | SessionCommandsAvailableUpdate<Command>
   | SessionUpdatedUpdate<Summary>
-  | SessionPromptQueueUpdate<Queue>;
+  | SessionTimelineBatchUpdate<TimelineEntry>
+  | SessionLiveStateUpdate<LiveStateSnapshot>
+  | SessionSubagentDetailUpdate<SubagentDetailDelta>;

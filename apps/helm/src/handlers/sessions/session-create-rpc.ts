@@ -1,10 +1,15 @@
 import { createSessionLifecycle } from "@tiller/core";
 import type { SessionReasoningEffort, SessionSummary } from "@tiller/shared";
-import { broadcastErrorRaised, broadcastSessionUpdate } from "../../rpc/notifications";
+import { broadcastErrorRaised, broadcastInfoRaised, broadcastSessionUpdate } from "../../rpc/notifications";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "../../runtime/session/config-options";
+import {
+  ensureLiveEventSequenceForSession,
+  publishCanonicalSessionStateEvent,
+} from "../../runtime/events";
+import { createSessionBootstrapEvents } from "../../runtime/session/event/bootstrap";
 import type { HelmHandlerContext } from "../context";
 import { resolveProjectSessionWorktree } from "./session-worktree";
 
@@ -100,7 +105,10 @@ export async function createSession(
           },
         }),
       buildSession: ({ runtime, timestamp }) => {
-        const summaryRuntimeModel = summary.model ?? runtime.sessionConfigState?.model;
+        const summaryRuntimeModel =
+          runtime.sessionConfigState?.model ??
+          runtime.sessionModelState?.currentModelId ??
+          summary.model;
         const resolvedRuntimeConfigOptions = resolveConfigOptionsForSelection({
           incomingOptions: runtime.sessionConfigOptions,
           previousOptions: summary.configOptions,
@@ -110,12 +118,12 @@ export async function createSession(
           ...summary,
           status: "idle" as const,
           updatedAt: timestamp,
-          agentMode: summary.agentMode ?? runtime.sessionConfigState?.agentMode,
+          agentMode: runtime.sessionConfigState?.agentMode ?? summary.agentMode,
           model: summaryRuntimeModel,
           modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
           configOptions: resolvedRuntimeConfigOptions.options,
           reasoningEffort: resolveConfigReasoningEffortForOptions(
-            summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
+            runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
             resolvedRuntimeConfigOptions,
           ),
           runtimeSessionId: runtime.runtimeSessionId,
@@ -139,8 +147,18 @@ export async function createSession(
       runtimeSessionId: runtime.runtimeSessionId,
       capabilities: runtime.sessionCapabilities ?? {},
     });
+    broadcastInfoRaised(context, {
+      sessionId,
+      code: "ACP_SESSION_STARTED",
+      message: "ACP session started.",
+      source: "session",
+    });
     context.sessions.set(sessionId, { summary: summaryWithRuntime, agent, worktree, runtime });
+    ensureLiveEventSequenceForSession(sessionId, context);
     context.persistRuntimeDescriptor(summaryWithRuntime, agent, runtime.sessionCapabilities);
+    for (const event of createSessionBootstrapEvents(summaryWithRuntime)) {
+      context.handleRuntimeEvent(sessionId, event);
+    }
     broadcastSessionUpdate(context, sessionId, {
       kind: "session_updated",
       session: summaryWithRuntime,
@@ -148,7 +166,12 @@ export async function createSession(
     return { session: summaryWithRuntime };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Failed to create session runtime";
-    broadcastErrorRaised(context, { sessionId, message });
+    broadcastErrorRaised(context, {
+      sessionId,
+      code: "ACP_SESSION_START_FAILED",
+      message,
+      source: "session",
+    });
     logSessionCreateError(context, "session.create.failed", {
       projectId: project.id,
       agentId: agent.id,
@@ -161,11 +184,7 @@ export async function createSession(
       updatedAt: new Date().toISOString(),
       lastMessagePreview: "Session startup failed",
     }));
-    broadcastSessionUpdate(context, sessionId, {
-      kind: "status_change",
-      status: "error",
-      message: "Session startup failed",
-    });
+    publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
     throw error;
   }
 }

@@ -1,10 +1,29 @@
-import type { AcpRuntimeProviderConfig, AgentCapabilities } from "@tiller/shared";
+import type {
+  AcpRuntimeProviderConfig,
+  AgentCapabilities,
+  AgentPlan,
+  AgentToolCall,
+} from "@tiller/shared";
+import type { RuntimeEventOrigin, SessionRuntimeEvent } from "../runtime-types";
+import {
+  createToolObservation,
+  disposeToolRecognitionSession,
+  recognizeToolObservation,
+} from "../tool-recognition";
 import { createClaudeAcpAdapter } from "./claude/index";
 import { createCodexAcpAdapter } from "./codex/index";
 import { createGenericAcpAdapter } from "./generic/index";
 import { createOpenClawAcpAdapter } from "./openclaw/index";
 import { createOpenCodeAcpAdapter } from "./opencode/index";
-import type { AcpAgentAdapter, AcpHistoryContext, AcpLaunchContext, AcpSessionUpdateProjectionContext } from "./types";
+import type {
+  AcpAgentAdapter,
+  AcpCompactionDetailsVisibility,
+  AcpCompactionSummaryContext,
+  AcpLaunchContext,
+  AcpPromptObservationContext,
+  AcpSessionUpdateProjectionContext,
+  AcpToolEvidenceContext,
+} from "./types";
 
 const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
   createOpenCodeAcpAdapter(),
@@ -15,10 +34,16 @@ const ACP_AGENT_ADAPTERS: AcpAgentAdapter[] = [
 ];
 
 export function resolveAcpAgentAdapter(provider: AcpRuntimeProviderConfig) {
-  return ACP_AGENT_ADAPTERS.find((adapter) => adapter.isMatch(provider)) ?? ACP_AGENT_ADAPTERS[ACP_AGENT_ADAPTERS.length - 1]!;
+  return (
+    ACP_AGENT_ADAPTERS.find((adapter) => adapter.isMatch(provider)) ??
+    ACP_AGENT_ADAPTERS[ACP_AGENT_ADAPTERS.length - 1]!
+  );
 }
 
-export function resolveAcpLaunchConfig(provider: AcpRuntimeProviderConfig, context: AcpLaunchContext) {
+export function resolveAcpLaunchConfig(
+  provider: AcpRuntimeProviderConfig,
+  context: AcpLaunchContext,
+) {
   return resolveAcpAgentAdapter(provider).resolveLaunch(provider, context);
 }
 
@@ -27,32 +52,234 @@ export function resolveAdapterCapabilities(
   initializeResult: unknown,
   detected: AgentCapabilities,
 ) {
-  return resolveAcpAgentAdapter(provider).resolveCapabilities(provider, initializeResult, detected);
+  return resolveAcpAgentAdapter(provider).resolveCapabilities(
+    provider,
+    initializeResult,
+    detected,
+  );
 }
 
-export function resolveAdapterCleanupPlan(provider: AcpRuntimeProviderConfig, runtimeSessionId: string) {
-  return resolveAcpAgentAdapter(provider).resolveCleanup({ provider, runtimeSessionId });
+export function resolveAdapterCleanupPlan(
+  provider: AcpRuntimeProviderConfig,
+  runtimeSessionId: string,
+) {
+  return resolveAcpAgentAdapter(provider).resolveCleanup({
+    provider,
+    runtimeSessionId,
+  });
 }
 
-export function resolveAdapterRequestTimeout(provider: AcpRuntimeProviderConfig, method: string) {
-  return resolveAcpAgentAdapter(provider).resolveRequestTimeout?.({ provider, method });
+export function resolveAdapterRequestTimeout(
+  provider: AcpRuntimeProviderConfig,
+  method: string,
+) {
+  return resolveAcpAgentAdapter(provider).resolveRequestTimeout?.({
+    provider,
+    method,
+  });
 }
 
-export function mapAdapterSessionUpdate(
+export function mapAdapterMessageUpdate(
   provider: AcpRuntimeProviderConfig | undefined,
   context: AcpSessionUpdateProjectionContext,
 ) {
   return provider
-    ? resolveAcpAgentAdapter(provider).mapSessionUpdate?.(context) ?? null
+    ? (resolveAcpAgentAdapter(provider).mapMessageUpdate?.(context) ?? null)
     : null;
 }
 
-export function readAdapterTranscriptPlan(context: AcpHistoryContext) {
-  return resolveAcpAgentAdapter(context.provider).readTranscriptPlan?.(context) ?? null;
+export function mapAdapterToolCallUpdate(
+  provider: AcpRuntimeProviderConfig | undefined,
+  context: AcpSessionUpdateProjectionContext,
+) {
+  return provider
+    ? (resolveAcpAgentAdapter(provider).mapToolCallUpdate?.(context) ?? null)
+    : null;
 }
 
-export function readAdapterTranscriptMessages(context: AcpHistoryContext) {
-  return resolveAcpAgentAdapter(context.provider).readTranscriptMessages?.(context) ?? [];
+export function mapAdapterUnknownUpdate(
+  provider: AcpRuntimeProviderConfig | undefined,
+  context: AcpSessionUpdateProjectionContext,
+) {
+  return provider
+    ? (resolveAcpAgentAdapter(provider).mapUnknownUpdate?.(context) ?? null)
+    : null;
+}
+
+export function beginAdapterPromptObservation(
+  provider: AcpRuntimeProviderConfig,
+  context: AcpPromptObservationContext,
+) {
+  resolveAcpAgentAdapter(provider).beginPromptObservation?.(context);
+}
+
+export function pollAdapterPromptEvents(
+  provider: AcpRuntimeProviderConfig,
+  context: AcpPromptObservationContext,
+) {
+  const adapter = resolveAcpAgentAdapter(provider);
+  const observations = adapter.pollPromptToolObservations?.(context) ?? [];
+  const toolEvents = observations.flatMap((sourceObservation) => {
+    const observation = { ...sourceObservation, providerId: provider.id };
+    const evidence = adapter.collectToolEvidence?.({ observation }) ?? [];
+    return recognizeToolObservation(observation, evidence).toolCalls.map(
+      (toolCall) => ({
+        type: "tool-call" as const,
+        toolCall,
+      }),
+    );
+  });
+  return [
+    ...toolEvents,
+    ...(adapter.pollPromptRuntimeEvents?.(context) ?? []),
+  ];
+}
+
+export function resolveAdapterRuntimeEventOrigin(
+  provider: AcpRuntimeProviderConfig | undefined,
+  context: AcpSessionUpdateProjectionContext,
+): RuntimeEventOrigin | undefined {
+  return provider
+    ? resolveAcpAgentAdapter(provider).resolveRuntimeEventOrigin?.(context)
+    : undefined;
+}
+
+export function disposeAdapterSession(
+  provider: AcpRuntimeProviderConfig | undefined,
+  sessionId: string,
+) {
+  if (provider) {
+    resolveAcpAgentAdapter(provider).disposeSession?.(sessionId);
+    disposeToolRecognitionSession(provider.id, sessionId);
+  } else {
+    disposeToolRecognitionSession(undefined, sessionId);
+  }
+}
+
+export function recognizeAdapterToolCalls(
+  provider: AcpRuntimeProviderConfig | undefined,
+  providerId: string | undefined,
+  context: {
+    toolCall: AgentToolCall;
+    update: unknown;
+    sessionId?: string;
+    cwd?: string;
+  },
+): AgentToolCall[] {
+  const resolvedProvider = provider ?? inferProviderFromId(providerId);
+  const observation = createToolObservation({
+    providerId: resolvedProvider?.id ?? providerId,
+    sessionId: context.sessionId,
+    cwd: context.cwd,
+    toolCall: context.toolCall,
+    update: context.update,
+  });
+  const adapter = resolvedProvider
+    ? resolveAcpAgentAdapter(resolvedProvider)
+    : undefined;
+  const evidence = adapter?.collectToolEvidence?.({ observation }) ?? [];
+  return recognizeToolObservation(observation, evidence).toolCalls;
+}
+
+/** @internal Compatibility helper for package-level characterization tests. */
+export function normalizeAdapterToolCall(
+  provider: AcpRuntimeProviderConfig | undefined,
+  providerId: string | undefined,
+  context: {
+    toolCall: AgentToolCall;
+    update: unknown;
+    sessionId?: string;
+    cwd?: string;
+  },
+): AgentToolCall | null {
+  return recognizeAdapterToolCalls(provider, providerId, context)[0] ?? null;
+}
+
+export function summarizeAdapterCompactionSignal(
+  providerId: string | undefined,
+  text: string,
+) {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return null;
+  }
+  return (
+    resolveAcpAgentAdapter(provider).summarizeCompactionSignal?.(text) ?? null
+  );
+}
+
+export function expandAdapterRuntimeEvent(
+  providerId: string | undefined,
+  event: SessionRuntimeEvent,
+) {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return null;
+  }
+  return resolveAcpAgentAdapter(provider).expandRuntimeEvent?.(event) ?? null;
+}
+
+export function resolveAdapterCompactionDetailsVisibility(
+  providerId: string | undefined,
+): AcpCompactionDetailsVisibility | undefined {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return undefined;
+  }
+  return resolveAcpAgentAdapter(
+    provider,
+  ).resolveCompactionDetailsVisibility?.();
+}
+
+export function resolveAdapterCompactionSummary(
+  providerId: string | undefined,
+  context: AcpCompactionSummaryContext,
+) {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return undefined;
+  }
+  return resolveAcpAgentAdapter(provider).resolveCompactionSummary?.(context);
+}
+
+export function extractAdapterPlanFromToolCall(
+  providerId: string | undefined,
+  toolCall: AgentToolCall,
+): AgentPlan | null {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return null;
+  }
+  return (
+    resolveAcpAgentAdapter(provider).extractPlanFromToolCall?.(toolCall) ?? null
+  );
+}
+
+export function isAdapterPlanToolCall(
+  providerId: string | undefined,
+  toolCall: AgentToolCall,
+) {
+  const provider = inferProviderFromId(providerId);
+  if (!provider) {
+    return false;
+  }
+  return resolveAcpAgentAdapter(provider).isPlanToolCall?.(toolCall) ?? false;
+}
+
+function inferProviderFromId(
+  providerId: string | undefined,
+): AcpRuntimeProviderConfig | undefined {
+  const id = providerId?.trim();
+  if (!id) {
+    return undefined;
+  }
+  return {
+    id,
+    name: id,
+    command: id,
+    transport: "stdio",
+    protocol: "acp",
+  };
 }
 
 export { createClaudeAcpAdapter } from "./claude/index";
@@ -63,4 +290,19 @@ export { createOpenCodeAcpAdapter } from "./opencode/index";
 export { OPENCODE_ACP_SESSION_REQUEST_TIMEOUT_MS } from "./opencode/index";
 export { resolveAdapterPluginManifest } from "./plugin-loader";
 export { SUPPRESS_SESSION_UPDATE } from "./types";
-export type { AcpAgentAdapter, AcpAuthoritativeHistory, AcpCleanupContext, AcpHistoryContext, AcpLaunchContext, AcpLaunchSpec, AcpRequestTimeoutContext, AcpSessionUpdateProjection, AcpSessionUpdateProjectionContext, ProviderAdapterPluginManifest, ProviderCleanupPlan } from "./types";
+export type {
+  AcpAgentAdapter,
+  AcpCleanupContext,
+  AcpCompactionDetailsVisibility,
+  AcpCompactionSummary,
+  AcpCompactionSummaryContext,
+  AcpLaunchContext,
+  AcpLaunchSpec,
+  AcpPromptObservationContext,
+  AcpRequestTimeoutContext,
+  AcpSessionUpdateProjection,
+  AcpSessionUpdateProjectionContext,
+  AcpToolEvidenceContext,
+  ProviderAdapterPluginManifest,
+  ProviderCleanupPlan,
+} from "./types";

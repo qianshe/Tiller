@@ -1,4 +1,4 @@
-import type { FormEvent, MutableRefObject } from "react";
+import type { Dispatch, FormEvent, MutableRefObject, SetStateAction } from "react";
 import type {
   AcpAgentProvider,
   AgentPromptContent,
@@ -28,6 +28,11 @@ type CreateSessionContext = {
   rpcClientRef: RpcClientRef;
   pendingPromptRef: MutableRefObject<string | null>;
   pendingPromptContentRef: MutableRefObject<AgentPromptContent[] | undefined>;
+  newSessionPromptPendingScopesRef: MutableRefObject<Set<string>>;
+  restoreInitialPrompt: (
+    prompt: string,
+    content: AgentPromptContent[] | undefined,
+  ) => void;
   dispatch: DispatchToHelm;
   effectiveDraftAgentMode?: string;
   normalizeModelSelection: (model: string) => string | undefined;
@@ -39,11 +44,15 @@ type CreateSessionContext = {
 type ResumeStartContext = {
   rpcClientRef: RpcClientRef;
   resumeStartRequestsRef: MutableRefObject<Set<string>>;
+  setResumeStartRequestIds: Dispatch<SetStateAction<Set<string>>>;
   setResumeFeedback: (value: string) => void;
   dispatch: DispatchToHelm;
 };
 
-type StartResumeContext = Omit<ResumeStartContext, "resumeStartRequestsRef"> & {
+type StartResumeContext = Omit<
+  ResumeStartContext,
+  "resumeStartRequestsRef" | "setResumeStartRequestIds"
+> & {
   activeSessionId: string | null;
 };
 
@@ -92,6 +101,8 @@ export function createSession(
     rpcClientRef,
     pendingPromptRef,
     pendingPromptContentRef,
+    newSessionPromptPendingScopesRef,
+    restoreInitialPrompt,
     dispatch,
     effectiveDraftAgentMode,
     normalizeModelSelection,
@@ -119,14 +130,54 @@ export function createSession(
     identity.projectId,
   );
   const draft = agentModelOptions?.[cacheKey];
+  const promptScopeKey = draft?.logicalScopeKey ?? `${identity.cwd}:${identity.agentId}`;
+  if (initialPrompt && newSessionPromptPendingScopesRef.current.has(promptScopeKey)) {
+    return false;
+  }
+  if (initialPrompt && draft?.loading && draft.deckClientId) {
+    newSessionPromptPendingScopesRef.current.add(promptScopeKey);
+    pendingPromptRef.current = null;
+    pendingPromptContentRef.current = undefined;
+    void dispatch(client, "session/draft", {
+      deckClientId: draft.deckClientId,
+      projectId: identity.projectId,
+      cwd: identity.cwd,
+      agentId: identity.agentId,
+      agentMode: effectiveDraftAgentMode,
+      model: normalizeModelSelection(selectedModel),
+      reasoningEffort: selectedReasoningEffort,
+    })
+      .then((result) => {
+        const draftId = (result as { draftId?: unknown })?.draftId;
+        if (typeof draftId !== "string" || !draftId) {
+          throw new Error("ACP runtime draft did not return a draft id.");
+        }
+        return dispatch(client, "session/prompt", {
+          draftId,
+          text: initialPrompt,
+          content: initialContent,
+        });
+      })
+      .catch(() => restoreInitialPrompt(initialPrompt, initialContent))
+      .finally(() => {
+        newSessionPromptPendingScopesRef.current.delete(promptScopeKey);
+      });
+    navigateToView("sessions");
+    return true;
+  }
   if (initialPrompt && draft?.draftId) {
+    newSessionPromptPendingScopesRef.current.add(promptScopeKey);
     pendingPromptRef.current = null;
     pendingPromptContentRef.current = undefined;
     void dispatch(client, "session/prompt", {
       draftId: draft.draftId,
       text: initialPrompt,
       content: initialContent,
-    });
+    })
+      .catch(() => restoreInitialPrompt(initialPrompt, initialContent))
+      .finally(() => {
+        newSessionPromptPendingScopesRef.current.delete(promptScopeKey);
+      });
     navigateToView("sessions");
     return true;
   }
@@ -153,6 +204,7 @@ export function requestSessionResumeStart(
   const {
     rpcClientRef,
     resumeStartRequestsRef,
+    setResumeStartRequestIds,
     setResumeFeedback,
     dispatch,
   } = context;
@@ -163,9 +215,20 @@ export function requestSessionResumeStart(
   }
 
   resumeStartRequestsRef.current.add(sessionId);
+  setResumeStartRequestIds((current) => {
+    const next = new Set(current);
+    next.add(sessionId);
+    return next;
+  });
   setResumeFeedback(reason);
   void dispatch(client, "session/resume", { sessionId }).catch((error: unknown) => {
     resumeStartRequestsRef.current.delete(sessionId);
+    setResumeStartRequestIds((current) => {
+      if (!current.has(sessionId)) return current;
+      const next = new Set(current);
+      next.delete(sessionId);
+      return next;
+    });
     setResumeFeedback(error instanceof Error ? error.message : "ACP 会话恢复请求失败，请重试。");
   });
 }

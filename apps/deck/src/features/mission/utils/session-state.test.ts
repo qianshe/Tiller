@@ -25,6 +25,21 @@ test("restore gate allows active same-process sessions to continue chatting", ()
   assert.equal(gate.state, "ready");
 });
 
+test("restore gate ignores stale pending flags after same-process resume is authoritative", () => {
+  const gate = resolveSessionRestoreGate({
+    activeSession: sessionWithResume({
+      state: "resume-available",
+      mode: "same-process",
+      restoreMethod: "client-reconnect",
+    }),
+    activeSessionStatus: "idle",
+    resumeStartPending: true,
+  });
+
+  assert.equal(gate.canChat, true);
+  assert.equal(gate.state, "ready");
+});
+
 test("restore gate blocks historical sessions until ACP restore succeeds", () => {
   const gate = resolveSessionRestoreGate({
     activeSession: sessionWithResume({

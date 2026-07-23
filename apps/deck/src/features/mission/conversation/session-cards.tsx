@@ -195,6 +195,7 @@ export function SessionCard({
   onRename,
   onClear,
   onClose,
+  onCreateTask,
   onDismissCompletedPlan,
   restoreNotice,
   toolLoading,
@@ -206,6 +207,7 @@ export function SessionCard({
   showThinkingToggle = false,
   showThinking,
   onToggleThinking,
+  showCreateTaskAction,
   children,
 }: {
   session: SessionSummary;
@@ -216,6 +218,7 @@ export function SessionCard({
   onRename: (session: SessionSummary) => void;
   onClear: (session: SessionSummary) => void;
   onClose: (session: SessionSummary) => void;
+  onCreateTask?: (projectId: string) => void;
   onDismissCompletedPlan?: (sessionId: string, planKey: string) => void;
   restoreNotice?: SessionRestoreNotice;
   toolLoading?: MissionToolLoadingState;
@@ -227,6 +230,7 @@ export function SessionCard({
   showThinkingToggle?: boolean;
   showThinking?: boolean;
   onToggleThinking?: () => void;
+  showCreateTaskAction?: boolean;
   children: ReactNode;
 }) {
   const statusTone = resolveSessionStatusTone(session.status);
@@ -243,6 +247,7 @@ export function SessionCard({
     planKey: string;
   } | null>(null);
   const lastAutoFocusedPlanKeyRef = useRef<string | null>(null);
+  const showCreateTaskButton = Boolean(showCreateTaskAction && onCreateTask);
   const planKey = plan ? createAgentPlanDismissalKey(plan) : null;
   const visiblePlan =
     plan &&
@@ -290,6 +295,15 @@ export function SessionCard({
     }
     setDismissedTransientPlan({ sessionId: session.id, planKey });
   }, [onDismissCompletedPlan, plan, planKey, session.id]);
+
+  useEffect(() => {
+    if (plan && isAgentPlanComplete(plan) && onDismissCompletedPlan) {
+      const timer = setTimeout(() => {
+        onDismissCompletedPlan(session.id, createAgentPlanDismissalKey(plan));
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [plan, onDismissCompletedPlan, session.id]);
 
   useEffect(() => {
     if (
@@ -465,16 +479,30 @@ export function SessionCard({
             </div>
           ) : null}
         </div>
-        <button
-          className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
-          title="关闭此 session"
-          onClick={(event) => {
-            event.stopPropagation();
-            onClose(session);
-          }}
-        >
-          <Icon name="x" size={11} />
-        </button>
+        {showCreateTaskButton ? (
+          <button
+            className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-primary-soft/20 hover:text-primary"
+            title="当前项目下新建会话"
+            aria-label="当前项目下新建会话"
+            onClick={(event) => {
+              event.stopPropagation();
+              onCreateTask?.(session.projectId);
+            }}
+          >
+            <Icon name="plus" size={11} />
+          </button>
+        ) : (
+          <button
+            className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
+            title="关闭此 session"
+            onClick={(event) => {
+              event.stopPropagation();
+              onClose(session);
+            }}
+          >
+            <Icon name="x" size={11} />
+          </button>
+        )}
       </div>
       <div className="relative min-h-0 flex-1" data-session-scroll-frame={session.id}>
         <div
@@ -702,7 +730,15 @@ export function DraftSessionCard({
   );
 }
 
-export function SessionPreviewMessages({ session, restoring = false }: { session: SessionSummary; restoring?: boolean }) {
+export function SessionPreviewMessages({
+  session,
+  restoring = false,
+  historyLoading = false,
+}: {
+  session: SessionSummary;
+  restoring?: boolean;
+  historyLoading?: boolean;
+}) {
   const sessionTitle = session.title?.trim();
 
   if (restoring) {
@@ -719,6 +755,32 @@ export function SessionPreviewMessages({ session, restoring = false }: { session
             <p className="text-section font-semibold text-foreground">正在恢复任务</p>
             <p className="text-meta leading-5 text-muted-foreground">
               正在重连 {session.agentName} 并同步历史消息，恢复后会继续显示最新输出。
+            </p>
+          </div>
+          {sessionTitle ? (
+            <div className="mx-auto max-w-full truncate rounded-md border border-border-ghost bg-surface-sunken px-3 py-2 text-meta text-foreground">
+              {sessionTitle}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (historyLoading) {
+    return (
+      <div
+        className="flex min-h-full flex-1 items-center justify-center px-6 py-10 text-center"
+        data-session-preview-state="history-loading"
+      >
+        <div className="mx-auto grid max-w-sm gap-3">
+          <div className="mx-auto grid size-9 place-items-center rounded-full border border-primary/20 bg-primary-soft/10 text-primary">
+            <StatusDot tone="primary" pulse size={8} />
+          </div>
+          <div className="grid gap-1">
+            <p className="text-section font-semibold text-foreground">正在加载历史消息</p>
+            <p className="text-meta leading-5 text-muted-foreground">
+              正在同步此任务的时间线历史，加载后会按统一消息顺序显示。
             </p>
           </div>
           {sessionTitle ? (

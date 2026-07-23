@@ -15,6 +15,7 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 
 import { Button } from "./button";
+import { copyTextToClipboard } from "../utils/clipboard";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,8 @@ import { MermaidViewportController, type MermaidViewportState } from "./mermaid-
 const PHASE_LABEL_BOUNDARY = /(\S)(\[(?:🌳木|🔥火|🏔️土|⚔️金|💧水|🔁知)\])/gu;
 const ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY = /(\b[A-Za-z0-9`'"”’)}\]]+\.)(?=[\u4e00-\u9fff])/gu;
 const THINKING_PARAGRAPH_PREFIX = /^(?:Thinking|Thought|思考)\b[:：-]?/iu;
+const MARKDOWN_DELIMITER_CELL = /^:?-{3,}:?$/u;
+const MARKDOWN_DELIMITER_ONLY_LINE = /^[|:\-\s]+$/u;
 
 const markdownRemarkPlugins = [remarkGfm];
 const markdownRehypePlugins = [rehypeSanitize];
@@ -50,7 +53,14 @@ const MAX_HIGHLIGHT_CACHE_SIZE = 256;
 const markdownHighlightCache = new Map<string, MarkdownHighlight>();
 let mermaidRenderSequence = 0;
 
-const markdownComponents: Components = {
+function createMarkdownComponents({
+  renderMermaid = true,
+  plainCodeBlocks = false,
+}: {
+  renderMermaid?: boolean;
+  plainCodeBlocks?: boolean;
+} = {}): Components {
+  return {
   a({ children, href, ...props }) {
     const external = Boolean(href && /^(https?:)?\/\//i.test(href));
     return (
@@ -71,7 +81,7 @@ const markdownComponents: Components = {
     return (
       <h1
         {...props}
-        className={[className, "markdown-heading my-1.5 text-[15px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[14.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -83,7 +93,7 @@ const markdownComponents: Components = {
     return (
       <h2
         {...props}
-        className={[className, "markdown-heading my-1.5 text-[14px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[13.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -95,7 +105,7 @@ const markdownComponents: Components = {
     return (
       <h3
         {...props}
-        className={[className, "markdown-heading my-1 text-[13px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[12.5px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -107,7 +117,7 @@ const markdownComponents: Components = {
     return (
       <h4
         {...props}
-        className={[className, "markdown-heading my-1 text-[12.5px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[12px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -119,7 +129,7 @@ const markdownComponents: Components = {
     return (
       <h5
         {...props}
-        className={[className, "markdown-heading my-1 text-[12.5px] font-semibold leading-snug text-foreground"]
+        className={[className, "markdown-heading pb-2 text-[12px] font-semibold leading-snug text-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -131,7 +141,7 @@ const markdownComponents: Components = {
     return (
       <h6
         {...props}
-        className={[className, "markdown-heading my-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground"]
+        className={[className, "markdown-heading pb-2 text-[10.5px] font-semibold uppercase tracking-wide text-muted-foreground"]
           .filter(Boolean)
           .join(" ")}
       >
@@ -142,7 +152,7 @@ const markdownComponents: Components = {
   p({ children, className, node: _node, ...props }) {
     const paragraphClassName = [
       className,
-      "markdown-paragraph leading-[1.5] text-foreground",
+      "markdown-paragraph leading-[1.72] text-foreground",
       isThinkingParagraph(children) ? "markdown-paragraph-thinking italic text-muted-foreground" : null,
     ]
       .filter(Boolean)
@@ -155,21 +165,21 @@ const markdownComponents: Components = {
   },
   ul({ children, node: _node, ...props }) {
     return (
-      <ul {...props} className="my-1.5 list-disc space-y-0.5 pl-4 marker:text-primary">
+      <ul {...props} className="list-disc space-y-1 pl-4 marker:text-primary">
         {children}
       </ul>
     );
   },
   ol({ children, node: _node, ...props }) {
     return (
-      <ol {...props} className="my-1.5 list-decimal space-y-0.5 pl-4 marker:text-primary">
+      <ol {...props} className="list-decimal space-y-1 pl-4 marker:text-primary">
         {children}
       </ol>
     );
   },
   li({ children, node: _node, ...props }) {
     return (
-      <li {...props} className="pl-1 leading-[1.5] text-foreground [&>p]:inline">
+      <li {...props} className="pl-1 leading-[1.6] text-foreground [&>p]:inline">
         {children}
       </li>
     );
@@ -178,7 +188,7 @@ const markdownComponents: Components = {
     return (
       <blockquote
         {...props}
-        className="my-1.5 border-l-2 border-primary/50 pl-3 text-muted-foreground"
+        className="border-l-2 border-primary/50 pl-3 text-muted-foreground"
       >
         {children}
       </blockquote>
@@ -217,7 +227,7 @@ const markdownComponents: Components = {
     return (
       <th
         {...props}
-        className="markdown-table-head border-b border-border-ghost bg-surface-emphasis px-2.5 py-1.5 text-left text-[11px] font-semibold text-muted-foreground"
+        className="markdown-table-head border-b border-border-ghost bg-surface-emphasis px-2.5 py-1.5 text-left text-[10.5px] font-semibold text-muted-foreground"
       >
         {children}
       </th>
@@ -227,7 +237,7 @@ const markdownComponents: Components = {
     return (
       <td
         {...props}
-        className="markdown-table-cell border-t border-border-ghost px-2.5 py-1.5 align-top text-[12.5px] text-foreground"
+        className="markdown-table-cell border-t border-border-ghost px-2.5 py-1.5 align-top text-[12px] text-foreground"
       >
         {children}
       </td>
@@ -236,7 +246,7 @@ const markdownComponents: Components = {
   table({ children, node: _node, ...props }) {
     return (
       <div className="markdown-table-scroll max-w-full overflow-x-auto overflow-y-hidden rounded-md border border-border-ghost">
-        <table {...props} className="w-full min-w-max border-collapse text-left text-[12.5px]">
+        <table {...props} className="w-full min-w-max border-collapse text-left text-[12px]">
           {children}
         </table>
       </div>
@@ -245,29 +255,54 @@ const markdownComponents: Components = {
   pre({ children }) {
     const code = extractTextFromReactNode(children).replace(/\n$/, "");
     const language = findCodeLanguage(children);
-    if (language === MERMAID_LANGUAGE) {
+    if (renderMermaid && language === MERMAID_LANGUAGE) {
       return <MarkdownMermaidBlock code={code} />;
     }
 
     return (
-      <MarkdownCodeBlock code={code} language={language}>
+      <MarkdownCodeBlock code={code} language={language} plain={plainCodeBlocks}>
         {children}
       </MarkdownCodeBlock>
     );
   },
-};
+  };
+}
+
+const markdownComponents = createMarkdownComponents();
+const markdownComponentsWithoutMermaid = createMarkdownComponents({ renderMermaid: false });
+const markdownComponentsPlainCodeBlocks = createMarkdownComponents({ plainCodeBlocks: true });
+const markdownComponentsWithoutMermaidPlainCodeBlocks = createMarkdownComponents({
+  renderMermaid: false,
+  plainCodeBlocks: true,
+});
 
 export const MarkdownMessage = memo(function MarkdownMessage({
   text,
+  renderMermaid = true,
+  plainCodeBlocks = false,
+  repairMalformedTables = false,
 }: {
   text: string;
+  renderMermaid?: boolean;
+  plainCodeBlocks?: boolean;
+  repairMalformedTables?: boolean;
 }) {
-  const normalizedText = useMemo(() => normalizeMarkdownMessageText(text), [text]);
+  const normalizedText = useMemo(
+    () => normalizeMarkdownMessageText(text, { repairMalformedTables }),
+    [text, repairMalformedTables],
+  );
+  const components = plainCodeBlocks
+    ? renderMermaid
+      ? markdownComponentsPlainCodeBlocks
+      : markdownComponentsWithoutMermaidPlainCodeBlocks
+    : renderMermaid
+      ? markdownComponents
+      : markdownComponentsWithoutMermaid;
 
   return (
-    <div className="markdown-message space-y-1.5 text-[12.5px] leading-[1.5] text-foreground">
+    <div className="markdown-message space-y-4 text-[12px] leading-[1.5] text-foreground">
       <ReactMarkdown
-        components={markdownComponents}
+        components={components}
         remarkPlugins={markdownRemarkPlugins}
         rehypePlugins={markdownRehypePlugins}
       >
@@ -323,12 +358,85 @@ export async function resolveMarkdownCodeHighlight(
   return highlighted;
 }
 
-export function normalizeMarkdownMessageText(text: string) {
+export function normalizeMarkdownMessageText(
+  text: string,
+  { repairMalformedTables = false }: { repairMalformedTables?: boolean } = {},
+) {
+  const normalized = text
+    .replace(ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY, "$1\n\n")
+    .replace(PHASE_LABEL_BOUNDARY, "$1\n\n$2");
   return deferOpenMermaidFence(
-    text
-      .replace(ENGLISH_TO_CJK_PARAGRAPH_BOUNDARY, "$1\n\n")
-      .replace(PHASE_LABEL_BOUNDARY, "$1\n\n$2"),
+    repairMalformedTables
+      ? repairMalformedMarkdownTables(normalized)
+      : normalized,
   );
+}
+
+function repairMalformedMarkdownTables(text: string) {
+  const lines = text.split("\n");
+  let openFence: { marker: "`" | "~"; length: number } | null = null;
+
+  for (let index = 0; index < lines.length - 2; index += 1) {
+    const line = lines[index]?.replace(/\r$/, "") ?? "";
+
+    if (openFence) {
+      const closeMatch = CLOSE_MARKDOWN_FENCE_LINE.exec(line);
+      const closeMarker = closeMatch?.[1];
+      if (
+        closeMarker?.[0] === openFence.marker &&
+        closeMarker.length >= openFence.length
+      ) {
+        openFence = null;
+      }
+      continue;
+    }
+
+    const openMatch = OPEN_MARKDOWN_FENCE_LINE.exec(line);
+    const openMarker = openMatch?.[1];
+    if (openMarker) {
+      openFence = {
+        marker: openMarker[0] as "`" | "~",
+        length: openMarker.length,
+      };
+      continue;
+    }
+
+    const headerCells = splitMarkdownTableCells(line);
+    if (headerCells.length < 2 || headerCells.every((cell) => !cell)) {
+      continue;
+    }
+
+    const delimiterLine = lines[index + 1]?.replace(/\r$/, "") ?? "";
+    const dataLine = lines[index + 2]?.replace(/\r$/, "") ?? "";
+    const delimiterCells = splitMarkdownTableCells(delimiterLine);
+    const dataCells = splitMarkdownTableCells(dataLine);
+
+    if (
+      !MARKDOWN_DELIMITER_ONLY_LINE.test(delimiterLine.trim()) ||
+      delimiterCells.length === 0 ||
+      delimiterCells.length >= headerCells.length ||
+      !delimiterCells.every((cell) => MARKDOWN_DELIMITER_CELL.test(cell)) ||
+      dataCells.length !== headerCells.length
+    ) {
+      continue;
+    }
+
+    lines[index + 1] = `| ${Array.from({ length: headerCells.length }, () => "---").join(" | ")} |`;
+  }
+
+  return lines.join("\n");
+}
+
+function splitMarkdownTableCells(line: string) {
+  const trimmed = line.trim();
+  if (!trimmed.includes("|")) {
+    return [];
+  }
+  return trimmed
+    .replace(/^\|/u, "")
+    .replace(/\|$/u, "")
+    .split(/(?<!\\)\|/u)
+    .map((cell) => cell.trim());
 }
 
 function deferOpenMermaidFence(text: string) {
@@ -395,20 +503,28 @@ function MarkdownCodeBlock({
   children,
   code,
   language,
+  plain = false,
 }: {
   children: ReactNode;
   code: string;
   language?: string;
+  plain?: boolean;
 }) {
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
     "idle",
   );
   const [highlightedCode, setHighlightedCode] = useState<MarkdownHighlight | null>(
-    () => readCachedMarkdownCodeHighlight(code, language),
+    () => (plain ? null : readCachedMarkdownCodeHighlight(code, language)),
   );
 
   useEffect(() => {
     let mounted = true;
+    if (plain) {
+      setHighlightedCode(null);
+      return () => {
+        mounted = false;
+      };
+    }
     const cached = readCachedMarkdownCodeHighlight(code, language);
 
     if (!code.trim()) {
@@ -442,11 +558,18 @@ function MarkdownCodeBlock({
     return () => {
       mounted = false;
     };
-  }, [code, language]);
+  }, [code, language, plain]);
+
+  const codeBodyClassName = plain
+    ? "overflow-x-hidden whitespace-pre-wrap break-words p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)] [overflow-wrap:anywhere]"
+    : "overflow-x-auto p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)]";
 
   async function copyCode() {
     try {
-      await navigator.clipboard.writeText(code);
+      await copyTextToClipboard(
+        code,
+        typeof navigator === "undefined" ? undefined : navigator.clipboard,
+      );
       setCopyState("copied");
       window.setTimeout(() => setCopyState("idle"), 1400);
     } catch {
@@ -456,7 +579,7 @@ function MarkdownCodeBlock({
   }
 
   return (
-    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[var(--markdown-code-bg)] text-[12.5px] text-[var(--markdown-code-fg)] shadow-sm">
+    <div className="markdown-code-block overflow-hidden rounded-lg border border-border-ghost bg-[var(--markdown-code-bg)] text-[12px] text-[var(--markdown-code-fg)] shadow-sm">
       <div className="not-prose flex items-center justify-between markdown-code-toolbar border-b border-border-ghost bg-[var(--markdown-code-head)] px-3 py-1.5 text-xs text-muted-foreground">
         <span>{highlightedCode?.language ?? language ?? "text"}</span>
         <button
@@ -474,14 +597,14 @@ function MarkdownCodeBlock({
         </button>
       </div>
       {highlightedCode ? (
-        <pre className="overflow-x-auto p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)]">
+        <pre className={codeBodyClassName}>
           <code
             className={`hljs !bg-transparent language-${highlightedCode.language ?? language ?? "text"}`}
             dangerouslySetInnerHTML={{ __html: highlightedCode.html }}
           />
         </pre>
       ) : (
-        <pre className="overflow-x-auto p-2.5 text-[12px] leading-5 text-[var(--markdown-code-fg)]">{children}</pre>
+        <pre className={codeBodyClassName}>{children}</pre>
       )}
     </div>
   );
@@ -596,6 +719,8 @@ function MermaidFullscreenViewer({
   const [viewportState, setViewportState] = useState<MermaidViewportState>(() =>
     controllerRef.current.getState(),
   );
+  const canZoomIn = controllerRef.current.canZoomIn();
+  const canZoomOut = controllerRef.current.canZoomOut();
 
   useEffect(() => {
     if (open) {
@@ -744,11 +869,23 @@ function MermaidFullscreenViewer({
             <DialogDescription>单指拖动平移，双指或滚轮缩放。</DialogDescription>
           </div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <Button type="button" variant="secondary" size="sm" onClick={zoomOut}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={zoomOut}
+              disabled={!canZoomOut}
+            >
               缩小
             </Button>
             <span className="min-w-12 text-center">{Math.round(viewportState.scale * 100)}%</span>
-            <Button type="button" variant="secondary" size="sm" onClick={zoomIn}>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={zoomIn}
+              disabled={!canZoomIn}
+            >
               放大
             </Button>
             <Button type="button" variant="outline" size="sm" onClick={resetViewport}>

@@ -1,19 +1,17 @@
 import type { AcpAgentProvider, SessionResumeInfo, SessionSummary, WorktreeSummary } from "@tiller/shared";
 import { resolveProviderById } from "@tiller/agent-registry";
 import type { AcpProtocolLoggingOptions, SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { HelmHandlerContext } from "../../handlers/context";
+import type { NotificationRaisedParams } from "@tiller/sync-protocol";
 import type { StoredSessionRuntimeDescriptor } from "../../sessions/facade";
 import type { SessionRecord } from "./services";
 import type { ProviderLifecyclePort } from "../provider-lifecycle";
-import type { createProviderHistoryService } from "../provider-history/service";
-import { createRestoreReplayBuffer, hasRestoreReplayContent } from "../replay/event-buffer";
 import { buildSessionResumeInfo, markSessionResumeUnavailable } from "../resume-info";
-import { resolveProviderHistorySnapshot } from "../provider-history/source";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "./config-options";
 import type { TillerLogger } from "../../logging/logger";
+import { createSessionBootstrapEvents } from "./event/bootstrap";
 
 type ResumePreconditionInput = {
   agent: AcpAgentProvider | undefined;
@@ -27,20 +25,13 @@ type ResumePreconditionInput = {
 type SessionResumeServiceOptions = {
   sessions: Map<string, SessionRecord>;
   sessionStore: {
-    list(): SessionSummary[];
+    get(sessionId: string): SessionSummary | undefined;
     upsert(summary: SessionSummary): void;
   };
-  sessionMessageStore: {
-    list(sessionId: string): unknown[];
-    replace(sessionId: string, messages: unknown[]): void;
-  };
-  sessionArtifactStore: { remove(sessionId: string): void };
   sessionRuntimeStore: { get(sessionId: string): StoredSessionRuntimeDescriptor | null | undefined };
   providerLifecycle: ProviderLifecyclePort;
-  providerHistory: ReturnType<typeof createProviderHistoryService>;
   getAgents(): AcpAgentProvider[];
   getProjects(): Array<{ id: string; path?: string }>;
-  createHandlerContext(): HelmHandlerContext;
   resolveStoredSessionWorktree(summary: SessionSummary): WorktreeSummary | undefined;
   buildResumeInfo(summary: SessionSummary, agent: AcpAgentProvider | undefined): SessionResumeInfo;
   hydrateSessionSummary(summary: SessionSummary): SessionSummary;
@@ -54,11 +45,9 @@ type SessionResumeServiceOptions = {
   logger?: Pick<TillerLogger, "debug" | "error">;
   logInfo(message: string): void;
   logError(message: string): void;
+  notify?: (notification: NotificationRaisedParams) => void;
   protocolLogging?: AcpProtocolLoggingOptions;
 };
-
-const RESTORE_REPLAY_SETTLE_MS = 100;
-const RESTORE_REPLAY_MAX_WAIT_MS = 2_000;
 
 export function createSessionResumeService(options: SessionResumeServiceOptions) {
   async function startSessionResume(
@@ -67,7 +56,6 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
   ) {
     const activeRecord = options.sessions.get(sessionId);
     if (activeRecord && !resumeOptions.forceReloadActive) {
-      await options.providerHistory.refreshAuthoritativeSessionHistory(sessionId);
       const resume = options.buildResumeInfo(activeRecord.summary, activeRecord.agent);
       logResumeInfo(options, "runtime.session_reconnect.active", {
         sessionId,
@@ -80,9 +68,10 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       };
     }
 
-    const summary = activeRecord?.summary ?? options.sessionStore.list().find((item) => item.id === sessionId);
+    const summary = activeRecord?.summary ?? options.sessionStore.get(sessionId);
     if (!summary) {
       const now = new Date().toISOString();
+      notifyResumeFailure(options, sessionId, "Session not found.", "SESSION_RESUME_UNAVAILABLE");
       return {
         ok: false,
         resume: {
@@ -122,6 +111,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       cwd: summary.cwd ?? options.getProjects().find((item) => item.id === summary.projectId)?.path,
     });
     if (unavailableReason) {
+      notifyResumeFailure(options, sessionId, unavailableReason, "SESSION_RESUME_UNAVAILABLE");
       return {
         ok: false,
         resume: markSessionResumeUnavailable(resume, unavailableReason),
@@ -139,17 +129,6 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         runtimeSessionId: restoreRuntimeSessionId,
         method: restoreMethod,
       });
-      const handlerContext = options.createHandlerContext();
-      const restoreReplayBuffer = createRestoreReplayBuffer(
-        sessionId,
-        handlerContext,
-        {
-          runtimeSessionId: restoreRuntimeSessionId,
-          providerId: restoreAgent.id,
-        },
-      );
-      let lastRestoreReplayEventAt = 0;
-      logResumeInfo(options, "runtime.restore_replay.opened", { sessionId });
       if (activeRecord && resumeOptions.forceReloadActive) {
         // Drop the existing ACP session reference first; otherwise the shared
         // connection reuses it and never sends session/load.
@@ -159,83 +138,19 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         sessionId,
         worktree: restoreWorktree,
         agent: restoreAgent,
-        sessionConfig: {
-          model: summary.model,
-          reasoningEffort: summary.reasoningEffort,
-        },
         restore: {
           runtimeSessionId: restoreRuntimeSessionId,
           strategy: restoreMethod === "session/load" ? "load" : "resume",
-          replayBaselineMessages: options.sessionMessageStore.list(sessionId),
+          replayBaselineMessages: [],
         },
         protocolLogging: options.protocolLogging,
         onEvent: (event) => options.handleRuntimeEvent(sessionId, event),
-        onRestoreReplayEvent: (event) => {
-          lastRestoreReplayEventAt = Date.now();
-          restoreReplayBuffer.add(event);
-        },
+        onRestoreReplayEvent: () => undefined,
         onConnectionLifecycleEvent: options.logConnectionLifecycle,
       });
-      await waitForRestoreReplayToSettle(() => lastRestoreReplayEventAt);
-      const replaySnapshot = restoreReplayBuffer.snapshot();
-      options.providerHistory.recordSessionPlan?.(sessionId, replaySnapshot.plan);
-
-      // Apply replay tail patch instead of unconditional clear
-      const { classifyReplayCompleteness } = await import("./replay-completeness");
-      const { applyReplayTailPatch } = await import("./replay-tail-patch");
-
-      const replayCompleteness = classifyReplayCompleteness({
-        restoreMethod,
-        replayMessages: replaySnapshot.messages,
-        providerId: restoreAgent.id,
-      });
-
-      const localMessages = options.sessionMessageStore.list(sessionId) as import("@tiller/shared").AgentMessage[];
-      const localTimeline = handlerContext.sessionTimelineStore?.list?.(sessionId) ?? [];
-      const shouldApplyReplayTailPatch = restoreMethod === "session/load" &&
-        replayCompleteness === "compacted" &&
-        replaySnapshot.messages.length > 0;
-
-      if (replaySnapshot.toolCalls.length || replaySnapshot.outputs.length || replaySnapshot.diffs.length) {
-        options.sessionArtifactStore.remove(sessionId);
-      }
-      const replayCounts = restoreReplayBuffer.flush();
-      if (hasRestoreReplayContent(replayCounts)) {
-        logResumeInfo(options, "runtime.restore_replay.completed", {
-          sessionId,
-          ...replayCounts,
-        });
-      }
-      if (shouldApplyReplayTailPatch) {
-        const replayTimeline = handlerContext.sessionTimelineStore?.list?.(sessionId) ?? [];
-        const patchResult = applyReplayTailPatch({
-          localMessages,
-          localTimeline,
-          replayMessages: replaySnapshot.messages,
-          replayTimeline,
-          replayCompleteness,
-        });
-        options.sessionMessageStore.replace(sessionId, patchResult.nextMessages);
-        handlerContext.sessionTimelineStore?.replace?.(sessionId, patchResult.nextTimeline);
-      }
-      const historySnapshot = await resolveProviderHistorySnapshot([
-        {
-          source: "acp-session-load",
-          load: async () => (options.providerHistory.hasHistoryContent(replaySnapshot) ? replaySnapshot : null),
-        },
-      ]);
-      if (historySnapshot?.source === "acp-session-load") {
-        logResumeInfo(options, "runtime.history_cache.loaded", {
-          source: "acp-session-load",
-          sessionId,
-          messages: historySnapshot.messages.length,
-          toolCalls: historySnapshot.toolCalls.length,
-          outputs: historySnapshot.outputs.length,
-          diffs: historySnapshot.diffs.length,
-          planEntries: historySnapshot.plan?.entries.length ?? 0,
-        });
-      }
-      const restoredModel = summary.model ?? runtime.sessionConfigState?.model;
+      const restoredRuntimeModel =
+        runtime.sessionConfigState?.model ?? runtime.sessionModelState?.currentModelId;
+      const restoredModel = restoredRuntimeModel ?? summary.model;
       const resolvedRestoredConfigOptions = resolveConfigOptionsForSelection({
         incomingOptions: runtime.sessionConfigOptions,
         previousOptions: summary.configOptions,
@@ -248,7 +163,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         modelOptions: runtime.sessionModelState?.options ?? summary.modelOptions,
         configOptions: restoredConfigOptions,
         reasoningEffort: resolveConfigReasoningEffortForOptions(
-          summary.reasoningEffort ?? runtime.sessionConfigState?.reasoningEffort,
+          runtime.sessionConfigState?.reasoningEffort ?? summary.reasoningEffort,
           resolvedRestoredConfigOptions,
         ),
         runtimeSessionId: runtime.runtimeSessionId,
@@ -258,6 +173,9 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       options.sessions.set(sessionId, { summary: restoredSummary, agent: restoreAgent, worktree: restoreWorktree, runtime });
       options.sessionStore.upsert(restoredSummary);
       options.persistRuntimeDescriptor(restoredSummary, restoreAgent, runtime.sessionCapabilities);
+      for (const event of createSessionBootstrapEvents(restoredSummary)) {
+        options.handleRuntimeEvent(sessionId, event);
+      }
       logResumeInfo(options, "runtime.session_restore.completed", {
         sessionId,
         runtimeSessionId: runtime.runtimeSessionId,
@@ -266,6 +184,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
       return {
         ok: true,
         resume: options.buildResumeInfo(restoredSummary, restoreAgent),
+        session: restoredSummary,
         message: `ACP ${restoreMethod} completed for this session.`,
       };
     } catch (error) {
@@ -277,6 +196,7 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         providerId: restoreAgent.id,
         errorMessage,
       });
+      notifyResumeFailure(options, sessionId, errorMessage, "ACP_SESSION_RESTORE_FAILED");
       return {
         ok: false,
         resume: {
@@ -293,25 +213,19 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
   return { startSessionResume };
 }
 
-async function waitForRestoreReplayToSettle(getLastEventAt: () => number) {
-  const startedAt = Date.now();
-  while (true) {
-    const now = Date.now();
-    const lastEventAt = getLastEventAt();
-    const quietFor = lastEventAt ? now - lastEventAt : now - startedAt;
-    const elapsed = now - startedAt;
-    if (quietFor >= RESTORE_REPLAY_SETTLE_MS || elapsed >= RESTORE_REPLAY_MAX_WAIT_MS) {
-      return;
-    }
-    await sleep(Math.min(
-      RESTORE_REPLAY_SETTLE_MS - quietFor,
-      RESTORE_REPLAY_MAX_WAIT_MS - elapsed,
-    ));
-  }
-}
-
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, Math.max(0, ms)));
+function notifyResumeFailure(
+  options: SessionResumeServiceOptions,
+  sessionId: string,
+  message: string,
+  code: string,
+) {
+  options.notify?.({
+    kind: "error",
+    source: "runtime",
+    code,
+    sessionId,
+    message,
+  });
 }
 
 function logResumeInfo(

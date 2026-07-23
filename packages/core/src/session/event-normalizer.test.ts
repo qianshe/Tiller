@@ -27,10 +27,11 @@ test("runtime generated message ids are detected", () => {
   assert.equal(isRuntimeGeneratedMessageId("provider-message-1"), false);
 });
 
-test("broadcast tool call preserves persisted metadata while applying live fields", () => {
+test("broadcast tool call keeps the first mapper-assigned kind while accepting later details", () => {
   const merged = resolveBroadcastToolCall(
     {
       id: "tool-1",
+      kind: "mcp",
       title: "New title",
       status: "completed",
       updatedAt: "2026-05-24T00:00:02.000Z",
@@ -38,17 +39,65 @@ test("broadcast tool call preserves persisted metadata while applying live field
     },
     {
       id: "tool-1",
-      title: "Persisted title",
+      kind: "tool",
+      title: "Tool call tool-1",
       status: "running",
       updatedAt: "2026-05-24T00:00:01.000Z",
       input: { command: "pnpm test" },
     },
   );
 
-  assert.equal(merged.title, "Persisted title");
+  assert.equal(merged.kind, "tool");
+  assert.equal(merged.title, "New title");
   assert.equal(merged.status, "completed");
   assert.equal(merged.output, "done");
   assert.deepEqual(merged.input, { command: "pnpm test" });
+});
+
+test("broadcast tool call keeps persisted informative title when live title is fallback", () => {
+  const merged = resolveBroadcastToolCall(
+    {
+      id: "tool-1",
+      kind: "tool",
+      title: "Tool call tool-1",
+      status: "completed",
+      updatedAt: "2026-05-24T00:00:02.000Z",
+    },
+    {
+      id: "tool-1",
+      kind: "shell",
+      title: "grep README",
+      status: "running",
+      updatedAt: "2026-05-24T00:00:01.000Z",
+    },
+  );
+
+  assert.equal(merged.kind, "shell");
+  assert.equal(merged.title, "grep README");
+});
+
+test("broadcast tool call does not reclassify a mapped shell call from a later update", () => {
+  const merged = resolveBroadcastToolCall(
+    {
+      id: "tool-find",
+      kind: "search",
+      title: "Find `**/AGENTS.md`",
+      status: "completed",
+      updatedAt: "2026-07-07T14:42:02.458Z",
+      input: "{\"pattern\":\"**/AGENTS.md\"}",
+    },
+    {
+      id: "tool-find",
+      kind: "shell",
+      title: "Find",
+      status: "running",
+      updatedAt: "2026-07-07T14:42:00.952Z",
+      input: "{}",
+    },
+  );
+
+  assert.equal(merged.kind, "shell");
+  assert.equal(merged.title, "Find `**/AGENTS.md`");
 });
 
 test("formatLogValue compacts strings and JSON values", () => {

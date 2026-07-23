@@ -9,7 +9,10 @@ import type {
   AvailableCommand,
   CommandChunk,
   FileDiffSummary,
+  PermissionDecision,
   PermissionRequest,
+  SessionCompactionPhase,
+  SessionCompactionSource,
   SessionReasoningEffort,
   SessionStatus,
   WorktreeSummary,
@@ -24,6 +27,11 @@ export type ProviderCleanupResult =
   | { kind: "remote-closed"; providerId: string; message: string }
   | { kind: "remote-close-failed"; providerId: string; message: string };
 
+export type RuntimeEventOrigin = {
+  scope: "subagent";
+  parentToolCallId: string;
+};
+
 export type SessionRuntimeEvent =
   | {
       type: "status";
@@ -33,14 +41,29 @@ export type SessionRuntimeEvent =
   | {
       type: "message";
       message: AgentMessage;
+      origin?: RuntimeEventOrigin;
+    }
+  | {
+      type: "compaction";
+      phase: SessionCompactionPhase;
+      source: SessionCompactionSource;
+      timestamp: string;
+      summaryText?: string;
+      messageId?: string;
     }
   | {
       type: "permission-request";
       request: PermissionRequest;
     }
   | {
+      type: "permission-response";
+      requestId: string;
+      decision: PermissionDecision;
+    }
+  | {
       type: "tool-call";
       toolCall: AgentToolCall;
+      origin?: RuntimeEventOrigin;
     }
   | {
       type: "plan-update";
@@ -50,6 +73,7 @@ export type SessionRuntimeEvent =
       type: "command-output";
       chunk: CommandChunk;
       toolCall?: AgentToolCall;
+      origin?: RuntimeEventOrigin;
     }
   | {
       type: "diff-update";
@@ -69,10 +93,32 @@ export type SessionRuntimeEvent =
       commands: AvailableCommand[];
     }
   | {
+      type: "mode-update";
+      agentMode: string;
+    }
+  | {
+      type: "session-info";
+      title?: string | null;
+      updatedAt?: string | null;
+    }
+  | {
+      type: "usage-update";
+      usage: {
+        used: number;
+        size: number;
+        cost?: { amount: number; currency: string } | null;
+      };
+    }
+  | {
       type: "error";
       message: string;
       code?: string;
     };
+
+export type MappedSessionRuntimeEvents = {
+  sessionId: string;
+  events: readonly SessionRuntimeEvent[];
+};
 
 export type AcpSessionRestoreStrategy = "load" | "resume";
 

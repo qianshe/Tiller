@@ -6,6 +6,7 @@ const TOOL_CALL_TONES: Record<string, ToolCallTone> = {
   MCP: { className: "tool-call-mcp", icon: "◇" },
   Shell: { className: "tool-call-shell", icon: "⌁" },
   Read: { className: "tool-call-read", icon: "◫" },
+  Diagnostics: { className: "tool-call-read", icon: "!" },
   Write: { className: "tool-call-write", icon: "✎" },
   Search: { className: "tool-call-mcp", icon: "⌕" },
   Fetch: { className: "tool-call-mcp", icon: "↧" },
@@ -22,6 +23,7 @@ const KIND_LABELS: Record<AgentToolCall["kind"], keyof typeof TOOL_CALL_TONES> =
   mcp: "MCP",
   skill: "Skill",
   read: "Read",
+  diagnostics: "Diagnostics",
   write: "Write",
   search: "Search",
   shell: "Shell",
@@ -32,36 +34,6 @@ const KIND_LABELS: Record<AgentToolCall["kind"], keyof typeof TOOL_CALL_TONES> =
   tool: "Tool",
   unknown: "Tool",
 };
-
-const KNOWN_MCP_ROUTER_TOOLS = [
-  "activate_project",
-  "check_onboarding_performed",
-  "list_dir",
-  "find_file",
-  "read_file",
-  "read_memory",
-  "write_memory",
-  "search_context",
-  "search_for_pattern",
-  "find_symbol",
-  "find_referencing_symbols",
-  "get_symbols_overview",
-  "edit_file",
-  "replace_content",
-  "replace_symbol_body",
-  "insert_before_symbol",
-  "insert_after_symbol",
-  "rename_symbol",
-  "safe_delete_symbol",
-  "tavily_",
-  "resolve_library_id",
-  "get_library_docs",
-  "ask_question",
-  "read_wiki_",
-  "zhi",
-  "ji",
-  "tu",
-];
 
 const BUILT_IN_TOOL_KEYWORDS = [
   "apply_patch",
@@ -85,9 +57,21 @@ export function resolveToolCallTone(
 }
 
 function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
-  const normalized = title.toLowerCase();
+  const normalizedTitle = title.trim();
+  const normalized = normalizedTitle.toLowerCase();
   if (kind === "subagent") {
     return "Subagent";
+  }
+  // Provider completion snapshots can fall back to the generic `tool` kind
+  // while retaining the descriptive Diagnostics title. Keep the visible
+  // category anchored to that explicit title instead of regressing to Tool.
+  const hasWeakKind = kind === "tool" || kind === "unknown" || kind === "read";
+  if (hasWeakKind && /^diagnostics(?:\s*:|\s+|$)/iu.test(normalizedTitle)) {
+    return "Diagnostics";
+  }
+  const labelFromKind = KIND_LABELS[kind];
+  if (labelFromKind && labelFromKind !== "Tool") {
+    return labelFromKind;
   }
   if (
     /\b(skill|execute_skill|load_skill)\b|[\\/](skills?|plugins)[\\/].*skill\.md|skill\.md/iu.test(
@@ -97,17 +81,11 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
     return "Skill";
   }
   if (
-    /(^|[\s:/_-])mcp([\s:/_-]|$)|mcp_router|mcp-router|mcp__[a-z0-9_-]+/iu.test(
+    /(^|[\s:/_-])mcp([\s:/_-]|$)|mcp__[a-z0-9_-]+/iu.test(
       title,
-    ) ||
-    isNamespacedMcpToolTitle(normalized) ||
-    isKnownMcpRouterTool(normalized)
+    ) || isNamespacedMcpToolTitle(normalized)
   ) {
     return "MCP";
-  }
-  const labelFromKind = KIND_LABELS[kind];
-  if (labelFromKind && labelFromKind !== "Tool") {
-    return labelFromKind;
   }
   if (isShellLikeToolTitle(kind, normalized)) {
     return "Shell";
@@ -119,7 +97,7 @@ function resolveToolCallLabel(kind: AgentToolCall["kind"], title: string) {
 }
 
 function isNamespacedMcpToolTitle(normalizedTitle: string) {
-  return /^(?:tool:\s*)?[a-z0-9_-]+\/[a-z0-9_-]+(?:\b|$)/u.test(
+  return /^(?:tool:\s*)?[a-z0-9_-]+\/[a-z0-9_-]+$/u.test(
     normalizedTitle.trim(),
   );
 }
@@ -136,12 +114,5 @@ function isShellLikeToolTitle(kind: AgentToolCall["kind"], normalizedTitle: stri
 function isBuiltInTool(normalizedTitle: string) {
   return BUILT_IN_TOOL_KEYWORDS.some((keyword) =>
     normalizedTitle.includes(keyword),
-  );
-}
-
-function isKnownMcpRouterTool(normalizedTitle: string) {
-  return KNOWN_MCP_ROUTER_TOOLS.some(
-    (toolName) =>
-      normalizedTitle === toolName || normalizedTitle.startsWith(toolName),
   );
 }

@@ -6,6 +6,12 @@ import {
   selectMissionDisplayTab,
 } from "../utils/session-render-state";
 import {
+  deriveHistoricalActivityFromTimeline,
+  mergeHistoricalAndLiveOutputs,
+  mergeHistoricalAndLiveToolCalls,
+} from "../utils/timeline-activity";
+import {
+  isSessionConversationLoaded,
   isSessionExecutionPending,
   resolveSessionRestoreGate,
 } from "../utils/session-state";
@@ -21,9 +27,12 @@ export function buildMissionWorktreeModel(input: any) {
     selectedCwd,
     selectedAgentId,
     activeSession,
+    composerSession,
     diffs = {},
     outputs = {},
     toolCalls = {},
+    sessionTimeline = {},
+    messageHistoryState = {},
     statuses = {},
     copy,
     selectedMissionDisplayTabId,
@@ -40,44 +49,81 @@ export function buildMissionWorktreeModel(input: any) {
     missionProjects,
     worktrees,
     resumeStartRequestsRef,
+    resumeStartRequestIds,
     draftModelLoading,
   } = input;
+  const effectiveComposerSession = composerSession ?? activeSession;
+  const effectiveComposerSessionId = effectiveComposerSession?.id ?? activeSessionId;
   const effectiveProjectId = selectedProjectId || missionProjects[0]?.id;
   const effectiveWorktreeId = selectedCwd || selectedWorktree?.path;
   const effectiveAgentId = selectedAgentId;
   const activeSessionStatus = activeSession
     ? (statuses[activeSession.id] ?? activeSession.status)
     : "idle";
+  const composerSessionStatus = effectiveComposerSession
+    ? (statuses[effectiveComposerSession.id] ?? effectiveComposerSession.status)
+    : "idle";
   const activeSessionRestoreGate = resolveSessionRestoreGate({
     activeSession,
     activeSessionStatus,
     resumeStartPending: Boolean(
-      activeSession && resumeStartRequestsRef?.current?.has(activeSession.id),
+      activeSession && (
+        resumeStartRequestIds?.has(activeSession.id) ||
+        resumeStartRequestsRef?.current?.has(activeSession.id)
+      ),
     ),
   });
-  const composerModelLoading = Boolean(
-    draftModelLoading || (activeSession && !activeSessionRestoreGate.canChat),
-  );
+  const composerSessionRestoreGate = resolveSessionRestoreGate({
+    activeSession: effectiveComposerSession,
+    activeSessionStatus: composerSessionStatus,
+    resumeStartPending: Boolean(
+      effectiveComposerSession &&
+        (resumeStartRequestIds?.has(effectiveComposerSession.id) ||
+          resumeStartRequestsRef?.current?.has(effectiveComposerSession.id)),
+    ),
+  });
+  const composerModelLoading = Boolean(draftModelLoading);
+  const composerConversationLoaded = !effectiveComposerSessionId ||
+    isSessionConversationLoaded(
+      effectiveComposerSessionId,
+      messageHistoryState,
+      sessionTimeline,
+    );
+  const composerSessionRestoring =
+    composerSessionRestoreGate.state === "checking" ||
+    composerSessionRestoreGate.state === "restoring";
   const canSend = Boolean(
-    activeSessionRestoreGate.canChat &&
-    activeSessionStatus !== "starting" &&
+    composerSessionRestoreGate.canChat &&
+    composerConversationLoaded &&
+    composerSessionStatus !== "starting" &&
     (prompt.trim() || promptImages.length) &&
     socketRef.current &&
-    (activeSessionId ||
+    (effectiveComposerSessionId ||
       (effectiveProjectId && effectiveWorktreeId && effectiveAgentId)) &&
     (!composerModelLoading) &&
     (!promptImages.length ||
-      !activeSession ||
-      activeSession.imageInput !== false),
+      !effectiveComposerSession ||
+      effectiveComposerSession.imageInput !== false),
   );
   const activeMissionHelm =
     missionHelms.find((helm: any) => helm.id === effectiveMissionHelmId) ??
     activeHelm;
   const activeMissionHelmProjectCount = missionProjects.length;
   const activeDiffs = activeSession ? (diffs[activeSession.id] ?? []) : [];
-  const activeOutputs = activeSession ? (outputs[activeSession.id] ?? []) : [];
+  const activeTimelineActivity = activeSession
+    ? deriveHistoricalActivityFromTimeline(sessionTimeline[activeSession.id])
+    : { outputs: [], toolCalls: [] };
+  const activeOutputs = activeSession
+    ? mergeHistoricalAndLiveOutputs(
+      activeTimelineActivity.outputs,
+      outputs[activeSession.id] ?? [],
+    )
+    : [];
   const activeToolCalls = activeSession
-    ? (toolCalls[activeSession.id] ?? [])
+    ? mergeHistoricalAndLiveToolCalls(
+      activeTimelineActivity.toolCalls,
+      toolCalls[activeSession.id] ?? [],
+    )
     : [];
   const pendingToolActivity =
     activeSession && isSessionExecutionPending(activeSessionStatus)
@@ -94,7 +140,10 @@ export function buildMissionWorktreeModel(input: any) {
   const missionDiffCount = activeDiffs.length;
   const missionLogCount = activeToolCalls.length || activeOutputs.length;
   const missionStatusLabel = activeSession
-    ? copy.status[statuses[activeSession.id] ?? activeSession.status]
+    ? activeSessionRestoreGate.state === "checking" ||
+      activeSessionRestoreGate.state === "restoring"
+      ? "恢复中"
+      : copy.status[statuses[activeSession.id] ?? activeSession.status]
     : "待创建";
   const missionDisplayTabs = buildMissionDisplayTabs(
     missionDiffCount,
@@ -160,17 +209,19 @@ export function buildMissionWorktreeModel(input: any) {
     : [];
   const visibleProjectFiles = [] as ProjectFileSummary[];
   const sessionExecutionPending = Boolean(
-    activeSession && isSessionExecutionPending(activeSessionStatus),
+    effectiveComposerSession && isSessionExecutionPending(composerSessionStatus),
   );
 
   return {
     canSend,
     activeSessionRestoreGate,
+    composerSessionRestoreGate,
     activeMissionHelm,
     activeDiffs,
     activeOutputs,
     activeToolCalls,
     activeSessionStatus,
+    composerSessionStatus,
     pendingToolActivity,
     missionActivityLoading,
     missionDiffCount,
@@ -191,6 +242,8 @@ export function buildMissionWorktreeModel(input: any) {
     visibleProjectFiles,
     sessionExecutionPending,
     composerModelLoading,
+    composerSessionRestoring,
+    composerConversationLoaded,
   };
 }
 

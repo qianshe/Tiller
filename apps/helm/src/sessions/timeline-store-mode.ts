@@ -4,7 +4,13 @@ import {
   type SessionTimelineBlockMode,
   type SessionTimelineStore,
 } from "@tiller/persistence";
-import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionTimelineBatch,
+  SessionTimelineEntry,
+  SessionUpdateRecord,
+} from "@tiller/shared";
 
 export type TimelineStoreModeOptions = {
   sqlitePath: string;
@@ -65,24 +71,42 @@ function createDualTimelineStore(options: DualTimelineStoreOptions): ClosableTim
   }
 
   return {
-    append(sessionId: string, entry: SessionTimelineEntry) {
-      const row = options.rowStore.append(sessionId, entry);
-      const block = options.blockStore.append(sessionId, entry);
-      return readStore === options.blockStore ? block : row;
-    },
     upsertMessage(sessionId: string, message: AgentMessage) {
-      const row = options.rowStore.upsertMessage?.(sessionId, message);
-      const block = options.blockStore.upsertMessage?.(sessionId, message);
+      if (!options.rowStore.upsertMessage || !options.blockStore.upsertMessage) {
+        return undefined;
+      }
+      const row = options.rowStore.upsertMessage(sessionId, message);
+      const block = options.blockStore.upsertMessage(sessionId, message);
       return readStore === options.blockStore ? block : row;
     },
     upsertToolCall(sessionId: string, toolCall: AgentToolCall) {
-      const row = options.rowStore.upsertToolCall?.(sessionId, toolCall);
-      const block = options.blockStore.upsertToolCall?.(sessionId, toolCall);
+      if (!options.rowStore.upsertToolCall || !options.blockStore.upsertToolCall) {
+        return undefined;
+      }
+      const row = options.rowStore.upsertToolCall(sessionId, toolCall);
+      const block = options.blockStore.upsertToolCall(sessionId, toolCall);
       return readStore === options.blockStore ? block : row;
     },
     replace(sessionId: string, entries: SessionTimelineEntry[]) {
       const row = options.rowStore.replace(sessionId, entries);
       const block = options.blockStore.replace(sessionId, entries);
+      return readStore === options.blockStore ? block : row;
+    },
+    applyBatch(sessionId: string, batch: SessionTimelineBatch) {
+      const row = options.rowStore.applyBatch(sessionId, batch);
+      const block = options.blockStore.applyBatch(sessionId, batch);
+      return readStore === options.blockStore ? block : row;
+    },
+    commitBatch(
+      sessionId: string,
+      batch: SessionTimelineBatch,
+      updates: SessionUpdateRecord[],
+    ) {
+      if (!options.rowStore.commitBatch) {
+        throw new Error("SQLite timeline store does not support atomic update commits.");
+      }
+      const row = options.rowStore.commitBatch(sessionId, batch, updates);
+      const block = options.blockStore.applyBatch(sessionId, batch);
       return readStore === options.blockStore ? block : row;
     },
     list(sessionId: string) {

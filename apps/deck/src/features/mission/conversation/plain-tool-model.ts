@@ -3,6 +3,7 @@ import type { TillerIconName } from "../../../shared/ui";
 
 export function resolveToolCallIconName(label: string): TillerIconName {
   if (label === "Read" || label === "Write" || label === "File") return "fileText";
+  if (label === "Diagnostics") return "activity";
   if (label === "Search") return "search";
   if (label === "Shell") return "terminal";
   if (label === "Fetch") return "globe";

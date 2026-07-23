@@ -1,37 +1,45 @@
 import type {
-  AgentMessage,
   AgentPromptContent,
-  AgentToolCall,
-  CommandChunk,
   SessionConfigOptionValue,
   SessionQueuedPrompt,
   SessionReasoningEffort,
   SessionSummary,
-  SessionTimelineEntry,
 } from "@tiller/shared";
 import { SendPromptUseCase } from "@tiller/core";
 import {
   ACP_IMAGE_INPUT_UNSUPPORTED_CODE,
   ACP_IMAGE_INPUT_UNSUPPORTED_MESSAGE,
 } from "@tiller/shared";
+import {
+  markAcpPromptFailureReported,
+  wasAcpPromptFailureReported,
+} from "@tiller/acp-runtime";
 import { applyUserPromptToSummary } from "../../sessions/facade";
 import { createSessionEventPublisher } from "./event/publisher";
 import {
   allocateLiveEventSequence,
   flushLiveAssistantMessage,
-  persistRuntimeSessionUpdate,
-  seedLiveEventSequenceForSession,
+  handleRuntimeEvent,
+  prepareRuntimeSessionUpdate,
+  publishCanonicalSessionStateEvent,
+  publishPromptQueueState,
 } from "../events";
 import type { HelmHandlerContext } from "../../handlers/context";
 import { emitHelmPromptTrace } from "../prompt-trace";
-import { persistTimelineMessage } from "./timeline-effects";
+import { routeSessionRuntimeEvent } from "../session-timeline/event-router";
 import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "./config-options";
 import { assertSupportedSlashCommand } from "./command-support";
 import { createUserPromptMessage as createProjectedUserPromptMessage } from "./user-message";
-import { persistMessageImageAttachments } from "./attachment-projection";
+import {
+  collectPromptAttachmentIds,
+  hydratePromptImageAttachments,
+  persistMessageImageAttachments,
+  persistPromptImageAttachments,
+} from "./attachment-projection";
+import { PROMPT_QUEUE_CAPACITY_ERROR_CODE } from "./prompt-queue";
 
 export type SessionPromptRequest = {
   sessionId: string;
@@ -100,17 +108,41 @@ async function resolvePromptRuntime(
     messageChars: restore.message.length,
   });
   record = context.sessions.get(params.sessionId);
+  if (!record && !restore.ok) {
+    const error = new Error("Session runtime is not available. Try reconnecting this Mission first.");
+    markAcpPromptFailureReported(error);
+    throw error;
+  }
   return record;
 }
 
-function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
-  createSessionEventPublisher(context).sessionUpdate(sessionId, {
-    kind: "prompt_queue",
-    queue: context.promptQueue.snapshot(sessionId),
-  });
+type PromptRuntimeRecord = NonNullable<ReturnType<HelmHandlerContext["sessions"]["get"]>>;
+
+async function promptWithRuntimeRecovery(
+  sessionId: string,
+  record: PromptRuntimeRecord,
+  prompt: () => Promise<void>,
+  context: HelmHandlerContext,
+) {
+  try {
+    await prompt();
+  } catch (error) {
+    if (context.sessions.get(sessionId) === record) {
+      context.sessions.delete(sessionId);
+    }
+    throw error;
+  }
 }
 
-function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, message: string) {
+function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
+  publishPromptQueueState(sessionId, context.promptQueue.snapshot(sessionId), context);
+}
+
+function broadcastPromptFailure(
+  context: HelmHandlerContext,
+  sessionId: string,
+  message: string,
+) {
   context.updateSessionSummary(sessionId, (current) => ({
     ...current,
     status: "error",
@@ -118,11 +150,24 @@ function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, 
     lastMessagePreview: "Prompt failed",
   }));
   createSessionEventPublisher(context).errorRaised({ sessionId, message });
-  createSessionEventPublisher(context).sessionUpdate(sessionId, {
-    kind: "status_change",
-    status: "error",
-    message,
+  publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
+}
+
+function handleUnreportedPromptFailure(
+  context: HelmHandlerContext,
+  sessionId: string,
+  error: unknown,
+  logEvent: string,
+) {
+  if (wasAcpPromptFailureReported(error)) {
+    return;
+  }
+  const message = error instanceof Error ? error.message : "Prompt failed.";
+  logRuntimeError(context, logEvent, {
+    sessionId,
+    messageChars: message.length,
   });
+  broadcastPromptFailure(context, sessionId, message);
 }
 
 function subscribePromptingSocketToSession(sessionId: string, context: HelmHandlerContext) {
@@ -141,48 +186,6 @@ function applyDispatchingUserPromptToSummary(
     ...applyUserPromptToSummary(current, text, timestamp),
     status: "running" as const,
   };
-}
-
-function seedPromptTimelineSequence(sessionId: string, context: HelmHandlerContext) {
-  seedLiveEventSequenceForSession(sessionId, collectPersistedTimelineSequences(sessionId, context));
-}
-
-function collectPersistedTimelineSequences(
-  sessionId: string,
-  context: HelmHandlerContext,
-): Array<number | undefined> {
-  const sequences: Array<number | undefined> = [];
-  try {
-    for (const entry of (context.sessionTimelineStore?.list?.(sessionId) ?? []) as SessionTimelineEntry[]) {
-      if (entry.kind === "context_compaction" || entry.kind === "session_resumed" || entry.kind === "history_gap") {
-        continue;
-      }
-      sequences.push(entry.timelineSequence);
-      if (entry.kind === "assistant_message") {
-        sequences.push(...entry.chunks.map((chunk) => chunk.timelineSequence));
-      } else if (entry.kind === "tool_call") {
-        sequences.push(entry.toolCall.timelineSequence);
-      } else {
-        sequences.push(entry.message.timelineSequence);
-      }
-    }
-  } catch {
-    // Best-effort seeding. If timeline storage is unavailable, fall back to
-    // message/artifact stores below and let normal prompt dispatch continue.
-  }
-  try {
-    sequences.push(...(context.sessionMessageStore?.list?.(sessionId) ?? []).map((message: AgentMessage) => message.timelineSequence));
-  } catch {
-    // Ignore unavailable legacy message storage.
-  }
-  try {
-    const artifacts = context.sessionArtifactStore?.get?.(sessionId);
-    sequences.push(...(artifacts?.toolCalls ?? []).map((toolCall: AgentToolCall) => toolCall.timelineSequence));
-    sequences.push(...(artifacts?.outputs ?? []).map((output: CommandChunk) => output.timelineSequence));
-  } catch {
-    // Ignore unavailable artifact storage.
-  }
-  return sequences;
 }
 
 export async function sendPromptImmediately(
@@ -214,7 +217,19 @@ export async function sendPromptImmediately(
     meta: { queued: true, chars: item.text.length, images: imageAttachments.length },
   });
 
-  await record.runtime.prompt(item.text, item.content);
+  await promptWithRuntimeRecovery(
+    item.sessionId,
+    record,
+    () => record.runtime.prompt(
+      item.text,
+      hydratePromptImageAttachments({
+        sessionId: item.sessionId,
+        content: item.content,
+        attachments: context.sessionAttachmentStore,
+      }),
+    ),
+    context,
+  );
   emitHelmPromptTrace(context, {
     traceId: item.clientMessageId,
     sessionId: item.sessionId,
@@ -232,8 +247,11 @@ export async function sendPromptImmediately(
 
 function createUserPromptMessage(
   item: Pick<SessionQueuedPrompt, "sessionId" | "text" | "content" | "clientMessageId"> & { timestamp: string },
+  context: HelmHandlerContext,
 ) {
-  return createProjectedUserPromptMessage(item, allocateLiveEventSequence);
+  return createProjectedUserPromptMessage(item, (sessionId) =>
+    allocateLiveEventSequence(sessionId, context)
+  );
 }
 
 async function appendUserPromptMessage(
@@ -246,18 +264,19 @@ async function appendUserPromptMessage(
     message: userMessage,
     attachments: context.sessionAttachmentStore,
   });
-  context.persistSessionMessage(sessionId, storedUserMessage);
-  persistRuntimeSessionUpdate(
+  assertCanonicalTimelinePipeline(context);
+  const event = { type: "message" as const, message: storedUserMessage };
+  const prepared = prepareRuntimeSessionUpdate(
     sessionId,
-    { type: "message", message: storedUserMessage },
+    event,
     context,
-    storedUserMessage.timelineSequence,
+    storedUserMessage.sequence,
   );
-  persistTimelineMessage(context, sessionId, storedUserMessage);
-  createSessionEventPublisher(context).sessionUpdate(sessionId, {
-    kind: "user_message",
-    message: storedUserMessage,
-  });
+  routeSessionRuntimeEvent(sessionId, event, {
+    workers: context.sessionTimelineWorkers,
+    flushScheduler: context.sessionTimelineFlushScheduler,
+    context,
+  }, prepared.resolvedSequence, prepared.update);
   const updated = context.updateSessionSummary(sessionId, (current) =>
     applyDispatchingUserPromptToSummary(current, storedUserMessage.text, storedUserMessage.timestamp),
   );
@@ -269,6 +288,26 @@ async function appendUserPromptMessage(
   }
 }
 
+function assertCanonicalTimelinePipeline(
+  context: HelmHandlerContext,
+): asserts context is HelmHandlerContext & Required<Pick<
+  HelmHandlerContext,
+  | "sessionTimelineWorkers"
+  | "sessionTimelineDispatcher"
+  | "sessionTimelineFlushScheduler"
+  | "sessionLiveStateStore"
+>> {
+  if (
+    context.sessionTimelineWorkers &&
+      context.sessionTimelineDispatcher &&
+      context.sessionTimelineFlushScheduler &&
+      context.sessionLiveStateStore
+  ) {
+    return;
+  }
+  throw new Error("Canonical runtime services are required.");
+}
+
 async function runInFlightPrompt(
   item: SessionQueuedPrompt,
   context: HelmHandlerContext,
@@ -276,12 +315,12 @@ async function runInFlightPrompt(
   try {
     await sendPromptImmediately(item, context);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Prompt failed.";
-    logRuntimeError(context, "runtime.prompt.inflight_failed", {
-      sessionId: item.sessionId,
-      messageChars: message.length,
-    });
-    broadcastPromptFailure(context, item.sessionId, message);
+    handleUnreportedPromptFailure(
+      context,
+      item.sessionId,
+      error,
+      "runtime.prompt.inflight_failed",
+    );
   } finally {
     context.promptQueue.clearInFlight(item.sessionId, item.id);
     broadcastPromptQueue(context, item.sessionId);
@@ -312,17 +351,18 @@ export async function drainPromptQueue(sessionId: string, context: HelmHandlerCo
         content: next.content,
         clientMessageId: next.clientMessageId,
         timestamp,
-      });
+      }, context);
       await appendUserPromptMessage(sessionId, userMessage, context);
       
       try {
         await sendPromptImmediately(inFlight, context);
       } catch (error) {
-        const message = error instanceof Error ? error.message : "Prompt failed.";
-        logRuntimeError(context, "runtime.prompt.queue_failed", {
+        handleUnreportedPromptFailure(
+          context,
           sessionId,
-          messageChars: message.length,
-        });
+          error,
+          "runtime.prompt.queue_failed",
+        );
       } finally {
         context.promptQueue.clearInFlight(sessionId, inFlight.id);
         broadcastPromptQueue(context, sessionId);
@@ -360,8 +400,23 @@ export async function sendPromptToSession(
   );
 
   subscribePromptingSocketToSession(params.sessionId, context);
-  seedPromptTimelineSequence(params.sessionId, context);
-
+  const clientMessageId = params.clientMessageId
+    ?? `${params.sessionId}-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const existingAttachmentIds = new Set(collectPromptAttachmentIds(params.content));
+  const promptInput: SessionPromptRequest = {
+    ...params,
+    clientMessageId,
+    ...(params.content?.length
+      ? {
+          content: persistPromptImageAttachments({
+            sessionId: params.sessionId,
+            messageId: clientMessageId,
+            content: params.content,
+            attachments: context.sessionAttachmentStore,
+          }),
+        }
+      : {}),
+  };
   const useCase = new SendPromptUseCase<SessionQueuedPrompt, ReturnType<typeof context.promptQueue.snapshot>, ReturnType<typeof createUserPromptMessage>, AgentPromptContent>({
     runtime: {
       prompt: async (input) => {
@@ -390,7 +445,19 @@ export async function sendPromptToSession(
             images: promptContent?.filter((content) => content.type === "image").length ?? 0,
           },
         });
-        await activeRecord.runtime.prompt(input.text, promptContent);
+        await promptWithRuntimeRecovery(
+          input.sessionId,
+          activeRecord,
+          () => activeRecord.runtime.prompt(
+            input.text,
+            hydratePromptImageAttachments({
+              sessionId: input.sessionId,
+              content: promptContent,
+              attachments: context.sessionAttachmentStore,
+            }),
+          ),
+          context,
+        );
         emitHelmPromptTrace(context, {
           traceId: input.clientMessageId,
           sessionId: input.sessionId,
@@ -412,15 +479,15 @@ export async function sendPromptToSession(
         await appendUserPromptMessage(sessionId, message, context);
       },
     },
-    createUserMessage: createUserPromptMessage,
+    createUserMessage: (item) => createUserPromptMessage(item, context),
     onQueueChanged: (sessionId) => broadcastPromptQueue(context, sessionId),
     onPromptFailed: (sessionId, error) => {
-      const message = error instanceof Error ? error.message : "Prompt failed.";
-      logRuntimeError(context, "runtime.prompt.inflight_failed", {
+      handleUnreportedPromptFailure(
+        context,
         sessionId,
-        messageChars: message.length,
-      });
-      broadcastPromptFailure(context, sessionId, message);
+        error,
+        "runtime.prompt.inflight_failed",
+      );
     },
     onPromptSettled: (sessionId, queueItem) => {
       context.promptQueue.clearInFlight(sessionId, queueItem.id);
@@ -433,10 +500,22 @@ export async function sendPromptToSession(
     },
   });
 
-  const result = await useCase.execute(params);
+  let result;
+  try {
+    result = await useCase.execute(promptInput);
+  } catch (error) {
+    if ((error as { code?: string }).code === PROMPT_QUEUE_CAPACITY_ERROR_CODE) {
+      for (const attachmentId of collectPromptAttachmentIds(promptInput.content)) {
+        if (!existingAttachmentIds.has(attachmentId)) {
+          context.sessionAttachmentStore.remove(attachmentId);
+        }
+      }
+    }
+    throw error;
+  }
   emitHelmPromptTrace(context, {
-    traceId: params.clientMessageId,
-    sessionId: params.sessionId,
+    traceId: promptInput.clientMessageId,
+    sessionId: promptInput.sessionId,
     phase: result.accepted === "queued" ? "helm.prompt.queued" : "helm.prompt.ack",
     meta: { accepted: result.accepted },
   });
@@ -449,7 +528,7 @@ export async function configureSessionRuntime(
 ) {
   const current =
     context.sessions.get(params.sessionId)?.summary ??
-    context.sessionStore.list().find((item: any) => item.id === params.sessionId);
+    context.sessionStore.get(params.sessionId);
   if (!current) {
     throw new Error("Session not found");
   }
@@ -464,17 +543,23 @@ export async function configureSessionRuntime(
         value: params.value,
       })
     : null;
-  const nextAgentMode = params.agentMode ?? runtimeResult?.state.agentMode ?? current.agentMode;
-  const nextModel = params.model ?? runtimeResult?.state.model ?? current.model;
+  const nextAgentMode = runtimeResult
+    ? (runtimeResult.state.agentMode ?? current.agentMode)
+    : (params.agentMode ?? current.agentMode);
+  const nextModel = runtimeResult
+    ? (runtimeResult.state.model ?? runtimeResult.modelState?.currentModelId ?? current.model)
+    : (params.model ?? current.model);
   const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
   const resolvedConfigOptions = resolveConfigOptionsForSelection({
     incomingOptions: runtimeResult?.options ?? activeRecord?.runtime.sessionConfigOptions,
     previousOptions: current.configOptions,
     selectedModel: nextModel,
   });
-  const nextConfigOptions = resolvedConfigOptions.options;
+  const nextConfigOptions = resolvedConfigOptions.options ?? current.configOptions ?? [];
   const nextReasoning = resolveConfigReasoningEffortForOptions(
-    params.reasoningEffort ?? runtimeResult?.state.reasoningEffort ?? current.reasoningEffort,
+    runtimeResult
+      ? (runtimeResult.state.reasoningEffort ?? current.reasoningEffort)
+      : (params.reasoningEffort ?? current.reasoningEffort),
     resolvedConfigOptions,
   );
   const updatedAt = new Date().toISOString();
@@ -488,7 +573,19 @@ export async function configureSessionRuntime(
     updatedAt,
   });
   context.updateSessionSummary(params.sessionId, () => next);
-  createSessionEventPublisher(context).sessionUpdate(params.sessionId, { kind: "session_updated", session: next });
+  publishCanonicalSessionStateEvent(
+    params.sessionId,
+    {
+      type: "config-options",
+      state: {
+        agentMode: nextAgentMode,
+        model: nextModel,
+        reasoningEffort: nextReasoning,
+      },
+      options: nextConfigOptions,
+    },
+    context,
+  );
   return {
     sessionId: params.sessionId,
     ok: true,
@@ -512,7 +609,11 @@ export async function cancelSessionRuntime(
     return true;
   }
 
+  handleRuntimeEvent(sessionId, {
+    type: "status",
+    status: "cancelled",
+    message: "Cancelled by user",
+  }, context);
   record.runtime.cancel();
-  context.sessions.delete(sessionId);
   return true;
 }

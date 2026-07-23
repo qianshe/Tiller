@@ -10,11 +10,15 @@ export async function withConnectionRequest<T>(
   method: string,
   operation: Promise<T>,
   child: ChildProcess,
-  stderrBuffer: string,
+  getStderrBuffer: () => string,
   logFile: string | undefined,
   provider: AcpAgentProvider,
+  onTimeout?: () => void,
 ): Promise<T> {
   const timeoutMs = resolveAcpRequestTimeout(provider, method);
+  const stderrStart = getStderrBuffer().length;
+  const getRequestStderr = () => getStderrBuffer().slice(stderrStart);
+  let requestTimedOut = false;
   let timeout: ReturnType<typeof setTimeout> | undefined;
   let exitHandler: ((code: number | null, signal: NodeJS.Signals | null) => void) | undefined;
   const exited = new Promise<never>((_resolve, reject) => {
@@ -25,7 +29,15 @@ export async function withConnectionRequest<T>(
   });
   const timedOut = new Promise<never>((_resolve, reject) => {
     timeout = setTimeout(() => {
-      reject(new Error(stderrBuffer.trim() || `Timed out waiting for ACP response: ${method}`));
+      requestTimedOut = true;
+      const message = `Timed out waiting for ACP response: ${method} after ${timeoutMs}ms`;
+      writeLogLine(logFile, "sdk-timeout", message);
+      reject(new Error(message));
+      try {
+        onTimeout?.();
+      } catch {
+        // Keep the timeout as the primary request error.
+      }
     }, timeoutMs);
   });
 
@@ -33,8 +45,9 @@ export async function withConnectionRequest<T>(
     writeLogLine(logFile, "sdk-request", method);
     return await Promise.race([operation, exited, timedOut]);
   } catch (error) {
-    if (stderrBuffer.trim() && error instanceof Error && !error.message.includes(stderrBuffer.trim())) {
-      throw new Error(`${error.message}: ${stderrBuffer.trim()}`);
+    const stderr = getRequestStderr().trim();
+    if (!requestTimedOut && stderr && error instanceof Error && !error.message.includes(stderr)) {
+      throw new Error(`${error.message}: ${stderr}`);
     }
     throw error;
   } finally {

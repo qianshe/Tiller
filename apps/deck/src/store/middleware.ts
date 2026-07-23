@@ -5,8 +5,24 @@ import {
 } from "../features/preferences/facade";
 import { persistAdapter } from "./persist";
 import type { DeckStore } from "./index";
+import {
+  MAX_DECK_NOTIFICATIONS,
+  type DeckNotification,
+} from "./slices/notifications-slice";
 
 export const DECK_STORE_STORAGE_KEY = "tiller.deck.store";
+const DEFAULT_PERSIST_WRITE_DELAY_MS = 100;
+
+let transientPersistenceDepth = 0;
+
+export function withDeckStorePersistenceSuppressed<T>(operation: () => T): T {
+  transientPersistenceDepth += 1;
+  try {
+    return operation();
+  } finally {
+    transientPersistenceDepth -= 1;
+  }
+}
 
 type PersistedDeckStore = Pick<
   DeckStore,
@@ -16,9 +32,21 @@ type PersistedDeckStore = Pick<
   | "openChatSessionIds"
   | "focusedChatWindowId"
   | "draftChatWindow"
-  | "sessionPlans"
   | "dismissedCompletedSessionPlanKeys"
+  | "notifications"
 >;
+
+function sanitizeNotification(notification: DeckNotification): DeckNotification {
+  const legacy = notification as DeckNotification & {
+    retryPrompt?: unknown;
+    retriedAt?: unknown;
+  };
+  const { retryPrompt: _retryPrompt, retriedAt: _retriedAt, ...safeNotification } = legacy;
+  return {
+    ...safeNotification,
+    source: safeNotification.source ?? "runtime",
+  };
+}
 
 export function createDeckStorePersistOptions(): PersistOptions<
   DeckStore,
@@ -36,15 +64,17 @@ export function createDeckStorePersistOptions(): PersistOptions<
       openChatSessionIds: state.openChatSessionIds,
       focusedChatWindowId: state.focusedChatWindowId,
       draftChatWindow: state.draftChatWindow,
-      sessionPlans: state.sessionPlans,
       dismissedCompletedSessionPlanKeys: state.dismissedCompletedSessionPlanKeys,
+      notifications: (state.notifications ?? []).map(sanitizeNotification),
     }),
     merge: (persistedState, currentState) => {
       const persisted = persistedState as PersistedDeckStore | undefined;
       if (!persisted) return currentState;
+      const { sessionPlans: _legacySessionPlans, ...persistedValues } = persisted as
+        PersistedDeckStore & { sessionPlans?: unknown };
       return {
         ...currentState,
-        ...persisted,
+        ...persistedValues,
         openChatSessionIds: Array.isArray(persisted.openChatSessionIds)
           ? persisted.openChatSessionIds.filter((id): id is string => typeof id === "string")
           : currentState.openChatSessionIds,
@@ -55,14 +85,13 @@ export function createDeckStorePersistOptions(): PersistOptions<
         draftChatWindow: isDraftChatWindow(persisted.draftChatWindow)
           ? persisted.draftChatWindow
           : currentState.draftChatWindow,
-        sessionPlans: isSessionPlanMap(persisted.sessionPlans)
-          ? persisted.sessionPlans
-          : currentState.sessionPlans,
         dismissedCompletedSessionPlanKeys: isStringMap(
           persisted.dismissedCompletedSessionPlanKeys,
         )
           ? persisted.dismissedCompletedSessionPlanKeys
           : currentState.dismissedCompletedSessionPlanKeys,
+        notifications: normalizePersistedNotifications(persisted.notifications)
+          ?? currentState.notifications,
         preferences: persisted.preferences
           ? {
               ...currentState.preferences,
@@ -86,16 +115,56 @@ export function createDeckStorePersistOptions(): PersistOptions<
   };
 }
 
-export function createDeckStorePersistStorage(storage: Storage) {
+export function createDeckStorePersistStorage(
+  storage: Storage,
+  options: { writeDelayMs?: number } = {},
+) {
   const adapter = persistAdapter(storage);
+  const writeDelayMs = options.writeDelayMs ?? DEFAULT_PERSIST_WRITE_DELAY_MS;
+  const lastWrittenByKey = new Map<string, string>();
+  let pending: { name: string; value: string } | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  function flush() {
+    if (timer) {
+      clearTimeout(timer);
+      timer = undefined;
+    }
+    const next = pending;
+    pending = undefined;
+    if (!next || lastWrittenByKey.get(next.name) === next.value) {
+      return;
+    }
+    adapter.setItem(next.name, next.value);
+    lastWrittenByKey.set(next.name, next.value);
+  }
+
   return {
     getItem(name: string) {
       return sanitizeDeckStorePayload(adapter.getItem(name), "hydrate");
     },
     setItem(name: string, value: string) {
-      adapter.setItem(name, sanitizeDeckStorePayload(value, "store") ?? value);
+      if (transientPersistenceDepth > 0) {
+        return;
+      }
+      const sanitized = sanitizeDeckStorePayload(value, "store") ?? value;
+      if (lastWrittenByKey.get(name) === sanitized || pending?.value === sanitized) {
+        return;
+      }
+      pending = { name, value: sanitized };
+      if (writeDelayMs <= 0) {
+        flush();
+        return;
+      }
+      if (!timer) {
+        timer = setTimeout(flush, writeDelayMs);
+      }
     },
     removeItem(name: string) {
+      if (pending?.name === name) {
+        pending = undefined;
+      }
+      lastWrittenByKey.delete(name);
       adapter.removeItem(name);
     },
   };
@@ -151,26 +220,35 @@ function isDraftChatWindow(value: unknown): value is PersistedDeckStore["draftCh
   );
 }
 
-function isSessionPlanMap(value: unknown): value is PersistedDeckStore["sessionPlans"] {
-  if (!isRecord(value)) {
-    return false;
-  }
-  return Object.values(value).every((plan) =>
-    isRecord(plan) &&
-    typeof plan.updatedAt === "string" &&
-    Array.isArray(plan.entries) &&
-    plan.entries.every((entry) =>
-      isRecord(entry) &&
-      typeof entry.content === "string" &&
-      (entry.priority === "high" || entry.priority === "medium" || entry.priority === "low") &&
-      (entry.status === "pending" || entry.status === "in_progress" || entry.status === "completed"),
-    ),
-  );
-}
-
 function isStringMap(value: unknown): value is Record<string, string> {
   return (
     isRecord(value) &&
     Object.values(value).every((item) => typeof item === "string")
+  );
+}
+
+function normalizePersistedNotifications(value: unknown): DeckNotification[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const notifications = value
+    .filter(isDeckNotification)
+    .map(sanitizeNotification)
+    .slice(0, MAX_DECK_NOTIFICATIONS);
+  return notifications.length === value.length ? notifications : null;
+}
+
+function isDeckNotification(value: unknown): value is DeckNotification {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    (value.kind === "error" || value.kind === "warning" || value.kind === "info") &&
+    typeof value.message === "string" &&
+    typeof value.createdAt === "string" &&
+    (typeof value.source === "undefined" || typeof value.source === "string") &&
+    (typeof value.code === "undefined" || typeof value.code === "string") &&
+    (typeof value.sessionId === "undefined" || typeof value.sessionId === "string")
   );
 }

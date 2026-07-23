@@ -106,15 +106,17 @@ type ActivityTimelineItem =
       kind: "prompt";
       id: string;
       timestamp: string;
+      sequence?: number;
       text: string;
     }
   | {
       kind: "tool";
       timestamp: string;
+      sequence?: number;
       item: ReturnType<typeof groupToolCalls>[number];
     };
 
-function buildActivityTimeline(
+export function buildActivityTimeline(
   sessionToolCalls: AgentToolCall[],
   commandChunks: CommandChunk[],
   sessionMessages: AgentMessage[],
@@ -132,20 +134,27 @@ function buildActivityTimeline(
     .flatMap((message) => {
       const text = normalizeLocalCommandMessageText(message.text);
       return text
-        ? [{ kind: "prompt" as const, id: message.id, timestamp: message.timestamp, text }]
+        ? [{ kind: "prompt" as const, id: message.id, timestamp: message.timestamp, sequence: message.sequence, text }]
         : [];
     });
 
-  return [
+  const items = [
     ...promptItems,
     ...toolItems.map((item) => ({
       kind: "tool" as const,
       timestamp: item.timestamp,
+      sequence: item.sequence,
       item,
     })),
-  ].sort(
-    (left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp),
-  );
+  ];
+  if (!items.every((item) => typeof item.sequence === "number")) {
+    return items;
+  }
+
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => left.item.sequence! - right.item.sequence! || left.index - right.index)
+    .map(({ item }) => item);
 }
 
 function PromptActivityCard({ text }: { text: string }) {

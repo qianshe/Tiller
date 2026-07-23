@@ -59,3 +59,30 @@ test("Mermaid viewport controller supports clamped pinch zoom", () => {
   controller.endPinch();
   assert.equal(controller.getState().dragging, false);
 });
+
+test("Mermaid viewport controller defaults favor readable fullscreen zoom", () => {
+  const controller = new MermaidViewportController();
+
+  for (let index = 0; index < 16; index += 1) {
+    controller.zoomOut();
+  }
+  assert.equal(controller.getState().scale, 0.5);
+
+  for (let index = 0; index < 40; index += 1) {
+    controller.zoomIn();
+  }
+  assert.equal(controller.getState().scale, 8);
+});
+
+test("Mermaid viewport controller reports when zoom controls hit their bounds", () => {
+  const controller = new MermaidViewportController({ minScale: 0.5, maxScale: 1.5, zoomStep: 0.5 });
+
+  assert.equal(controller.canZoomOut(), true);
+  controller.zoomOut();
+  assert.equal(controller.canZoomOut(), false);
+
+  assert.equal(controller.canZoomIn(), true);
+  controller.zoomIn();
+  controller.zoomIn();
+  assert.equal(controller.canZoomIn(), false);
+});

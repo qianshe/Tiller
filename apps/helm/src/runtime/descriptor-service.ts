@@ -44,7 +44,6 @@ export function createRuntimeDescriptorService(options: RuntimeDescriptorService
       providerId: summary.agentId,
       runtimeSessionId: summary.runtimeSessionId,
       capabilities: resolvedCapabilities,
-      providerHistory: existingDescriptor?.providerHistory,
       lastSeenAt: summary.updatedAt,
       state: summary.status === "error" || summary.status === "cancelled" ? "stale" : "resumeable",
     });

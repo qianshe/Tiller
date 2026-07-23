@@ -1,8 +1,10 @@
 import type { FileDiffSummary, ProjectSummary, SessionSummary, WorktreeSummary } from "@tiller/shared";
-import { normalizeDiffPath, readWorktreeGitDiffs } from "../../sessions/facade";
-import { summarizeLargeDiffs } from "../diff-limits";
-import { createSessionEventPublisher } from "./event/publisher";
+import type { SessionDiffBodyStore } from "@tiller/persistence";
+import { normalizeDiffPath } from "../../sessions/facade";
+import { publishCanonicalSessionStateEvent } from "../events";
+import { materializeDiffPayloads } from "./diff-payload";
 import { resolveStoredSessionWorktree } from "./worktree-resolution";
+import { createGitHydrationScheduler } from "./git-hydration-scheduler";
 
 type SessionArtifactStore = {
   replaceDiffs(sessionId: string, diffs: FileDiffSummary[]): void;
@@ -14,21 +16,23 @@ type SessionRecord = {
 
 type SessionDiffHydrationOptions = {
   sessions: Map<string, SessionRecord>;
-  sessionStore: { list(): SessionSummary[] };
+  sessionStore: { get(sessionId: string): SessionSummary | undefined };
   sessionArtifactStore: SessionArtifactStore;
+  sessionDiffBodyStore: SessionDiffBodyStore;
   getProjects(): ProjectSummary[];
   getWorktrees(): WorktreeSummary[];
   createHandlerContext(): any;
 };
 
 export function createSessionDiffHydrationService(options: SessionDiffHydrationOptions) {
+  const scheduler = createGitHydrationScheduler();
   async function hydrateDiffsFromWorktreeGit(sessionId: string, files: FileDiffSummary[]) {
     const worktree = resolveSessionWorktreeForSession(sessionId);
     if (!worktree) {
       return files;
     }
 
-    const gitDiffs = await readWorktreeGitDiffs(worktree.path);
+    const gitDiffs = await scheduler.hydrate(sessionId, worktree.path);
     if (!gitDiffs.length) {
       return files;
     }
@@ -52,12 +56,17 @@ export function createSessionDiffHydrationService(options: SessionDiffHydrationO
   }
 
   async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {
-    const diffs = summarizeLargeDiffs(await hydrateDiffsFromWorktreeGit(sessionId, files));
+    const diffs = materializeDiffPayloads(
+      sessionId,
+      await hydrateDiffsFromWorktreeGit(sessionId, files),
+      options.sessionDiffBodyStore,
+    );
     options.sessionArtifactStore.replaceDiffs(sessionId, diffs);
-    createSessionEventPublisher(options.createHandlerContext()).sessionUpdate(sessionId, {
-      kind: "diff_update",
-      files: diffs,
-    });
+    publishCanonicalSessionStateEvent(
+      sessionId,
+      { type: "diff-update", files: diffs },
+      options.createHandlerContext(),
+    );
   }
 
   function resolveSessionWorktreeForSession(sessionId: string) {
@@ -66,7 +75,7 @@ export function createSessionDiffHydrationService(options: SessionDiffHydrationO
       return liveWorktree;
     }
 
-    const summary = options.sessionStore.list().find((item) => item.id === sessionId);
+    const summary = options.sessionStore.get(sessionId);
     if (!summary) {
       return null;
     }
@@ -80,5 +89,7 @@ export function createSessionDiffHydrationService(options: SessionDiffHydrationO
   return {
     hydrateDiffsFromWorktreeGit,
     publishDiffUpdate,
+    remove: scheduler.remove,
+    dispose: scheduler.dispose,
   };
 }

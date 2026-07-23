@@ -7,6 +7,11 @@ import { resolveTechnicalPanelPreferences } from "../../preferences/utils/helper
 import { formatResumeLabel } from "../utils/session-state";
 import { usePromptImages } from "../hooks/prompt-images";
 import {
+  deriveHistoricalActivityFromTimeline,
+  mergeHistoricalAndLiveToolCalls,
+} from "../utils/timeline-activity";
+import { buildChatWindowModel } from "../workspace/chat-window-model";
+import {
   MODEL_OPTIONS,
   resolveAgentModeOptions,
   resolveBaseModelOptions,
@@ -52,11 +57,39 @@ export function useMissionViewModel(ctx: any) {
     promptQueues,
     deckPreferences,
     toolCalls,
+    sessionTimeline,
+    openChatSessionIds,
+    focusedChatWindowId,
+    draftChatWindow,
   } = source;
-const activeSessionToolCalls = activeSessionId ? (toolCalls?.[activeSessionId] ?? []) : [];
+const activeSessionToolCalls = activeSessionId
+  ? mergeHistoricalAndLiveToolCalls(
+    deriveHistoricalActivityFromTimeline(sessionTimeline?.[activeSessionId]).toolCalls,
+    toolCalls?.[activeSessionId] ?? [],
+  )
+  : [];
 const activeSession = useMemo(
   () => sessions.find((session) => session.id === activeSessionId) ?? null,
   [activeSessionId, sessions],
+);
+const selectedComposerSession = useMemo(
+  () =>
+    buildChatWindowModel({
+      sessions,
+      activeSessionId,
+      activeSession,
+      openChatSessionIds: openChatSessionIds ?? [],
+      focusedChatWindowId: focusedChatWindowId ?? null,
+      draftChatWindow: draftChatWindow ?? null,
+    }).selectedComposerSession ?? null,
+  [
+    activeSession,
+    activeSessionId,
+    draftChatWindow,
+    focusedChatWindowId,
+    openChatSessionIds,
+    sessions,
+  ],
 );
 const activePromptQueue = activeSessionId ? promptQueues?.[activeSessionId] : undefined;
 const {
@@ -329,6 +362,7 @@ const effectiveDraftReasoningEffort =
 const showDraftReasoningSelect = draftReasoningOptions.length > 0;
   return {
     activeSession,
+    selectedComposerSession,
     activePromptQueue,
     promptQueues,
     promptImages,

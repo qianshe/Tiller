@@ -32,15 +32,15 @@
     "smoke:contract": "node scripts/contract-smoke.mjs",
     "probe:acp-models": "tsx scripts/probe-codex-models.ts",
     "probe:codex-models": "tsx scripts/probe-codex-models.ts --command codex-acp",
-    "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --pure --arg --port --arg 0"
+    "probe:opencode-models": "tsx scripts/probe-codex-models.ts --command opencode --arg acp --arg --pure --arg --port --arg 0",
+    "benchmark:session-timeline": "node --expose-gc --import tsx scripts/session-timeline-benchmark.ts"
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "^0.21.0",
     "@tiller/persistence": "workspace:*",
     "pino": "^10.3.1",
-    "pino-pretty": "^13.1.3",
     "qrcode-terminal": "^0.12.0",
-    "ws": "^8.18.3",
+    "ws": "^8.21.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {

@@ -22,6 +22,19 @@ export function isSessionExecutionPending(status: SessionStatus) {
   );
 }
 
+export function isSessionConversationLoaded(
+  sessionId: string,
+  messageHistoryState: Record<string, { loading: boolean } | undefined>,
+  sessionTimeline: Record<string, unknown[] | undefined>,
+) {
+  const historyState = messageHistoryState[sessionId];
+  return Boolean(
+    historyState &&
+    !historyState.loading &&
+    Object.prototype.hasOwnProperty.call(sessionTimeline, sessionId),
+  );
+}
+
 export function formatResumeLabel(resume: SessionSummary["resume"], locale: Locale) {
   if (!resume) {
     return "恢复状态待检查";
@@ -76,6 +89,13 @@ export function resolveSessionRestoreGate(input: {
     return { state: "ready", canChat: true, message: "" };
   }
 
+  if (
+    resume?.state === "resume-available" &&
+    (resume.mode === "same-process" || resume.restoreMethod === "client-reconnect")
+  ) {
+    return { state: "ready", canChat: true, message: "" };
+  }
+
   if (resumeStartPending) {
     return {
       state: "restoring",
@@ -90,13 +110,6 @@ export function resolveSessionRestoreGate(input: {
       canChat: false,
       message: "正在检查 ACP 会话恢复能力...",
     };
-  }
-
-  if (
-    resume.state === "resume-available" &&
-    (resume.mode === "same-process" || resume.restoreMethod === "client-reconnect")
-  ) {
-    return { state: "ready", canChat: true, message: "" };
   }
 
   if (isAgentSideSessionRestoreAvailable(resume)) {

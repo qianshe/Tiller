@@ -14,21 +14,30 @@ import {
   cancelSessionRuntime,
   configureSessionRuntime,
 } from "../../runtime/session/router";
+import {
+  collectPromptAttachmentIds,
+  persistPromptImageAttachments,
+} from "../../runtime/session/attachment-projection";
+import {
+  publishCanonicalSessionStateEvent,
+  publishPromptQueueState,
+} from "../../runtime/events";
 import type { HelmHandlerContext } from "../context";
 import { createSessionDraft, discardSessionDraft } from "./draft-rpc";
 import { createSession } from "./session-create-rpc";
 import { promptSession } from "./prompt-rpc";
+import { repairTimeline } from "./timeline-repair-rpc";
 import {
   checkResume,
   getArtifacts,
-  listMessages,
+  getSubagentDetail,
+  listLegacyEvidence,
   listSessions,
-  reimportHistory,
+  listTimeline,
   resumeSession,
   subscribeSession,
   unsubscribeSession,
 } from "./session-query-rpc";
-import { listSessionUpdates } from "./session-updates-rpc";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 
 export { resolveProjectSessionWorktree } from "./session-worktree";
@@ -45,14 +54,24 @@ export async function handleSessionRpcRequest(
       return subscribeSession(params as { sessionId: string }, context);
     case "session/unsubscribe":
       return unsubscribeSession(params as { sessionId: string }, context);
-    case "session/list_messages":
-      return listMessages(
-        params as { sessionId: string; limit?: number; before?: string; timelineBefore?: string },
+    case "session/list_timeline":
+      return listTimeline(
+        params as { sessionId: string; limit?: number; before?: string },
         context,
       );
-    case "session/list_updates":
-      return listSessionUpdates(
-        params as { sessionId: string; limit?: number; before?: string },
+    case "session/repair_timeline":
+      return repairTimeline(
+        params as { sessionId: string; apply?: boolean },
+        context,
+      );
+    case "session/list_legacy_evidence":
+      return listLegacyEvidence(
+        params as {
+          sessionId: string;
+          source: import("@tiller/shared").LegacyEvidenceSource;
+          limit?: number;
+          after?: string;
+        },
         context,
       );
     case "session/get_artifacts":
@@ -60,13 +79,9 @@ export async function handleSessionRpcRequest(
         params as { sessionId: string; limit?: number; before?: string },
         context,
       );
-    case "session/reimport_history":
-      throw new Error(
-        "session/reimport_history 已从公开会话 RPC 移除；仅保留 debug/reimport_history 供内部维护使用。",
-      );
-    case "debug/reimport_history":
-      return reimportHistory(
-        params as { sessionId: string; limit?: number },
+    case "session/get_subagent_detail":
+      return getSubagentDetail(
+        params as { sessionId: string; parentToolCallId: string },
         context,
       );
     case "session/check_resume":
@@ -162,8 +177,8 @@ export async function handleSessionRpcRequest(
       );
     case "permission/respond":
     case "permission/list_pending":
-      // Moved to approvals/rpc.ts so the legacy methods read from the unified
-      // approvalIndex. The router invokes handleApprovalRpcRequest before this
+      // Moved to approvals/rpc.ts so legacy methods read canonical approval
+      // state. The router invokes handleApprovalRpcRequest before this
       // handler, so falling through here means the approval handler returned
       // undefined intentionally and we should not double-resolve.
       return undefined;
@@ -189,20 +204,46 @@ export async function handleSessionRpcNotification(
 }
 
 function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {
-  broadcastSessionUpdate(context, sessionId, {
-    kind: "prompt_queue",
-    queue: context.promptQueue.snapshot(sessionId),
-  });
+  publishPromptQueueState(sessionId, context.promptQueue.snapshot(sessionId), context);
 }
 
 function updateQueuedPrompt(
   params: { sessionId: string; queueItemId: string; text: string; content?: AgentPromptContent[] },
   context: HelmHandlerContext,
 ) {
-  const queueItem = context.promptQueue.updateQueuedPrompt(params.sessionId, params.queueItemId, {
-    text: params.text,
-    content: params.content,
-  });
+  const current = context.promptQueue.getQueuedPrompt(params.sessionId, params.queueItemId);
+  if (!current) {
+    throw new Error("Queued prompt not found or already sending.");
+  }
+  const previousAttachmentIds = new Set(collectPromptAttachmentIds(current.content));
+  const content = params.content
+    ? persistPromptImageAttachments({
+        sessionId: params.sessionId,
+        messageId: current.clientMessageId,
+        content: params.content,
+        attachments: context.sessionAttachmentStore,
+      })
+    : undefined;
+  const nextAttachmentIds = new Set(collectPromptAttachmentIds(content));
+  let queueItem;
+  try {
+    queueItem = context.promptQueue.updateQueuedPrompt(params.sessionId, params.queueItemId, {
+      text: params.text,
+      content,
+    });
+  } catch (error) {
+    for (const attachmentId of nextAttachmentIds) {
+      if (!previousAttachmentIds.has(attachmentId)) {
+        context.sessionAttachmentStore.remove(attachmentId);
+      }
+    }
+    throw error;
+  }
+  for (const attachmentId of previousAttachmentIds) {
+    if (!nextAttachmentIds.has(attachmentId)) {
+      context.sessionAttachmentStore.remove(attachmentId);
+    }
+  }
   broadcastPromptQueue(context, params.sessionId);
   return { ok: true, queueItem };
 }
@@ -211,7 +252,11 @@ function deleteQueuedPrompt(
   params: { sessionId: string; queueItemId: string },
   context: HelmHandlerContext,
 ) {
+  const queueItem = context.promptQueue.getQueuedPrompt(params.sessionId, params.queueItemId);
   const queue = context.promptQueue.deleteQueuedPrompt(params.sessionId, params.queueItemId);
+  for (const attachmentId of collectPromptAttachmentIds(queueItem?.content)) {
+    context.sessionAttachmentStore.remove(attachmentId);
+  }
   broadcastPromptQueue(context, params.sessionId);
   return { ok: true, queue };
 }
@@ -260,12 +305,17 @@ async function renameSession(
 ) {
   const summary =
     context.sessions.get(params.sessionId)?.summary ??
-    context.sessionStore.list().find((item: any) => item.id === params.sessionId);
+    context.sessionStore.get(params.sessionId);
   if (!summary) {
     throw new Error("Session not found");
   }
   const next = { ...summary, title: params.title };
   context.updateSessionSummary(params.sessionId, () => next);
+  publishCanonicalSessionStateEvent(
+    params.sessionId,
+    { type: "session-info", title: params.title },
+    context,
+  );
   broadcastSessionUpdate(context, params.sessionId, {
     kind: "session_updated",
     session: next,
@@ -277,13 +327,14 @@ async function cleanupSession(params: { sessionId: string }, context: HelmHandle
   const record = context.sessions.get(params.sessionId);
   const summary =
     record?.summary ??
-    context.sessionStore.list().find((item: any) => item.id === params.sessionId);
+    context.sessionStore.get(params.sessionId);
   if (!summary) {
     context.logError(
       `[tiller] session.cleanup.failed session=${params.sessionId} reason=Session not found`,
     );
     throw new Error("Session not found");
   }
+  context.sessionSubagentDetailService?.beginDelete(summary.id);
   const provider =
     record?.agent ?? context.resolveProviderById(summary.agentId, context.getAgents());
   let remoteResult;

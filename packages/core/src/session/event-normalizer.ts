@@ -30,6 +30,9 @@ export function isRuntimeGeneratedMessageId(id: string) {
 }
 
 type BroadcastToolCallLike = {
+  kind?: string;
+  title?: string;
+  id?: string;
   status: unknown;
   updatedAt?: string;
   output?: unknown;
@@ -45,11 +48,40 @@ export function resolveBroadcastToolCall<T extends BroadcastToolCallLike>(
   }
   return {
     ...persisted,
+    // ACP adapters assign the category once. Later snapshots only enrich the
+    // same entity; they must not create a second classification truth.
+    kind: persisted.kind ?? incoming.kind,
+    title: resolveBroadcastToolCallTitle(
+      persisted.title,
+      incoming.title,
+      incoming.id ?? persisted.id,
+    ),
     status: incoming.status,
     updatedAt: incoming.updatedAt,
     ...(incoming.output !== undefined ? { output: incoming.output } : {}),
     ...(incoming.input !== undefined ? { input: incoming.input } : {}),
   };
+}
+
+function resolveBroadcastToolCallTitle(
+  currentTitle: string | undefined,
+  incomingTitle: string | undefined,
+  id: string | undefined,
+) {
+  if (isInformativeToolCallTitle(incomingTitle, id)) {
+    return incomingTitle;
+  }
+  return currentTitle ?? incomingTitle;
+}
+
+function isInformativeToolCallTitle(title: string | undefined, id: string | undefined) {
+  const normalized = title?.trim();
+  return Boolean(
+    normalized &&
+      normalized !== id &&
+      !/^call_[A-Za-z0-9]+$/u.test(normalized) &&
+      !/^Tool call\b/u.test(normalized),
+  );
 }
 
 export function oneLine(value: string, maxLength = 220) {

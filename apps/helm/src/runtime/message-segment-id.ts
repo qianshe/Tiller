@@ -31,7 +31,12 @@ export function createMessageSegmentIdAllocator() {
     return `${sessionId}-msg-${padSequence(turn)}-${padSequence(segment)}-${identitySuffix(input)}`;
   }
 
-  return { startAssistantTurn, bumpToolBoundary, nextAssistantSegmentId };
+  function removeSession(sessionId: string) {
+    turns.delete(sessionId);
+    segments.delete(sessionId);
+  }
+
+  return { startAssistantTurn, bumpToolBoundary, nextAssistantSegmentId, removeSession };
 }
 
 function identitySuffix(input: MessageSegmentIdInput) {

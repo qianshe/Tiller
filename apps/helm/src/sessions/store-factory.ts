@@ -1,17 +1,30 @@
 import {
   createSqliteSessionArtifactStore,
+  createSqliteSessionLegacyEvidenceStore,
   createSqliteSessionAttachmentStore,
+  createSqliteSessionDiffBodyStore,
   createSqliteSessionMessageStore,
+  createSqliteSessionOutputBodyStore,
+  createSqliteSessionPlanStore,
   createSqliteSessionRuntimeStore,
   createSqliteSessionStore,
+  createSqliteSessionStateStore,
+  createSqliteSessionApprovalStore,
   createSqliteSessionUpdateStore,
+  createSqliteSessionSubagentDetailStore,
   migrateJsonSessionDataToSqlite,
   type HelmSessionStores,
   type JsonSessionStorePaths,
   type SessionArtifactStore,
+  type SessionLegacyEvidenceStore,
   type SessionAttachmentStore,
+  type SessionDiffBodyStore,
   type SessionMessageStore,
+  type SessionOutputBodyStore,
+  type SessionPlanStore,
   type SessionRuntimeStore,
+  type SessionStateStore,
+  type SessionApprovalStore,
   type SessionSummaryStore,
   type SessionTimelineStore,
   type SessionUpdateStore,
@@ -22,9 +35,15 @@ import { createModeAwareSessionTimelineStore } from "./timeline-store-mode";
 export type {
   HelmSessionStores,
   SessionArtifactStore,
+  SessionLegacyEvidenceStore,
   SessionAttachmentStore,
+  SessionDiffBodyStore,
   SessionMessageStore,
+  SessionOutputBodyStore,
+  SessionPlanStore,
   SessionRuntimeStore,
+  SessionStateStore,
+  SessionApprovalStore,
   SessionSummaryStore,
   SessionTimelineStore,
   SessionUpdateStore,
@@ -36,6 +55,7 @@ type StoreFactoryLogger = (message: string) => void;
 export type HelmSessionStoreFactoryOptions = {
   sqlitePath: string;
   attachmentRootPath: string;
+  outputBodyRootPath: string;
   timelineBlockRootPath?: string;
   timelineBlockMode?: string;
   /**
@@ -61,11 +81,21 @@ export function createHelmSessionStores(
     sessionStore: createSqliteSessionStore(options.sqlitePath),
     sessionMessageStore: createSqliteSessionMessageStore(options.sqlitePath),
     sessionArtifactStore: createSqliteSessionArtifactStore(options.sqlitePath),
+    sessionLegacyEvidenceStore: createSqliteSessionLegacyEvidenceStore(options.sqlitePath),
     sessionAttachmentStore: createSqliteSessionAttachmentStore({
       dbPath: options.sqlitePath,
       rootPath: options.attachmentRootPath,
     }),
+    sessionDiffBodyStore: createSqliteSessionDiffBodyStore({
+      dbPath: options.sqlitePath,
+      rootPath: `${options.outputBodyRootPath}.diffs`,
+    }),
+    sessionOutputBodyStore: createSqliteSessionOutputBodyStore({
+      dbPath: options.sqlitePath,
+      rootPath: options.outputBodyRootPath,
+    }),
     sessionRuntimeStore: createSqliteSessionRuntimeStore(options.sqlitePath),
+    sessionPlanStore: createSqliteSessionPlanStore(options.sqlitePath),
     sessionTimelineStore: createModeAwareSessionTimelineStore({
       sqlitePath: options.sqlitePath,
       blockRootPath: options.timelineBlockRootPath ?? `${options.sqlitePath}.timeline-blocks`,
@@ -73,5 +103,8 @@ export function createHelmSessionStores(
       logDebug: options.logDebug,
     }),
     sessionUpdateStore: createSqliteSessionUpdateStore(options.sqlitePath),
+    sessionStateStore: createSqliteSessionStateStore(options.sqlitePath),
+    sessionApprovalStore: createSqliteSessionApprovalStore(options.sqlitePath),
+    sessionSubagentDetailStore: createSqliteSessionSubagentDetailStore(options.sqlitePath),
   };
 }

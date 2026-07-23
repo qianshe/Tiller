@@ -1,28 +1,39 @@
 import type { MutableRefObject } from "react";
-import type { AgentPlan, AgentToolCall, AgentMessage, SessionSummary } from "@tiller/shared";
-import {
-  appendMessageToSessionTimeline,
-  appendToolCallToSessionTimeline,
-  sortSessionTimelineEntries,
+import type {
+  AgentMessage,
+  AgentToolCall,
+  SessionSummary,
 } from "@tiller/shared";
-import { commandChunkToToolCall, dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
-import { useDeckStore } from "../../store";
+import { dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
+import { toast } from "../toast";
+import { useDeckStore, type DeckNotificationInput } from "../../store";
 import { stripRedundantAttachmentData } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
-
-const MAX_OUTPUTS_PER_SESSION = 2000;
 
 export type ActivityServerEventContext = {
   toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>;
   mergeSessionToolCalls: (sessionId: string, incoming: AgentToolCall[]) => void;
   appendSystemMessage: (sessionId: string, text: string) => void;
+  addNotification?: (input: DeckNotificationInput) => void;
+  scheduleSubagentSettlement?: (callback: () => void) => void;
 };
+
+const SUBAGENT_RUNNING_MIN_VISIBLE_MS = 400;
 
 type ErrorRaisedParams = {
   sessionId?: string;
   message: string;
   code?: string;
   data?: unknown;
+};
+
+type NotificationRaisedParams = {
+  kind: "error" | "warning" | "info";
+  source: string;
+  sessionId?: string;
+  code?: string;
+  message: string;
+  occurredAt?: string;
 };
 
 export function applyActivityUpdate(
@@ -54,7 +65,6 @@ export function applyActivityUpdate(
           toolBoundaryTimes,
         ),
       }));
-      appendMessageTimelineEntry(store, sessionId, message);
       if (shouldApplyMessageToSessionSummary(message)) {
         store.setSessions((current) =>
           current.map((session) =>
@@ -66,115 +76,42 @@ export function applyActivityUpdate(
       }
       return true;
     }
-    case "command_output": {
-      const chunk = update.chunk;
-      store.setOutputs((current) => {
-        const existing = current[sessionId] ?? [];
-        const appended = [...existing, chunk];
-        return {
-          ...current,
-          [sessionId]: appended.length > MAX_OUTPUTS_PER_SESSION
-            ? appended.slice(-MAX_OUTPUTS_PER_SESSION)
-            : appended,
-        };
-      });
-      {
-        const toolCall = commandChunkToToolCall(chunk);
-        mergeSessionToolCalls(sessionId, [toolCall]);
-        appendToolCallTimelineEntry(store, sessionId, toolCall);
-      }
-      return true;
-    }
     case "tool_call": {
       const toolCall = update.toolCall;
-      const isAlreadySettled = toolCall.status === "completed" || toolCall.status === "failed";
-      if (isAlreadySettled) {
-        const runningSnapshot = { ...toolCall, status: "running" as const };
+      const isSettledSubagent =
+        toolCall.kind === "subagent"
+        && (
+          toolCall.status === "completed"
+          || toolCall.status === "failed"
+          || toolCall.status === "cancelled"
+        );
+      if (isSettledSubagent) {
+        const runningSnapshot = {
+          ...toolCall,
+          status: "running" as const,
+          output: undefined,
+        };
         mergeSessionToolCalls(sessionId, [runningSnapshot]);
-        appendToolCallTimelineEntry(store, sessionId, runningSnapshot);
-        requestAnimationFrame(() => {
+        const scheduleSettlement =
+          context.scheduleSubagentSettlement ?? scheduleVisibleSubagentSettlement;
+        scheduleSettlement(() => {
           mergeSessionToolCalls(sessionId, [toolCall]);
-          appendToolCallTimelineEntry(useDeckStore.getState(), sessionId, toolCall);
         });
       } else {
         mergeSessionToolCalls(sessionId, [toolCall]);
-        appendToolCallTimelineEntry(store, sessionId, toolCall);
       }
       return true;
     }
-    case "plan_update":
-      // Plan updates are session-scoped state carried over the activity update transport.
-      store.setSessionPlans((current) =>
-        mergeSessionPlanUpdate(current, sessionId, update.plan),
-      );
-      return true;
-    case "diff_update":
-      store.setDiffs((current) => ({
-        ...current,
-        [sessionId]: update.files,
-      }));
-      return true;
     default:
       return false;
   }
 }
 
+function scheduleVisibleSubagentSettlement(callback: () => void): void {
+  globalThis.setTimeout(callback, SUBAGENT_RUNNING_MIN_VISIBLE_MS);
+}
+
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
-
-function mergeSessionPlanUpdate(
-  current: Record<string, AgentPlan>,
-  sessionId: string,
-  incoming: AgentPlan,
-) {
-  if (incoming.entries.length === 0) {
-    if (!current[sessionId]) {
-      return current;
-    }
-    const { [sessionId]: _removed, ...rest } = current;
-    return rest;
-  }
-  return {
-    ...current,
-    [sessionId]: incoming,
-  };
-}
-
-function isAgentPlanComplete(plan: AgentPlan | undefined) {
-  if (!plan?.entries.length) {
-    return false;
-  }
-  return plan.entries.every((entry) => entry.status === "completed");
-}
-
-function appendMessageTimelineEntry(
-  store: DeckStore,
-  sessionId: string,
-  message: AgentMessage,
-) {
-  store.setSessionTimeline((current) => {
-    const entries = [...(current[sessionId] ?? [])];
-    appendMessageToSessionTimeline(entries, message);
-    return {
-      ...current,
-      [sessionId]: sortSessionTimelineEntries(entries),
-    };
-  });
-}
-
-function appendToolCallTimelineEntry(
-  store: DeckStore,
-  sessionId: string,
-  toolCall: AgentToolCall,
-) {
-  store.setSessionTimeline((current) => {
-    const entries = [...(current[sessionId] ?? [])];
-    appendToolCallToSessionTimeline(entries, toolCall);
-    return {
-      ...current,
-      [sessionId]: sortSessionTimelineEntries(entries),
-    };
-  });
-}
 
 function clearActiveThinkingToolCalls(
   sessionId: string,
@@ -232,14 +169,50 @@ export function applyErrorRaised(
   params: ErrorRaisedParams,
   context: ActivityServerEventContext,
 ) {
-  const { appendSystemMessage } = context;
+  return applyNotificationRaised({
+    ...params,
+    kind: "error",
+    source: "rpc",
+  }, context);
+}
+
+export function applyNotificationRaised(
+  params: NotificationRaisedParams,
+  context: ActivityServerEventContext,
+) {
+  const { appendSystemMessage, addNotification } = context;
   const store = useDeckStore.getState();
-  store.setPairingFeedback(params.message);
-  if (/not paired|not authenticated/iu.test(params.message)) {
+  const sessionMessage = params.code
+    ? `[${params.code}] ${params.message}`
+    : params.message;
+  addNotification?.({
+    kind: params.kind,
+    message: params.message,
+    source: params.source,
+    code: params.code,
+    sessionId: params.sessionId,
+    createdAt: params.occurredAt,
+  });
+  const toastOptions = params.kind === "error"
+    ? { duration: 8_000 }
+    : params.kind === "warning"
+      ? { duration: 6_000 }
+      : undefined;
+  if (params.kind === "error") {
+    toast.error(sessionMessage, toastOptions);
+  } else if (params.kind === "warning") {
+    toast.warning(sessionMessage, toastOptions);
+  } else {
+    toast.info(sessionMessage, toastOptions);
+  }
+  if (params.kind === "error") {
+    store.setPairingFeedback(params.message);
+  }
+  if (params.kind === "error" && /not paired|not authenticated/iu.test(params.message)) {
     store.setPairingState("input");
   }
-  if (params.sessionId) {
-    appendSystemMessage(params.sessionId, params.message);
+  if (params.sessionId && params.kind === "error") {
+    appendSystemMessage(params.sessionId, sessionMessage);
     store.setSessions((current) =>
       current.map((session) =>
         session.id === params.sessionId
@@ -247,7 +220,7 @@ export function applyErrorRaised(
               ...session,
               status: "error",
               updatedAt: new Date().toISOString(),
-              lastMessagePreview: params.message.slice(0, 160),
+              lastMessagePreview: sessionMessage.slice(0, 160),
             }
           : session,
       ),

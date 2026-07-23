@@ -1,4 +1,4 @@
-import type { AgentMessage, AgentPlan, AgentToolCall, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
+import type { AgentMessage, SessionSummary, SessionTimelineEntry } from "@tiller/shared";
 
 type HistoryState = {
   hasMore: boolean;
@@ -7,8 +7,6 @@ type HistoryState = {
 
 export type WorkspaceSessionStreamHydrationPlan = {
   messageSessionIds: string[];
-  activitySessionIds: string[];
-  planActivitySessionIds: string[];
   resumeCheckSessionIds: string[];
 };
 
@@ -16,59 +14,22 @@ export type WorkspaceSessionStreamHydrationInput = {
   sessionIds: string[];
   sessionById: ReadonlyMap<string, SessionSummary>;
   messageHistoryState: Record<string, HistoryState | undefined>;
-  activityHistoryState: Record<string, HistoryState | undefined>;
   messagesBySession?: Record<string, Pick<AgentMessage, "id" | "role">[] | undefined>;
   sessionTimelineBySession?: Record<string, SessionTimelineEntry[] | undefined>;
-  outputsBySession?: Record<string, unknown[] | undefined>;
-  toolCallsBySession?: Record<string, AgentToolCall[] | undefined>;
-  sessionPlansBySession?: Record<string, AgentPlan | undefined>;
   checkedResumeSessionIds: ReadonlySet<string>;
-  checkedPlanSessionIds?: ReadonlySet<string>;
+  pendingTimelineRequestSessionIds?: ReadonlySet<string>;
 };
 
 export function buildSessionStreamHydrationPlan({
   sessionIds,
   sessionById,
   messageHistoryState,
-  activityHistoryState,
   messagesBySession,
   sessionTimelineBySession,
-  outputsBySession,
-  toolCallsBySession,
-  sessionPlansBySession,
   checkedResumeSessionIds,
-  checkedPlanSessionIds,
+  pendingTimelineRequestSessionIds,
 }: WorkspaceSessionStreamHydrationInput): WorkspaceSessionStreamHydrationPlan {
   const uniqueSessionIds = [...new Set(sessionIds)];
-  const activitySessionIds: string[] = [];
-  const planActivitySessionIds: string[] = [];
-
-  for (const sessionId of uniqueSessionIds) {
-    const toolCalls = toolCallsBySession?.[sessionId] ?? [];
-    const hasCachedActivity = Boolean(
-      outputsBySession?.[sessionId]?.length || toolCalls.length,
-    );
-    const needsCachedPlan = needsPlanHydration({
-      sessionId,
-      session: sessionById.get(sessionId),
-      messageHistoryState,
-      messagesBySession,
-      sessionTimelineBySession,
-      sessionPlansBySession,
-      toolCalls,
-    });
-    const activityState = activityHistoryState[sessionId];
-    if (needsCachedPlan) {
-      if (!checkedPlanSessionIds?.has(sessionId)) {
-        activitySessionIds.push(sessionId);
-        planActivitySessionIds.push(sessionId);
-      }
-      continue;
-    }
-    if (!activityState && !hasCachedActivity) {
-      activitySessionIds.push(sessionId);
-    }
-  }
 
   return {
     messageSessionIds: uniqueSessionIds.filter((sessionId) => (
@@ -80,11 +41,11 @@ export function buildSessionStreamHydrationPlan({
         // every render turns that steady state into an idle fetch loop.
         hasTimelineCache: hasOwnSessionCache(sessionTimelineBySession, sessionId),
         historyState: messageHistoryState[sessionId],
+        hasPendingTimelineRequest:
+          pendingTimelineRequestSessionIds?.has(sessionId) ?? false,
         session: sessionById.get(sessionId),
       })
     )),
-    activitySessionIds,
-    planActivitySessionIds,
     resumeCheckSessionIds: uniqueSessionIds.filter((sessionId) => {
       const session = sessionById.get(sessionId);
       return Boolean(
@@ -97,58 +58,30 @@ export function buildSessionStreamHydrationPlan({
   };
 }
 
-function isPlanCapableToolCall(toolCall: AgentToolCall) {
-  if (toolCall.kind === "todo") {
-    return true;
-  }
-  const title = (toolCall.title ?? "").trim().toLowerCase().replace(/[^a-z0-9]/gu, "");
-  return title === "taskcreate" || title === "taskupdate" || title === "todowrite";
-}
-
-function needsPlanHydration({
-  sessionId,
-  session,
-  messageHistoryState,
-  messagesBySession,
-  sessionTimelineBySession,
-  sessionPlansBySession,
-  toolCalls,
-}: {
-  sessionId: string;
-  session: SessionSummary | undefined;
-  messageHistoryState: Record<string, HistoryState | undefined>;
-  messagesBySession: Record<string, Pick<AgentMessage, "id" | "role">[] | undefined> | undefined;
-  sessionTimelineBySession: Record<string, SessionTimelineEntry[] | undefined> | undefined;
-  sessionPlansBySession: Record<string, AgentPlan | undefined> | undefined;
-  toolCalls: AgentToolCall[];
-}) {
-  if (!sessionPlansBySession || sessionPlansBySession[sessionId]) {
-    return false;
-  }
-  return toolCalls.some(isPlanCapableToolCall) ||
-    hasOwnSessionCache(sessionTimelineBySession, sessionId) ||
-    Boolean(messagesBySession?.[sessionId]?.length) ||
-    Boolean(messageHistoryState[sessionId]) ||
-    Boolean(session?.messageCount);
-}
-
 function hasIncompleteCachedMessageHistory({
   cachedMessages,
   hasTimelineCache,
   historyState,
+  hasPendingTimelineRequest,
   session,
 }: {
   cachedMessages: Pick<AgentMessage, "id" | "role">[] | undefined;
   hasTimelineCache: boolean;
   historyState: HistoryState | undefined;
+  hasPendingTimelineRequest: boolean;
   session: SessionSummary | undefined;
 }) {
-  if (!session || !historyState || historyState.loading || historyState.hasMore) {
+  if (!session || !historyState || historyState.hasMore) {
     return false;
   }
-  const cachedUserCount = cachedMessages?.filter((message) => message.role === "user").length ?? 0;
-  return session.messageCount > cachedUserCount ||
-    (!hasTimelineCache && Boolean(cachedMessages?.length || session.messageCount > 0));
+  if (hasTimelineCache) {
+    return false;
+  }
+  if (historyState.loading) {
+    return !hasPendingTimelineRequest &&
+      Boolean(cachedMessages?.length || session.messageCount > 0);
+  }
+  return Boolean(cachedMessages?.length || session.messageCount > 0);
 }
 
 function hasOwnSessionCache<T>(

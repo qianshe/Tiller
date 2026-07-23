@@ -17,16 +17,34 @@ import type {
   PromptTraceEvent,
   SessionConfigOption,
   SessionConfigOptionValue,
-  SessionHistoryReimportResult,
+  SessionLiveStateSnapshot,
   SessionReasoningEffort,
   SessionSummary,
   TrustedDeviceSummary,
   WorktreeSummary,
 } from "@tiller/shared";
-import type { StoredSessionRuntimeDescriptor } from "../sessions/facade";
+import type {
+  SessionDiffBodyStore,
+  SessionOutputBodyStore,
+  SessionPlanStore,
+  StoredSessionRuntimeDescriptor,
+} from "../sessions/facade";
+import type {
+  SessionLegacyEvidenceStore,
+  SessionTimelineStore,
+  SessionUpdateStore,
+} from "@tiller/persistence";
 import type { LiveMessageBuffer } from "../runtime/live-message-buffer";
 import type { SessionPromptQueueManager } from "../runtime/session/prompt-queue";
+import type { SessionTimelineDispatcher } from "../runtime/session-timeline/dispatcher";
+import type { SessionTimelineFlushScheduler } from "../runtime/session-timeline/flush-scheduler";
+import type { SessionLiveStateStore } from "../runtime/session-timeline/live-state-store";
+import type { SessionApprovalStateStore } from "../runtime/session/event/approval-store";
+import type { SessionRuntimeEventState } from "../runtime/session/event/runtime-state";
+import type { RuntimeMetrics } from "../logging/runtime-metrics";
+import type { SessionTimelineWorkerRegistry } from "../runtime/session-timeline/worker-registry";
 import type { TillerLogger } from "../logging/logger";
+import type { SessionSubagentDetailService } from "../runtime/session/subagent-detail-service";
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -36,7 +54,9 @@ export type SessionRecord = {
 };
 
 export type PermissionRecord = { sessionId: string; request: PermissionRequest };
-export type ApprovalRecord = PermissionRecord;
+export type ApprovalRecord = PermissionRecord & {
+  status?: "pending" | "resolving";
+};
 
 export type RuntimeDraftReason = "scope-change" | "tab-disconnect" | "ttl" | "shutdown" | "user" | "obsolete";
 
@@ -58,6 +78,17 @@ export type RuntimeDraftRecord = {
   >["state"];
   configOptions: SessionConfigOption[];
   availableCommands: AvailableCommand[];
+};
+
+export type RuntimeEventThrottleConfig = {
+  assistantWindowMs?: number;
+  assistantMaxChars?: number;
+  commandOutputWindowMs?: number;
+  commandOutputMaxChars?: number;
+  toolCallWindowMs?: number;
+  toolCallMaxChars?: number;
+  setTimeoutFn?: (callback: () => void, delay: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutFn?: (timer: ReturnType<typeof setTimeout>) => void;
 };
 
 export type HelmHandlerContext = {
@@ -104,11 +135,24 @@ export type HelmHandlerContext = {
   sessionStore: any;
   sessionMessageStore: any;
   sessionArtifactStore: any;
+  sessionLegacyEvidenceStore?: SessionLegacyEvidenceStore;
   sessionAttachmentStore: any;
+  sessionDiffBodyStore?: SessionDiffBodyStore;
+  sessionOutputBodyStore: SessionOutputBodyStore;
   sessionRuntimeStore: any;
-  sessionTimelineStore: any;
-  sessionUpdateStore: any;
+  sessionPlanStore: SessionPlanStore;
+  sessionTimelineStore: SessionTimelineStore;
+  sessionTimelineWorkers?: SessionTimelineWorkerRegistry;
+  sessionTimelineDispatcher?: SessionTimelineDispatcher;
+  sessionTimelineFlushScheduler?: SessionTimelineFlushScheduler;
+  sessionLiveStateStore?: SessionLiveStateStore;
+  sessionApprovalStateStore?: SessionApprovalStateStore;
+  sessionSubagentDetailService?: SessionSubagentDetailService;
+  sessionRuntimeEventState?: SessionRuntimeEventState;
+  runtimeMetrics?: RuntimeMetrics;
+  sessionUpdateStore: SessionUpdateStore;
   liveMessageBuffer: LiveMessageBuffer;
+  runtimeEventThrottleConfig?: RuntimeEventThrottleConfig;
   promptQueue: SessionPromptQueueManager;
   drainPromptQueue: (sessionId: string) => Promise<void>;
 
@@ -194,6 +238,7 @@ export type HelmHandlerContext = {
   startSessionResume: (sessionId: string) => Promise<{
     ok: boolean;
     resume: SessionSummary["resume"] extends infer R ? NonNullable<R> : never;
+    session?: SessionSummary;
     message: string;
   }>;
   handleRuntimeEvent: (
@@ -201,7 +246,6 @@ export type HelmHandlerContext = {
     event: import("@tiller/acp-runtime").SessionRuntimeEvent,
   ) => void;
   hydrateSessionSummary: (summary: SessionSummary) => SessionSummary;
-  migrateStoredSessionSummary: (summary: SessionSummary) => SessionSummary;
   buildResumeInfo: (
     summary: SessionSummary,
     agent: AcpAgentProvider | undefined,
@@ -211,12 +255,7 @@ export type HelmHandlerContext = {
     agent: AcpAgentProvider | undefined,
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
   ) => void;
-  refreshAuthoritativeSessionHistory: (sessionId: string) => Promise<void>;
-  readSessionPlan?: (sessionId: string) => AgentPlan | undefined;
-  reimportSessionHistory: (
-    sessionId: string,
-    options?: { limit?: number },
-  ) => Promise<SessionHistoryReimportResult>;
+  readSessionLiveState?: (sessionId: string) => SessionLiveStateSnapshot | undefined;
   updateSessionSummary: (
     sessionId: string,
     mutate: (summary: SessionSummary) => SessionSummary,

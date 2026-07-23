@@ -14,12 +14,10 @@ import type {
   PermissionRequest,
   SessionReasoningEffort,
   SessionResumeInfo,
-  SessionHistoryReimportResult,
   SessionSummary,
   WorktreeSummary,
   SessionConfigOptionValue,
 } from "@tiller/shared";
-import { buildSessionTimelineFromLegacy } from "@tiller/shared";
 import type { HelmHandlerContext } from "../../handlers/context";
 import {
   createHelmSessionStores,
@@ -27,37 +25,32 @@ import {
 } from "../../sessions/facade";
 import { createSessionEventPublisher } from "./event/publisher";
 import { createProviderLifecycle, type HelmRuntimeHandle } from "../provider-lifecycle";
-import { handleRuntimeEvent as dispatchRuntimeEvent } from "../events";
+import {
+  cleanupRuntimeEventState,
+  ensureLiveEventSequenceForSession,
+  handleRuntimeEvent as dispatchRuntimeEvent,
+} from "../events";
 import { markSessionResumeUnavailable, } from "../resume-info";
-import { createProviderHistoryService } from "../provider-history/service";
-import { createRestoreReplayBuffer } from "../replay/event-buffer";
 import { createSessionPersistenceService } from "./persistence-service";
 import { createRuntimeDraftRegistry } from "../draft-registry";
 import { createSessionResumeService } from "./resume-service";
 import { createSessionDiffHydrationService } from "./diff-hydration";
 import { createSessionSummaryHydrationService } from "./summary-hydration";
 import { createRuntimeDescriptorService } from "../descriptor-service";
-import {
-  clearRecoveredArtifactTimelineSequences,
-  chooseRecoverySummary,
-  findAcpReplayCoverageGap,
-  preservePreviousUserPromptsAfterReimport,
-  readReimportedHistoryPage,
-  recoverUserPromptFromSessionSummary,
-  sanitizeRecoveredHistorySequenceResets,
-} from "../history-reimport/helpers";
+import { createSessionTimelineDispatcher } from "../session-timeline/dispatcher";
+import { createSessionTimelineFlushScheduler } from "../session-timeline/flush-scheduler";
+import { createSessionLiveStateStore } from "../session-timeline/live-state-store";
+import { createSessionApprovalStateStore } from "./event/approval-store";
+import { createSessionRuntimeEventState } from "./event/runtime-state";
+import { broadcastNotificationRaised } from "../../rpc/notifications";
+import { expirePersistedApprovalsOnStartup } from "./event/approval-recovery";
+import { createSessionTimelineWorkerRegistry } from "../session-timeline/worker-registry";
 import { resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary } from "./worktree-resolution";
-import {
-  readAdapterTranscriptPlanRepair,
-  appendTranscriptRepairPlanUpdate,
-} from "../history-reimport/plan-repair";
-import {
-  applyLocalMessageRepair,
-  applyTranscriptMessageRepair,
-  readAdapterTranscriptMessageRepair,
-} from "../history-reimport/message-repair";
 import type { TillerLogger } from "../../logging/logger";
 import type { AcpProtocolLoggingOptions } from "@tiller/acp-runtime";
+import { createSessionSubagentDetailService } from "./subagent-detail-service";
+import type { SessionSubagentDetailStore } from "@tiller/persistence";
+import { materializeRuntimeCommandOutputChunk } from "./event/effects";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
 
@@ -77,9 +70,15 @@ export type SessionServicesOptions = {
   sessionMessageStore: HelmSessionStores["sessionMessageStore"];
   sessionArtifactStore: HelmSessionStores["sessionArtifactStore"];
   sessionAttachmentStore: HelmSessionStores["sessionAttachmentStore"];
+  sessionDiffBodyStore: HelmSessionStores["sessionDiffBodyStore"];
+  sessionOutputBodyStore: HelmSessionStores["sessionOutputBodyStore"];
   sessionRuntimeStore: HelmSessionStores["sessionRuntimeStore"];
+  sessionPlanStore: HelmSessionStores["sessionPlanStore"];
   sessionTimelineStore: HelmSessionStores["sessionTimelineStore"];
   sessionUpdateStore: HelmSessionStores["sessionUpdateStore"];
+  sessionStateStore: HelmSessionStores["sessionStateStore"];
+  sessionApprovalStore: HelmSessionStores["sessionApprovalStore"];
+  sessionSubagentDetailStore?: SessionSubagentDetailStore;
   getAgents: () => AcpAgentProvider[];
   getProjects: () => ProjectSummary[];
   getWorktrees: () => WorktreeSummary[];
@@ -95,39 +94,6 @@ type ProjectSummary = import("@tiller/shared").ProjectSummary;
 
 
 export function createSessionServiceGraph(options: SessionServicesOptions) {
-  function sanitizeRecoveredHistoryOrdering(sessionId: string) {
-    const messages = options.sessionMessageStore.list(sessionId);
-    const artifacts = options.sessionArtifactStore.get(sessionId);
-    const currentTimeline = options.sessionTimelineStore.list(sessionId);
-    const baseTimeline = currentTimeline.length
-      ? currentTimeline
-      : buildSessionTimelineFromLegacy({
-        messages,
-        outputs: artifacts.outputs,
-        toolCalls: artifacts.toolCalls,
-      });
-    const sanitized = sanitizeRecoveredHistorySequenceResets(baseTimeline);
-    if (!sanitized.clearedMessageIds.size && !sanitized.clearedToolCallIds.size) {
-      return;
-    }
-
-    const sanitizedMessages = messages.map((message) =>
-      sanitized.clearedMessageIds.has(message.id) && typeof message.timelineSequence === "number"
-        ? { ...message, timelineSequence: undefined }
-        : message
-    );
-    const sanitizedArtifacts = clearRecoveredArtifactTimelineSequences({
-      outputs: artifacts.outputs,
-      toolCalls: artifacts.toolCalls,
-      clearedToolCallIds: sanitized.clearedToolCallIds,
-    });
-
-    options.sessionMessageStore.replace(sessionId, sanitizedMessages);
-    options.sessionArtifactStore.replaceOutputs(sessionId, sanitizedArtifacts.outputs);
-    options.sessionArtifactStore.replaceToolCalls(sessionId, sanitizedArtifacts.toolCalls);
-    options.sessionTimelineStore.replace(sessionId, sanitized.entries);
-  }
-
   function resolveStoredSessionWorktree(summary: SessionSummary) {
     return resolveStoredSessionWorktreeFromSummary({
       summary,
@@ -155,30 +121,37 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionStore: options.sessionStore,
     sessionMessageStore: options.sessionMessageStore,
     sessionArtifactStore: options.sessionArtifactStore,
+    sessionDiffBodyStore: options.sessionDiffBodyStore,
+    sessionOutputBodyStore: options.sessionOutputBodyStore,
     sessionAttachmentStore: options.sessionAttachmentStore,
     sessionRuntimeStore: options.sessionRuntimeStore,
+    sessionPlanStore: options.sessionPlanStore,
     sessionTimelineStore: options.sessionTimelineStore,
     sessionUpdateStore: options.sessionUpdateStore,
   });
-  const providerHistory = createProviderHistoryService({
-    sessions: options.sessions,
-    sessionStore: options.sessionStore,
-    sessionMessageStore: options.sessionMessageStore,
-    sessionArtifactStore: options.sessionArtifactStore,
-    sessionAttachmentStore: options.sessionAttachmentStore,
-    sessionRuntimeStore: options.sessionRuntimeStore,
-    sessionTimelineStore: options.sessionTimelineStore,
-    sessionUpdateStore: options.sessionUpdateStore,
-    getAgents: options.getAgents,
-    getWorktrees: options.getWorktrees,
-    logger: options.logger,
-    logInfo: options.logInfo,
-    logError: options.logError,
-  });
+  const sessionSubagentDetailService = options.sessionSubagentDetailStore
+    ? createSessionSubagentDetailService({
+        store: options.sessionSubagentDetailStore,
+        materializeCommandOutput: (sessionId, chunk) =>
+          materializeRuntimeCommandOutputChunk(
+            options.createHandlerContext(),
+            sessionId,
+            chunk,
+          ),
+        publish: (sessionId, delta) => {
+          createSessionEventPublisher(options.createHandlerContext()).sessionUpdate(sessionId, {
+            kind: "subagent_detail",
+            delta,
+          });
+        },
+        logError: options.logError,
+      })
+    : undefined;
   const diffHydration = createSessionDiffHydrationService({
     sessions: options.sessions,
     sessionStore: options.sessionStore,
     sessionArtifactStore: options.sessionArtifactStore,
+    sessionDiffBodyStore: options.sessionDiffBodyStore,
     getProjects: options.getProjects,
     getWorktrees: options.getWorktrees,
     createHandlerContext: options.createHandlerContext,
@@ -194,6 +167,57 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionRuntimeStore: options.sessionRuntimeStore,
     getAgents: options.getAgents,
   });
+  const sessionTimelineWorkers = createSessionTimelineWorkerRegistry();
+  const sessionRuntimeEventState = createSessionRuntimeEventState();
+  const sessionLiveStateStore = createSessionLiveStateStore(options.sessionStateStore);
+  const sessionApprovalStateStore = createSessionApprovalStateStore(
+    options.sessionApprovalStore,
+  );
+  try {
+    const expiredApprovalIds = expirePersistedApprovalsOnStartup({
+      sessions: options.sessionStore.list(),
+      approvals: sessionApprovalStateStore,
+      liveStates: sessionLiveStateStore,
+    });
+    if (expiredApprovalIds.length > 0) {
+      options.logInfo(
+        `[tiller] approval.recovery.expired count=${expiredApprovalIds.length}`,
+      );
+    }
+  } catch (error) {
+    options.logError(
+      `[tiller] approval.recovery.failed message=${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const sessionTimelineDispatcher = createSessionTimelineDispatcher({
+    store: options.sessionTimelineStore,
+    publish: (sessionId, batch) => {
+      createSessionEventPublisher(options.createHandlerContext()).sessionUpdate(sessionId, {
+        kind: "timeline_batch",
+        batch,
+      });
+    },
+  });
+  const sessionTimelineFlushScheduler = createSessionTimelineFlushScheduler({
+    workers: sessionTimelineWorkers,
+    dispatcher: sessionTimelineDispatcher,
+  });
+  const sessionTimelineIdleEvictionTimer = setInterval(() => {
+    sessionTimelineWorkers.evictIdle();
+  }, 60_000);
+  sessionTimelineIdleEvictionTimer.unref?.();
+  function resetSessionTimelineRuntimeState(sessionId: string) {
+    const context = options.createHandlerContext();
+    context.promptQueue.remove(sessionId);
+    context.liveMessageBuffer.remove(sessionId);
+    context.runtimeMetrics?.removeSession(sessionId);
+    cleanupRuntimeEventState(sessionId, context);
+    diffHydration.remove(sessionId);
+    sessionTimelineFlushScheduler.remove(sessionId);
+    sessionTimelineWorkers.remove(sessionId);
+    sessionLiveStateStore.remove(sessionId);
+    sessionApprovalStateStore.remove(sessionId);
+  }
   function handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent) {
     dispatchRuntimeEvent(sessionId, event, options.createHandlerContext());
   }
@@ -206,18 +230,18 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logError: options.logError,
     logger: options.logger,
     protocolLogging: options.protocolLogging,
+    notify: (notification) => broadcastNotificationRaised(
+      { broadcastNotification: options.broadcastNotification },
+      notification,
+    ),
   });
   const sessionResume = createSessionResumeService({
     sessions: options.sessions,
     sessionStore: options.sessionStore,
-    sessionMessageStore: options.sessionMessageStore,
-    sessionArtifactStore: options.sessionArtifactStore,
     sessionRuntimeStore: options.sessionRuntimeStore,
     providerLifecycle,
-    providerHistory,
     getAgents: options.getAgents,
     getProjects: options.getProjects,
-    createHandlerContext: options.createHandlerContext,
     resolveStoredSessionWorktree,
     buildResumeInfo,
     hydrateSessionSummary,
@@ -227,6 +251,10 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logger: options.logger,
     logInfo: options.logInfo,
     logError: options.logError,
+    notify: (notification) => broadcastNotificationRaised(
+      { broadcastNotification: options.broadcastNotification },
+      notification,
+    ),
     protocolLogging: options.protocolLogging,
   });
 
@@ -239,183 +267,12 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
   }
 
 
-  async function reimportSessionHistory(
-    sessionId: string,
-    reimportOptions: { limit?: number } = {},
-  ): Promise<SessionHistoryReimportResult> {
-    const activeRecord = options.sessions.get(sessionId);
-    const storedSummary = options.sessionStore.list().find((item) => item.id === sessionId);
-    const summary = activeRecord?.summary ?? storedSummary;
-    if (!summary) {
-      throw new Error("Session not found");
-    }
-    const recoverySummary = chooseRecoverySummary(summary, storedSummary);
-
-    const previousMessages = options.sessionMessageStore.list(sessionId);
-    const previousArtifacts = options.sessionArtifactStore.get(sessionId);
-    const previousPlan = providerHistory.readSessionPlan(sessionId);
-    const previousTimeline = options.sessionTimelineStore.list(sessionId);
-    const restorePreviousLocalHistory = () => {
-      options.sessionMessageStore.replace(sessionId, previousMessages);
-      options.sessionArtifactStore.remove(sessionId);
-      for (const output of previousArtifacts.outputs) {
-        options.sessionArtifactStore.appendOutput(sessionId, output);
-      }
-      options.sessionArtifactStore.replaceDiffs(sessionId, previousArtifacts.diffs);
-      options.sessionArtifactStore.replaceToolCalls(sessionId, previousArtifacts.toolCalls);
-      if (previousTimeline.length) {
-        options.sessionTimelineStore.replace(sessionId, previousTimeline);
-      } else {
-        options.sessionTimelineStore.remove(sessionId);
-      }
-      providerHistory.recordSessionPlan(sessionId, previousPlan);
-    };
-
-    options.sessionMessageStore.replace(sessionId, []);
-    options.sessionArtifactStore.remove(sessionId);
-    options.sessionTimelineStore.remove(sessionId);
-    providerHistory.resetRefresh(sessionId);
-
-    try {
-      const resume = await sessionResume.startSessionResume(sessionId, { forceReloadActive: true });
-      if (!resume.ok) {
-        throw new Error(resume.message);
-      }
-      // A successful resume has already applied ACP replay. Do not overwrite it here.
-      preservePreviousUserPromptsAfterReimport({
-        sessionId,
-        previousMessages,
-        sessionMessageStore: options.sessionMessageStore,
-      });
-      recoverUserPromptFromSessionSummary({
-        sessionId,
-        summary: recoverySummary,
-        sessionMessageStore: options.sessionMessageStore,
-      });
-
-      let messages = options.sessionMessageStore.list(sessionId);
-      const artifacts = options.sessionArtifactStore.get(sessionId);
-      let plan = providerHistory.readSessionPlan(sessionId);
-      const repairAgent = activeRecord?.agent ?? resolveProviderById(recoverySummary.agentId, options.getAgents());
-      if (!plan) {
-        const repairedPlan = readAdapterTranscriptPlanRepair({
-          summary: recoverySummary,
-          agent: repairAgent,
-          logger: options.logger,
-        });
-        if (repairedPlan) {
-          providerHistory.recordSessionPlan(sessionId, repairedPlan);
-          appendTranscriptRepairPlanUpdate({
-            sessionId,
-            summary: recoverySummary,
-            agent: repairAgent,
-            plan: repairedPlan,
-            sessionUpdateStore: options.sessionUpdateStore,
-          });
-          plan = repairedPlan;
-        }
-      }
-      const didRepairFromLocalMessages = applyLocalMessageRepair({
-        sessionId,
-        summary: recoverySummary,
-        agent: repairAgent,
-        previousMessages,
-        sessionMessageStore: options.sessionMessageStore,
-        sessionArtifactStore: options.sessionArtifactStore,
-        sessionTimelineStore: options.sessionTimelineStore,
-        sessionUpdateStore: options.sessionUpdateStore,
-      });
-      if (didRepairFromLocalMessages) {
-        messages = options.sessionMessageStore.list(sessionId);
-      } else {
-        const repairedMessages = readAdapterTranscriptMessageRepair({
-          summary: recoverySummary,
-          agent: repairAgent,
-          logger: options.logger,
-        });
-        if (repairedMessages.length) {
-          const didRepairMessages = applyTranscriptMessageRepair({
-            sessionId,
-            summary: recoverySummary,
-            agent: repairAgent,
-            transcriptMessages: repairedMessages,
-            sessionMessageStore: options.sessionMessageStore,
-            sessionArtifactStore: options.sessionArtifactStore,
-            sessionTimelineStore: options.sessionTimelineStore,
-            sessionUpdateStore: options.sessionUpdateStore,
-          });
-          if (didRepairMessages) {
-            messages = options.sessionMessageStore.list(sessionId);
-          }
-        }
-      }
-      const coverageGap = findAcpReplayCoverageGap({
-        previousMessages,
-        replayMessages: messages,
-        previousTimeline,
-        replayTimeline: options.sessionTimelineStore?.list(sessionId),
-        previousPlan,
-        replayPlan: plan,
-      });
-      if (coverageGap) {
-        throw new Error(coverageGap);
-      }
-      if (
-        !messages.length &&
-        !artifacts.outputs.length &&
-        !artifacts.toolCalls.length &&
-        !artifacts.diffs.length &&
-        !plan
-      ) {
-        throw new Error("ACP did not return any history content for this session.");
-      }
-
-      sanitizeRecoveredHistoryOrdering(sessionId);
-      return readReimportedHistoryPage({
-        sessionId,
-        limit: reimportOptions.limit,
-        message: "历史已从 ACP 重新导入。",
-        plan,
-        sessionMessageStore: options.sessionMessageStore,
-        sessionArtifactStore: options.sessionArtifactStore,
-        sessionTimelineStore: options.sessionTimelineStore,
-      });
-    } catch (error) {
-      restorePreviousLocalHistory();
-      recoverUserPromptFromSessionSummary({
-        sessionId,
-        summary: recoverySummary,
-        sessionMessageStore: options.sessionMessageStore,
-      });
-      const restoredMessages = options.sessionMessageStore.list(sessionId);
-      const restoredArtifacts = options.sessionArtifactStore.get(sessionId);
-      if (
-        restoredMessages.length ||
-        restoredArtifacts.outputs.length ||
-        restoredArtifacts.toolCalls.length ||
-        restoredArtifacts.diffs.length
-      ) {
-        return readReimportedHistoryPage({
-          sessionId,
-          limit: reimportOptions.limit,
-          message: `ACP 历史重导入失败，已保留本地历史并恢复用户提示：${error instanceof Error ? error.message : "未知错误"}`,
-          plan: providerHistory.readSessionPlan(sessionId),
-          sessionMessageStore: options.sessionMessageStore,
-          sessionArtifactStore: options.sessionArtifactStore,
-          sessionTimelineStore: options.sessionTimelineStore,
-        });
-      }
-      throw error;
-    }
-  }
-
-
   function updateSessionSummary(
     sessionId: string,
     mutate: (summary: SessionSummary) => SessionSummary,
   ) {
     const activeSummary = options.sessions.get(sessionId)?.summary;
-    const persistedSummary = options.sessionStore.list().find((item) => item.id === sessionId);
+    const persistedSummary = options.sessionStore.get(sessionId);
     const base = activeSummary ?? persistedSummary;
     if (!base) {
       return undefined;
@@ -437,21 +294,6 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
 
   function hydrateSessionSummary(summary: SessionSummary): SessionSummary {
     return sessionSummaryHydration.hydrateSessionSummary(summary);
-  }
-
-  function migrateStoredSessionSummary(summary: SessionSummary) {
-    const hydrated = sessionSummaryHydration.migrateStoredSessionSummary(summary);
-    if (
-      hydrated.projectId !== summary.projectId ||
-      hydrated.projectName !== summary.projectName ||
-      hydrated.helmId !== summary.helmId ||
-      hydrated.cwd !== summary.cwd ||
-      hydrated.worktreeName !== summary.worktreeName ||
-      hydrated.cwd !== summary.cwd
-    ) {
-      options.sessionStore.upsert(hydrated);
-    }
-    return hydrated;
   }
 
   function buildResumeInfo(
@@ -477,14 +319,30 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     return diffHydration.hydrateDiffsFromWorktreeGit(sessionId, files);
   }
 
+  function deleteLocalSessionData(sessionId: string) {
+    resetSessionTimelineRuntimeState(sessionId);
+    sessionSubagentDetailService?.remove(sessionId);
+    sessionPersistence.deleteLocalSessionData(sessionId);
+  }
+
+  async function startSessionResume(
+    sessionId: string,
+    resumeOptions: { forceReloadActive?: boolean } = {},
+  ) {
+    const result = await sessionResume.startSessionResume(sessionId, resumeOptions);
+    if (result.ok) {
+      ensureLiveEventSequenceForSession(sessionId, options.createHandlerContext());
+    }
+    return result;
+  }
+
   return {
     buildResumeInfo,
     clearPermissionRequestsForSession,
-    deleteLocalSessionData: sessionPersistence.deleteLocalSessionData,
+    deleteLocalSessionData,
     handleRuntimeEvent,
     hydrateDiffsFromWorktreeGit,
     hydrateSessionSummary,
-    migrateStoredSessionSummary,
     configureRuntimeDraft: runtimeDraftRegistry.configureRuntimeDraft,
     createRuntimeDraft: runtimeDraftRegistry.createRuntimeDraft,
     discardRuntimeDraft: runtimeDraftRegistry.discardRuntimeDraft,
@@ -492,11 +350,39 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     persistRuntimeDescriptor,
     persistSessionMessage: sessionPersistence.persistSessionMessage,
     publishDiffUpdate,
-    reimportSessionHistory,
-    refreshAuthoritativeSessionHistory: providerHistory.refreshAuthoritativeSessionHistory,
-    readSessionPlan: providerHistory.readSessionPlan,
+    readSessionLiveState: sessionLiveStateStore.get,
     scheduleDeckClientDraftDiscard: runtimeDraftRegistry.scheduleDeckClientDraftDiscard,
-    startSessionResume: sessionResume.startSessionResume,
+    sessionLiveStateStore,
+    sessionApprovalStateStore,
+    sessionRuntimeEventState,
+    sessionSubagentDetailService,
+    sessionTimelineDispatcher,
+    sessionTimelineFlushScheduler,
+    sessionTimelineWorkers,
+    dispose() {
+      clearInterval(sessionTimelineIdleEvictionTimer);
+      const context = options.createHandlerContext();
+      const transientSessionIds = new Set([
+        ...options.sessions.keys(),
+        ...sessionRuntimeEventState.sessionIds(),
+        ...context.promptQueue.sessionIds(),
+        ...context.liveMessageBuffer.sessionIds(),
+      ]);
+      for (const sessionId of transientSessionIds) {
+        options.sessionUpdateStore.compactTail(sessionId);
+        context.promptQueue.remove(sessionId);
+        context.liveMessageBuffer.remove(sessionId);
+        context.runtimeMetrics?.removeSession(sessionId);
+        cleanupRuntimeEventState(sessionId, context);
+        sessionTimelineFlushScheduler.remove(sessionId);
+        sessionTimelineWorkers.remove(sessionId);
+        sessionSubagentDetailService?.flush(sessionId);
+      }
+      sessionTimelineFlushScheduler.dispose();
+      sessionSubagentDetailService?.dispose();
+      diffHydration.dispose();
+    },
+    startSessionResume,
     takeRuntimeDraft: runtimeDraftRegistry.takeRuntimeDraft,
     updateSessionSummary,
   };

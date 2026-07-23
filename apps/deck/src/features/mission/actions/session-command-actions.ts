@@ -7,11 +7,14 @@ import type {
   ProjectSummary,
   SessionReasoningEffort,
   SessionSummary,
+  SessionTimelineEntry,
   WorktreeSummary,
 } from "@tiller/shared";
 import type {
+  Dispatch,
   FormEvent,
   KeyboardEvent as ReactKeyboardEvent,
+  SetStateAction,
 } from "react";
 import type { AgentModelOptionsEntry } from "../../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
@@ -27,7 +30,10 @@ import {
   startResume as startResumeImpl,
   submitPrompt as submitPromptImpl,
 } from "./session-actions";
-import { resolveSessionRestoreGate } from "../utils/session-state";
+import {
+  isSessionConversationLoaded,
+  resolveSessionRestoreGate,
+} from "../utils/session-state";
 
 type MutableRef<T> = { current: T };
 
@@ -40,6 +46,8 @@ type UseSessionCommandActionsOptions = {
   activeSessionId: string | null;
   activeSession?: SessionSummary | null;
   statuses: Record<string, SessionSummary["status"]>;
+  messageHistoryState?: Record<string, { loading: boolean } | undefined>;
+  sessionTimeline?: Record<string, SessionTimelineEntry[] | undefined>;
   selectedProjectId?: string | null;
   projects: ProjectSummary[];
   selectedWorktree?: WorktreeSummary | null;
@@ -49,14 +57,16 @@ type UseSessionCommandActionsOptions = {
   agentModelOptions?: Record<string, AgentModelOptionsEntry>;
   pendingPromptRef: MutableRef<string | null>;
   pendingPromptContentRef: MutableRef<AgentPromptContent[] | undefined>;
+  newSessionPromptPendingScopesRef: MutableRef<Set<string>>;
   dispatch: DispatchToHelm;
   effectiveDraftAgentMode?: string;
   normalizeModelSelection: (model: string) => string | undefined;
   selectedModel: string;
   selectedReasoningEffort?: SessionReasoningEffort;
   navigateToView: (view: "sessions") => void;
-  setPrompt: (value: string) => void;
-  setPromptImages: (images: AgentPromptImageContent[]) => void;
+  isMobile?: boolean;
+  setPrompt: Dispatch<SetStateAction<string>>;
+  setPromptImages: Dispatch<SetStateAction<AgentPromptImageContent[]>>;
   createClientUserMessageId: (sessionId: string) => string;
   appendUserMessage: (
     sessionId: string,
@@ -66,6 +76,7 @@ type UseSessionCommandActionsOptions = {
   ) => void;
   permissionRequests: Record<string, PermissionRequest | null>;
   resumeStartRequestsRef: MutableRef<Set<string>>;
+  setResumeStartRequestIds: Dispatch<SetStateAction<Set<string>>>;
   setResumeFeedback: (value: string) => void;
 };
 
@@ -91,6 +102,8 @@ export function useSessionCommandActions({
   activeSessionId,
   activeSession,
   statuses,
+  messageHistoryState = {},
+  sessionTimeline = {},
   selectedProjectId,
   projects,
   selectedWorktree,
@@ -100,18 +113,21 @@ export function useSessionCommandActions({
   agentModelOptions,
   pendingPromptRef,
   pendingPromptContentRef,
+  newSessionPromptPendingScopesRef,
   dispatch,
   effectiveDraftAgentMode,
   normalizeModelSelection,
   selectedModel,
   selectedReasoningEffort,
   navigateToView,
+  isMobile = false,
   setPrompt,
   setPromptImages,
   createClientUserMessageId,
   appendUserMessage,
   permissionRequests,
   resumeStartRequestsRef,
+  setResumeStartRequestIds,
   setResumeFeedback,
 }: UseSessionCommandActionsOptions) {
   function createSession(
@@ -133,6 +149,20 @@ export function useSessionCommandActions({
       rpcClientRef,
       pendingPromptRef,
       pendingPromptContentRef,
+      newSessionPromptPendingScopesRef,
+      restoreInitialPrompt: (promptToRestore, contentToRestore) => {
+        const text = contentToRestore
+          ? contentToRestore
+            .filter((item) => item.type === "text")
+            .map((item) => item.text)
+            .join("\n")
+          : promptToRestore;
+        const images = contentToRestore?.filter(
+          (item): item is AgentPromptImageContent => item.type === "image",
+        ) ?? [];
+        setPrompt((current) => current || text);
+        setPromptImages((current) => current.length ? current : images);
+      },
       dispatch,
       effectiveDraftAgentMode,
       normalizeModelSelection,
@@ -150,6 +180,7 @@ export function useSessionCommandActions({
     requestSessionResumeStartImpl(sessionId, reason, {
       rpcClientRef,
       resumeStartRequestsRef,
+      setResumeStartRequestIds,
       setResumeFeedback,
       dispatch,
     });
@@ -182,13 +213,20 @@ export function useSessionCommandActions({
         promptSession && resumeStartRequestsRef.current.has(promptSession.id),
       ),
     });
+    const promptSessionConversationLoaded = !promptSessionId ||
+      isSessionConversationLoaded(
+        promptSessionId,
+        messageHistoryState,
+        sessionTimeline,
+      );
     submitPromptImpl(event, {
       prompt,
       promptImages,
       rpcClientRef,
       setImagePasteNotice,
       activeSessionId: promptSessionId,
-      activeSessionCanChat: promptSessionRestoreGate.canChat,
+      activeSessionCanChat:
+        promptSessionRestoreGate.canChat && promptSessionConversationLoaded,
       createSession,
       setPrompt,
       setPromptImages,
@@ -201,6 +239,9 @@ export function useSessionCommandActions({
   function submitPromptFromKeyboard(
     event: ReactKeyboardEvent<HTMLTextAreaElement>,
   ) {
+    if (isMobile) {
+      return;
+    }
     if (
       event.key !== "Enter" ||
       event.shiftKey ||

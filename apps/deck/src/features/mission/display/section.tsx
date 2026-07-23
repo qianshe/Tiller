@@ -29,6 +29,7 @@ type MissionDisplaySectionProps = {
   selectedDiffFilePath: string | null;
   diffs: FileDiffSummary[];
   noDiffSummary: string;
+  historicalDiffIncomplete?: boolean;
   onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   gitGraph?: GitGraphState;
   onAddPage: () => void;
@@ -57,6 +58,7 @@ export function MissionDisplaySection({
   selectedDiffFilePath,
   diffs,
   noDiffSummary,
+  historicalDiffIncomplete,
   onReconnectRuntime,
   gitGraph,
   onAddPage,
@@ -82,6 +84,7 @@ export function MissionDisplaySection({
       selectedDiffFilePath={selectedDiffFilePath}
       diffs={diffs}
       noDiffSummary={noDiffSummary}
+      historicalDiffIncomplete={historicalDiffIncomplete}
       onReconnectRuntime={onReconnectRuntime}
       gitGraph={gitGraph}
       onAddPage={onAddPage}

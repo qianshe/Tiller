@@ -5,7 +5,7 @@ import type { SessionRealtimeUpdate } from "../update-contracts";
 
 export type SessionEventPublisher = {
   sessionUpdate(sessionId: string, update: SessionRealtimeUpdate): void;
-  errorRaised(input: { sessionId?: string; code?: string; message: string; data?: unknown }): void;
+  errorRaised(input: { sessionId?: string; code?: string; message: string; source?: string }): void;
 };
 
 export function createSessionEventPublisher(context: HelmHandlerContext): SessionEventPublisher {

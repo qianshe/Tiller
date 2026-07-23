@@ -6,6 +6,7 @@ import * as sessionSubscribe from "./session/subscribe";
 import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
+import * as notificationRaised from "./notification/raised";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
 
@@ -37,53 +38,29 @@ test("session topic subscription methods validate session ids", () => {
   });
 });
 
-test("session/update accepts every kind", () => {
+test("session/update accepts only canonical state, timeline, lifecycle, and live overlays", () => {
   assert.equal(sessionUpdate.method, "session/update");
   for (const kind of [
     "agent_message",
     "tool_call",
-    "command_output",
-    "diff_update",
-    "status_change",
-    "config_options",
-    "model_options",
-    "commands_available",
     "session_updated",
-    "prompt_queue",
-    "plan_update",
-    "user_message",
-    "permission_request",
-    "permission_resolved",
+    "timeline_batch",
+    "live_state",
+    "subagent_detail",
   ]) {
     sessionUpdate.ParamsSchema.parse({
       sessionId: "s1",
-      update: kind === "command_output"
-        ? { kind, commandId: "c1", chunk: {} }
-        : kind === "permission_resolved"
-          ? { kind, permissionRequestId: "pr1", decision: {} }
-          : kind === "diff_update"
-            ? { kind, files: [] }
-            : kind === "config_options"
-              ? { kind, state: {}, options: [] }
-              : kind === "model_options"
-                ? { kind, options: [] }
-                : kind === "commands_available"
-                  ? { kind, commands: [] }
-                  : kind === "session_updated"
-                    ? { kind, session: {} }
-                    : kind === "prompt_queue"
-                      ? { kind, queue: { sessionId: "s1", queued: [] } }
-                      : kind === "plan_update"
-                        ? { kind, plan: { entries: [], updatedAt: "2026-06-02T00:00:00.000Z" } }
-                        : kind === "user_message"
-                          ? { kind, message: { id: "m1", role: "user", text: "hello", timestamp: "2026-05-15T00:00:00.000Z" } }
-                          : kind === "agent_message"
-                            ? { kind, message: {} }
-                            : kind === "tool_call"
-                              ? { kind, toolCall: {} }
-                              : kind === "permission_request"
-                                ? { kind, permissionRequest: {} }
-                                : { kind, status: "running" },
+      update: kind === "session_updated"
+        ? { kind, session: {} }
+        : kind === "timeline_batch"
+          ? { kind, batch: { replace: false, deliverySequence: 1, lastSequence: 1, entries: [] } }
+          : kind === "live_state"
+            ? { kind, snapshot: {} }
+            : kind === "subagent_detail"
+              ? { kind, delta: {} }
+            : kind === "agent_message"
+              ? { kind, message: {} }
+              : { kind, toolCall: {} },
     });
   }
 });
@@ -104,6 +81,17 @@ test("error/raised is a notification with at least a message", () => {
   assert.equal(errorRaised.method, "error/raised");
   assert.equal(errorRaised.descriptor.kind, "notification");
   errorRaised.ParamsSchema.parse({ message: "boom" });
+});
+
+test("notification/raised carries extensible source and severity fields", () => {
+  assert.equal(notificationRaised.method, "notification/raised");
+  assert.equal(notificationRaised.descriptor.kind, "notification");
+  notificationRaised.ParamsSchema.parse({
+    kind: "warning",
+    source: "storage",
+    message: "Storage is temporarily unavailable",
+    occurredAt: "2026-07-18T12:00:00.000Z",
+  });
 });
 
 test("device/pair and device/authenticate carry the expected fields", () => {

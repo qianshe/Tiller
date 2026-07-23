@@ -18,7 +18,7 @@ export function mapCodexPlanUpdate(
 
   const update = recordFrom(context.update);
   const source = sourceFrom(update);
-  if (!isCodexPlanTool(resolveToolName(source, update))) {
+  if (!isCodexPlanToolName(resolveToolName(source, update))) {
     return null;
   }
 
@@ -31,7 +31,7 @@ export function mapCodexPlanUpdate(
 }
 
 export function extractCodexPlanFromToolCall(toolCall: AgentToolCall): AgentPlan | null {
-  if (!isCodexPlanTool(toolCall.title)) {
+  if (!isCodexPlanToolName(toolCall.title)) {
     return null;
   }
   return extractCodexPlanFromSource(
@@ -39,6 +39,23 @@ export function extractCodexPlanFromToolCall(toolCall: AgentToolCall): AgentPlan
     {},
     toolCall.updatedAt ?? toolCall.timestamp,
   );
+}
+
+export function isCodexPlanToolCall(toolCall: AgentToolCall) {
+  return toolCall.kind === "todo" ||
+    isCodexPlanToolName(toolCall.title) ||
+    looksLikeCodexGenericPlanUpdate(toolCall) ||
+    Boolean(extractCodexPlanFromToolCall(toolCall));
+}
+
+function looksLikeCodexGenericPlanUpdate(toolCall: AgentToolCall) {
+  if (toolCall.kind !== "tool") {
+    return false;
+  }
+  if (!/^Tool call call_/u.test(toolCall.title.trim())) {
+    return false;
+  }
+  return toolCall.output?.trim() === "Plan updated";
 }
 
 function extractCodexPlanFromSource(
@@ -129,7 +146,7 @@ function resolveToolName(
   return namespace && rawName ? `${namespace}.${rawName}` : rawName;
 }
 
-function isCodexPlanTool(value: string) {
+export function isCodexPlanToolName(value: string) {
   return /(?:^|[./\s_-])update[_-]?plan$/iu.test(value.trim());
 }
 

@@ -1,5 +1,9 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import type { SessionAttachmentStore } from "../sessions/facade";
+import type {
+  SessionAttachmentStore,
+  SessionDiffBodyStore,
+  SessionOutputBodyStore,
+} from "../sessions/facade";
 import {
   loadStaticAsset as loadStaticAssetFromDisk,
   type StaticAssetResponse,
@@ -13,6 +17,8 @@ export type StaticDeckAssetLoader = (
 export type StaticDeckHandlerOptions = {
   deckStaticDir: string;
   sessionAttachmentStore?: SessionAttachmentStore;
+  sessionDiffBodyStore?: SessionDiffBodyStore;
+  sessionOutputBodyStore?: SessionOutputBodyStore;
   loadStaticAsset?: StaticDeckAssetLoader;
   logError: (message: string) => void;
 };
@@ -25,6 +31,12 @@ export function createStaticDeckHandler(options: StaticDeckHandlerOptions) {
     response: ServerResponse,
   ) {
     if (serveSessionAttachment(request, response, options.sessionAttachmentStore)) {
+      return;
+    }
+    if (serveSessionDiffBody(request, response, options.sessionDiffBodyStore)) {
+      return;
+    }
+    if (serveSessionOutputBody(request, response, options.sessionOutputBodyStore)) {
       return;
     }
 
@@ -53,6 +65,68 @@ export function createStaticDeckHandler(options: StaticDeckHandlerOptions) {
       response.end("Failed to serve Tiller Deck asset.");
     }
   };
+}
+
+function serveSessionDiffBody(
+  request: IncomingMessage,
+  response: ServerResponse,
+  diffBodyStore: SessionDiffBodyStore | undefined,
+) {
+  if (!diffBodyStore) {
+    return false;
+  }
+  const diffRequest = parseSessionDiffRequest(request.url ?? "/");
+  if (!diffRequest) {
+    return false;
+  }
+  const bodyRecord = diffBodyStore.get(diffRequest.sessionId, diffRequest.path);
+  const body = diffBodyStore.readText(diffRequest.sessionId, diffRequest.path);
+  if (!bodyRecord || typeof body !== "string") {
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Diff body not found.");
+    return true;
+  }
+  response.writeHead(200, {
+    "cache-control": "private, max-age=31536000, immutable",
+    "content-type": bodyRecord.mimeType,
+  });
+  response.end(body);
+  return true;
+}
+
+function serveSessionOutputBody(
+  request: IncomingMessage,
+  response: ServerResponse,
+  outputBodyStore: SessionOutputBodyStore | undefined,
+) {
+  if (!outputBodyStore) {
+    return false;
+  }
+  const outputRequest = parseSessionOutputRequest(request.url ?? "/");
+  if (!outputRequest) {
+    return false;
+  }
+
+  const outputBody = outputBodyStore.get(outputRequest.sessionId, outputRequest.outputId);
+  if (!outputBody) {
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Output body not found.");
+    return true;
+  }
+
+  const body = outputBodyStore.readText(outputRequest.sessionId, outputRequest.outputId);
+  if (typeof body !== "string") {
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("Output body not found.");
+    return true;
+  }
+
+  response.writeHead(200, {
+    "cache-control": "private, max-age=31536000, immutable",
+    "content-type": outputBody.mimeType,
+  });
+  response.end(body);
+  return true;
 }
 
 function serveSessionAttachment(
@@ -101,5 +175,39 @@ function parseSessionAttachmentRequest(requestUrl: string) {
   return {
     sessionId: decodeURIComponent(parts[2] ?? ""),
     attachmentId: decodeURIComponent(parts[4] ?? ""),
+  };
+}
+
+function parseSessionOutputRequest(requestUrl: string) {
+  const url = new URL(requestUrl, "http://tiller.local");
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (
+    parts.length !== 5 ||
+    parts[0] !== "api" ||
+    parts[1] !== "sessions" ||
+    parts[3] !== "outputs"
+  ) {
+    return null;
+  }
+  return {
+    sessionId: decodeURIComponent(parts[2] ?? ""),
+    outputId: decodeURIComponent(parts[4] ?? ""),
+  };
+}
+
+function parseSessionDiffRequest(requestUrl: string) {
+  const url = new URL(requestUrl, "http://tiller.local");
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (
+    parts.length !== 5 ||
+    parts[0] !== "api" ||
+    parts[1] !== "sessions" ||
+    parts[3] !== "diffs"
+  ) {
+    return null;
+  }
+  return {
+    sessionId: decodeURIComponent(parts[2] ?? ""),
+    path: decodeURIComponent(parts[4] ?? ""),
   };
 }

@@ -1,3 +1,4 @@
+import type { NotificationRaisedParams } from "@tiller/sync-protocol";
 import type { PromptTraceEvent } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 
@@ -16,9 +17,40 @@ export function broadcastSessionUpdate(
 
 export function broadcastErrorRaised(
   context: HelmHandlerContext,
-  input: { sessionId?: string; code?: string; message: string; data?: unknown },
+  input: Omit<NotificationRaisedParams, "kind" | "source" | "occurredAt"> & {
+    source?: string;
+    occurredAt?: string;
+  },
 ): void {
-  context.broadcastNotification("error/raised", input);
+  broadcastNotificationRaised(context, {
+    ...input,
+    kind: "error",
+    source: input.source ?? "runtime",
+  });
+}
+
+export function broadcastInfoRaised(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  input: Omit<NotificationRaisedParams, "kind" | "source" | "occurredAt"> & {
+    source?: string;
+    occurredAt?: string;
+  },
+): void {
+  broadcastNotificationRaised(context, {
+    ...input,
+    kind: "info",
+    source: input.source ?? "runtime",
+  });
+}
+
+export function broadcastNotificationRaised(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  input: NotificationRaisedParams,
+): void {
+  context.broadcastNotification("notification/raised", {
+    ...input,
+    occurredAt: input.occurredAt ?? new Date().toISOString(),
+  });
 }
 
 export function broadcastPromptTrace(
@@ -33,10 +65,9 @@ function isSessionDetailUpdate(update: unknown): boolean {
     return false;
   }
   const kind = (update as { kind?: unknown }).kind;
-  return kind === "user_message"
-    || kind === "agent_message"
+  return kind === "agent_message"
     || kind === "tool_call"
-    || kind === "plan_update"
-    || kind === "command_output"
-    || kind === "diff_update";
+    || kind === "timeline_batch"
+    || kind === "live_state"
+    || kind === "subagent_detail";
 }

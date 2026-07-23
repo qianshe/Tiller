@@ -43,7 +43,7 @@ test("runtime descriptor persistence is a no-op when nothing is restorable", () 
   assert.equal(upserts.length, 0);
 });
 
-test("runtime descriptor persistence preserves provider history and marks error state stale", () => {
+test("runtime descriptor persistence drops legacy provider history and marks error state stale", () => {
   const upserts: unknown[] = [];
   const service = createRuntimeDescriptorService({
     sessionRuntimeStore: {
@@ -68,5 +68,5 @@ test("runtime descriptor persistence preserves provider history and marks error 
   assert.equal(upserts.length, 1);
   const descriptor = upserts[0] as { providerHistory?: unknown; state?: string };
   assert.equal(descriptor.state, "stale");
-  assert.deepEqual(descriptor.providerHistory, { syncedAt: "2026-05-28T00:00:00.000Z" });
+  assert.equal(descriptor.providerHistory, undefined);
 });

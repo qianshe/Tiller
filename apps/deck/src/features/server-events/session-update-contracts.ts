@@ -1,38 +1,33 @@
 import type {
-  AcpModelOption,
-  AgentPlan,
   AgentMessage,
   AgentToolCall,
-  AvailableCommand,
-  CommandChunk,
-  FileDiffSummary,
   RuntimeSessionSummary,
-  SessionConfigOption,
-  SessionPromptQueueSnapshot,
+  SessionLiveStateSnapshot,
+  SessionTimelineEntry,
+  SessionSubagentDetailDelta,
 } from "@tiller/shared";
-import type { SessionRealtimeUpdate as DomainSessionRealtimeUpdate } from "@tiller/domain-contracts";
-
-export type DeckSessionConfigState = Partial<
-  Pick<RuntimeSessionSummary, "agentMode" | "model" | "reasoningEffort">
->;
+import {
+  isCanonicalConversationUpdateKind as isDomainCanonicalConversationUpdateKind,
+  isCompatibilityConversationUpdateKind as isDomainCompatibilityConversationUpdateKind,
+  type SessionRealtimeUpdate as DomainSessionRealtimeUpdate,
+} from "@tiller/domain-contracts";
 
 export type DeckSessionRealtimeUpdate =
   | DomainSessionRealtimeUpdate<
       AgentMessage,
       AgentToolCall,
-      CommandChunk,
-      FileDiffSummary,
-      DeckSessionConfigState,
-      SessionConfigOption,
-      AcpModelOption,
-      AvailableCommand,
       RuntimeSessionSummary,
-      SessionPromptQueueSnapshot,
-      AgentPlan
-    >
-  | { kind: "restore_replay_cached" };
+      SessionTimelineEntry,
+      SessionLiveStateSnapshot,
+      SessionSubagentDetailDelta
+    >;
 
 export type SessionUpdateParams = {
   sessionId: string;
   update: DeckSessionRealtimeUpdate;
 };
+
+export const isCanonicalConversationUpdateKind = isDomainCanonicalConversationUpdateKind;
+
+export const isCompatibilityConversationUpdateKind =
+  isDomainCompatibilityConversationUpdateKind;

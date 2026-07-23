@@ -36,7 +36,7 @@ const MISSION_AUTO_COLLAPSE_DISPLAY_WIDTH = 1081;
 const MISSION_MOBILE_WIDTH = 1081;
 type MissionLayoutOptions = {
   activeView: unknown;
-  hasActiveSession: boolean;
+  hasActiveConversation: boolean;
 };
 
 function getMissionPaneMax(pane: MissionPaneId) {
@@ -240,7 +240,7 @@ function shouldCollapseDisplayForChat(
 }
 
 export function useMissionLayout(options: MissionLayoutOptions) {
-  const { activeView, hasActiveSession } = options;
+  const { activeView, hasActiveConversation } = options;
   const [missionPaneWidths, setMissionPaneWidths] = useState<MissionPaneWidths>(
     DEFAULT_MISSION_PANE_WIDTHS,
   );
@@ -249,8 +249,12 @@ export function useMissionLayout(options: MissionLayoutOptions) {
   const [missionInspectorCollapsed, setMissionInspectorCollapsed] =
     useState(true);
   const [selectedMissionMobilePane, setSelectedMissionMobilePane] =
-    useState<MissionMobilePane>(() => (hasActiveSession ? "chat" : "project"));
+    useState<MissionMobilePane>(() => (hasActiveConversation ? "chat" : "project"));
   const missionLayoutRef = useRef<HTMLElement | null>(null);
+  const missionLayoutMeasureFrameRef = useRef<number | null>(null);
+  const missionPaneResizeCleanupRef = useRef<((reconcile?: boolean) => void) | null>(null);
+  const [isMissionPaneResizing, setIsMissionPaneResizing] = useState(false);
+  const [missionPaneResizeVersion, setMissionPaneResizeVersion] = useState(0);
   const [missionViewportWidth, setMissionViewportWidth] = useState(() =>
     typeof document === "undefined"
       ? 1440
@@ -265,23 +269,45 @@ export function useMissionLayout(options: MissionLayoutOptions) {
       );
       const layoutWidth =
         missionLayoutRef.current?.getBoundingClientRect().width ?? documentWidth;
-      const width = window.matchMedia("(max-width: 1080px)").matches
-        ? Math.min(layoutWidth, documentWidth, MISSION_MOBILE_WIDTH - 1)
-        : Math.min(layoutWidth, documentWidth);
-      setMissionViewportWidth(Math.max(0, Math.round(width)));
+      const nextWidth = Math.max(
+        0,
+        Math.round(
+          window.matchMedia("(max-width: 1080px)").matches
+            ? Math.min(layoutWidth, documentWidth, MISSION_MOBILE_WIDTH - 1)
+            : Math.min(layoutWidth, documentWidth),
+        ),
+      );
+      setMissionViewportWidth((currentWidth) =>
+        currentWidth === nextWidth ? currentWidth : nextWidth,
+      );
     };
+
+    const scheduleMissionLayoutMeasure = () => {
+      if (missionLayoutMeasureFrameRef.current !== null) {
+        return;
+      }
+      missionLayoutMeasureFrameRef.current = window.requestAnimationFrame(() => {
+        missionLayoutMeasureFrameRef.current = null;
+        measureMissionLayout();
+      });
+    };
+
     measureMissionLayout();
     const resizeObserver =
       typeof ResizeObserver === "undefined"
         ? null
-        : new ResizeObserver(measureMissionLayout);
+        : new ResizeObserver(scheduleMissionLayoutMeasure);
     if (missionLayoutRef.current) {
       resizeObserver?.observe(missionLayoutRef.current);
     }
-    window.addEventListener("resize", measureMissionLayout);
+    window.addEventListener("resize", scheduleMissionLayoutMeasure);
     return () => {
+      if (missionLayoutMeasureFrameRef.current !== null) {
+        window.cancelAnimationFrame(missionLayoutMeasureFrameRef.current);
+        missionLayoutMeasureFrameRef.current = null;
+      }
       resizeObserver?.disconnect();
-      window.removeEventListener("resize", measureMissionLayout);
+      window.removeEventListener("resize", scheduleMissionLayoutMeasure);
     };
   }, [activeView]);
 
@@ -291,8 +317,8 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     if (!isMissionMobile) {
       return;
     }
-    setSelectedMissionMobilePane(hasActiveSession ? "chat" : "project");
-  }, [activeView, hasActiveSession, isMissionMobile]);
+    setSelectedMissionMobilePane(hasActiveConversation ? "chat" : "project");
+  }, [activeView, hasActiveConversation, isMissionMobile]);
 
   const effectiveSidebarCollapsed =
     missionSidebarCollapsed ||
@@ -343,12 +369,22 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     const onMove = (moveEvent: MouseEvent) => {
       applyMissionPaneDelta(handle, moveEvent.clientX - startX, base);
     };
-    const onUp = () => {
+    const cleanupResize = (reconcile = true) => {
       document.body.classList.remove("mission-pane-resizing");
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
+      missionPaneResizeCleanupRef.current = null;
+      setIsMissionPaneResizing(false);
+      if (reconcile) {
+        setMissionPaneResizeVersion((currentVersion) => currentVersion + 1);
+      }
+    };
+    const onUp = () => {
+      cleanupResize();
     };
 
+    setIsMissionPaneResizing(true);
+    missionPaneResizeCleanupRef.current = cleanupResize;
     document.body.classList.add("mission-pane-resizing");
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp, { once: true });
@@ -357,6 +393,10 @@ export function useMissionLayout(options: MissionLayoutOptions) {
   function nudgeMissionPane(handle: MissionResizeHandle, direction: -1 | 1) {
     applyMissionPaneDelta(handle, direction * 24, resolvedMissionPaneWidths);
   }
+
+  useEffect(() => () => {
+    missionPaneResizeCleanupRef.current?.(false);
+  }, []);
 
   return {
     missionLayoutRef,
@@ -372,6 +412,8 @@ export function useMissionLayout(options: MissionLayoutOptions) {
     paneStyles,
     startMissionPaneResize,
     nudgeMissionPane,
+    isMissionPaneResizing,
+    missionPaneResizeVersion,
     isMissionMobile,
     selectedMissionMobilePane,
     setSelectedMissionMobilePane,

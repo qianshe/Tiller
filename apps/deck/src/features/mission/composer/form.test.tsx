@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MissionComposer } from "./form.js";
+import { insertTextAtSelection, MissionComposer } from "./form.js";
 
 function baseProps(overrides: Record<string, unknown> = {}) {
   return {
@@ -60,6 +60,7 @@ function baseProps(overrides: Record<string, unknown> = {}) {
     draftModelLoading: false,
     draftModelConfigReady: true,
     modelSettingsLocked: false,
+    sessionRestoring: false,
     draftModelBaseOptions: [],
     resolveReasoningOptionsForModel: () => [],
     draftAllModelOptions: [],
@@ -92,7 +93,7 @@ test("composer uses a tighter frame and padded square textarea", () => {
 
   assert.match(html, /chat-input-area[^\"]*border-t[^\"]*px-2 py-1\.5/);
   assert.match(html, /mission-composer[^\"]*px-2 py-1\.5/);
-  assert.match(html, /mission-composer-deck[^\"]*max-w-\[min\(1120px,calc\(100%_-_32px\)\)\]/);
+  assert.match(html, /mission-composer-deck[^\"]*max-w-\[min\(1120px,calc\(100%_-_32px\)\)\][^\"]*gap-0\.5/);
   assert.match(html, /min-h-\[48px\][^\"]*rounded-none border-0 bg-transparent px-1 py-0/);
 });
 
@@ -113,11 +114,49 @@ test("composer hides the session title hint in mobile mode", () => {
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
     isMobile: true,
     activeSession: { id: "mobile-session", title: "移动端会话", projectName: "Project A", agentName: "Codex" },
+    draftPromptPlaceholder: "输入消息",
   })));
 
   assert.match(html, /Project A/);
+  assert.match(html, /placeholder="输入消息"/);
+  assert.match(html, /rows="1"/);
+  assert.match(html, /enterKeyHint="enter"/);
   assert.doesNotMatch(html, /Codex/);
   assert.doesNotMatch(html, /→ 移动端会话/);
+});
+
+test("composer applies tighter mobile-only spacing and textarea sizing", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    isMobile: true,
+    activeSession: { id: "mobile-session", title: "移动端会话", projectName: "Project A", agentName: "Codex" },
+    draftPromptPlaceholder: "输入消息",
+  })));
+
+  assert.match(html, /chat-input-area[^\"]*py-1/);
+  assert.match(html, /mission-composer-deck[^\"]*px-1\.5 py-1[^\"]*gap-0/);
+  assert.match(html, /min-h-8[^\"]*px-0\.5 py-0/);
+  assert.match(html, /mission-composer-sidecar[^\"]*min-h-6[^\"]*gap-1/);
+  assert.match(html, /mission-send-prompt-button[^\"]*h-\[var\(--control-h-sm\)\][^\"]*px-2\.5/);
+});
+
+test("insertTextAtSelection inserts a newline at the caret", () => {
+  assert.deepEqual(
+    insertTextAtSelection("继续", 2, 2, "\n"),
+    {
+      nextValue: "继续\n",
+      nextCaret: 3,
+    },
+  );
+});
+
+test("insertTextAtSelection replaces the selected range", () => {
+  assert.deepEqual(
+    insertTextAtSelection("abc", 1, 3, "\n"),
+    {
+      nextValue: "a\n",
+      nextCaret: 2,
+    },
+  );
 });
 
 test("composer shows project in folder chip and switches worktree from branch chip", () => {
@@ -197,16 +236,18 @@ test("composer locks model settings while new-session config is loading", () => 
   assert.match(html, /模型加载中/);
 });
 
-test("composer shows model loading while an active session is restoring", () => {
+test("composer labels active session restoration separately from model loading", () => {
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
     activeSession: { id: "session-1", model: "claude-haiku-4-5" },
     draftModelLoading: false,
     draftModelConfigReady: true,
     modelSettingsLocked: true,
+    sessionRestoring: true,
   })));
 
   assert.match(html, /aria-label="打开任务设置"[^>]*disabled=""/);
-  assert.match(html, /模型加载中/);
+  assert.match(html, /会话恢复中/);
+  assert.doesNotMatch(html, /模型加载中/);
 });
 
 test("composer hides model loading for active sessions that already know the model", () => {
@@ -252,4 +293,18 @@ test("composer shows only the interrupt action while a session can be cancelled"
   assert.match(html, /mission-cancel-session-stop-icon[^\"]*size-1\.5/);
   assert.doesNotMatch(html, /aria-label="增强提示词"/);
   assert.doesNotMatch(html, /aria-label="发送"/);
+});
+
+test("composer renders context usage indicator at row tail", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    activeSession: { id: "active", title: "活动会话", projectName: "Project A", agentName: "Codex" },
+  })));
+
+  // composerSession = activeSession (无 contextSession);无 store usage 注入 → 空态 dash
+  assert.match(html, /–/u);
+  // 圆环在 → 标题 之后:标题在前,dash 在后
+  assert.ok(
+    html.lastIndexOf("→ 活动会话") < html.indexOf("–"),
+    "context usage indicator should render after the session title hint",
+  );
 });

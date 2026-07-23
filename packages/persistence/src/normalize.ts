@@ -1,4 +1,19 @@
-import type { AgentMessage, AgentToolCall, AgentToolCallKind, CommandChunk } from "@tiller/shared";
+import {
+  compactBinaryToolCallOutput,
+  collapseRepeatedStreamingText,
+  mergeStreamingText,
+  resolveMergedAgentToolCallKind,
+  type AgentMessage,
+  type AgentToolCall,
+  type AgentToolCallKind,
+  type CommandChunk,
+} from "@tiller/shared";
+import {
+  findEquivalentReplayDuplicateMessageIndex,
+  formatAgentToolCallMcpTitle,
+  resolveAgentToolCallMcp,
+  resolveStructuredToolName,
+} from "@tiller/shared";
 
 export function mergeSessionMessage(messages: AgentMessage[], message: AgentMessage) {
   return normalizeSessionMessages([...messages, message]);
@@ -9,6 +24,10 @@ export function normalizeSessionMessages(messages: AgentMessage[]) {
     const existingIndex = merged.findIndex((item) => item.id === message.id);
     if (existingIndex !== -1) {
       merged[existingIndex] = mergeAgentMessageChunk(merged[existingIndex]!, message);
+      return merged;
+    }
+
+    if (findEquivalentReplayDuplicateMessageIndex(merged, message) !== -1) {
       return merged;
     }
 
@@ -23,79 +42,44 @@ export function normalizeSessionMessages(messages: AgentMessage[]) {
 }
 
 export function mergeToolCall(current: AgentToolCall, incoming: AgentToolCall): AgentToolCall {
-  return {
+  return compactBinaryToolCallOutput({
     ...current,
     ...incoming,
-    kind: resolveToolCallKind(current.kind, incoming.kind),
+    kind: resolveMergedAgentToolCallKind(current, incoming),
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
+    mcp: incoming.mcp ?? current.mcp,
     output: mergeToolCallOutput(current.output, incoming.output),
     input: incoming.input ?? current.input,
     timestamp: current.timestamp,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
+    sequence: current.sequence ?? incoming.sequence,
     updatedAt: incoming.updatedAt,
-  };
+  });
 }
 
 export function mergeToolCallOutput(currentOutput: string | undefined, incomingOutput: string | undefined) {
-  if (!incomingOutput) {
-    return currentOutput;
-  }
-  if (!currentOutput || incomingOutput.startsWith(currentOutput)) {
-    return incomingOutput;
-  }
-  if (currentOutput.startsWith(incomingOutput)) {
-    return currentOutput;
-  }
-  if (currentOutput.endsWith(incomingOutput)) {
-    return currentOutput;
-  }
-  return `${currentOutput}${incomingOutput}`;
+  return mergeStreamingText(currentOutput, incomingOutput);
 }
 
 export function sortCommandChunks(items: CommandChunk[]) {
-  return [...items].sort((left, right) =>
-    compareHistoryPosition(left.timestamp, left.id, right.timestamp, right.id),
-  );
+  return sortSequencedItems(items);
 }
 
 export function sortToolCalls(items: AgentToolCall[]) {
-  return [...items].sort(compareToolCallPosition);
+  return sortSequencedItems(items);
 }
 
-function compareToolCallPosition(left: AgentToolCall, right: AgentToolCall) {
-  const sequenceDelta = compareOptionalTimelineSequence(
-    left.timelineSequence,
-    right.timelineSequence,
-  );
-  if (sequenceDelta !== 0) {
-    return sequenceDelta;
+function sortSequencedItems<T extends { sequence?: number }>(items: T[]) {
+  if (!items.every((item) => typeof item.sequence === "number")) {
+    return [...items];
   }
-  return compareHistoryPosition(
-    left.timestamp || left.updatedAt,
-    left.id,
-    right.timestamp || right.updatedAt,
-    right.id,
-  );
+
+  return items
+    .map((item, index) => ({ item, index }))
+    .sort((left, right) => left.item.sequence! - right.item.sequence! || left.index - right.index)
+    .map(({ item }) => item);
 }
 
-function compareOptionalTimelineSequence(
-  left: number | undefined,
-  right: number | undefined,
-) {
-  if (left === undefined || right === undefined) {
-    return 0;
-  }
-  return left - right;
-}
-
-export function resolveToolCallKind(
-  currentKind: AgentToolCallKind,
-  incomingKind: AgentToolCallKind,
-) {
-  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
-}
-
-export function isHigherConfidenceToolKind(
+export function isLegacyToolKindMoreSpecific(
   incomingKind: AgentToolCallKind,
   currentKind: AgentToolCallKind,
 ) {
@@ -107,6 +91,7 @@ export function isHigherConfidenceToolKind(
     fetch: 2,
     search: 3,
     read: 3,
+    diagnostics: 3,
     write: 3,
     shell: 3,
     skill: 3,
@@ -114,6 +99,32 @@ export function isHigherConfidenceToolKind(
     mcp: 4,
   };
   return rank[incomingKind] > rank[currentKind];
+}
+
+export function normalizeLegacyPersistedAgentToolCall(
+  toolCall: AgentToolCall | null,
+): AgentToolCall | null {
+  if (!toolCall) {
+    return null;
+  }
+
+  const normalizedKind = normalizeLegacyPersistedAgentToolCallKind(toolCall.kind);
+  const mcp = resolveAgentToolCallMcp({
+    existing: toolCall.mcp,
+    input: toolCall.input,
+    title: toolCall.title,
+    rawTitle: toolCall.mcp?.rawTitle,
+  });
+  if (!mcp || (normalizedKind !== "mcp" && !isLegacyToolKindMoreSpecific("mcp", normalizedKind))) {
+    return compactBinaryToolCallOutput({ ...toolCall, kind: normalizedKind });
+  }
+
+  return compactBinaryToolCallOutput({
+    ...toolCall,
+    kind: "mcp",
+    title: resolveQualifiedMcpToolCallTitle(mcp),
+    mcp,
+  });
 }
 
 export function resolveToolCallTitle(currentTitle: string, incomingTitle: string, id: string) {
@@ -132,17 +143,42 @@ export function isInformativeToolCallTitle(title: string | undefined, id: string
   return Boolean(normalized && normalized !== id && !/^call_[A-Za-z0-9]+$/u.test(normalized));
 }
 
-export function compareHistoryPosition(
-  leftTimestamp: string,
-  leftId: string,
-  rightTimestamp: string,
-  rightId: string,
-) {
-  const timestampDelta = Date.parse(leftTimestamp) - Date.parse(rightTimestamp);
-  if (timestampDelta !== 0) {
-    return timestampDelta;
-  }
-  return leftId.localeCompare(rightId);
+function resolveQualifiedMcpToolCallTitle(mcp: NonNullable<AgentToolCall["mcp"]>) {
+  return formatAgentToolCallMcpTitle(mcp);
+}
+
+function normalizeLegacyPersistedAgentToolCallKind(value: unknown): AgentToolCallKind {
+  if (value === "terminal") return "shell";
+  if (value === "edit") return "write";
+  return typeof value === "string"
+    ? ([
+      "mcp",
+      "skill",
+      "read",
+      "diagnostics",
+      "write",
+      "search",
+      "shell",
+      "fetch",
+      "think",
+      "todo",
+      "subagent",
+      "tool",
+      "unknown",
+    ] as const).includes(value as AgentToolCallKind)
+      ? (value as AgentToolCallKind)
+      : "unknown"
+    : "unknown";
+}
+
+function toolNameFromInput(input: string | undefined) {
+  return resolveStructuredToolName(input);
+}
+
+function primitiveStringFrom(value: unknown) {
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  return undefined;
 }
 
 function shouldMergeAssistantStreamChunk(current: AgentMessage, incoming: AgentMessage) {
@@ -177,14 +213,9 @@ function isRuntimeGeneratedMessageId(id: string) {
 }
 
 function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): AgentMessage {
-  const isDuplicateText = current.text === incoming.text || current.text.endsWith(incoming.text);
-  const isCumulativeSnapshot = incoming.text.startsWith(current.text);
-  const nextText = isDuplicateText
-    ? current.text
-    : isCumulativeSnapshot
-      ? incoming.text
-      : `${current.text}${incoming.text}`;
-  const timelineSequence = current.timelineSequence ?? incoming.timelineSequence;
+  const nextText = mergeStreamingText(current.text, incoming.text) ?? current.text;
+  const isDuplicateText = nextText === current.text;
+  const sequence = current.sequence ?? incoming.sequence;
   const merged: AgentMessage = {
     ...current,
     ...incoming,
@@ -195,16 +226,16 @@ function mergeAgentMessageChunk(current: AgentMessage, incoming: AgentMessage): 
         ? incoming.timestamp
         : current.timestamp,
   };
-  if (timelineSequence === undefined) {
-    delete merged.timelineSequence;
+  if (sequence === undefined) {
+    delete merged.sequence;
   } else {
-    merged.timelineSequence = timelineSequence;
+    merged.sequence = sequence;
   }
   return merged;
 }
 
 function collapseRepeatedAssistantText(text: string) {
-  const repeatedUnit = collapseExactRepeatedText(text);
+  const repeatedUnit = collapseRepeatedStreamingText(text);
   if (repeatedUnit !== text) {
     return repeatedUnit;
   }
@@ -223,28 +254,4 @@ function collapseRepeatedAssistantText(text: string) {
   const cutIndex =
     bridgeIndex !== -1 && repeatIndex - bridgeIndex < 240 ? bridgeIndex : repeatIndex;
   return text.slice(0, cutIndex).trimEnd();
-}
-
-function collapseExactRepeatedText(text: string) {
-  const minUnitLength = 40;
-  const maxUnitLength = Math.floor(text.length / 2);
-  for (let unitLength = minUnitLength; unitLength <= maxUnitLength; unitLength += 1) {
-    if (text.length % unitLength !== 0) {
-      continue;
-    }
-
-    const unit = text.slice(0, unitLength);
-    let repeatsExactly = true;
-    for (let index = unitLength; index < text.length; index += unitLength) {
-      if (text.slice(index, index + unitLength) !== unit) {
-        repeatsExactly = false;
-        break;
-      }
-    }
-
-    if (repeatsExactly) {
-      return unit;
-    }
-  }
-  return text;
 }

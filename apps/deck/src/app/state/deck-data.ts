@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { useDeckStore } from "../../store";
+import { useDeckStore, type DeckNotification } from "../../store";
 import type {
   AcpAgentProvider,
   AgentMessage,
@@ -15,7 +15,6 @@ import type {
   SessionPromptQueueSnapshot,
   WorktreeSummary,
 } from "@tiller/shared";
-
 type DeckApprovalItem = {
   request: PermissionRequest;
 };
@@ -121,6 +120,10 @@ export function useDeckData(missionVisualFixture: any) {
   const setActivityHistoryState = useDeckStore((state) => state.setActivityHistoryState);
   const activityVisibleCounts = useDeckStore((state) => state.activityVisibleCounts);
   const setActivityVisibleCounts = useDeckStore((state) => state.setActivityVisibleCounts);
+  const storedNotifications = useDeckStore((state) => state.notifications);
+  const notifications = (missionVisualFixture?.notifications ?? storedNotifications) as DeckNotification[];
+  const addNotification = useDeckStore((state) => state.addNotification);
+  const clearNotifications = useDeckStore((state) => state.clearNotifications);
 
   const sessionTitles = useDeckStore((state) => state.sessionTitles);
   const setSessionTitles = useDeckStore((state) => state.setSessionTitles);
@@ -128,6 +131,9 @@ export function useDeckData(missionVisualFixture: any) {
   const storedDiffs = useDeckStore((state) => state.diffs);
   const diffs = (missionVisualFixture?.diffs ?? storedDiffs) as Record<string, FileDiffSummary[]>;
   const setDiffs = useDeckStore((state) => state.setDiffs);
+  const historicalDiffIncompleteBySession = useDeckStore(
+    (state) => state.historicalDiffIncompleteBySession,
+  );
 
   const sessionConfigOptions = useDeckStore((state) => state.sessionConfigOptions);
   const setSessionConfigOptions = useDeckStore((state) => state.setSessionConfigOptions);
@@ -230,10 +236,14 @@ export function useDeckData(missionVisualFixture: any) {
     setActivityHistoryState,
     activityVisibleCounts,
     setActivityVisibleCounts,
+    notifications,
+    addNotification,
+    clearNotifications,
     sessionTitles,
     setSessionTitles,
     diffs,
     setDiffs,
+    historicalDiffIncompleteBySession,
     sessionConfigOptions,
     setSessionConfigOptions,
     sessionAvailableCommands,

@@ -47,3 +47,17 @@ test("new running turn starts a new ordered prefix", () => {
   assert.match(first, /^session-1-msg-000001-000000-/u);
   assert.match(second, /^session-1-msg-000002-000000-/u);
 });
+
+test("removing a session releases its turn and segment counters", () => {
+  const allocator = createMessageSegmentIdAllocator();
+  allocator.startAssistantTurn("session-1");
+  allocator.bumpToolBoundary("session-1");
+
+  allocator.removeSession("session-1");
+  const next = allocator.nextAssistantSegmentId("session-1", {
+    text: "fresh lifecycle",
+    providerMessageId: null,
+  });
+
+  assert.match(next, /^session-1-msg-000001-000000-/u);
+});

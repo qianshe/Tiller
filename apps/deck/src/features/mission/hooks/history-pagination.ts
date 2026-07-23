@@ -1,6 +1,5 @@
 import type {
   MutableRefObject,
-  RefObject,
   UIEvent as ReactUIEvent,
 } from "react";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
@@ -12,9 +11,7 @@ import type {
 import { buildConversationPaginationPlan } from "../history/model";
 
 type UseHistoryPaginationOptions = {
-  activeSessionId: string | null;
   activityHistoryState: ActivitiesSlice["activityHistoryState"];
-  chatMainRef: RefObject<HTMLDivElement | null>;
   dispatch: DispatchToHelm;
   messageHistoryState: MessagesSlice["messageHistoryState"];
   sessionHistoryState: SessionsSlice["sessionHistoryState"];
@@ -35,9 +32,7 @@ function getOpenClient(rpcClientRef: MutableRefObject<DeckRpcClient | null>) {
 
 /** Coordinates mission history pagination for sessions, messages and activities. */
 export function useHistoryPagination({
-  activeSessionId,
   activityHistoryState,
-  chatMainRef,
   dispatch,
   messageHistoryState,
   sessionHistoryState,
@@ -83,14 +78,12 @@ export function useHistoryPagination({
     const plan = buildConversationPaginationPlan({
       sessionId,
       messagePageLimit,
-      activityPageLimit,
       messageState: messageHistoryState[sessionId],
-      activityState: activityHistoryState[sessionId],
     });
-    if (!client || (!plan.listMessages && !plan.getArtifacts)) {
+    if (!client || !plan.listTimeline) {
       return;
     }
-    if (plan.listMessages) {
+    if (plan.listTimeline) {
       setMessageHistoryState((current) => ({
         ...current,
         [sessionId]: {
@@ -99,10 +92,7 @@ export function useHistoryPagination({
           loading: true,
         },
       }));
-      void dispatch(client, "session/list_messages", plan.listMessages);
-    }
-    if (plan.getArtifacts) {
-      loadOlderActivities(sessionId);
+      void dispatch(client, "session/list_timeline", plan.listTimeline);
     }
   }
 
@@ -125,7 +115,7 @@ export function useHistoryPagination({
         loading: true,
       },
     }));
-    void dispatch(client, "session/get_artifacts", {
+    void dispatch(client, "session/list_timeline", {
       sessionId,
       limit: activityPageLimit,
       before: historyState.nextCursor,

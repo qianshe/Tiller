@@ -1,6 +1,13 @@
-import type { PermissionDecision } from "@tiller/shared";
+import type { CanonicalApproval, PermissionDecision } from "@tiller/shared";
 import { buildApprovalPolicyRuleFromDecision } from "./permission-policy";
 import { broadcastSessionUpdate } from "../../rpc/notifications";
+import {
+  prepareRuntimeSessionUpdate,
+} from "../../runtime/events";
+import {
+  applyCanonicalSessionStateEvent,
+  createCanonicalSessionState,
+} from "../../runtime/session/event/state-reducer";
 import type { HelmHandlerContext } from "../context";
 
 export async function handleApprovalRpcRequest(
@@ -33,7 +40,7 @@ export async function handleApprovalRpcRequest(
 
 export function listPendingApprovals(context: HelmHandlerContext) {
   return {
-    approvals: Array.from(context.approvalIndex.values()).map((approval) => ({
+    approvals: listCanonicalPendingApprovals(context).map((approval) => ({
       sessionId: approval.sessionId,
       request: approval.request,
     })),
@@ -42,20 +49,23 @@ export function listPendingApprovals(context: HelmHandlerContext) {
 
 export function listPendingPermissionsCompat(context: HelmHandlerContext) {
   return {
-    permissions: Array.from(context.approvalIndex.values()).map((approval) => ({
+    permissions: listCanonicalPendingApprovals(context).map((approval) => ({
       sessionId: approval.sessionId,
       request: approval.request,
     })),
   };
 }
 
-export function respondApproval(
+export async function respondApproval(
   params: { approvalRequestId: string; decision: PermissionDecision },
   context: HelmHandlerContext,
 ) {
-  const approval = context.approvalIndex.get(params.approvalRequestId);
+  const approval = findCanonicalPendingApproval(params.approvalRequestId, context);
   if (!approval) {
     throw new Error(`Approval request ${params.approvalRequestId} already resolved or not found.`);
+  }
+  if (approval.status === "resolving") {
+    throw new Error(`Approval request ${params.approvalRequestId} is already resolving.`);
   }
   const record = context.sessions.get(approval.sessionId);
   if (!record) {
@@ -68,6 +78,114 @@ export function respondApproval(
     (error as Error & { code?: string }).code = "ACP_PERMISSION_UNSUPPORTED";
     throw error;
   }
+
+  const { sessionApprovalStateStore, sessionLiveStateStore } = requireCanonicalApprovalStores(context);
+  {
+    const updatedAt = new Date().toISOString();
+    const event = {
+      type: "approval-status" as const,
+      approvalId: params.approvalRequestId,
+      status: "resolving" as const,
+      updatedAt,
+    };
+    const prepared = prepareRuntimeSessionUpdate(approval.sessionId, event, context);
+    const currentSessionState = sessionLiveStateStore.get(approval.sessionId) ??
+      createCanonicalSessionState();
+    const nextSessionState = applyCanonicalSessionStateEvent(
+      currentSessionState,
+      {
+        type: "pending-approval-count",
+        count: currentSessionState.status.pendingApprovalCount,
+      },
+      prepared.resolvedSequence,
+    );
+    sessionApprovalStateStore.commit(
+      approval.sessionId,
+      {
+        type: "status-changed",
+        approvalId: params.approvalRequestId,
+        status: "resolving",
+        updatedAt,
+      },
+      prepared.resolvedSequence,
+      prepared.update,
+      nextSessionState,
+    );
+    sessionLiveStateStore.adoptCommitted(approval.sessionId, nextSessionState);
+  }
+  context.approvalIndex.set(params.approvalRequestId, {
+    ...approval,
+    status: "resolving",
+  });
+
+  try {
+    await record.runtime.respondPermission(params.approvalRequestId, params.decision);
+  } catch (error) {
+    const updatedAt = new Date().toISOString();
+    const event = {
+      type: "approval-status" as const,
+      approvalId: params.approvalRequestId,
+      status: "pending" as const,
+      updatedAt,
+    };
+    const prepared = prepareRuntimeSessionUpdate(approval.sessionId, event, context);
+    const currentSessionState = sessionLiveStateStore.get(approval.sessionId) ??
+      createCanonicalSessionState();
+    const nextSessionState = applyCanonicalSessionStateEvent(
+      currentSessionState,
+      {
+        type: "pending-approval-count",
+        count: currentSessionState.status.pendingApprovalCount,
+      },
+      prepared.resolvedSequence,
+    );
+    sessionApprovalStateStore.commit(
+      approval.sessionId,
+      {
+        type: "status-changed",
+        approvalId: params.approvalRequestId,
+        status: "pending",
+        updatedAt,
+      },
+      prepared.resolvedSequence,
+      prepared.update,
+      nextSessionState,
+    );
+    sessionLiveStateStore.adoptCommitted(approval.sessionId, nextSessionState);
+    context.approvalIndex.set(params.approvalRequestId, {
+      ...approval,
+      status: "pending",
+    });
+    throw error;
+  }
+
+  const responseEvent = {
+    type: "permission-response" as const,
+    requestId: params.approvalRequestId,
+    decision: params.decision,
+  };
+  const prepared = prepareRuntimeSessionUpdate(approval.sessionId, responseEvent, context);
+  const remainingApprovalCount = Object.keys(
+    sessionApprovalStateStore.get(approval.sessionId).active,
+  ).filter((approvalId) => approvalId !== params.approvalRequestId).length;
+  const canonicalSnapshot = applyCanonicalSessionStateEvent(
+    sessionLiveStateStore.get(approval.sessionId) ?? createCanonicalSessionState(),
+    { type: "pending-approval-count", count: remainingApprovalCount },
+    prepared.resolvedSequence,
+  );
+  sessionApprovalStateStore.commit(
+    approval.sessionId,
+    {
+      type: "resolved",
+      approvalId: params.approvalRequestId,
+      decision: params.decision,
+      updatedAt: new Date().toISOString(),
+    },
+    prepared.resolvedSequence,
+    prepared.update,
+    canonicalSnapshot,
+  );
+  sessionLiveStateStore.adoptCommitted(approval.sessionId, canonicalSnapshot);
 
   const policyRule = buildApprovalPolicyRuleFromDecision({
     decision: params.decision,
@@ -88,9 +206,9 @@ export function respondApproval(
   context.approvalIndex.delete(params.approvalRequestId);
   context.permissionIndex.delete(params.approvalRequestId);
 
-  const updated = context.updateSessionSummary(approval.sessionId, (current) => ({
+  context.updateSessionSummary(approval.sessionId, (current) => ({
     ...current,
-    status: "running",
+    status: canonicalSnapshot?.status.effectiveStatus ?? "running",
     updatedAt: new Date().toISOString(),
   }));
 
@@ -100,18 +218,10 @@ export function respondApproval(
     decision: params.decision,
   });
   broadcastSessionUpdate(context, approval.sessionId, {
-    kind: "status_change",
-    status: "running",
-    message: "Approval response sent",
+    kind: "live_state",
+    snapshot: canonicalSnapshot,
   });
-  if (updated) {
-    broadcastSessionUpdate(context, approval.sessionId, {
-      kind: "session_updated",
-      session: context.hydrateSessionSummary(updated),
-    });
-  }
 
-  record.runtime.respondPermission(params.approvalRequestId, params.decision);
   return {
     ok: true,
     approvalRequestId: params.approvalRequestId,
@@ -119,21 +229,57 @@ export function respondApproval(
   };
 }
 
-export function respondPermissionCompat(
+type CanonicalPendingApproval = CanonicalApproval & {
+  status: "pending" | "resolving";
+};
+
+function requireCanonicalApprovalStores(context: HelmHandlerContext) {
+  if (!context.sessionApprovalStateStore || !context.sessionLiveStateStore) {
+    throw new Error("Canonical approval state services are required.");
+  }
+  return {
+    sessionApprovalStateStore: context.sessionApprovalStateStore,
+    sessionLiveStateStore: context.sessionLiveStateStore,
+  };
+}
+
+function listCanonicalPendingApprovals(
+  context: HelmHandlerContext,
+): CanonicalPendingApproval[] {
+  if (!context.sessionApprovalStateStore) {
+    return [];
+  }
+  const sessionIds = new Set<string>([
+    ...context.sessions.keys(),
+    ...context.sessionStore.list().map((session: { id: string }) => session.id),
+  ]);
+  return Array.from(sessionIds).flatMap((sessionId) =>
+    Object.values(context.sessionApprovalStateStore!.get(sessionId).active)
+      .filter((approval): approval is CanonicalPendingApproval =>
+        approval.status === "pending" || approval.status === "resolving",
+      ),
+  );
+}
+
+function findCanonicalPendingApproval(
+  approvalRequestId: string,
+  context: HelmHandlerContext,
+): CanonicalPendingApproval | undefined {
+  return listCanonicalPendingApprovals(context)
+    .find((approval) => approval.id === approvalRequestId);
+}
+
+export async function respondPermissionCompat(
   params: { permissionRequestId: string; decision: PermissionDecision },
   context: HelmHandlerContext,
 ) {
-  const result = respondApproval(
+  const result = await respondApproval(
     {
       approvalRequestId: params.permissionRequestId,
       decision: params.decision,
     },
     context,
-  ) as {
-    ok: boolean;
-    approvalRequestId: string;
-    decision: PermissionDecision;
-  };
+  );
 
   return {
     ok: result.ok,

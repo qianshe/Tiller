@@ -49,6 +49,15 @@ export function buildPromptContent(
   return [...(text ? [{ type: "text" as const, text }] : []), ...images];
 }
 
+function isSentPromptResult(result: unknown): result is { accepted: "sent" } {
+  return Boolean(
+    result &&
+    typeof result === "object" &&
+    "accepted" in result &&
+    result.accepted === "sent",
+  );
+}
+
 export function submitPromptRequest(
   input: PromptSubmissionInput,
   dependencies: PromptSubmissionDependencies,
@@ -86,18 +95,21 @@ export function submitPromptRequest(
   dependencies.setPrompt("");
   dependencies.setPromptImages([]);
   const images = [...input.promptImages];
-  const dispatchPrompt = () => dependencies.dispatch(dependencies.client, "session/prompt", {
-    sessionId: activeSessionId,
-    text: messageText,
-    content,
-    clientMessageId,
-  });
-  const appendIfNotQueued = (result: unknown) => {
-    const accepted = (result as Record<string, unknown> | null)?.accepted;
-    if (accepted === "queued") {
-      return;
+  const dispatchPrompt = async () => {
+    const result = await dependencies.dispatch(dependencies.client, "session/prompt", {
+      sessionId: activeSessionId,
+      text: messageText,
+      content,
+      clientMessageId,
+    });
+    if (isSentPromptResult(result)) {
+      dependencies.appendExistingSessionPrompt(
+        activeSessionId,
+        messageText,
+        clientMessageId,
+        images,
+      );
     }
-    dependencies.appendExistingSessionPrompt(activeSessionId, messageText, clientMessageId, images);
   };
   if (dependencies.prepareExistingSessionPrompt) {
     void (async () => {
@@ -106,10 +118,10 @@ export function submitPromptRequest(
       } catch {
         // Best effort: a missed subscription should not block the prompt itself.
       }
-      appendIfNotQueued(await dispatchPrompt());
+      await dispatchPrompt();
     })();
   } else {
-    void dispatchPrompt().then(appendIfNotQueued);
+    void dispatchPrompt();
   }
   return true;
 }

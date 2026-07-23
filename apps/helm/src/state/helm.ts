@@ -62,6 +62,7 @@ export type HelmStatePaths = {
   sessionMessages: string;
   sessionArtifacts: string;
   sessionAttachments: string;
+  sessionOutputBodies: string;
   sessionRuntimes: string;
   sessionsSqlite: string;
   trustedDevices: string;
@@ -112,6 +113,7 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
     sessionMessages: resolve(configDir, "session-messages"),
     sessionArtifacts: resolve(configDir, "session-artifacts"),
     sessionAttachments: resolve(configDir, "session-attachments"),
+    sessionOutputBodies: resolve(configDir, "session-output-bodies"),
     sessionRuntimes: resolve(configDir, "session-runtimes.json"),
     sessionsSqlite: resolve(configDir, "sessions.sqlite"),
     trustedDevices: resolve(configDir, "trusted-devices.json"),
@@ -130,6 +132,7 @@ export function createHelmState(options: CreateHelmStateOptions): HelmState {
   const sessionStores = createHelmSessionStores({
     sqlitePath: paths.sessionsSqlite,
     attachmentRootPath: paths.sessionAttachments,
+    outputBodyRootPath: paths.sessionOutputBodies,
     jsonPaths: {
       sessionHistoryPath: paths.sessions,
       sessionMessagesPath: paths.sessionMessages,

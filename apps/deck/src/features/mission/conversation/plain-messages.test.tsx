@@ -1,10 +1,34 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { SessionTimelineEntry } from "@tiller/shared";
+import type { AgentMessage, SessionTimelineEntry } from "@tiller/shared";
 import { resolveMessageImageSource } from "./plain-message-items.js";
-import { PlainMessages } from "./plain-messages.js";
+import {
+  PlainMessages,
+  INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+  PLAIN_MESSAGE_RENDER_LOAD_STEP,
+  resolveRemoteHistoryRevealAction,
+  resolveNextPlainConversationRenderLimit,
+  resolveFinalAssistantActionTarget,
+  resolvePlainConversationItemSpacingClass,
+  resolvePlainDisplayMessages,
+  resolvePlainConversationDisplayItems,
+  resolvePlainMessageRenderSignature,
+  resolvePlainMessageRenderItems,
+  resolvePlainMessageScrollContainer,
+  resolveRemoteHistoryRevealBaseline,
+  resolveVisiblePlainConversationItems,
+  resolveLocalHistoryRevealPlan,
+  shouldPrimeOlderHistoryLoad,
+  shouldAutoLoadOlderHistory,
+} from "./plain-messages.js";
+
+const plainMessagesSource = readFileSync(
+  new URL("./plain-messages.tsx", import.meta.url),
+  "utf8",
+);
 
 function renderPlainMessages(props: Partial<Parameters<typeof PlainMessages>[0]> = {}) {
   return renderToStaticMarkup(
@@ -59,12 +83,52 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
   assert.match(html, /Thinking/);
   assert.doesNotMatch(html, /Thinking · Tab 替换边界探索/);
   assert.match(html, /完整 Thinking 内容/);
+  assert.match(html, /plain-thinking-row[^"]*w-\[calc\(100%-0\.625rem\)\][^"]*max-w-\[calc\(100%-0\.625rem\)\]/);
   assert.match(html, /plain-thinking-row[^"]*grid-cols-\[0\.375rem_minmax\(0,1fr\)\][^"]*gap-x-1/);
   assert.match(html, /plain-thinking[^"]*rounded-\[8px\][^"]*bg-surface-sunken\/55/);
-  assert.match(html, /plain-thinking-content[^"]*border-l/);
+  assert.match(html, /plain-thinking-content[^"]*text-\[12\.5px\][^"]*leading-\[1\.5\]/);
+  assert.doesNotMatch(html, /plain-thinking-content[^"]*border-l/);
   assert.match(html, /aria-label="展开 Thinking"/);
+  assert.match(html, /plain-thinking[\s\S]*?bg-violet-500\/10[\s\S]*?text-violet-700/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium text-violet-700 dark:text-violet-300">Thinking<\/span>/);
+  assert.match(html, /class="inline-flex h-4 min-w-0 flex-1 items-center truncate leading-none text-muted-foreground\/70"/);
   assert.doesNotMatch(html, /plain-thinking[^"]*rounded-xl/);
   assert.doesNotMatch(html, /plain-thinking[^"]*bg-surface-elevated/);
+});
+
+test("plain messages renders pending compaction rows from timeline entries", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "compaction-pending",
+        kind: "context_compaction",
+        phase: "started",
+        source: "provider",
+        timestamp: "2026-06-28T00:00:00.000Z",
+        updatedAt: "2026-06-28T00:00:00.000Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-1:content",
+            kind: "content",
+            text: "我先继续处理剩余上下文。",
+            timestamp: "2026-06-28T00:00:01.000Z",
+            sequence: 1,
+          },
+        ],
+        timestamp: "2026-06-28T00:00:01.000Z",
+        updatedAt: "2026-06-28T00:00:01.000Z",
+        sequence: 1,
+      },
+    ],
+  } as any);
+
+  assert.match(html, /正在压缩上下文/);
+  assert.ok(html.indexOf("正在压缩上下文") < html.indexOf("我先继续处理剩余上下文。"));
 });
 
 test("plain messages can render unified timeline entries with ordered assistant chunks", () => {
@@ -77,11 +141,11 @@ test("plain messages can render unified timeline entries with ordered assistant 
         role: "user",
         text: "开始",
         timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       timestamp: "2026-05-17T10:00:00.000Z",
       updatedAt: "2026-05-17T10:00:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
     {
       id: "assistant-1",
@@ -95,19 +159,19 @@ test("plain messages can render unified timeline entries with ordered assistant 
           status: "completed",
           timestamp: "2026-05-17T10:00:01.000Z",
           updatedAt: "2026-05-17T10:00:01.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
         {
           id: "assistant-1:content",
           kind: "content",
           text: "最终回答",
           timestamp: "2026-05-17T10:00:02.000Z",
-          timelineSequence: 3,
+          sequence: 3,
         },
       ],
       timestamp: "2026-05-17T10:00:01.000Z",
       updatedAt: "2026-05-17T10:00:02.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   ];
 
@@ -126,6 +190,170 @@ test("plain messages can render unified timeline entries with ordered assistant 
   assert.ok(answerIndex > thinkingIndex);
 });
 
+test("plain conversation omits whitespace-only assistant content between thinking and tools", () => {
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [],
+    timelineItems: [
+      {
+        id: "assistant-1",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-1:thinking",
+            kind: "thinking",
+            text: "先思考",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:00:01.000Z",
+            updatedAt: "2026-05-17T10:00:01.000Z",
+            sequence: 1,
+          },
+          {
+            id: "assistant-1:content",
+            kind: "content",
+            text: "\n\n",
+            timestamp: "2026-05-17T10:00:02.000Z",
+            sequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        sequence: 1,
+      },
+      {
+        id: "tool:skill-1",
+        kind: "tool_call",
+        toolCall: {
+          id: "skill-1",
+          commandId: "skill-1",
+          kind: "mcp",
+          title: "Skill",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:03.000Z",
+          updatedAt: "2026-05-17T10:00:03.000Z",
+          sequence: 3,
+        },
+        timestamp: "2026-05-17T10:00:03.000Z",
+        updatedAt: "2026-05-17T10:00:03.000Z",
+        sequence: 3,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.deepEqual(displayItems.map((item) => item.kind), ["thinking", "tool-group"]);
+});
+
+test("plain conversation preserves surrounding whitespace on renderable message text", () => {
+  const text = "  最终回答\n";
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "assistant-1",
+        role: "assistant",
+        text,
+        timestamp: "2026-05-17T10:00:00.000Z",
+        streaming: true,
+      },
+    ],
+    timelineItems: [],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(displayItems.length, 1);
+  assert.equal(displayItems[0]?.kind === "message" ? displayItems[0].message.text : "", text);
+});
+
+test("plain conversation groups adjacent tool calls without merging their entities", () => {
+  const items = resolvePlainConversationDisplayItems({
+    displayMessages: [],
+    timelineItems: [
+      {
+        id: "tool:shell-1",
+        kind: "tool_call",
+        toolCall: {
+          id: "shell-1",
+          commandId: "shell-1",
+          kind: "shell",
+          title: "第一步",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+          sequence: 1,
+        },
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 1,
+      },
+      {
+        id: "tool:write-2",
+        kind: "tool_call",
+        toolCall: {
+          id: "write-2",
+          commandId: "write-2",
+          kind: "write",
+          title: "第二步",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+          sequence: 2,
+        },
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        sequence: 2,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(items.length, 1);
+  assert.deepEqual(
+    items[0]?.kind === "tool-group"
+      ? items[0].group.map((tool) => ({
+          commandId: tool.commandId,
+          toolKind: tool.toolKind,
+        }))
+      : [],
+    [
+      { commandId: "shell-1", toolKind: "shell" },
+      { commandId: "write-2", toolKind: "write" },
+    ],
+  );
+});
+
+test("plain conversation renders live thought messages as collapsible thinking", () => {
+  const items = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "reply-1",
+        role: "assistant",
+        contentKind: "thought",
+        text: "internal reasoning",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        streaming: true,
+        streamMode: "delta",
+      },
+    ],
+    timelineItems: [],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(items[0]?.kind, "thinking");
+  assert.equal(
+    items[0]?.kind === "thinking" ? items[0].toolCall.output : undefined,
+    "internal reasoning",
+  );
+});
+
 test("plain messages preserves persisted timeline order during sequence resets", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {
@@ -136,11 +364,11 @@ test("plain messages preserves persisted timeline order during sequence resets",
         role: "user",
         text: "恢复后的 prompt",
         timestamp: "2026-06-10T10:19:22.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
       timestamp: "2026-06-10T10:19:22.000Z",
       updatedAt: "2026-06-10T10:19:22.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
     {
       id: "older-assistant",
@@ -151,12 +379,12 @@ test("plain messages preserves persisted timeline order during sequence resets",
           kind: "content",
           text: "更早的回复",
           timestamp: "2026-06-10T09:28:50.000Z",
-          timelineSequence: 87,
+          sequence: 87,
         },
       ],
       timestamp: "2026-06-10T09:28:50.000Z",
       updatedAt: "2026-06-10T09:28:50.000Z",
-      timelineSequence: 87,
+      sequence: 87,
     },
     {
       id: "restored-assistant",
@@ -167,12 +395,12 @@ test("plain messages preserves persisted timeline order during sequence resets",
           kind: "content",
           text: "恢复后的回复",
           timestamp: "2026-06-10T10:19:40.000Z",
-          timelineSequence: 4,
+          sequence: 4,
         },
       ],
       timestamp: "2026-06-10T10:19:40.000Z",
       updatedAt: "2026-06-10T10:19:40.000Z",
-      timelineSequence: 4,
+      sequence: 4,
     },
   ];
 
@@ -201,11 +429,11 @@ test("plain messages appends live sequenced prompts without reordering persisted
         role: "user",
         text: "恢复后的 prompt",
         timestamp: "2026-06-10T10:19:22.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
       timestamp: "2026-06-10T10:19:22.000Z",
       updatedAt: "2026-06-10T10:19:22.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
     {
       id: "older-assistant",
@@ -216,12 +444,12 @@ test("plain messages appends live sequenced prompts without reordering persisted
           kind: "content",
           text: "更早的回复",
           timestamp: "2026-06-10T09:28:50.000Z",
-          timelineSequence: 87,
+          sequence: 87,
         },
       ],
       timestamp: "2026-06-10T09:28:50.000Z",
       updatedAt: "2026-06-10T09:28:50.000Z",
-      timelineSequence: 87,
+      sequence: 87,
     },
   ];
 
@@ -233,7 +461,7 @@ test("plain messages appends live sequenced prompts without reordering persisted
         role: "user",
         text: "最新 live prompt",
         timestamp: "2026-06-10T10:20:00.000Z",
-        timelineSequence: 88,
+        sequence: 88,
       },
     ],
     thinkingToolCalls: [],
@@ -259,12 +487,12 @@ test("plain messages inserts unsequenced compact summary messages by timestamp",
           kind: "content",
           text: "还没有，之前上下文断了。",
           timestamp: "2026-06-18T12:13:00.540Z",
-          timelineSequence: 255,
+          sequence: 255,
         },
       ],
       timestamp: "2026-06-18T12:13:00.540Z",
       updatedAt: "2026-06-18T12:13:00.540Z",
-      timelineSequence: 255,
+      sequence: 255,
     },
     {
       id: "current-user",
@@ -274,11 +502,11 @@ test("plain messages inserts unsequenced compact summary messages by timestamp",
         role: "user",
         text: "结束任务",
         timestamp: "2026-06-18T14:01:49.292Z",
-        timelineSequence: 256,
+        sequence: 256,
       },
       timestamp: "2026-06-18T14:01:49.292Z",
       updatedAt: "2026-06-18T14:01:49.292Z",
-      timelineSequence: 256,
+      sequence: 256,
     },
     {
       id: "current-assistant",
@@ -289,12 +517,12 @@ test("plain messages inserts unsequenced compact summary messages by timestamp",
           kind: "content",
           text: "好的，我来完成剩余的两处改动然后收尾。",
           timestamp: "2026-06-18T14:02:15.534Z",
-          timelineSequence: 275,
+          sequence: 275,
         },
       ],
       timestamp: "2026-06-18T14:02:15.534Z",
       updatedAt: "2026-06-18T14:02:15.534Z",
-      timelineSequence: 275,
+      sequence: 275,
     },
   ];
 
@@ -341,11 +569,11 @@ test("plain messages keeps compact continuation preface ahead of the resumed win
           role: "user",
           text: "结束任务",
           timestamp: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
+          sequence: 256,
         },
         timestamp: "2026-06-18T14:01:49.292Z",
         updatedAt: "2026-06-18T14:01:49.292Z",
-        timelineSequence: 256,
+        sequence: 256,
       },
       {
         id: "current-assistant",
@@ -356,12 +584,12 @@ test("plain messages keeps compact continuation preface ahead of the resumed win
             kind: "content",
             text: "好的，我来完成剩余的两处改动然后收尾。",
             timestamp: "2026-06-18T14:02:15.534Z",
-            timelineSequence: 275,
+            sequence: 275,
           },
         ],
         timestamp: "2026-06-18T14:02:15.534Z",
         updatedAt: "2026-06-18T14:02:15.534Z",
-        timelineSequence: 275,
+        sequence: 275,
       },
     ],
     items: [
@@ -382,14 +610,14 @@ test("plain messages keeps compact continuation preface ahead of the resumed win
         role: "user",
         text: "结束任务",
         timestamp: "2026-06-18T14:01:49.292Z",
-        timelineSequence: 256,
+        sequence: 256,
       },
       {
         id: "provider-current-assistant",
         role: "assistant",
         text: "好的，我来完成剩余的两处改动然后收尾。",
         timestamp: "2026-06-18T14:02:15.534Z",
-        timelineSequence: 275,
+        sequence: 275,
       },
     ],
   });
@@ -415,11 +643,11 @@ test("plain messages keeps local continuation records visible while paged timeli
           role: "user",
           text: "结束任务",
           timestamp: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
+          sequence: 256,
         },
         timestamp: "2026-06-18T14:01:49.292Z",
         updatedAt: "2026-06-18T14:01:49.292Z",
-        timelineSequence: 256,
+        sequence: 256,
       },
       {
         id: "current-assistant",
@@ -430,12 +658,12 @@ test("plain messages keeps local continuation records visible while paged timeli
             kind: "content",
             text: "好的，我来完成剩余的两处改动然后收尾。",
             timestamp: "2026-06-18T14:02:15.534Z",
-            timelineSequence: 275,
+            sequence: 275,
           },
         ],
         timestamp: "2026-06-18T14:02:15.534Z",
         updatedAt: "2026-06-18T14:02:15.534Z",
-        timelineSequence: 275,
+        sequence: 275,
       },
     ],
     items: [
@@ -454,7 +682,6 @@ test("plain messages keeps local continuation records visible while paged timeli
     ],
     historyState: {
       hasMore: true,
-      timelineHasMore: true,
       loading: false,
     },
   });
@@ -472,18 +699,12 @@ test("plain messages prefers transcript compaction events over duplicate continu
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         summaryMessageId: "compaction-summary",
         summaryText,
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",
-        replayCompleteness: "compacted",
-      },
-      {
-        id: "resumed-1",
-        kind: "session_resumed",
-        restoreMethod: "session/resume",
-        timestamp: "2026-06-18T13:55:25.194Z",
-        updatedAt: "2026-06-18T13:55:25.194Z",
         replayCompleteness: "compacted",
       },
       {
@@ -494,11 +715,11 @@ test("plain messages prefers transcript compaction events over duplicate continu
           role: "user",
           text: "结束任务",
           timestamp: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
+          sequence: 256,
         },
         timestamp: "2026-06-18T14:01:49.292Z",
         updatedAt: "2026-06-18T14:01:49.292Z",
-        timelineSequence: 256,
+        sequence: 256,
       },
       {
         id: "current-assistant",
@@ -509,12 +730,12 @@ test("plain messages prefers transcript compaction events over duplicate continu
             kind: "content",
             text: "好的，我来完成剩余的两处改动然后收尾。",
             timestamp: "2026-06-18T14:02:15.534Z",
-            timelineSequence: 275,
+            sequence: 275,
           },
         ],
         timestamp: "2026-06-18T14:02:15.534Z",
         updatedAt: "2026-06-18T14:02:15.534Z",
-        timelineSequence: 275,
+        sequence: 275,
       },
     ],
     items: [
@@ -535,14 +756,14 @@ test("plain messages prefers transcript compaction events over duplicate continu
         role: "user",
         text: "结束任务",
         timestamp: "2026-06-18T14:01:49.292Z",
-        timelineSequence: 256,
+        sequence: 256,
       },
       {
         id: "provider-current-assistant",
         role: "assistant",
         text: "好的，我来完成剩余的两处改动然后收尾。",
         timestamp: "2026-06-18T14:02:15.534Z",
-        timelineSequence: 275,
+        sequence: 275,
       },
     ],
   });
@@ -570,12 +791,12 @@ test("plain messages suppresses timeline summary messages once compaction transc
             kind: "content",
             text: "更早的回复",
             timestamp: "2026-06-18T13:50:00.000Z",
-            timelineSequence: 240,
+            sequence: 240,
           },
         ],
         timestamp: "2026-06-18T13:50:00.000Z",
         updatedAt: "2026-06-18T13:50:00.000Z",
-        timelineSequence: 240,
+        sequence: 240,
       },
       {
         id: "compaction-summary",
@@ -592,18 +813,12 @@ test("plain messages suppresses timeline summary messages once compaction transc
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         summaryMessageId: "compaction-summary",
         summaryText,
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",
-        replayCompleteness: "compacted",
-      },
-      {
-        id: "resumed-1",
-        kind: "session_resumed",
-        restoreMethod: "session/load",
-        timestamp: "2026-06-18T13:55:25.194Z",
-        updatedAt: "2026-06-18T13:55:25.194Z",
         replayCompleteness: "compacted",
       },
       {
@@ -614,11 +829,11 @@ test("plain messages suppresses timeline summary messages once compaction transc
           role: "user",
           text: "结束任务",
           timestamp: "2026-06-18T14:01:49.292Z",
-          timelineSequence: 256,
+          sequence: 256,
         },
         timestamp: "2026-06-18T14:01:49.292Z",
         updatedAt: "2026-06-18T14:01:49.292Z",
-        timelineSequence: 256,
+        sequence: 256,
       },
     ],
     items: [],
@@ -632,6 +847,298 @@ test("plain messages suppresses timeline summary messages once compaction transc
   assert.ok(html.indexOf("结束任务") > html.indexOf("上下文已压缩"));
 });
 
+test("plain messages suppresses raw compaction lifecycle messages once compaction transcript events exist", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        timestamp: "2026-06-18T13:55:25.193Z",
+        updatedAt: "2026-06-18T13:55:25.193Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-answer",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-answer:content",
+            kind: "content",
+            text: "有个测试失败了，看一下具体原因。",
+            timestamp: "2026-06-18T13:55:26.000Z",
+            sequence: 1,
+          },
+        ],
+        timestamp: "2026-06-18T13:55:26.000Z",
+        updatedAt: "2026-06-18T13:55:26.000Z",
+        sequence: 1,
+      },
+    ],
+    items: [
+      {
+        id: "compaction-started",
+        role: "assistant",
+        text: "Compacting...",
+        timestamp: "2026-06-18T13:55:24.000Z",
+      },
+      {
+        id: "compaction-completed",
+        role: "assistant",
+        text: "Compacting completed.",
+        timestamp: "2026-06-18T13:55:25.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /上下文已压缩/);
+  assert.doesNotMatch(html, /Compacting\.\.\./);
+  assert.doesNotMatch(html, /Compacting completed\./);
+  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("有个测试失败了，看一下具体原因。"));
+});
+
+test("plain messages preserves transcript boundary anchor order when compaction timestamps are later than the first post-compaction message", () => {
+  const summaryText = "This session is being continued from a previous conversation that ran out of context.";
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "older-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "older-assistant:content",
+            kind: "content",
+            text: "验证不过的项告诉我具体表现，我来定位修。",
+            timestamp: "2026-06-18T14:01:30.000Z",
+            sequence: 255,
+          },
+        ],
+        timestamp: "2026-06-18T14:01:30.000Z",
+        updatedAt: "2026-06-18T14:01:30.000Z",
+        sequence: 255,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText,
+        timestamp: "2026-06-18T14:05:25.193Z",
+        updatedAt: "2026-06-18T14:05:25.193Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "current-user",
+        kind: "user_message",
+        message: {
+          id: "current-user",
+          role: "user",
+          text: "给我验证清单",
+          timestamp: "2026-06-18T14:01:49.292Z",
+          sequence: 256,
+        },
+        timestamp: "2026-06-18T14:01:49.292Z",
+        updatedAt: "2026-06-18T14:01:49.292Z",
+        sequence: 256,
+      },
+      {
+        id: "assistant-answer",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-answer:content",
+            kind: "content",
+            text: "验证清单",
+            timestamp: "2026-06-18T14:02:16.000Z",
+            sequence: 276,
+          },
+        ],
+        timestamp: "2026-06-18T14:02:16.000Z",
+        updatedAt: "2026-06-18T14:02:16.000Z",
+        sequence: 276,
+      },
+    ],
+    items: [],
+  });
+
+  assert.ok(html.indexOf("验证不过的项告诉我具体表现，我来定位修。") < html.indexOf("上下文已压缩"));
+  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("给我验证清单"));
+  assert.ok(html.indexOf("给我验证清单") < html.indexOf("验证清单"));
+});
+
+test("plain messages renders compaction-only transcript prefixes using the stored canonical order", () => {
+  const summaryText = "This session is being continued from a previous conversation that ran out of context.";
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "older-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "older-assistant:content",
+            kind: "content",
+            text: "验证不过的项告诉我具体表现，我来定位修。",
+            timestamp: "2026-06-18T14:01:30.000Z",
+            sequence: 255,
+          },
+        ],
+        timestamp: "2026-06-18T14:01:30.000Z",
+        updatedAt: "2026-06-18T14:01:30.000Z",
+        sequence: 255,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText,
+        timestamp: "2026-06-18T14:05:25.193Z",
+        updatedAt: "2026-06-18T14:05:25.193Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "current-user",
+        kind: "user_message",
+        message: {
+          id: "current-user",
+          role: "user",
+          text: "给我验证清单",
+          timestamp: "2026-06-18T14:01:49.292Z",
+          sequence: 256,
+        },
+        timestamp: "2026-06-18T14:01:49.292Z",
+        updatedAt: "2026-06-18T14:01:49.292Z",
+        sequence: 256,
+      },
+      {
+        id: "assistant-answer",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-answer:content",
+            kind: "content",
+            text: "验证清单",
+            timestamp: "2026-06-18T14:02:16.000Z",
+            sequence: 276,
+          },
+        ],
+        timestamp: "2026-06-18T14:02:16.000Z",
+        updatedAt: "2026-06-18T14:02:16.000Z",
+        sequence: 276,
+      },
+    ],
+    items: [],
+  });
+
+  assert.ok(html.indexOf("验证不过的项告诉我具体表现，我来定位修。") < html.indexOf("上下文已压缩"));
+  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("给我验证清单"));
+  assert.ok(html.indexOf("给我验证清单") < html.indexOf("验证清单"));
+});
+
+test("plain messages dedupes live assistant replies already represented after a compaction boundary", () => {
+  const summaryText = "This session is being continued from a previous conversation that ran out of context.";
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "older-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "older-assistant:content",
+            kind: "content",
+            text: "压缩前最后一条可见回复",
+            timestamp: "2026-06-18T13:50:00.000Z",
+            sequence: 240,
+          },
+        ],
+        timestamp: "2026-06-18T13:50:00.000Z",
+        updatedAt: "2026-06-18T13:50:00.000Z",
+        sequence: 240,
+      },
+      {
+        id: "compaction-1",
+        kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
+        summaryMessageId: "compaction-summary",
+        summaryText,
+        timestamp: "2026-06-18T13:55:25.193Z",
+        updatedAt: "2026-06-18T13:55:25.193Z",
+        replayCompleteness: "compacted",
+      },
+      {
+        id: "assistant-after-compaction",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-after-compaction:content",
+            kind: "content",
+            text: "这是压缩后的第一条回复。",
+            timestamp: "2026-06-18T14:02:15.534Z",
+            sequence: 275,
+          },
+        ],
+        timestamp: "2026-06-18T14:02:15.534Z",
+        updatedAt: "2026-06-18T14:02:15.534Z",
+        sequence: 275,
+      },
+    ],
+    items: [
+      {
+        id: "provider-assistant-after-compaction",
+        role: "assistant",
+        text: "这是压缩后的第一条回复。",
+        timestamp: "2026-06-18T14:02:15.534Z",
+        sequence: 275,
+      },
+    ],
+  });
+
+  assert.equal(html.match(/这是压缩后的第一条回复。/g)?.length, 1);
+  assert.ok(html.indexOf("压缩前最后一条可见回复") < html.indexOf("上下文已压缩"));
+  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("这是压缩后的第一条回复。"));
+});
+
+test("plain messages dedupes live assistant replies already represented by timeline content outside compaction flows", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "assistant-final",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-final:content",
+            kind: "content",
+            text: "明白了，MCP 工具应该保持 mcp 类型，不应该被重新分类为 read/search/write。移除 MCP 语义细分逻辑。",
+            timestamp: "2026-06-28T00:00:10.000Z",
+            sequence: 42,
+          },
+        ],
+        timestamp: "2026-06-28T00:00:10.000Z",
+        updatedAt: "2026-06-28T00:00:10.000Z",
+        sequence: 42,
+      },
+    ],
+    items: [
+      {
+        id: "provider-assistant-final",
+        role: "assistant",
+        text: "明白了，MCP 工具应该保持 mcp 类型，不应该被重新分类为 read/search/write。移除 MCP 语义细分逻辑。",
+        timestamp: "2026-06-28T00:00:10.000Z",
+        sequence: 42,
+      },
+    ],
+  });
+
+  assert.equal(
+    html.match(/明白了，MCP 工具应该保持 mcp 类型，不应该被重新分类为 read\/search\/write。移除 MCP 语义细分逻辑。/g)?.length,
+    1,
+  );
+});
+
 test("plain messages does not append live user prompts already represented by timeline", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {
@@ -642,11 +1149,11 @@ test("plain messages does not append live user prompts already represented by ti
         role: "user",
         text: "继续检查历史",
         timestamp: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       timestamp: "2026-05-17T10:00:01.000Z",
       updatedAt: "2026-05-17T10:00:01.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
     {
       id: "assistant-1",
@@ -657,12 +1164,12 @@ test("plain messages does not append live user prompts already represented by ti
           kind: "content",
           text: "已检查",
           timestamp: "2026-05-17T10:00:02.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
       ],
       timestamp: "2026-05-17T10:00:02.000Z",
       updatedAt: "2026-05-17T10:00:02.000Z",
-      timelineSequence: 2,
+      sequence: 2,
     },
   ];
 
@@ -674,7 +1181,7 @@ test("plain messages does not append live user prompts already represented by ti
         role: "user",
         text: "继续检查历史",
         timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
     ],
   });
@@ -925,12 +1432,12 @@ test("plain messages keeps loaded content visible when timeline has many tool an
           kind: "content",
           text: "开头说明应当仍然可见",
           timestamp: "2026-05-17T10:00:00.000Z",
-          timelineSequence: 1,
+          sequence: 1,
         },
       ],
       timestamp: "2026-05-17T10:00:00.000Z",
       updatedAt: "2026-05-17T10:00:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
     ...Array.from({ length: 24 }, (_, index) => {
       const sequence = index * 2 + 2;
@@ -945,11 +1452,11 @@ test("plain messages keeps loaded content visible when timeline has many tool an
             status: "completed" as const,
             timestamp: `2026-05-17T10:00:${String(sequence).padStart(2, "0")}.000Z`,
             updatedAt: `2026-05-17T10:00:${String(sequence).padStart(2, "0")}.000Z`,
-            timelineSequence: sequence,
+            sequence: sequence,
           },
           timestamp: `2026-05-17T10:00:${String(sequence).padStart(2, "0")}.000Z`,
           updatedAt: `2026-05-17T10:00:${String(sequence).padStart(2, "0")}.000Z`,
-          timelineSequence: sequence,
+          sequence: sequence,
         },
         {
           id: `thinking-${index}`,
@@ -963,12 +1470,12 @@ test("plain messages keeps loaded content visible when timeline has many tool an
               status: "completed" as const,
               timestamp: `2026-05-17T10:00:${String(sequence + 1).padStart(2, "0")}.000Z`,
               updatedAt: `2026-05-17T10:00:${String(sequence + 1).padStart(2, "0")}.000Z`,
-              timelineSequence: sequence + 1,
+              sequence: sequence + 1,
             },
           ],
           timestamp: `2026-05-17T10:00:${String(sequence + 1).padStart(2, "0")}.000Z`,
           updatedAt: `2026-05-17T10:00:${String(sequence + 1).padStart(2, "0")}.000Z`,
-          timelineSequence: sequence + 1,
+          sequence: sequence + 1,
         },
       ];
     }).flat(),
@@ -981,12 +1488,12 @@ test("plain messages keeps loaded content visible when timeline has many tool an
           kind: "content",
           text: "最终汇总",
           timestamp: "2026-05-17T10:01:00.000Z",
-          timelineSequence: 99,
+          sequence: 99,
         },
       ],
       timestamp: "2026-05-17T10:01:00.000Z",
       updatedAt: "2026-05-17T10:01:00.000Z",
-      timelineSequence: 99,
+      sequence: 99,
     },
   ];
 
@@ -1010,19 +1517,19 @@ test("plain messages reveals leading timeline details when all loaded messages f
           status: "completed",
           timestamp: "2026-05-17T10:00:00.000Z",
           updatedAt: "2026-05-17T10:00:00.000Z",
-          timelineSequence: 1,
+          sequence: 1,
         },
         {
           id: "assistant-1:content",
           kind: "content",
           text: "只有一条正文时应展示完整已加载条目",
           timestamp: "2026-05-17T10:00:01.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
       ],
       timestamp: "2026-05-17T10:00:00.000Z",
       updatedAt: "2026-05-17T10:00:01.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
   ];
 
@@ -1048,12 +1555,12 @@ test("plain messages marks paged windows that start inside earlier context", () 
             status: "completed",
             timestamp: "2026-05-17T10:00:00.000Z",
             updatedAt: "2026-05-17T10:00:00.000Z",
-            timelineSequence: 1,
+            sequence: 1,
           },
         ],
         timestamp: "2026-05-17T10:00:00.000Z",
         updatedAt: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       {
         id: "assistant-answer",
@@ -1064,15 +1571,15 @@ test("plain messages marks paged windows that start inside earlier context", () 
             kind: "content",
             text: "后续正文",
             timestamp: "2026-05-17T10:00:01.000Z",
-            timelineSequence: 2,
+            sequence: 2,
           },
         ],
         timestamp: "2026-05-17T10:00:01.000Z",
         updatedAt: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
     ],
-    historyState: { hasMore: true, timelineHasMore: true, loading: false },
+    historyState: { hasMore: true, loading: false },
   });
 
   assert.match(html, /plain-history-boundary/);
@@ -1081,25 +1588,19 @@ test("plain messages marks paged windows that start inside earlier context", () 
   assert.ok(html.indexOf("上方还有上下文") < html.indexOf("后续正文"));
 });
 
-test("plain messages keeps transcript boundary rows when paged windows start before the resumed message", () => {
+test("plain messages keeps transcript boundary rows when paged windows start before the first post-compaction message", () => {
   const summaryText = "This session is being continued from a previous conversation that ran out of context.";
   const html = renderPlainMessages({
     timelineItems: [
       {
         id: "compaction-1",
         kind: "context_compaction",
+        phase: "completed",
+        source: "provider",
         summaryMessageId: "compaction-summary",
         summaryText,
         timestamp: "2026-06-18T13:55:25.193Z",
         updatedAt: "2026-06-18T13:55:25.193Z",
-        replayCompleteness: "compacted",
-      },
-      {
-        id: "resumed-1",
-        kind: "session_resumed",
-        restoreMethod: "session/load",
-        timestamp: "2026-06-18T13:55:25.194Z",
-        updatedAt: "2026-06-18T13:55:25.194Z",
         replayCompleteness: "compacted",
       },
       {
@@ -1111,24 +1612,57 @@ test("plain messages keeps transcript boundary rows when paged windows start bef
             kind: "content",
             text: "后续正文",
             timestamp: "2026-06-18T13:55:26.000Z",
-            timelineSequence: 1,
+            sequence: 1,
           },
         ],
         timestamp: "2026-06-18T13:55:26.000Z",
         updatedAt: "2026-06-18T13:55:26.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
     ],
-    historyState: { hasMore: true, timelineHasMore: true, loading: false },
+    historyState: { hasMore: true, loading: false },
   });
 
   assert.match(html, /plain-history-boundary/);
   assert.match(html, /上方还有上下文/);
   assert.match(html, /上下文已压缩/);
-  assert.match(html, /会话已恢复/);
   assert.ok(html.indexOf("上方还有上下文") < html.indexOf("上下文已压缩"));
-  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("会话已恢复"));
-  assert.ok(html.indexOf("会话已恢复") < html.indexOf("后续正文"));
+  assert.ok(html.indexOf("上下文已压缩") < html.indexOf("后续正文"));
+});
+
+test("plain messages drops replay-duplicate live assistant messages already covered by timeline history", () => {
+  const assistantText = "我来看看项目结构和相关代码。";
+  const html = renderPlainMessages({
+    items: [
+      {
+        id: "provider-assistant-1",
+        role: "assistant",
+        text: assistantText,
+        timestamp: "2026-06-28T12:44:23.973Z",
+        sequence: 3,
+      },
+    ],
+    timelineItems: [
+      {
+        id: "session-1-msg-000001",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "session-1-msg-000001:content",
+            kind: "content",
+            text: assistantText,
+            timestamp: "2026-06-28T12:42:44.452Z",
+            sequence: 40,
+          },
+        ],
+        timestamp: "2026-06-28T12:42:44.452Z",
+        updatedAt: "2026-06-28T12:42:44.452Z",
+        sequence: 40,
+      },
+    ],
+  });
+
+  assert.equal(html.match(new RegExp(assistantText, "g"))?.length ?? 0, 1);
 });
 
 test("plain messages does not mark paged windows that start at a normal message", () => {
@@ -1142,11 +1676,11 @@ test("plain messages does not mark paged windows that start at a normal message"
           role: "user",
           text: "正常起点",
           timestamp: "2026-05-17T10:00:00.000Z",
-          timelineSequence: 1,
+          sequence: 1,
         },
         timestamp: "2026-05-17T10:00:00.000Z",
         updatedAt: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       {
         id: "assistant-answer",
@@ -1157,17 +1691,16 @@ test("plain messages does not mark paged windows that start at a normal message"
             kind: "content",
             text: "回答",
             timestamp: "2026-05-17T10:00:01.000Z",
-            timelineSequence: 2,
+            sequence: 2,
           },
         ],
         timestamp: "2026-05-17T10:00:01.000Z",
         updatedAt: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
     ],
     historyState: {
       hasMore: true,
-      timelineHasMore: true,
       loading: false,
     },
   });
@@ -1187,16 +1720,16 @@ test("plain messages keep optimistic live messages visible when timeline history
           role: "user",
           text: "历史问题",
           timestamp: "2026-05-17T10:00:00.000Z",
-          timelineSequence: 1,
+          sequence: 1,
         },
         timestamp: "2026-05-17T10:00:00.000Z",
         updatedAt: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
     ],
     items: [
       {
-        id: "session-1-user-1001",
+        id: "session-1-user-pending",
         role: "user",
         text: "新的 OpenCode prompt",
         timestamp: "2026-05-17T10:00:02.000Z",
@@ -1220,11 +1753,11 @@ test("plain messages do not append persisted runtime assistant history to the op
           role: "user",
           text: "历史问题",
           timestamp: "2026-05-17T10:00:00.000Z",
-          timelineSequence: 1,
+          sequence: 1,
         },
         timestamp: "2026-05-17T10:00:00.000Z",
         updatedAt: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       {
         id: "history-assistant",
@@ -1235,12 +1768,12 @@ test("plain messages do not append persisted runtime assistant history to the op
             kind: "content",
             text: "较晚的历史回复",
             timestamp: "2026-05-17T10:10:00.000Z",
-            timelineSequence: 2,
+            sequence: 2,
           },
         ],
         timestamp: "2026-05-17T10:10:00.000Z",
         updatedAt: "2026-05-17T10:10:00.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
     ],
     items: [
@@ -1261,6 +1794,155 @@ test("plain messages do not append persisted runtime assistant history to the op
   assert.ok(laterHistoryAssistantIndex > restoredAssistantIndex);
 });
 
+test("plain messages drop optimistic assistant content once canonical timeline content matches it", () => {
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "assistant-live-final",
+        role: "assistant",
+        text: "最终回答",
+        timestamp: "2026-05-17T10:10:01.000Z",
+        streaming: true,
+      },
+    ],
+    timelineItems: [
+      {
+        id: "history-user",
+        kind: "user_message",
+        message: {
+          id: "history-user",
+          role: "user",
+          text: "历史问题",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          sequence: 1,
+        },
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        sequence: 1,
+      },
+      {
+        id: "history-assistant",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "history-assistant:content",
+            kind: "content",
+            text: "最终回答",
+            timestamp: "2026-05-17T10:10:02.000Z",
+            sequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:10:02.000Z",
+        updatedAt: "2026-05-17T10:10:02.000Z",
+        sequence: 2,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "message" && item.message.id === "assistant-live-final",
+    ),
+    false,
+  );
+});
+
+test("plain messages keep streaming assistant content while canonical timeline only has thinking", () => {
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "assistant-live",
+        role: "assistant",
+        text: "正在流式输出的正文",
+        timestamp: "2026-05-17T10:10:01.000Z",
+        streaming: true,
+      },
+    ],
+    timelineItems: [
+      {
+        id: "assistant-live",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-live:thinking",
+            kind: "thinking",
+            text: "先分析问题",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:10:00.000Z",
+            updatedAt: "2026-05-17T10:10:00.000Z",
+            sequence: 1,
+          },
+        ],
+        timestamp: "2026-05-17T10:10:00.000Z",
+        updatedAt: "2026-05-17T10:10:00.000Z",
+        sequence: 1,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "thinking" && item.toolCall.output === "先分析问题",
+    ),
+    true,
+  );
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "message" && item.message.text === "正在流式输出的正文",
+    ),
+    true,
+  );
+});
+
+test("plain messages drop same-id streaming assistant content once canonical content arrives", () => {
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "assistant-live",
+        role: "assistant",
+        text: "最终回答",
+        timestamp: "2026-05-17T10:10:01.000Z",
+        streaming: true,
+      },
+    ],
+    timelineItems: [
+      {
+        id: "assistant-live",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-live:content",
+            kind: "content",
+            text: "最终回答",
+            timestamp: "2026-05-17T10:10:02.000Z",
+            sequence: 2,
+          },
+        ],
+        timestamp: "2026-05-17T10:10:02.000Z",
+        updatedAt: "2026-05-17T10:10:02.000Z",
+        sequence: 2,
+      },
+    ],
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(
+    displayItems.filter(
+      (item) => item.kind === "message" && item.message.text === "最终回答",
+    ).length,
+    1,
+  );
+});
+
 test("plain messages append live prompts after restored timeline history", () => {
   const html = renderPlainMessages({
     timelineItems: [
@@ -1272,11 +1954,11 @@ test("plain messages append live prompts after restored timeline history", () =>
           role: "user",
           text: "历史问题",
           timestamp: "2026-05-17T10:00:00.000Z",
-          timelineSequence: 1,
+          sequence: 1,
         },
         timestamp: "2026-05-17T10:00:00.000Z",
         updatedAt: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       {
         id: "history-assistant",
@@ -1287,17 +1969,17 @@ test("plain messages append live prompts after restored timeline history", () =>
             kind: "content",
             text: "旧回复历史",
             timestamp: "2026-05-17T10:10:00.000Z",
-            timelineSequence: 2,
+            sequence: 2,
           },
         ],
         timestamp: "2026-05-17T10:10:00.000Z",
         updatedAt: "2026-05-17T10:10:00.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
     ],
     items: [
       {
-        id: "session-1-user-1002",
+        id: "session-1-user-pending",
         role: "user",
         text: "刚发送的新消息",
         timestamp: "2026-05-17T10:05:00.000Z",
@@ -1328,11 +2010,11 @@ test("plain messages keep assistant fallback visible when only message paginatio
           output: "stdout",
           timestamp: "2026-05-17T10:00:02.000Z",
           updatedAt: "2026-05-17T10:00:02.000Z",
-          timelineSequence: 2,
+          sequence: 2,
         },
         timestamp: "2026-05-17T10:00:02.000Z",
         updatedAt: "2026-05-17T10:00:02.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
     ],
     items: [
@@ -1341,13 +2023,12 @@ test("plain messages keep assistant fallback visible when only message paginatio
         role: "assistant",
         text: "最终答复",
         timestamp: "2026-05-17T10:00:00.500Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
     ],
     historyState: {
-      hasMore: true,
+      hasMore: false,
       loading: false,
-      timelineHasMore: false,
     },
   });
 
@@ -1368,17 +2049,17 @@ test("plain messages append live prompts after a paged restored timeline", () =>
             kind: "content",
             text: "旧会话窗口里的回复",
             timestamp: "2026-05-17T10:10:00.000Z",
-            timelineSequence: 50,
+            sequence: 50,
           },
         ],
         timestamp: "2026-05-17T10:10:00.000Z",
         updatedAt: "2026-05-17T10:10:00.000Z",
-        timelineSequence: 50,
+        sequence: 50,
       },
     ],
     items: [
       {
-        id: "session-1-user-1003",
+        id: "session-1-user-pending",
         role: "user",
         text: "刚发送到旧会话的新消息",
         timestamp: "2026-05-17T10:20:00.000Z",
@@ -1386,7 +2067,6 @@ test("plain messages append live prompts after a paged restored timeline", () =>
     ],
     historyState: {
       hasMore: true,
-      timelineHasMore: true,
       loading: false,
     },
   });
@@ -1397,7 +2077,7 @@ test("plain messages append live prompts after a paged restored timeline", () =>
   assert.ok(liveUserIndex > historyAssistantIndex);
 });
 
-test("plain messages do not append legacy messages older than the loaded timeline window", () => {
+test("plain messages keep older fallback messages ahead of the loaded timeline window", () => {
   const html = renderPlainMessages({
     timelineItems: [
       {
@@ -1409,12 +2089,12 @@ test("plain messages do not append legacy messages older than the loaded timelin
             kind: "content",
             text: "已加载窗口里的回复",
             timestamp: "2026-05-17T10:10:00.000Z",
-            timelineSequence: 50,
+            sequence: 50,
           },
         ],
         timestamp: "2026-05-17T10:10:00.000Z",
         updatedAt: "2026-05-17T10:10:00.000Z",
-        timelineSequence: 50,
+        sequence: 50,
       },
     ],
     items: [
@@ -1423,18 +2103,21 @@ test("plain messages do not append legacy messages older than the loaded timelin
         role: "user",
         text: "最早的用户消息不应追加到末尾",
         timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
     ],
     historyState: {
       hasMore: true,
-      timelineHasMore: true,
       loading: false,
     },
   });
 
+  const legacyUserIndex = html.indexOf("最早的用户消息不应追加到末尾");
+  const loadedAssistantIndex = html.indexOf("已加载窗口里的回复");
+
   assert.match(html, /已加载窗口里的回复/);
-  assert.doesNotMatch(html, /最早的用户消息不应追加到末尾/);
+  assert.match(html, /最早的用户消息不应追加到末尾/);
+  assert.ok(legacyUserIndex >= 0 && loadedAssistantIndex > legacyUserIndex);
 });
 
 test("plain messages sort fallback messages with the restored timeline window", () => {
@@ -1449,12 +2132,12 @@ test("plain messages sort fallback messages with the restored timeline window", 
             kind: "content",
             text: "底部窗口里较新的助手回复",
             timestamp: "2026-05-17T10:30:00.000Z",
-            timelineSequence: 116,
+            sequence: 116,
           },
         ],
         timestamp: "2026-05-17T10:30:00.000Z",
         updatedAt: "2026-05-17T10:30:00.000Z",
-        timelineSequence: 116,
+        sequence: 116,
       },
     ],
     items: [
@@ -1463,28 +2146,28 @@ test("plain messages sort fallback messages with the restored timeline window", 
         role: "user",
         text: "旧的用户问题一",
         timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 49,
+        sequence: 49,
       },
       {
         id: "legacy-assistant-first",
         role: "assistant",
         text: "旧的助手回复一",
         timestamp: "2026-05-17T10:01:00.000Z",
-        timelineSequence: 50,
+        sequence: 50,
       },
       {
         id: "legacy-user-second",
         role: "user",
         text: "旧的用户问题二",
         timestamp: "2026-05-17T10:02:00.000Z",
-        timelineSequence: 63,
+        sequence: 63,
       },
       {
         id: "legacy-assistant-second",
         role: "assistant",
         text: "旧的助手回复二",
         timestamp: "2026-05-17T10:03:00.000Z",
-        timelineSequence: 64,
+        sequence: 64,
       },
     ],
   });
@@ -1511,11 +2194,11 @@ test("plain messages counts coalesced provider paragraphs as one green-dot messa
         role: "user",
         text: "继续",
         timestamp: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       timestamp: "2026-05-17T10:00:00.000Z",
       updatedAt: "2026-05-17T10:00:00.000Z",
-      timelineSequence: 1,
+      sequence: 1,
     },
     ...Array.from({ length: 30 }, (_, index) => ({
       id: `assistant-final#p${index}`,
@@ -1526,12 +2209,12 @@ test("plain messages counts coalesced provider paragraphs as one green-dot messa
           kind: "content" as const,
           text: `段落 ${index}`,
           timestamp: `2026-05-17T10:00:${String(index + 1).padStart(2, "0")}.000Z`,
-          timelineSequence: index + 2,
+          sequence: index + 2,
         },
       ],
       timestamp: `2026-05-17T10:00:${String(index + 1).padStart(2, "0")}.000Z`,
       updatedAt: `2026-05-17T10:00:${String(index + 1).padStart(2, "0")}.000Z`,
-      timelineSequence: index + 2,
+      sequence: index + 2,
     })),
   ];
 
@@ -1555,12 +2238,12 @@ test("plain messages renders all loaded timeline message blocks without manual l
           kind: "content" as const,
           text: `已加载消息 ${index}`,
           timestamp: `2026-05-17T10:01:${String(index).padStart(2, "0")}.000Z`,
-          timelineSequence: index + 1,
+          sequence: index + 1,
         },
       ],
       timestamp: `2026-05-17T10:01:${String(index).padStart(2, "0")}.000Z`,
       updatedAt: `2026-05-17T10:01:${String(index).padStart(2, "0")}.000Z`,
-      timelineSequence: index + 1,
+      sequence: index + 1,
     }),
   );
 
@@ -1587,12 +2270,12 @@ test("plain messages initially renders only the newest window for large loaded t
           kind: "content" as const,
           text: `大历史消息 ${index}`,
           timestamp: `2026-05-17T10:02:${String(index).padStart(2, "0")}.000Z`,
-          timelineSequence: index + 1,
+          sequence: index + 1,
         },
       ],
       timestamp: `2026-05-17T10:02:${String(index).padStart(2, "0")}.000Z`,
       updatedAt: `2026-05-17T10:02:${String(index).padStart(2, "0")}.000Z`,
-      timelineSequence: index + 1,
+      sequence: index + 1,
     }),
   );
 
@@ -1693,6 +2376,9 @@ test("plain messages auto-expands running thinking and collapses completed think
   assert.match(completedHtml, /aria-label="展开 Thinking"/);
   assert.match(runningHtml, /class="[^"]*rotate-180/);
   assert.doesNotMatch(completedHtml, /class="[^"]*rotate-180/);
+  assert.match(runningHtml, /plain-thinking-content[^"]*pt-1[^"]*text-\[12\.5px\]/);
+  assert.doesNotMatch(runningHtml, /plain-thinking-content[^"]*h-64/);
+  assert.doesNotMatch(completedHtml, /plain-thinking-content/);
 });
 
 test("plain messages collapses still-running thinking once newer content follows", () => {
@@ -1887,7 +2573,7 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
   assert.match(html, /第三段 Thinking/);
 });
 
-test("plain messages keeps adjacent thinking tool calls separate when ids differ", () => {
+test("plain messages keeps distinct generic thinking snapshots split when ids differ", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -1925,6 +2611,111 @@ test("plain messages keeps adjacent thinking tool calls separate when ids differ
   assert.match(html, /第二轮 Thinking/);
 });
 
+test("plain messages coalesces adjacent generic thinking snapshots when later text extends earlier text", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      thinkingToolCalls: [
+        {
+          id: "message-a:thinking",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "第一轮 Thinking",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+        },
+        {
+          id: "message-b:thinking",
+          kind: "think",
+          title: "Thinking",
+          status: "completed",
+          output: "第一轮 Thinking\n第二轮 Thinking",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+        },
+      ],
+      emptyText: "等待回复",
+      expandedMessageIds: new Set<string>(),
+      historyState: { hasMore: false, loading: false },
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 1);
+  assert.match(html, /第一轮 Thinking/);
+  assert.match(html, /第二轮 Thinking/);
+});
+
+test("plain messages keeps generic thinking groups split across real tool boundaries", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "thinking-before",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "thinking-before:thinking",
+            kind: "thinking",
+            text: "工具前 Thinking",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:00:00.000Z",
+            updatedAt: "2026-05-17T10:00:00.000Z",
+            sequence: 1,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        sequence: 1,
+      },
+      {
+        id: "tool-between",
+        kind: "tool_call",
+        toolCall: {
+          id: "tool-between",
+          kind: "search",
+          title: "Search",
+          status: "completed",
+          input: "{\"query\":\"ACP\"}",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+          sequence: 2,
+        },
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 2,
+      },
+      {
+        id: "thinking-after",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "thinking-after:thinking",
+            kind: "thinking",
+            text: "工具后 Thinking",
+            title: "Thinking",
+            status: "completed",
+            timestamp: "2026-05-17T10:00:02.000Z",
+            updatedAt: "2026-05-17T10:00:02.000Z",
+            sequence: 3,
+          },
+        ],
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        sequence: 3,
+      },
+    ],
+  });
+
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 2);
+  assert.match(html, /工具前 Thinking/);
+  assert.match(html, /工具后 Thinking/);
+  assert.match(html, /Search: ACP/);
+});
+
 test("plain messages coalesces adjacent duplicate generic thinking snapshots", () => {
   const html = renderPlainMessages({
     timelineItems: [
@@ -1940,12 +2731,12 @@ test("plain messages coalesces adjacent duplicate generic thinking snapshots", (
             status: "completed",
             timestamp: "2026-05-17T10:00:00.000Z",
             updatedAt: "2026-05-17T10:00:00.000Z",
-            timelineSequence: 1,
+            sequence: 1,
           },
         ],
         timestamp: "2026-05-17T10:00:00.000Z",
         updatedAt: "2026-05-17T10:00:00.000Z",
-        timelineSequence: 1,
+        sequence: 1,
       },
       {
         id: "opencode-thinking-b",
@@ -1959,12 +2750,12 @@ test("plain messages coalesces adjacent duplicate generic thinking snapshots", (
             status: "running",
             timestamp: "2026-05-17T10:00:01.000Z",
             updatedAt: "2026-05-17T10:00:01.000Z",
-            timelineSequence: 2,
+            sequence: 2,
           },
         ],
         timestamp: "2026-05-17T10:00:01.000Z",
         updatedAt: "2026-05-17T10:00:01.000Z",
-        timelineSequence: 2,
+        sequence: 2,
       },
       {
         id: "assistant-answer",
@@ -1975,12 +2766,12 @@ test("plain messages coalesces adjacent duplicate generic thinking snapshots", (
             kind: "content",
             text: "最终回答",
             timestamp: "2026-05-17T10:00:02.000Z",
-            timelineSequence: 3,
+            sequence: 3,
           },
         ],
         timestamp: "2026-05-17T10:00:02.000Z",
         updatedAt: "2026-05-17T10:00:02.000Z",
-        timelineSequence: 3,
+        sequence: 3,
       },
     ],
   });
@@ -2105,6 +2896,322 @@ test("plain messages renders subagents as standalone timeline rows", () => {
   assert.ok(html.indexOf("准备委派。") < html.indexOf("spawn_agents_on_csv"));
 });
 
+test("plain messages renders persisted subagent tools and replies inside the root row", () => {
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-subagent-detail",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "completed",
+      input: JSON.stringify({
+        description: "Explore repository",
+        prompt: "先读取 README，再执行 git status --short",
+      }),
+      output: "Root envelope that must not replace the generated text",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:03.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-subagent-detail"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-subagent-detail",
+        throughSequence: 3,
+        entries: [
+          {
+            id: "subagent-prompt:tool-subagent-detail",
+            kind: "user_message",
+            message: {
+              id: "subagent-prompt:tool-subagent-detail",
+              role: "user",
+              text: "先读取 README，再执行 git status --short",
+              timestamp: "2026-07-22T00:00:00.000Z",
+              sequence: 0,
+            },
+            timestamp: "2026-07-22T00:00:00.000Z",
+            updatedAt: "2026-07-22T00:00:00.000Z",
+            sequence: 0,
+          },
+          {
+            id: "reply-1",
+            kind: "assistant_message",
+            chunks: [
+              {
+                id: "reply-1:thinking",
+                kind: "thinking",
+                text: "先分析 README",
+                title: "Thinking",
+                status: "completed",
+                timestamp: "2026-07-22T00:00:01.000Z",
+                updatedAt: "2026-07-22T00:00:01.000Z",
+                sequence: 1,
+              },
+              {
+                id: "reply-1:content",
+                kind: "content",
+                text: "Subagent final reply",
+                timestamp: "2026-07-22T00:00:03.000Z",
+                sequence: 3,
+              },
+            ],
+            timestamp: "2026-07-22T00:00:01.000Z",
+            updatedAt: "2026-07-22T00:00:03.000Z",
+            sequence: 1,
+          },
+          {
+            id: "tool:read-1",
+            kind: "tool_call",
+            toolCall: {
+              id: "read-1",
+              kind: "read",
+              title: "Read README.md",
+              status: "completed",
+              output: "README body",
+              timestamp: "2026-07-22T00:00:02.000Z",
+              updatedAt: "2026-07-22T00:00:02.000Z",
+              sequence: 2,
+            },
+            timestamp: "2026-07-22T00:00:02.000Z",
+            updatedAt: "2026-07-22T00:00:02.000Z",
+            sequence: 2,
+          },
+        ],
+      },
+    },
+  });
+
+  assert.match(html, /README\.md/);
+  assert.match(html, /README body/);
+  assert.match(html, /先分析 README/);
+  assert.match(html, /Subagent final reply/);
+  assert.match(html, /先读取 README，再执行 git status --short/);
+  assert.ok(html.indexOf("先读取 README") < html.indexOf("先分析 README"));
+  assert.ok(html.indexOf("先分析 README") < html.indexOf("README.md"));
+  assert.ok(html.indexOf("README.md") < html.indexOf("Subagent final reply"));
+  assert.doesNotMatch(html, /Root envelope that must not replace the generated text/);
+  assert.match(html, /data-subagent-conversation/);
+  assert.doesNotMatch(html, /plain-tool-group-content/);
+});
+
+test("plain messages renders a subagent timeline without root-output concatenation", () => {
+  const prompt = "读取项目说明并检查工作区状态";
+  const finalReply = "README 已读取，git status 已完成。";
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-claude-subagent-fallback-reply",
+      kind: "subagent",
+      title: "读取 README 并执行 git status",
+      status: "completed",
+      input: JSON.stringify({
+        description: "读取 README 并执行 git status",
+        prompt,
+      }),
+      output: "Root output must not be rendered inside the detail",
+      timestamp: "2026-07-23T00:00:00.000Z",
+      updatedAt: "2026-07-23T00:00:03.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-claude-subagent-fallback-reply"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-claude-subagent-fallback-reply",
+        throughSequence: 2,
+        entries: [
+          {
+            id: "subagent-prompt:tool-claude-subagent-fallback-reply",
+            kind: "user_message",
+            message: {
+              id: "subagent-prompt:tool-claude-subagent-fallback-reply",
+              role: "user",
+              text: prompt,
+              timestamp: "2026-07-23T00:00:00.000Z",
+              sequence: 0,
+            },
+            timestamp: "2026-07-23T00:00:00.000Z",
+            updatedAt: "2026-07-23T00:00:00.000Z",
+            sequence: 0,
+          },
+          {
+            id: "tool:read-1",
+            kind: "tool_call",
+            toolCall: {
+              id: "read-1",
+              kind: "read",
+              title: "Read README.md",
+              status: "completed",
+              input: JSON.stringify({ file_path: "docs/README.md" }),
+              output: "README body",
+              timestamp: "2026-07-23T00:00:01.000Z",
+              updatedAt: "2026-07-23T00:00:01.000Z",
+            },
+            timestamp: "2026-07-23T00:00:01.000Z",
+            updatedAt: "2026-07-23T00:00:01.000Z",
+            sequence: 1,
+          },
+          {
+            id: "tool:shell-1",
+            kind: "tool_call",
+            toolCall: {
+              id: "shell-1",
+              kind: "shell",
+              title: "Run git status",
+              status: "completed",
+              input: JSON.stringify({ command: "git status --short" }),
+              output: "clean",
+              timestamp: "2026-07-23T00:00:02.000Z",
+              updatedAt: "2026-07-23T00:00:02.000Z",
+            },
+            timestamp: "2026-07-23T00:00:02.000Z",
+            updatedAt: "2026-07-23T00:00:02.000Z",
+            sequence: 2,
+          },
+          {
+            id: "reply-1",
+            kind: "assistant_message",
+            chunks: [{
+              id: "reply-1:content",
+              kind: "content",
+              text: finalReply,
+              timestamp: "2026-07-23T00:00:03.000Z",
+              sequence: 3,
+              streaming: false,
+              streamMode: "snapshot",
+            }],
+            timestamp: "2026-07-23T00:00:03.000Z",
+            updatedAt: "2026-07-23T00:00:03.000Z",
+            sequence: 3,
+          },
+        ],
+      },
+    },
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /docs\/README\.md/);
+  assert.match(html, /git status --short/);
+  assert.match(html, /README 已读取，git status 已完成。/);
+  assert.equal(html.split(prompt).length - 1, 1);
+  assert.equal(html.split(finalReply).length - 1, 1);
+  assert.ok(html.indexOf(prompt) < html.indexOf("docs/README.md"));
+  assert.ok(html.indexOf("git status --short") < html.indexOf(finalReply));
+  assert.doesNotMatch(html, /Root output must not be rendered/);
+  assert.doesNotMatch(html, /plain-tool-group/);
+  assert.match(
+    html,
+    /class="border-t border-border-ghost\/70 pb-0\.5 pt-1\.5"><details class="plain-tool-call/,
+  );
+  assert.match(
+    html,
+    /class="pb-0\.5 pt-0\.5"><details class="plain-tool-call/,
+  );
+  assert.match(html, /plain-subagent-content max-h-\[min\(22rem,55vh\)\] min-w-0 overflow-y-auto overscroll-contain pr-1 pt-1/);
+  assert.match(html, /plain-subagent-content[^>]*data-mission-swipe-lock="true"/);
+});
+
+test("plain messages keeps the root output hidden while subagent detail is loading", () => {
+  const html = renderPlainMessages({
+    items: [],
+    toolCalls: [{
+      id: "tool-subagent-loading",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "running",
+      input: JSON.stringify({
+        description: "Explore repository",
+        prompt: "先读取 README，再执行 git status --short",
+      }),
+      output: "Root envelope that must stay out of the loading state",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-subagent-loading"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-subagent-loading",
+        throughSequence: 0,
+        entries: [],
+        loading: true,
+      },
+    },
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /正在加载 Subagent 会话/);
+  assert.doesNotMatch(html, /先读取 README，再执行 git status --short/);
+  assert.doesNotMatch(html, /Root envelope that must stay out of the loading state/);
+});
+
+test("plain messages primes the loading state before a completed subagent is expanded", () => {
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-subagent-before-expand",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "completed",
+      output: "Root reply must not flash before the detail request starts",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    }],
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /正在加载 Subagent 会话/);
+  assert.doesNotMatch(html, /Root reply must not flash before the detail request starts/);
+});
+
+test("plain messages falls back to the root reply only after an empty detail snapshot loads", () => {
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-subagent-empty-detail",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "completed",
+      output: "Root reply retained for an empty subagent conversation",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-subagent-empty-detail"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-subagent-empty-detail",
+        throughSequence: 0,
+        entries: [],
+        loading: false,
+        failed: false,
+      },
+    },
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /Root reply retained for an empty subagent conversation/);
+  assert.doesNotMatch(html, /正在加载 Subagent 会话/);
+});
+
+test("plain messages reports detail load failures without rendering the root reply", () => {
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-subagent-failed-detail",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "completed",
+      output: "Root reply must not mask a detail request failure",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-subagent-failed-detail"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-subagent-failed-detail",
+        throughSequence: 0,
+        entries: [],
+        failed: true,
+      },
+    },
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /Subagent 会话加载失败，收起后可重试/);
+  assert.doesNotMatch(html, /Root reply must not mask a detail request failure/);
+});
+
 test("plain messages keeps subagents out of adjacent normal tool groups", () => {
   const html = renderPlainMessages({
     items: [
@@ -2155,7 +3262,7 @@ test("plain messages keeps subagents out of adjacent normal tool groups", () => 
   assert.ok(html.indexOf("background_output") < html.indexOf("工具调用 · 2 项"));
 });
 
-test("plain messages keeps tool call icon, badge, title, and status top aligned", () => {
+test("plain messages keeps tool call rows vertically centered with symmetric padding", () => {
   const html = renderPlainMessages({
     toolCalls: [
       {
@@ -2171,11 +3278,15 @@ test("plain messages keeps tool call icon, badge, title, and status top aligned"
   });
 
   assert.match(html, /plain-tool-call/);
-  assert.match(html, /<summary class="flex min-w-0 cursor-pointer list-none items-start gap-1\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
-  assert.match(html, /class="grid size-3 shrink-0 self-start place-items-center rounded-sm/);
-  assert.match(html, /h-4 shrink-0 self-start rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
-  assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium text-foreground">/);
-  assert.match(html, /class="ml-auto shrink-0 self-start text-2xs text-muted-foreground\/60"/);
+  assert.match(html, /<details class="plain-tool-call min-w-0 text-muted-foreground"/);
+  assert.match(html, /<summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5 py-0\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
+  assert.match(html, /class="grid size-3 shrink-0 place-items-center rounded-sm/);
+  assert.match(html, /class="inline-flex shrink-0 items-center w-12"/);
+  assert.match(html, /inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
+  assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium leading-4 text-foreground">/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground\/60"/);
+  assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-muted-foreground\/85"/);
+  assert.doesNotMatch(html, /grid-cols-subgrid|col-span-/);
 });
 
 test("plain messages surfaces subagent type and task summary when available", () => {
@@ -2201,6 +3312,366 @@ test("plain messages surfaces subagent type and task summary when available", ()
   assert.match(html, /Explore/);
   assert.match(html, /trace async refresh flow/);
   assert.match(html, /运行中/);
+  assert.match(html, /<summary class="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost \[\&amp;::-webkit-details-marker\]:hidden"/);
+  assert.match(html, /class="flex min-w-0 flex-1 items-center gap-2"/);
+  assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-amber-500\/10/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center font-medium leading-none text-amber-700/);
+  assert.match(html, /class="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground\/70"/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0\.5 text-2xs font-semibold leading-none bg-accent/);
+  assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground\/60 transition-transform duration-150 rotate-180"/);
+});
+
+test("plain messages renders Codex spawn, wait, and close as separate operation rows", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "spawn-call",
+        commandId: "spawn-call",
+        kind: "subagent",
+        title: "Cicero",
+        status: "completed",
+        input: JSON.stringify({ task_name: "Cicero", message: "Inspect the adapter" }),
+        subagentOperation: {
+          action: "spawn",
+          targets: [{ id: "agent-1", label: "Cicero" }],
+        },
+        timestamp: "2026-07-17T09:00:01.000Z",
+        updatedAt: "2026-07-17T09:00:02.000Z",
+      },
+      {
+        id: "wait-call",
+        commandId: "wait-call",
+        kind: "subagent",
+        title: "Cicero",
+        status: "completed",
+        input: JSON.stringify({ targets: ["agent-1"] }),
+        output: "All tests passed.",
+        subagentOperation: {
+          action: "wait",
+          targets: [{ id: "agent-1", label: "Cicero" }],
+        },
+        timestamp: "2026-07-17T09:00:03.000Z",
+        updatedAt: "2026-07-17T09:00:04.000Z",
+      },
+      {
+        id: "close-call",
+        commandId: "close-call",
+        kind: "subagent",
+        title: "Cicero",
+        status: "completed",
+        input: JSON.stringify({ target: "agent-1" }),
+        output: JSON.stringify({ previous_status: { completed: "All tests passed." } }),
+        subagentOperation: {
+          action: "close",
+          targets: [{ id: "agent-1", label: "Cicero" }],
+        },
+        timestamp: "2026-07-17T09:00:05.000Z",
+        updatedAt: "2026-07-17T09:00:06.000Z",
+      },
+    ],
+  });
+
+  assert.equal(html.match(/data-subagent-call/g)?.length, 3);
+  assert.match(html, /创建 Subagent · Cicero/);
+  assert.match(html, /等待 Subagent · Cicero/);
+  assert.match(html, /关闭 Subagent · Cicero/);
+  assert.match(html, /Inspect the adapter/);
+  assert.match(html, /All tests passed\./);
+  assert.match(html, /关闭前已完成/);
+  assert.match(html, /已创建/);
+  assert.match(html, /已返回/);
+  assert.match(html, /已关闭/);
+});
+
+test("plain messages renders subagent lifecycle status and cleans provider envelopes", () => {
+  const runningHtml = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-subagent-running",
+        kind: "subagent",
+        title: "Lifecycle check",
+        status: "running",
+        input: JSON.stringify({
+          subagent_type: "general",
+          description: "Lifecycle check",
+          prompt: "Return SUBAGENT_RUNNING_OK",
+        }),
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:01.000Z",
+      },
+    ],
+  });
+  const completedHtml = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-subagent-completed",
+        kind: "subagent",
+        title: "Lifecycle check",
+        status: "completed",
+        input: JSON.stringify({ subagent_type: "general", description: "Lifecycle check" }),
+        output: JSON.stringify({
+          output:
+            "Task completed in 7s.\n\nAgent: general\n\n---\n\nSUBAGENT_RUNNING_OK\n<!-- OMO_INTERNAL_INITIATOR -->\n\n<task_metadata>\ntask_id: task-42\n</task_metadata>\n\nto continue: task(task_id=\"task-42\")",
+          metadata: { taskId: "task-42" },
+        }),
+        timestamp: "2026-07-13T00:00:01.000Z",
+        updatedAt: "2026-07-13T00:00:08.000Z",
+      },
+    ],
+  });
+
+  assert.match(runningHtml, /运行中/);
+  assert.match(runningHtml, /Return SUBAGENT_RUNNING_OK/);
+  assert.match(completedHtml, /已完成/);
+  assert.match(completedHtml, /SUBAGENT_RUNNING_OK/);
+  assert.doesNotMatch(completedHtml, /Task completed in 7s/);
+  assert.doesNotMatch(completedHtml, /task_metadata/);
+  assert.doesNotMatch(completedHtml, /to continue/);
+});
+
+test("plain messages extracts Claude TaskOutput content from lifecycle metadata", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-claude-subagent-output",
+        kind: "subagent",
+        title: "Inspect adapter B",
+        status: "completed",
+        output: [
+          "<retrieval_status>success</retrieval_status>",
+          "<task_id>agent-b</task_id>",
+          "<task_type>local_agent</task_type>",
+          "<status>completed</status>",
+          "<output>CLAUDE_PURPOSE_B_CHILD</output>",
+        ].join("\n"),
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /CLAUDE_PURPOSE_B_CHILD/);
+  assert.doesNotMatch(html, /retrieval_status/);
+  assert.doesNotMatch(html, /task_id/);
+});
+
+test("plain messages removes Claude Agent continuation metadata from subagent output", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-claude-agent-output",
+        kind: "subagent",
+        title: "Claude transcript pending final",
+        status: "completed",
+        output: [
+          "CLAUDE_PENDING_CHILD_OK",
+          "agentId: agent-123 (use SendMessage with to: 'agent-123', summary: '<5-10 word recap>' to continue this agent)",
+          "<usage>subagent_tokens: 75114 tool_uses: 1 duration_ms: 33107</usage>",
+        ].join("\n"),
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /CLAUDE_PENDING_CHILD_OK/);
+  assert.doesNotMatch(html, /agentId/);
+  assert.doesNotMatch(html, /SendMessage/);
+  assert.doesNotMatch(html, /subagent_tokens/);
+});
+
+test("plain tool rows do not repeat the Skill category in the title", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-skill-title",
+        kind: "skill",
+        title: "Skill: superpowers:verification-before-completion",
+        status: "completed",
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, />Skill</);
+  assert.match(html, />superpowers:verification-before-completion</);
+  assert.doesNotMatch(html, /Skill: superpowers:verification-before-completion/);
+});
+
+test("plain tool rows render diagnostics as an independent category", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-diagnostics",
+        kind: "diagnostics",
+        title: "Diagnostics: packages/acp-runtime/src/adapters/opencode/tool-calls.ts",
+        status: "completed",
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /data-tool-kind="diagnostics"/);
+  assert.match(html, /class="inline-flex shrink-0 items-center min-w-[3.25rem]"/);
+  assert.match(html, />Diagnostics</);
+  assert.match(html, />packages\/acp-runtime\/src\/adapters\/opencode\/tool-calls\.ts</);
+  assert.doesNotMatch(html, /Diagnostics: packages/);
+});
+
+test("plain shell rows expose the complete command through the title attribute", () => {
+  const command = "pnpm --filter @tiller/deck test -- --test-name-pattern &quot;complete shell command title&quot;";
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-shell-long-title",
+        kind: "shell",
+        title: command.replace(/&quot;/gu, '"'),
+        status: "completed",
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, new RegExp(`title="${command}"`, "u"));
+});
+
+test("plain write rows show per-call additions and deletions when evidence is available", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-write-stats",
+        kind: "write",
+        title: "src/app.ts",
+        status: "completed",
+        input: JSON.stringify({
+          path: "src/app.ts",
+          old_string: "const value = 1;",
+          new_string: "const value = 2;",
+        }),
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /tool-call-additions[^\"]*text-success[^>]*>\+1</);
+  assert.match(html, /tool-call-deletions[^\"]*text-destructive[^>]*>-1</);
+  assert.match(html, /tool-call-diff-preview/);
+  assert.match(html, /diff-line-deleted/);
+  assert.match(html, /diff-line-added/);
+  assert.doesNotMatch(html, /old_string/);
+  assert.equal(html.match(/src\/app\.ts/gu)?.length, 2);
+});
+
+test("plain write rows keep the Diff shell when only counts are available", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-write-counts-only",
+        kind: "write",
+        title: "src/counts-only.ts",
+        status: "completed",
+        input: JSON.stringify({
+          path: "src/counts-only.ts",
+          additions: 4,
+          deletions: 2,
+        }),
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /tool-call-diff-preview/);
+  assert.match(html, /tool-call-diff-empty/);
+  assert.match(html, /只提供了变更统计/);
+  assert.doesNotMatch(html, /counts-only&quot;.*additions/su);
+});
+
+test("plain tool rows align titles without letting expanded output resize the row", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-search-title-alignment",
+        kind: "search",
+        title: "Find command handler",
+        status: "completed",
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+      {
+        id: "tool-read-title-alignment",
+        kind: "read",
+        title: "Read handler implementation",
+        status: "completed",
+        output: '{"result":"long tool output must not resize the shared title columns"}',
+        timestamp: "2026-07-14T00:00:03.000Z",
+        updatedAt: "2026-07-14T00:00:04.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /plain-tool-group[\s\S]*?bg-sky-500\/10[\s\S]*?text-sky-700/);
+  assert.match(html, /plain-tool-group-content flex max-h-\[min\(22rem,55vh\)\] min-w-0 flex-col divide-y divide-border-ghost\/70 overflow-y-auto pr-1 text-\[12\.5px\] text-muted-foreground/);
+  assert.doesNotMatch(html, /plain-tool-group-content[^\"]*gap-1/);
+  assert.equal(html.match(/plain-tool-call min-w-0 text-muted-foreground/g)?.length, 2);
+  assert.equal(html.match(/summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5/g)?.length, 2);
+  assert.match(html, /class="inline-flex shrink-0 items-center min-w-[3.25rem]"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
+  assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full/);
+  assert.doesNotMatch(html, /grid-cols-subgrid|col-span-/);
+});
+
+test("plain messages removes vertical guide lines from thinking, subagent, and tool group details", () => {
+  const html = renderPlainMessages({
+    thinkingToolCalls: [
+      {
+        id: "assistant-1:thinking",
+        commandId: "assistant-1:thinking",
+        kind: "think",
+        title: "Thinking",
+        status: "running",
+        output: "Reasoning...",
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+      },
+    ],
+    toolCalls: [
+      {
+        id: "tool-subagent",
+        kind: "subagent",
+        title: "background_output",
+        status: "running",
+        input: JSON.stringify({
+          subagent_type: "Explore",
+          description: "trace async refresh flow",
+        }),
+        output: "",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+      },
+      {
+        id: "tool-read",
+        kind: "read",
+        title: "Read file",
+        status: "completed",
+        output: "file content",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /class="plain-thinking min-w-0 w-full/);
+  assert.match(html, /class="plain-subagent-content max-h-\[min\(22rem,55vh\)\]/);
+  assert.match(html, /plain-thinking[\s\S]*?bg-violet-500\/10[\s\S]*?text-violet-700/);
+  assert.match(html, /plain-tool-group[\s\S]*?bg-sky-500\/10[\s\S]*?text-sky-700/);
+  assert.match(html, /plain-subagent[\s\S]*?bg-amber-500\/10[\s\S]*?text-amber-700/);
+  assert.match(html, /plain-tool-group-content flex max-h-\[min\(22rem,55vh\)\] min-w-0 flex-col divide-y divide-border-ghost\/70 overflow-y-auto pr-1 text-\[12\.5px\] text-muted-foreground/);
+  assert.doesNotMatch(html, /plain-tool-group-content[^\"]*gap-1/);
+  assert.doesNotMatch(html, /border-l border-primary\/25/);
 });
 
 test("plain messages does not treat OpenCode task-like payloads as subagents without typed kind", () => {
@@ -2329,6 +3800,91 @@ test("plain messages starts a new tool group after assistant text resumes", () =
   assert.ok(html.indexOf("Run B") < html.indexOf("第三段。"));
 });
 
+test("plain messages preserves source order for tied unsequenced tool calls and messages", () => {
+  const timestamp = "2026-05-17T10:00:00.000Z";
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "assistant-before",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-before:content",
+            kind: "content",
+            text: "第一段。",
+            timestamp,
+          },
+        ],
+        timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: "tool-a",
+        kind: "tool_call",
+        toolCall: {
+          id: "tool-a",
+          kind: "read",
+          title: "Read A",
+          status: "completed",
+          output: "read a output",
+          timestamp,
+          updatedAt: timestamp,
+        },
+        timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: "assistant-middle",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-middle:content",
+            kind: "content",
+            text: "第二段。",
+            timestamp,
+          },
+        ],
+        timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: "tool-b",
+        kind: "tool_call",
+        toolCall: {
+          id: "tool-b",
+          kind: "shell",
+          title: "Run B",
+          status: "running",
+          timestamp,
+          updatedAt: timestamp,
+        },
+        timestamp,
+        updatedAt: timestamp,
+      },
+      {
+        id: "assistant-after",
+        kind: "assistant_message",
+        chunks: [
+          {
+            id: "assistant-after:content",
+            kind: "content",
+            text: "第三段。",
+            timestamp,
+          },
+        ],
+        timestamp,
+        updatedAt: timestamp,
+      },
+    ],
+  });
+
+  assert.equal(html.match(/<details class="plain-tool-group/g)?.length, 2);
+  assert.ok(html.indexOf("第一段。") < html.indexOf("read a output"));
+  assert.ok(html.indexOf("read a output") < html.indexOf("第二段。"));
+  assert.ok(html.indexOf("第二段。") < html.indexOf("Run B"));
+  assert.ok(html.indexOf("Run B") < html.indexOf("第三段。"));
+});
+
 test("plain messages hides local command wrappers and model switch stdout", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
@@ -2373,4 +3929,1377 @@ test("plain messages hides local command wrappers and model switch stdout", () =
   assert.doesNotMatch(html, /command-name/);
   assert.doesNotMatch(html, /local-command-caveat/);
   assert.doesNotMatch(html, /command-args/);
+});
+
+function message(index: number): AgentMessage {
+  return {
+    id: `m-${index}`,
+    role: index % 2 === 0 ? "assistant" : "user",
+    text: `message ${index}`,
+    timestamp: `2026-05-06T00:${String(index).padStart(2, "0")}:00.000Z`,
+  };
+}
+
+test("plain message render keys stay unique for duplicate provider ids", () => {
+  const duplicateMessages: AgentMessage[] = [
+    { ...message(1), id: "session-1-msg-s0", text: "第一段" },
+    { ...message(2), id: "session-1-msg-s0", text: "第二段" },
+    { ...message(3), id: "session-1-msg-s1", text: "第三段" },
+  ];
+
+  assert.deepEqual(
+    resolvePlainMessageRenderItems(duplicateMessages).map((item) => item.renderKey),
+    ["session-1-msg-s0", "session-1-msg-s0#1", "session-1-msg-s1"],
+  );
+});
+
+test("plain message timeline keeps tool and thinking rows tighter than content boundaries", () => {
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("thinking", "tool-group"),
+    "plain-message-block min-w-0",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("subagent", "thinking"),
+    "plain-message-block min-w-0",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("tool-group", "subagent"),
+    "plain-message-block min-w-0",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("message", "tool-group"),
+    "plain-message-block min-w-0 mt-2",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("thinking", "message"),
+    "plain-message-block min-w-0 mt-2",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("message", "message", "assistant", "user"),
+    "plain-message-block min-w-0 mt-4",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("message", "message", "user", "assistant"),
+    "plain-message-block min-w-0 mt-4",
+  );
+  assert.equal(
+    resolvePlainConversationItemSpacingClass("message", "message", "assistant", "assistant"),
+    "plain-message-block min-w-0 mt-2",
+  );
+  assert.match(plainMessagesSource, /gap-y-1/);
+});
+
+test("plain user messages render a copy action", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "user-1",
+          role: "user",
+          text: "需要复制的用户消息",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "助手回复",
+          timestamp: "2026-05-06T00:00:01.000Z",
+        },
+      ] as AgentMessage[],
+      timelineItems: [],
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/aria-label="复制用户消息"/g)?.length, 1);
+  assert.match(html, /plain-message-copy/);
+});
+
+test("plain assistant actions target only the final stable assistant block", () => {
+  const renderItems = resolvePlainMessageRenderItems([
+    {
+      id: "assistant-1",
+      role: "assistant",
+      text: "上一段 assistant",
+      timestamp: "2026-05-06T00:00:00.000Z",
+    },
+    {
+      id: "assistant-2",
+      role: "assistant",
+      text: "最后一段 assistant",
+      timestamp: "2026-05-06T00:00:01.000Z",
+    },
+  ]);
+
+  assert.deepEqual(resolveFinalAssistantActionTarget(renderItems), {
+    copyText: "最后一段 assistant",
+    messageId: "assistant-2",
+    renderKey: "assistant-2",
+  });
+});
+
+test("plain assistant actions skip streaming or non-final assistant blocks", () => {
+  assert.equal(
+    resolveFinalAssistantActionTarget(
+      resolvePlainMessageRenderItems([
+        {
+          id: "assistant-streaming",
+          role: "assistant",
+          text: "还在输出",
+          streaming: true,
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ]),
+    ),
+    null,
+  );
+  assert.equal(
+    resolveFinalAssistantActionTarget(
+      resolvePlainMessageRenderItems([
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "不是最终 item",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+        {
+          id: "user-1",
+          role: "user",
+          text: "后面还有用户消息",
+          timestamp: "2026-05-06T00:00:01.000Z",
+        },
+      ]),
+    ),
+    null,
+  );
+});
+
+test("plain assistant actions render copy and configured Handoff under final assistant", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "可复制的最后回复",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ] as AgentMessage[],
+      canHandoffAssistantMessage: true,
+      assistantHandoffBusy: false,
+      onHandoffAssistantMessage: () => {},
+      timelineItems: [],
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/plain-assistant-actions/g)?.length, 1);
+  assert.equal(html.match(/aria-label=\"复制回复\"/g)?.length, 1);
+  assert.equal(html.match(/aria-label=\"生成 Handoff\"/g)?.length, 1);
+  assert.match(html, /border-t/);
+});
+
+test("plain assistant actions hide Handoff when LLM is not configured", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "可复制的最后回复",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ] as AgentMessage[],
+      canHandoffAssistantMessage: false,
+      onHandoffAssistantMessage: () => {},
+      timelineItems: [],
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/aria-label=\"复制回复\"/g)?.length, 1);
+  assert.doesNotMatch(html, /生成 Handoff/);
+});
+
+test("plain assistant actions do not backtrack when final rendered item is a tool group", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-1",
+          role: "assistant",
+          text: "工具前回复",
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ] as AgentMessage[],
+      toolCalls: [
+        {
+          id: "tool-1",
+          kind: "shell",
+          title: "Run tests",
+          status: "completed",
+          output: "ok",
+          timestamp: "2026-05-06T00:00:01.000Z",
+          updatedAt: "2026-05-06T00:00:01.000Z",
+        },
+      ],
+      canHandoffAssistantMessage: true,
+      onHandoffAssistantMessage: () => {},
+      timelineItems: [],
+      thinkingToolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.doesNotMatch(html, /aria-label=\"复制回复\"/);
+  assert.doesNotMatch(html, /生成 Handoff/);
+});
+
+test("plain user message actions render below the message body", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "user-1",
+          role: "user",
+          text: "这是一条需要折叠的用户消息。".repeat(24),
+          timestamp: "2026-05-06T00:00:00.000Z",
+        },
+      ] as AgentMessage[],
+      timelineItems: [],
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  const userRowIndex = html.indexOf("plain-message-user-row");
+  const actionsIndex = html.indexOf("plain-message-actions");
+  const copyIndex = html.indexOf("plain-message-copy");
+  const expandIndex = html.indexOf("plain-message-expand");
+
+  assert.ok(userRowIndex >= 0);
+  assert.ok(actionsIndex > userRowIndex);
+  assert.ok(copyIndex > actionsIndex);
+  assert.ok(expandIndex > actionsIndex);
+  assert.ok(expandIndex < copyIndex);
+  assert.doesNotMatch(html.slice(userRowIndex, actionsIndex), /plain-message-copy/);
+});
+
+test("plain message display keeps all loaded messages", () => {
+  const messages = Array.from({ length: 25 }, (_, index) => message(index + 1));
+
+  assert.deepEqual(
+    resolvePlainDisplayMessages(messages).map((item) => item.id),
+    messages.map((item) => item.id),
+  );
+});
+
+test("plain message render window keeps newest loaded items first", () => {
+  const messages = Array.from(
+    { length: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 5 },
+    (_, index) => message(index + 1),
+  );
+
+  assert.deepEqual(
+    resolveVisiblePlainConversationItems(messages).map((item) => item.id),
+    messages.slice(5).map((item) => item.id),
+  );
+});
+
+test("plain message render window keeps the preceding message for leading tool context", () => {
+  const items = [
+    ...Array.from({ length: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT }, (_, index) => message(index + 1)),
+    {
+      kind: "message" as const,
+      timestamp: "2026-05-06T01:00:00.000Z",
+      message: {
+        id: "assistant-context",
+        role: "assistant" as const,
+        text: "工具前回复正文",
+        timestamp: "2026-05-06T01:00:00.000Z",
+      },
+    },
+    {
+      kind: "thinking" as const,
+      timestamp: "2026-05-06T01:00:01.000Z",
+      toolCall: {
+        id: "thinking-1",
+        kind: "think" as const,
+        title: "Thinking",
+        status: "completed" as const,
+        output: "推理内容",
+        timestamp: "2026-05-06T01:00:01.000Z",
+        updatedAt: "2026-05-06T01:00:01.000Z",
+      },
+    },
+    {
+      kind: "tool-group" as const,
+      timestamp: "2026-05-06T01:00:02.000Z",
+      group: [
+        {
+          id: "tool-1",
+          kind: "read" as const,
+          title: "Read",
+          status: "completed" as const,
+          timestamp: "2026-05-06T01:00:02.000Z",
+          updatedAt: "2026-05-06T01:00:02.000Z",
+        },
+      ],
+    },
+    {
+      kind: "message" as const,
+      timestamp: "2026-05-06T01:00:03.000Z",
+      message: {
+        id: "assistant-after-tools",
+        role: "assistant" as const,
+        text: "工具后回复正文",
+        timestamp: "2026-05-06T01:00:03.000Z",
+      },
+    },
+  ];
+
+  assert.deepEqual(
+    resolveVisiblePlainConversationItems(items, 3).map((item) => "role" in item ? item.id : item.kind === "message" ? item.message.id : item.kind),
+    ["assistant-context", "thinking", "tool-group", "assistant-after-tools"],
+  );
+});
+
+test("plain message render window reveals local loaded items before remote history", () => {
+  assert.equal(
+    resolveNextPlainConversationRenderLimit(
+      INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 5,
+    ),
+    INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 5,
+  );
+  assert.equal(
+    resolveNextPlainConversationRenderLimit(
+      INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP + 5,
+    ),
+    INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP,
+  );
+});
+
+test("plain message local top reveal expands all loaded history without preserving scroll", () => {
+  assert.deepEqual(
+    resolveLocalHistoryRevealPlan({
+      scrollTop: 0,
+      currentLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      totalItems: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP + 5,
+    }),
+    {
+      nextLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP + 5,
+      preserveScroll: false,
+    },
+  );
+});
+
+test("plain message local near-top reveal keeps stepped expansion and preserves scroll", () => {
+  assert.deepEqual(
+    resolveLocalHistoryRevealPlan({
+      scrollTop: 32,
+      currentLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      totalItems: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP + 5,
+    }),
+    {
+      nextLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + PLAIN_MESSAGE_RENDER_LOAD_STEP,
+      preserveScroll: true,
+    },
+  );
+});
+
+test("plain message history auto-loads older pages when loaded content does not fill the viewport", () => {
+  assert.equal(
+    shouldAutoLoadOlderHistory({ scrollHeight: 720, clientHeight: 760 }),
+    true,
+  );
+  assert.equal(
+    shouldAutoLoadOlderHistory({ scrollHeight: 1200, clientHeight: 760 }),
+    false,
+  );
+});
+
+test("plain message history primes another older-page load when the session opens already pinned to the top", () => {
+  assert.equal(
+    shouldPrimeOlderHistoryLoad({
+      scrollTop: 0,
+      scrollHeight: 2396,
+      clientHeight: 699,
+      canLoadMore: true,
+    }),
+    true,
+  );
+  assert.equal(
+    shouldPrimeOlderHistoryLoad({
+      scrollTop: 240,
+      scrollHeight: 2396,
+      clientHeight: 699,
+      canLoadMore: true,
+    }),
+    false,
+  );
+  assert.equal(
+    shouldPrimeOlderHistoryLoad({
+      scrollTop: 0,
+      scrollHeight: 2396,
+      clientHeight: 699,
+      canLoadMore: false,
+    }),
+    false,
+  );
+});
+
+test("plain message history waits one frame before treating the initial top position as intentional", () => {
+  assert.match(
+    plainMessagesSource,
+    /const primeFrame = window\.requestAnimationFrame\(\(\) => \{\s+if \(shouldPrimeOlderHistoryLoad/,
+  );
+  assert.match(
+    plainMessagesSource,
+    /window\.cancelAnimationFrame\(primeFrame\);/,
+  );
+});
+
+test("plain message history uses the session card body as the scroll container", () => {
+  const wrapper = {} as HTMLDivElement;
+  const scrollContainer = {} as HTMLDivElement;
+  const list = {
+    parentElement: wrapper,
+    closest(selector: string) {
+      return selector === "[data-session-card-body]" ? scrollContainer : null;
+    },
+  } as unknown as HTMLDivElement;
+
+  assert.equal(resolvePlainMessageScrollContainer(list), scrollContainer);
+});
+
+test("plain message remote history requests reset so repeated top scroll can load again", () => {
+  const resetCount = plainMessagesSource.match(/olderLoadRequestedRef\.current = false/g)?.length ?? 0;
+
+  assert.ok(resetCount >= 3);
+  assert.match(
+    plainMessagesSource,
+    /pendingRemoteHistoryRevealRef\.current = false;\s+olderLoadRequestedRef\.current = false;/,
+  );
+});
+
+test("plain message history restores scroll during layout instead of after paint", () => {
+  assert.match(
+    plainMessagesSource,
+    /useLayoutEffect\(\(\) => \{\s+renderRevealRequestedRef\.current = false;/,
+  );
+  assert.match(
+    plainMessagesSource,
+    /scrollContainer\.scrollTop = newScrollTop;/,
+  );
+  assert.doesNotMatch(
+    plainMessagesSource,
+    /requestAnimationFrame\(\(\) => \{\s+const newScrollTop = snapshot\.mode === "top"/,
+  );
+});
+
+test("plain message remote history preserves scroll when compact shifts the visible window without growing total items", () => {
+  assert.equal(
+    resolveRemoteHistoryRevealAction({
+      previousDisplayItemsLength: 120,
+      nextDisplayItemsLength: 120,
+      previousVisibleRenderSignature: "assistant-12|assistant-13|assistant-14",
+      nextVisibleRenderSignature: "assistant-11|assistant-12|assistant-13|assistant-14",
+      visibleItemLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    }),
+    "preserve-scroll",
+  );
+});
+
+test("plain message remote history expands the render window when an older page increases loaded items", () => {
+  assert.equal(
+    resolveRemoteHistoryRevealAction({
+      previousDisplayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+      nextDisplayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 8,
+      previousVisibleRenderSignature: "assistant-1|assistant-2",
+      nextVisibleRenderSignature: "assistant-1|assistant-2",
+      visibleItemLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    }),
+    "reveal-more",
+  );
+});
+
+test("plain message remote history keeps the request baseline while loading commits new items", () => {
+  const requestBaseline = {
+    displayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    visibleRenderSignature: "assistant-10|assistant-11",
+  };
+  const loadingBaseline = resolveRemoteHistoryRevealBaseline({
+    previousBaseline: requestBaseline,
+    pendingRemoteHistoryReveal: true,
+    displayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 8,
+    visibleRenderSignature: "assistant-2|assistant-10|assistant-11",
+  });
+
+  assert.deepEqual(loadingBaseline, requestBaseline);
+  assert.equal(
+    resolveRemoteHistoryRevealAction({
+      previousDisplayItemsLength: loadingBaseline.displayItemsLength,
+      nextDisplayItemsLength: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT + 8,
+      previousVisibleRenderSignature: loadingBaseline.visibleRenderSignature,
+      nextVisibleRenderSignature: "assistant-2|assistant-10|assistant-11",
+      visibleItemLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    }),
+    "reveal-more",
+  );
+});
+
+test("plain message remote history clears pending state only when neither size nor visible window changed", () => {
+  assert.equal(
+    resolveRemoteHistoryRevealAction({
+      previousDisplayItemsLength: 120,
+      nextDisplayItemsLength: 120,
+      previousVisibleRenderSignature: "assistant-12|assistant-13|assistant-14",
+      nextVisibleRenderSignature: "assistant-12|assistant-13|assistant-14",
+      visibleItemLimit: INITIAL_PLAIN_MESSAGE_RENDER_LIMIT,
+    }),
+    "clear-pending",
+  );
+});
+
+test("plain message render signature changes when the same render key changes height", () => {
+  const before = resolvePlainMessageRenderItems([
+    {
+      ...message(1),
+      id: "assistant-same-key",
+      role: "assistant",
+      text: "短回复",
+    },
+  ]);
+  const after = resolvePlainMessageRenderItems([
+    {
+      ...message(1),
+      id: "assistant-same-key",
+      role: "assistant",
+      text: "短回复\n补充一行会改变高度",
+    },
+  ]);
+
+  assert.notEqual(
+    resolvePlainMessageRenderSignature(before),
+    resolvePlainMessageRenderSignature(after),
+  );
+});
+
+test("plain message display stops merging fallback messages once canonical timeline exists", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-1:thinking",
+          kind: "thinking",
+          text: "先思考",
+          title: "Thinking",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+          sequence: 2,
+        },
+        {
+          id: "assistant-1:content",
+          kind: "content",
+          text: "最终回答",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          sequence: 3,
+        },
+      ],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+      sequence: 2,
+    },
+  ];
+  const liveMessages: AgentMessage[] = [
+    {
+      id: "assistant-live-older",
+      role: "assistant",
+      text: "更早的 fallback 回复",
+      timestamp: "2026-05-17T10:00:00.500Z",
+      sequence: 1,
+    },
+  ];
+
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: liveMessages,
+    timelineItems,
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "message" && item.message.id === "assistant-live-older",
+    ),
+    false,
+  );
+});
+
+test("plain message display supplements canonical history with live running tools", () => {
+  const html = renderPlainMessages({
+    timelineItems: [
+      {
+        id: "canonical-user-entry",
+        kind: "user_message",
+        message: {
+          id: "canonical-user",
+          role: "user",
+          text: "运行一个工具",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          sequence: 1,
+        },
+        timestamp: "2026-05-17T10:00:00.000Z",
+        updatedAt: "2026-05-17T10:00:00.000Z",
+        sequence: 1,
+      },
+    ],
+    toolCalls: [
+      {
+        id: "live-shell",
+        kind: "shell",
+        title: "node slow-tool.js",
+        status: "running",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 2,
+      },
+    ],
+  });
+
+  assert.match(html, /node slow-tool\.js/);
+  assert.match(html, /运行中/);
+});
+
+test("plain message display keeps optimistic user prompts visible alongside canonical timeline", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "canonical-user-entry-1",
+      kind: "user_message",
+      message: {
+        id: "canonical-user-1",
+        role: "user",
+        text: "上一条消息",
+        timestamp: "2026-05-17T10:00:00.000Z",
+      },
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+      sequence: 1,
+    },
+  ];
+  const liveMessages: AgentMessage[] = [
+    {
+      id: "session-1-user-optimistic",
+      role: "user",
+      text: "刚发送的新消息",
+      timestamp: "2026-05-17T10:00:01.000Z",
+    },
+  ];
+
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: liveMessages,
+    timelineItems,
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+  });
+
+  assert.equal(
+    displayItems.some(
+      (item) => item.kind === "message" && item.message.id === "session-1-user-optimistic",
+    ),
+    true,
+  );
+});
+
+test("plain message display uses chronological order from newest-first pages", () => {
+  const messages = Array.from({ length: 25 }, (_, index) => message(index + 1));
+  const newestFirstMessages = [...messages].reverse();
+
+  assert.deepEqual(
+    resolvePlainDisplayMessages(newestFirstMessages).map((item) => item.id),
+    messages.map((item) => item.id),
+  );
+});
+
+test("plain message timeline coalesces runtime assistant chunks before rendering", () => {
+  const chunks: AgentMessage[] = "具体消息内容".split("").map((text, index) => ({
+    id: `019dfc94-a921-7112-8980-8d57cd537787-msg-${(1000 + index).toString(36)}`,
+    role: "assistant",
+    text,
+    timestamp: `2026-05-06T01:00:${String(index).padStart(2, "0")}.000Z`,
+  }));
+
+  assert.deepEqual(resolvePlainDisplayMessages(chunks).map((item) => item.text), [
+    "具体消息内容",
+  ]);
+});
+
+test("plain message fallback keeps source order when a legacy item has no sequence", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "legacy-user",
+          role: "user",
+          text: "旧用户提问",
+          timestamp: "2026-05-06T01:00:03.000Z",
+        },
+        {
+          id: "provider-assistant",
+          role: "assistant",
+          text: "Provider 回复",
+          timestamp: "2026-05-06T01:00:01.000Z",
+          sequence: 2,
+        },
+      ],
+      toolCalls: [
+        {
+          id: "tool-seq-3",
+          kind: "shell",
+          title: "Run tests",
+          status: "completed",
+          commandId: "cmd-seq-3",
+          output: "PASS",
+          stream: "stdout",
+          timestamp: "2026-05-06T01:00:02.000Z",
+          updatedAt: "2026-05-06T01:00:02.000Z",
+          sequence: 3,
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  const userIndex = html.indexOf("旧用户提问");
+  const assistantIndex = html.indexOf("Provider 回复");
+  const toolIndex = html.indexOf("Run tests");
+  assert.ok(userIndex >= 0 && assistantIndex > userIndex && toolIndex > assistantIndex);
+});
+
+test("plain message timeline interleaves assistant chunks with tool entries", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "assistant-entry",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "assistant-entry:content:before",
+          kind: "content",
+          text: "先说明。",
+          timestamp: "2026-05-17T10:00:00.000Z",
+          sequence: 1,
+        },
+        {
+          id: "assistant-entry:content:after",
+          kind: "content",
+          text: "工具后继续输出。",
+          timestamp: "2026-05-17T10:00:04.000Z",
+          sequence: 4,
+        },
+      ],
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:04.000Z",
+      sequence: 1,
+    },
+    {
+      id: "tool:tool-read",
+      kind: "tool_call",
+      toolCall: {
+        id: "tool-read",
+        kind: "read",
+        title: "Read file",
+        status: "completed",
+        output: "file content",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 2,
+      },
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      sequence: 2,
+    },
+    {
+      id: "tool:tool-search",
+      kind: "tool_call",
+      toolCall: {
+        id: "tool-search",
+        kind: "search",
+        title: "Search code",
+        status: "completed",
+        output: "search result",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        sequence: 3,
+      },
+      timestamp: "2026-05-17T10:00:02.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+      sequence: 3,
+    },
+  ];
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      timelineItems,
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/<details class="plain-tool-group/g)?.length, 1);
+  assert.match(html, /工具调用 · 2 项/);
+  assert.ok(html.indexOf("先说明。") < html.indexOf("工具调用 · 2 项"));
+  assert.ok(html.indexOf("工具调用 · 2 项") < html.indexOf("工具后继续输出。"));
+});
+
+test("plain message timeline keeps canonical sequence order when timestamps are skewed", () => {
+  const timelineItems: SessionTimelineEntry[] = [
+    {
+      id: "tool:spawn-later",
+      kind: "tool_call",
+      toolCall: {
+        id: "spawn-later",
+        kind: "subagent",
+        title: "spawn_agent",
+        status: "completed",
+        output: "later spawn",
+        timestamp: "2026-07-08T11:45:06.872Z",
+        updatedAt: "2026-07-08T11:45:17.132Z",
+        sequence: 27,
+      },
+      timestamp: "2026-07-08T11:45:06.872Z",
+      updatedAt: "2026-07-08T11:45:17.132Z",
+      sequence: 27,
+    },
+    {
+      id: "tool:wait-earlier",
+      kind: "tool_call",
+      toolCall: {
+        id: "wait-earlier",
+        kind: "subagent",
+        title: "wait_agent",
+        status: "completed",
+        output: "earlier wait",
+        timestamp: "2026-07-08T11:28:13.789Z",
+        updatedAt: "2026-07-08T11:28:13.789Z",
+        sequence: 51,
+      },
+      timestamp: "2026-07-08T11:28:13.789Z",
+      updatedAt: "2026-07-08T11:28:13.789Z",
+      sequence: 51,
+    },
+  ];
+
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [],
+      timelineItems,
+      thinkingToolCalls: [],
+      toolCalls: [],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.ok(html.indexOf("later spawn") < html.indexOf("earlier wait"));
+});
+
+test("plain message timeline filters OpenCode prompt wrapper echoes", () => {
+  const messages: AgentMessage[] = [
+    {
+      id: "wrapper-1",
+      role: "user",
+      text: "[analyze-mode]\nANALYSIS MODE. Gather context before diving deep:",
+      timestamp: "2026-05-06T01:05:01.000Z",
+    },
+    {
+      id: "wrapper-2",
+      role: "user",
+      text: "SYNTHESIZE findings before proceeding.",
+      timestamp: "2026-05-06T01:05:02.000Z",
+    },
+    {
+      id: "wrapper-3",
+      role: "user",
+      text: "---",
+      timestamp: "2026-05-06T01:05:03.000Z",
+    },
+    {
+      id: "real-user",
+      role: "user",
+      text: "帮我分析下现在项目的分支是什么？",
+      timestamp: "2026-05-06T01:05:04.000Z",
+    },
+  ];
+
+  assert.deepEqual(resolvePlainDisplayMessages(messages).map((item) => item.text), [
+    "帮我分析下现在项目的分支是什么？",
+  ]);
+});
+
+test("plain message timeline filters whole OpenCode wrapper echo messages", () => {
+  const wrappedPrompt = [
+    "[analyze-mode]",
+    "ANALYSIS MODE. Gather context before diving deep:",
+    "SYNTHESIZE findings before proceeding.",
+    "---",
+    "MANDATORY delegate_task params: ALWAYS include load_skills=[] and run_in_background when calling delegate_task.",
+    "---",
+    "帮我分析下现在项目的分支是什么？",
+  ].join("\n");
+
+  assert.deepEqual(
+    resolvePlainDisplayMessages([
+      {
+        id: "real-user",
+        role: "user",
+        text: "帮我分析下现在项目的分支是什么？",
+        timestamp: "2026-05-06T01:05:00.000Z",
+      },
+      {
+        id: "wrapper-whole",
+        role: "user",
+        text: wrappedPrompt,
+        timestamp: "2026-05-06T01:05:01.000Z",
+      },
+    ]).map((item) => item.text),
+    ["帮我分析下现在项目的分支是什么？"],
+  );
+});
+
+test("plain message timeline keeps a single OpenCode wrapper when no original prompt exists", () => {
+  const wrappedPrompt = [
+    "[analyze-mode]",
+    "ANALYSIS MODE. Gather context before diving deep:",
+    "SYNTHESIZE findings before proceeding.",
+    "---",
+    "MANDATORY delegate_task params: ALWAYS include load_skills=[] and run_in_background when calling delegate_task.",
+    "---",
+    "帮我分析下现在项目的分支是什么？",
+  ].join("\n");
+
+  assert.deepEqual(
+    resolvePlainDisplayMessages([
+      {
+        id: "wrapper-whole",
+        role: "user",
+        text: wrappedPrompt,
+        timestamp: "2026-05-06T01:05:01.000Z",
+      },
+    ]).map((item) => item.text),
+    [wrappedPrompt],
+  );
+});
+
+test("plain message timeline splits cumulative assistant chunks at tool call boundaries", () => {
+  const chunks: AgentMessage[] = [
+    {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-a",
+      role: "assistant",
+      text: "先说明",
+      timestamp: "2026-05-06T01:10:01.000Z",
+    },
+    {
+      id: "019dfc94-a921-7112-8980-8d57cd537787-msg-b",
+      role: "assistant",
+      text: "先说明再继续",
+      timestamp: "2026-05-06T01:10:03.000Z",
+    },
+  ];
+
+  assert.deepEqual(
+    resolvePlainDisplayMessages(chunks, [
+      "2026-05-06T01:10:02.000Z",
+    ]).map((item) => item.text),
+    ["先说明", "再继续"],
+  );
+});
+
+test("plain message timeline renders assistant segment dots for tool-boundary splits", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-a",
+          role: "assistant",
+          text: "第一段",
+          timestamp: "2026-05-06T01:10:01.000Z",
+        },
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-b",
+          role: "assistant",
+          text: "第一段第二段",
+          timestamp: "2026-05-06T01:10:03.000Z",
+        },
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-c",
+          role: "assistant",
+          text: "第一段第二段第三段",
+          timestamp: "2026-05-06T01:10:05.000Z",
+        },
+      ],
+      boundaryTimestamps: [
+        "2026-05-06T01:10:02.000Z",
+        "2026-05-06T01:10:04.000Z",
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.equal(html.match(/plain-assistant-segment-dot/g)?.length, 3);
+  assert.equal(html.match(/plain-message-role/g)?.length ?? 0, 0);
+  assert.match(html, /第一段/);
+  assert.match(html, /第二段/);
+  assert.match(html, /第三段/);
+});
+
+test("plain message timeline does not render visual tool-boundary dividers", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-a",
+          role: "assistant",
+          text: "先说明",
+          timestamp: "2026-05-06T01:10:01.000Z",
+        },
+        {
+          id: "019dfc94-a921-7112-8980-8d57cd537787-msg-b",
+          role: "assistant",
+          text: "先说明再继续",
+          timestamp: "2026-05-06T01:10:03.000Z",
+        },
+      ],
+      boundaryTimestamps: ["2026-05-06T01:10:02.000Z"],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.doesNotMatch(html, /mission-message-tool-boundary/);
+  assert.doesNotMatch(html, />---/);
+});
+
+test("assistant phase notes render as ordinary markdown instead of structured cards", () => {
+  const assistantText = [
+    "[⚔️金] 验证",
+    "**验证**：已定位会话栏问题。",
+    "普通补充说明。",
+  ].join("\n\n");
+
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-markdown-phase",
+          role: "assistant",
+          text: assistantText,
+          timestamp: "2026-05-06T01:30:00.000Z",
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-message/);
+  assert.match(html, /\[⚔️金\] 验证/);
+  assert.match(html, /<strong>验证<\/strong>：已定位会话栏问题/);
+  assert.doesNotMatch(html, /structured-assistant-message/);
+  assert.doesNotMatch(html, /structured-message-phase/);
+  assert.doesNotMatch(html, /Assistant response/);
+});
+
+test("assistant non-structured messages keep markdown fallback", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-markdown",
+          role: "assistant",
+          text: "这是一段普通回复，包含 **强调** 但没有结构字段。",
+          timestamp: "2026-05-06T01:40:00.000Z",
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-message/);
+  assert.doesNotMatch(html, /structured-assistant-message/);
+});
+
+test("streaming assistant messages keep incomplete markdown as lightweight plain text", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-streaming",
+          role: "assistant",
+          text: "| A | B |\n| - | - |\n| 1 | 2 |",
+          timestamp: "2026-05-12T00:00:00.000Z",
+          streaming: true,
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /plain-message-streaming/);
+  assert.match(html, /plain-message-text/);
+  assert.match(html, /\| A \| B \|/);
+  assert.doesNotMatch(html, /markdown-message/);
+  assert.doesNotMatch(html, /<table/);
+});
+
+test("streaming assistant messages render completed markdown blocks before the active tail", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-streaming",
+          role: "assistant",
+          text: [
+            "现在我已收集了足够的上下文。",
+            "",
+            "## Bug 根因分析",
+            "",
+            "概览：命令数据流",
+            "",
+            "slash 命令的数据流如下：",
+          ].join("\n"),
+          timestamp: "2026-05-12T00:00:00.000Z",
+          streaming: true,
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-message/);
+  assert.match(html, /<h2 class="markdown-heading[^"]*">Bug 根因分析<\/h2>/);
+  assert.match(html, /plain-message-streaming-tail/);
+  assert.match(html, /slash 命令的数据流如下：/);
+});
+
+test("streaming assistant Mermaid blocks stay in the plain streaming tail until the message finishes", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-streaming-mermaid",
+          role: "assistant",
+          text: [
+            "先给出已经稳定的结论：",
+            "",
+            "```mermaid",
+            "flowchart TD",
+            "  A[stream] --> B[jitter]",
+            "```",
+            "",
+            "后续说明仍在继续输出中。",
+          ].join("\n"),
+          timestamp: "2026-07-06T00:00:00.000Z",
+          streaming: true,
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-message/);
+  assert.doesNotMatch(html, /markdown-code-block/);
+  assert.match(html, /plain-message-streaming-tail/);
+  assert.match(html, /```mermaid/);
+  assert.doesNotMatch(html, /markdown-mermaid-block/);
+});
+
+test("completed assistant Mermaid blocks render the diagram shell after streaming finishes", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "assistant-complete-mermaid",
+          role: "assistant",
+          text: [
+            "先给出已经稳定的结论：",
+            "",
+            "```mermaid",
+            "flowchart TD",
+            "  A[stream] --> B[stable]",
+            "```",
+          ].join("\n"),
+          timestamp: "2026-07-06T00:00:00.000Z",
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /markdown-mermaid-block/);
+  assert.doesNotMatch(html, /plain-message-streaming-tail/);
+});
+
+test("thinking content renders as plain text without Markdown or Mermaid transforms", () => {
+  const html = renderPlainMessages({
+    thinkingToolCalls: [
+      {
+        id: "thinking-mermaid",
+        kind: "think",
+        title: "Thinking",
+        status: "completed",
+        output: [
+          "# 不应变成标题",
+          "",
+          "```mermaid",
+          "flowchart TD",
+          "  A --> B",
+          "```",
+        ].join("\n"),
+        timestamp: "2026-07-08T00:00:00.000Z",
+        updatedAt: "2026-07-08T00:00:00.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /# 不应变成标题/);
+  assert.match(html, /```mermaid/);
+  assert.doesNotMatch(html, /markdown-heading/);
+  assert.doesNotMatch(html, /markdown-mermaid-block/);
+  assert.doesNotMatch(html, /markdown-message/);
+});
+
+test("user messages render as plain text and keep the collapse affordance", () => {
+  const longUserMessage = [
+    "# 标题",
+    "| 列 1 | 列 2 |",
+    "| --- | --- |",
+    "| 很长的文本 | 仍然应该按纯文本展示 |",
+    "第五行内容",
+    "第六行内容",
+  ].join("\n");
+
+  const html = renderToStaticMarkup(
+    createElement(PlainMessages, {
+      sessionId: "session-1",
+      items: [
+        {
+          id: "user-1",
+          role: "user",
+          text: longUserMessage,
+          timestamp: "2026-05-06T02:00:00.000Z",
+        },
+      ],
+      emptyText: "empty",
+      expandedMessageIds: new Set<string>(),
+      onLoadOlderMessages: () => {},
+      onToggleExpandedMessage: () => {},
+    }),
+  );
+
+  assert.match(html, /plain-message-text/);
+  assert.match(html, /plain-message-text-collapsed/);
+  assert.match(html, /展开完整消息/);
+  assert.match(html, /很长的文本/);
+  assert.doesNotMatch(html, /markdown-message/);
+  assert.doesNotMatch(html, /<table>/);
+  assert.doesNotMatch(html, />你<\/span>/);
+  assert.doesNotMatch(html, /plain-assistant-segment-dot/);
+});
+
+test("plain messages show a loading hint while the first history page is loading and the list is empty", () => {
+  const html = renderPlainMessages({
+    items: [],
+    emptyText: "等待回复",
+    historyState: { hasMore: false, loading: true },
+  });
+
+  assert.match(html, /加载消息中…/);
+  assert.doesNotMatch(html, /等待回复/);
+});
+
+test("plain messages fall back to emptyText once loading finishes with no messages", () => {
+  const html = renderPlainMessages({
+    items: [],
+    emptyText: "等待回复",
+    historyState: { hasMore: false, loading: false },
+  });
+
+  assert.match(html, /等待回复/);
+  assert.doesNotMatch(html, /加载消息中…/);
 });

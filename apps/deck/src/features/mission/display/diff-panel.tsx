@@ -13,6 +13,7 @@ type MissionDiffPanelProps = {
   selectedDiffFilePath: string | null;
   diffs: FileDiffSummary[];
   noDiffSummary: string;
+  historicalDiffIncomplete?: boolean;
   collapsedDiffDirectories?: ReadonlySet<string>;
   selectedCommitDiffPaths?: ReadonlySet<string>;
   onToggleCommitDiff?: (path: string) => void;
@@ -27,6 +28,7 @@ type MissionDiffPanelProps = {
 export function MissionDiffPanel({
   diffs,
   noDiffSummary,
+  historicalDiffIncomplete = false,
   collapsedDiffDirectories = EMPTY_COLLAPSED_DIFF_DIRECTORIES,
   selectedCommitDiffPaths,
   onToggleCommitDiff,
@@ -45,22 +47,29 @@ export function MissionDiffPanel({
   }
 
   return (
-    <div
-      className="mission-inspector-diff mission-change-tree grid min-h-0 gap-0.5 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      aria-label="Git Diff 文件列表"
-      data-mission-swipe-lock="true"
-    >
-      {diffTree.map((node) =>
-        renderDiffTreeNode({
-          node,
-          collapsedDiffDirectories,
-          selectedCommitDiffPaths,
-          onToggleCommitDiff,
-          onToggleCommitDiffDirectory,
-          onOpenDiffDetail,
-          onToggleDiffDirectory,
-        }),
-      )}
+    <div className="grid min-h-0 gap-2">
+      {historicalDiffIncomplete ? (
+        <p className="rounded border border-amber-500/30 bg-amber-500/10 px-2 py-1 text-xs text-amber-200">
+          历史快照不完整：仅显示已保存的 Diff，未从当前工作区补算。
+        </p>
+      ) : null}
+      <div
+        className="mission-inspector-diff mission-change-tree grid min-h-0 gap-0.5 overflow-y-auto pr-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        aria-label="Git Diff 文件列表"
+        data-mission-swipe-lock="true"
+      >
+        {diffTree.map((node) =>
+          renderDiffTreeNode({
+            node,
+            collapsedDiffDirectories,
+            selectedCommitDiffPaths,
+            onToggleCommitDiff,
+            onToggleCommitDiffDirectory,
+            onOpenDiffDetail,
+            onToggleDiffDirectory,
+          }),
+        )}
+      </div>
     </div>
   );
 }

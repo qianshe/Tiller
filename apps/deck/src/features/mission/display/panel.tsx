@@ -1,5 +1,5 @@
 import type { FileDiffSummary } from "@tiller/shared";
-import type { CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import {
@@ -45,6 +45,7 @@ type MissionDisplayPanelProps = {
   selectedDiffFilePath: string | null;
   diffs: FileDiffSummary[];
   noDiffSummary: string;
+  historicalDiffIncomplete?: boolean;
   onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   gitStatus?: GitStatusState;
   gitGraph?: GitGraphState;
@@ -69,6 +70,7 @@ export function MissionDisplayPanel({
   selectedDiffFilePath,
   diffs,
   noDiffSummary,
+  historicalDiffIncomplete,
   gitStatus,
   gitGraph,
   onRefreshGitStatus,
@@ -77,18 +79,30 @@ export function MissionDisplayPanel({
   onCloseDiffFile,
   onCollapse,
 }: MissionDisplayPanelProps) {
-  // Single-layer tab model: Graph is fixed, diff files are dynamic
   const isGraphTabSelected = selectedPage.id === "graph";
-  const graphTab = pages.find((p) => p.id === "graph");
+  const [graphTabDismissed, setGraphTabDismissed] = useState(false);
+  useEffect(() => {
+    if (isGraphTabSelected) {
+      setGraphTabDismissed(false);
+    }
+  }, [isGraphTabSelected]);
+  const showGraphTab = isGraphTabSelected || (Boolean(gitGraph) && !graphTabDismissed);
   const displayTabs = resolveDisplayTabs(
     diffs,
     openedDiffFilePaths,
     selectedDiffFilePath,
     isGraphTabSelected ? null : selectedPage.id,
   );
+  const showTabStrip = showGraphTab || displayTabs.length > 0;
 
   const selectedDisplayDiff = diffs.find((file) => file.path === selectedDiffFilePath);
   const displayFilePath = selectedDisplayDiff ? selectedDiffFilePath : "未选择文件";
+  const closeGraphTab = () => {
+    setGraphTabDismissed(true);
+    if (isGraphTabSelected) {
+      onSelectPage("diff-detail");
+    }
+  };
 
   return (
     <aside
@@ -112,66 +126,79 @@ export function MissionDisplayPanel({
         </button>
       </div>
       
-      {/* Single-layer tab strip: fixed Graph + dynamic diff tabs */}
-      <div className="mission-display-tab-strip flex items-center gap-1 overflow-x-auto border-b border-border-ghost px-1 py-1 [scrollbar-width:none]">
-        {/* Graph tab (fixed) */}
-        <button
-          type="button"
-          className={cn(
-            "flex h-6 shrink-0 items-center gap-1 rounded px-2 text-2xs transition-colors",
-            isGraphTabSelected
-              ? "bg-surface-emphasis text-foreground"
-              : "text-muted-foreground hover:bg-surface-emphasis hover:text-foreground",
-          )}
-          onClick={() => onSelectPage("graph")}
-        >
-          <span className="font-medium">{graphTab?.title ?? "Graph"}</span>
-        </button>
-        
-        {/* Dynamic diff tabs */}
-        {displayTabs.map((page) => {
-          const selected = page.id === selectedPage.id;
-          return (
+      {showTabStrip ? (
+        <div className="mission-display-tab-strip flex items-center gap-1 overflow-x-auto border-b border-border-ghost px-1 py-1 [scrollbar-width:none]">
+          {showGraphTab ? (
             <div
-              key={page.id}
               className={cn(
-                "flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-2xs transition-colors",
-                selected
+                "flex h-[22px] shrink-0 items-center gap-1 rounded px-1.5 text-2xs transition-colors",
+                isGraphTabSelected
                   ? "bg-surface-emphasis text-foreground"
                   : "text-muted-foreground hover:bg-surface-emphasis hover:text-foreground",
               )}
-              title={page.title}
             >
               <button
                 type="button"
                 className="flex shrink-0 items-center gap-1"
-                onClick={() => onOpenDiffDetail(page.path)}
+                onClick={() => onSelectPage("graph")}
               >
-                <span className={`mission-file-status status-${page.status} bg-transparent px-0.5 py-0 text-2xs font-semibold text-primary`}>
-                  {formatDiffStatus(page.status)}
-                </span>
-                <span className="whitespace-nowrap font-mono tabular">{page.title}</span>
+                <span className="font-medium">Graph</span>
               </button>
               <button
                 type="button"
                 className="grid h-4 w-4 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
-                aria-label={`关闭 ${page.title}`}
-                title={`关闭 ${page.title}`}
-                onClick={() => onCloseDiffFile(page.path)}
+                aria-label="关闭 Graph"
+                title="关闭 Graph"
+                onClick={closeGraphTab}
               >
                 <Icon name="x" size={9} className="shrink-0" />
               </button>
             </div>
-          );
-        })}
-      </div>
+          ) : null}
+          {displayTabs.map((page) => {
+            const selected = page.id === selectedPage.id;
+            return (
+              <div
+                key={page.id}
+                className={cn(
+                  "flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-2xs transition-colors",
+                  selected
+                    ? "bg-surface-emphasis text-foreground"
+                    : "text-muted-foreground hover:bg-surface-emphasis hover:text-foreground",
+                )}
+                title={page.title}
+              >
+                <button
+                  type="button"
+                  className="flex shrink-0 items-center gap-1"
+                  onClick={() => onOpenDiffDetail(page.path)}
+                >
+                  <span className={`mission-file-status status-${page.status} bg-transparent px-0.5 py-0 text-2xs font-semibold text-primary`}>
+                    {formatDiffStatus(page.status)}
+                  </span>
+                  <span className="whitespace-nowrap font-mono tabular">{page.title}</span>
+                </button>
+                <button
+                  type="button"
+                  className="grid h-4 w-4 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
+                  aria-label={`关闭 ${page.title}`}
+                  title={`关闭 ${page.title}`}
+                  onClick={() => onCloseDiffFile(page.path)}
+                >
+                  <Icon name="x" size={9} className="shrink-0" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       
       {/* Content area */}
       <section className="mission-panel-content min-h-0 flex-1 overflow-auto p-0">
         {isGraphTabSelected ? (
           <GitGraphPanel gitGraph={gitGraph} />
         ) : (
-          renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary })
+          renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary, historicalDiffIncomplete })
         )}
       </section>
       
@@ -228,9 +255,15 @@ type RenderDiffDetailPageInput = {
   selectedDiffFilePath: string | null;
   diffs: FileDiffSummary[];
   noDiffSummary: string;
+  historicalDiffIncomplete?: boolean;
 };
 
-function renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary }: RenderDiffDetailPageInput) {
+function renderDiffDetailPage({
+  selectedDiffFilePath,
+  diffs,
+  noDiffSummary,
+  historicalDiffIncomplete,
+}: RenderDiffDetailPageInput) {
   const selectedFile = selectedDiffFilePath
     ? diffs.find((file) => file.path === selectedDiffFilePath)
     : null;
@@ -245,10 +278,35 @@ function renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary }: Re
     <div className="mission-panel-page mission-diff-detail grid min-h-0 overflow-hidden" aria-label="Diff 文件详情">
       <div className="mission-diff-file min-w-0 overflow-hidden bg-transparent">
         {selectedFile.patch ? (
-          renderDiffPatch(selectedFile.patch)
+          <>
+            {renderDiffPatch(selectedFile.patch)}
+            {selectedFile.patchTruncated && selectedFile.patchRef ? (
+              <div className="border-t border-border-ghost px-3 py-2 text-xs text-muted-foreground">
+                <a
+                  className="text-primary underline underline-offset-2 hover:text-foreground"
+                  href={selectedFile.patchRef.uri}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  查看完整 patch
+                </a>
+              </div>
+            ) : null}
+          </>
         ) : (
           <div className="mission-diff-patch-empty p-3 text-sm text-muted-foreground">
-            该 diff 事件没有携带 patch/hunk 内容。
+            {selectedFile.patchRef ? (
+              <a
+                className="text-primary underline underline-offset-2 hover:text-foreground"
+                href={selectedFile.patchRef.uri}
+                target="_blank"
+                rel="noreferrer"
+              >
+                查看完整 patch
+              </a>
+            ) : historicalDiffIncomplete
+              ? "历史快照不完整：该文件未保存 patch/hunk，未从当前工作区补算。"
+              : "该 diff 事件没有携带 patch/hunk 内容。"}
           </div>
         )}
       </div>

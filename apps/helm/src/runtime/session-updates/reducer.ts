@@ -6,13 +6,20 @@ import type {
   CommandChunk,
   FileDiffSummary,
   SessionTimelineEntry,
+  SessionPromptQueueSnapshot,
   SessionUpdateRecord,
 } from "@tiller/shared";
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
-  sortSessionTimelineEntries,
+  compactBinaryToolCallOutput,
+  resolveMergedAgentToolCallKind,
+  shouldStartNewAssistantOccurrenceAfterBoundary,
 } from "@tiller/shared";
+import {
+  buildSessionCompactionEntryFromProvider,
+  upsertSessionCompactionEntry,
+} from "../../sessions/compaction-entry";
 
 export type SessionUpdateReducerState = {
   entries: SessionTimelineEntry[];
@@ -21,7 +28,18 @@ export type SessionUpdateReducerState = {
   outputs: CommandChunk[];
   diffs: FileDiffSummary[];
   plan?: AgentPlan;
+  assistantBoundarySequence?: number;
 };
+
+export type PersistedSessionEvent =
+  | SessionRuntimeEvent
+  | { type: "prompt-queue"; snapshot: SessionPromptQueueSnapshot }
+  | {
+      type: "approval-status";
+      approvalId: string;
+      status: "pending" | "resolving" | "expired";
+      updatedAt: string;
+    };
 
 export function createEmptySessionUpdateReducerState(): SessionUpdateReducerState {
   return {
@@ -37,21 +55,42 @@ export function applySessionUpdateRecordToState(
   state: SessionUpdateReducerState,
   record: SessionUpdateRecord,
 ): SessionUpdateReducerState {
-  const event = parseSessionRuntimeEvent(record.payloadJson);
-  return event ? applySessionRuntimeEventToState(state, event) : state;
+  const event = parsePersistedSessionEvent(record.payloadJson);
+  return event && event.type !== "prompt-queue" && event.type !== "approval-status"
+    ? applySessionRuntimeEventToStateWithMeta(
+      state,
+      backfillSessionUpdateEventMeta(event, record),
+      record,
+    )
+    : state;
 }
 
 export function applySessionRuntimeEventToState(
   state: SessionUpdateReducerState,
   event: SessionRuntimeEvent,
 ): SessionUpdateReducerState {
+  return applySessionRuntimeEventToStateWithMeta(state, event);
+}
+
+function applySessionRuntimeEventToStateWithMeta(
+  state: SessionUpdateReducerState,
+  event: SessionRuntimeEvent,
+  meta?: Pick<SessionUpdateRecord, "providerId" | "sessionId" | "sequence">,
+): SessionUpdateReducerState {
   switch (event.type) {
     case "message":
-      return applyMessage(state, event.message);
+      return applyMessage(state, event.message, meta?.sequence);
+    case "compaction":
+      return applyCompaction(state, event, meta);
     case "tool-call":
-      return applyToolCall(state, event.toolCall);
+      return applyToolCall(state, event.toolCall, meta?.sequence ?? event.toolCall.sequence);
     case "command-output":
-      return applyCommandOutput(state, event.chunk, event.toolCall);
+      return applyCommandOutput(
+        state,
+        event.chunk,
+        event.toolCall,
+        meta?.sequence ?? event.chunk.sequence,
+      );
     case "diff-update":
       return { ...state, diffs: event.files };
     case "plan-update":
@@ -61,61 +100,186 @@ export function applySessionRuntimeEventToState(
   }
 }
 
+function applyCompaction(
+  state: SessionUpdateReducerState,
+  event: Extract<SessionRuntimeEvent, { type: "compaction" }>,
+  meta?: Pick<SessionUpdateRecord, "providerId" | "sessionId">,
+): SessionUpdateReducerState {
+  if (!meta?.sessionId) {
+    return state;
+  }
+  const entry = buildSessionCompactionEntryFromProvider({
+    sessionId: meta.sessionId,
+    providerId: meta.providerId,
+    timestamp: event.timestamp,
+    phase: event.phase,
+    source: event.source,
+    summaryText: event.summaryText,
+    summaryMessageId: event.messageId,
+    idSuffix: event.messageId ? undefined : `compaction:${event.timestamp}`,
+  });
+  const entries = [...state.entries];
+  upsertSessionCompactionEntry(entries, entry);
+  return {
+    ...state,
+    entries,
+  };
+}
+
 export function createSessionUpdateRecord(input: {
   sessionId: string;
   runtimeSessionId: string;
   providerId: string;
   sequence: number;
   source: SessionUpdateRecord["source"];
-  event: SessionRuntimeEvent;
+  event: PersistedSessionEvent;
   receivedAt?: string;
 }): SessionUpdateRecord {
+  const event = normalizeSessionUpdateEvent(input.event);
   return {
     sessionId: input.sessionId,
     runtimeSessionId: input.runtimeSessionId,
     providerId: input.providerId,
     sequence: input.sequence,
     source: input.source,
-    updateType: input.event.type,
+    updateType: event.type,
     receivedAt: input.receivedAt ?? new Date().toISOString(),
-    payloadJson: JSON.stringify(input.event),
+    payloadJson: JSON.stringify(event),
   };
 }
 
 function applyMessage(
   state: SessionUpdateReducerState,
   message: AgentMessage,
+  observationSequence?: number,
 ): SessionUpdateReducerState {
-  const resolvedMessage = resolveMessageIdentity(state.messages, message);
+  const resolvedMessage = resolveMessageIdentity(state, message, observationSequence);
   const messages = upsertMessage(state.messages, resolvedMessage);
-  const entries = appendMessageToSessionTimeline([...state.entries], resolvedMessage);
+  const mergedMessage = messages.find((item) =>
+    item.id === resolvedMessage.id && item.role === resolvedMessage.role
+  ) ?? resolvedMessage;
+  const entries = appendMessageToSessionTimeline([...state.entries], mergedMessage);
   return {
     ...state,
     messages,
-    entries: sortSessionTimelineEntries(entries),
+    entries,
   };
 }
 
-function resolveMessageIdentity(messages: AgentMessage[], incoming: AgentMessage) {
-  const sameRole = messages.find((message) => message.id === incoming.id && message.role === incoming.role);
-  if (sameRole) {
+function resolveMessageIdentity(
+  state: SessionUpdateReducerState,
+  incoming: AgentMessage,
+  observationSequence?: number,
+) {
+  const sameIdentity = findLatestCompatibleMessageOccurrence(state.messages, incoming);
+  if (sameIdentity) {
+    if (
+      shouldStartNewAssistantOccurrence(
+        state,
+        sameIdentity,
+        incoming,
+        observationSequence,
+      )
+    ) {
+      return {
+        ...incoming,
+        sequence: observationSequence ?? incoming.sequence,
+        id: resolveOccurrenceScopedMessageId(
+          state.messages,
+          incoming,
+          state.assistantBoundarySequence!,
+        ),
+      };
+    }
+    return sameIdentity.id === incoming.id
+      ? incoming
+      : { ...incoming, id: sameIdentity.id };
+  }
+  const conflictingMessage = state.messages.find((message) => message.id === incoming.id);
+  if (!conflictingMessage) {
     return incoming;
   }
-  const otherRole = messages.find((message) => message.id === incoming.id);
-  if (!otherRole) {
-    return incoming;
-  }
-  const scopedId = resolveRoleScopedMessageId(messages, incoming);
+  const scopedId = resolveRoleScopedMessageId(state.messages, incoming);
   return { ...incoming, id: scopedId };
 }
 
+function findLatestCompatibleMessageOccurrence(
+  messages: AgentMessage[],
+  incoming: AgentMessage,
+): AgentMessage | undefined {
+  const occurrencePrefix = `${incoming.id}:occ-`;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (
+      (message.id === incoming.id ||
+        (incoming.role === "assistant" && message.id.startsWith(occurrencePrefix))) &&
+      message.role === incoming.role &&
+      resolveMessageContentKind(message) === resolveMessageContentKind(incoming)
+    ) {
+      return message;
+    }
+  }
+  return undefined;
+}
+
+function shouldStartNewAssistantOccurrence(
+  state: SessionUpdateReducerState,
+  current: AgentMessage,
+  incoming: AgentMessage,
+  observationSequence?: number,
+) {
+  if (incoming.role !== "assistant") return false;
+  const boundary = state.assistantBoundarySequence;
+  const incomingSequence = observationSequence ?? incoming.sequence;
+  if (
+    boundary === undefined ||
+    current.sequence === undefined ||
+    incomingSequence === undefined ||
+    boundary <= current.sequence ||
+    boundary >= incomingSequence
+  ) {
+    return false;
+  }
+  return shouldStartNewAssistantOccurrenceAfterBoundary(
+    current.text,
+    incoming.text,
+    true,
+  );
+}
+
+function resolveOccurrenceScopedMessageId(
+  messages: AgentMessage[],
+  message: AgentMessage,
+  boundarySequence: number,
+) {
+  const baseId = `${message.id}:occ-${boundarySequence}`;
+  let candidateId = baseId;
+  let suffix = 2;
+  while (messages.some((item) => item.id === candidateId)) {
+    candidateId = `${baseId}:${suffix}`;
+    suffix += 1;
+  }
+  return candidateId;
+}
+
 function resolveRoleScopedMessageId(messages: AgentMessage[], message: AgentMessage) {
-  const baseId = `${message.id}:${message.role}`;
+  const hasSameRoleConflict = messages.some((item) =>
+    item.id === message.id && item.role === message.role
+  );
+  const baseId = hasSameRoleConflict
+    ? `${message.id}:${resolveMessageContentKind(message)}`
+    : `${message.id}:${message.role}`;
   let candidateId = baseId;
   let suffix = 2;
   while (true) {
     const current = messages.find((item) => item.id === candidateId);
-    if (!current || current.role === message.role) {
+    if (
+      !current ||
+      (
+        current.role === message.role &&
+        resolveMessageContentKind(current) === resolveMessageContentKind(message)
+      )
+    ) {
       return candidateId;
     }
     candidateId = `${baseId}:${suffix}`;
@@ -126,6 +290,7 @@ function resolveRoleScopedMessageId(messages: AgentMessage[], message: AgentMess
 function applyToolCall(
   state: SessionUpdateReducerState,
   toolCall: AgentToolCall,
+  observationSequence?: number,
 ): SessionUpdateReducerState {
   const toolCalls = upsertToolCall(state.toolCalls, toolCall);
   const mergedToolCall = toolCalls.find((item) => item.id === toolCall.id) ?? toolCall;
@@ -133,7 +298,11 @@ function applyToolCall(
   return {
     ...state,
     toolCalls,
-    entries: sortSessionTimelineEntries(entries),
+    entries,
+    assistantBoundarySequence: maxSequence(
+      state.assistantBoundarySequence,
+      observationSequence,
+    ),
   };
 }
 
@@ -141,15 +310,35 @@ function applyCommandOutput(
   state: SessionUpdateReducerState,
   chunk: CommandChunk,
   toolCall?: AgentToolCall,
+  observationSequence?: number,
 ): SessionUpdateReducerState {
   const outputs = upsertOutput(state.outputs, chunk);
   return toolCall
-    ? { ...applyToolCall(state, toolCall), outputs }
-    : { ...state, outputs };
+    ? { ...applyToolCall(state, toolCall, observationSequence), outputs }
+    : {
+      ...state,
+      outputs,
+      assistantBoundarySequence: maxSequence(
+        state.assistantBoundarySequence,
+        observationSequence,
+      ),
+    };
 }
 
-function upsertMessage(messages: AgentMessage[], incoming: AgentMessage) {
-  const existingIndex = messages.findIndex((message) => message.id === incoming.id && message.role === incoming.role);
+function maxSequence(current: number | undefined, incoming: number | undefined) {
+  if (incoming === undefined) return current;
+  return current === undefined ? incoming : Math.max(current, incoming);
+}
+
+function upsertMessage(
+  messages: AgentMessage[],
+  incoming: AgentMessage,
+) {
+  const existingIndex = messages.findIndex((message) =>
+    message.id === incoming.id &&
+    message.role === incoming.role &&
+    resolveMessageContentKind(message) === resolveMessageContentKind(incoming)
+  );
   if (existingIndex === -1) {
     return [...messages, incoming];
   }
@@ -158,14 +347,21 @@ function upsertMessage(messages: AgentMessage[], incoming: AgentMessage) {
   next[existingIndex] = {
     ...current,
     ...incoming,
-    text: mergeText(current.text, incoming.text),
+    text: mergeMessageText(current, incoming),
     timestamp: current.timestamp,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
+    sequence: current.sequence ?? incoming.sequence,
   };
   return next;
 }
 
-function upsertToolCall(toolCalls: AgentToolCall[], incoming: AgentToolCall) {
+function resolveMessageContentKind(message: AgentMessage) {
+  return message.contentKind ?? "content";
+}
+
+function upsertToolCall(
+  toolCalls: AgentToolCall[],
+  incoming: AgentToolCall,
+) {
   const existingIndex = toolCalls.findIndex((toolCall) => toolCall.id === incoming.id);
   if (existingIndex === -1) {
     return [...toolCalls, incoming];
@@ -175,13 +371,14 @@ function upsertToolCall(toolCalls: AgentToolCall[], incoming: AgentToolCall) {
   next[existingIndex] = {
     ...current,
     ...incoming,
-    kind: resolveToolCallKind(current.kind, incoming.kind),
+    status: resolveToolCallStatus(current.status, incoming.status),
+    kind: resolveMergedAgentToolCallKind(current, incoming),
     title: resolveToolCallTitle(current.title, incoming.title, incoming.id),
     id: current.id,
     timestamp: current.timestamp,
-    timelineSequence: current.timelineSequence ?? incoming.timelineSequence,
-    input: mergeText(current.input, incoming.input),
-    output: mergeText(current.output, incoming.output),
+    sequence: current.sequence ?? incoming.sequence,
+    input: incoming.input ?? current.input,
+    output: mergeToolCallOutput(current, incoming),
   };
   return next;
 }
@@ -192,8 +389,28 @@ function upsertOutput(outputs: CommandChunk[], incoming: CommandChunk) {
     return [...outputs, incoming];
   }
   const next = [...outputs];
-  next[existingIndex] = incoming;
+  const current = next[existingIndex]!;
+  next[existingIndex] = {
+    ...current,
+    ...incoming,
+    id: current.id,
+    timestamp: current.timestamp,
+    sequence: current.sequence ?? incoming.sequence,
+  };
   return next;
+}
+
+function resolveToolCallStatus(
+  current: AgentToolCall["status"],
+  incoming: AgentToolCall["status"],
+) {
+  return isTerminalToolCallStatus(current) && !isTerminalToolCallStatus(incoming)
+    ? current
+    : incoming;
+}
+
+function isTerminalToolCallStatus(status: AgentToolCall["status"]) {
+  return status === "completed" || status === "failed" || status === "cancelled";
 }
 
 function mergeText(current: string | undefined, incoming: string | undefined) {
@@ -209,32 +426,54 @@ function mergeText(current: string | undefined, incoming: string | undefined) {
   return `${current}${incoming}`;
 }
 
-function resolveToolCallKind(
-  currentKind: AgentToolCall["kind"],
-  incomingKind: AgentToolCall["kind"],
-) {
-  return isHigherConfidenceToolKind(incomingKind, currentKind) ? incomingKind : currentKind;
+function mergeMessageText(current: AgentMessage, incoming: AgentMessage) {
+  if (current.streaming === true && incoming.streaming !== true && incoming.text) {
+    return incoming.text;
+  }
+  return mergeText(current.text, incoming.text);
 }
 
-function isHigherConfidenceToolKind(
-  incomingKind: AgentToolCall["kind"],
-  currentKind: AgentToolCall["kind"],
+function mergeToolCallOutput(current: AgentToolCall, incoming: AgentToolCall) {
+  if (current.kind !== "think" && incoming.kind !== "think") {
+    return mergeText(current.output, incoming.output);
+  }
+  return mergeThinkingSnapshotText(current.output, incoming.output);
+}
+
+function mergeThinkingSnapshotText(
+  current: string | undefined,
+  incoming: string | undefined,
 ) {
-  const rank: Record<AgentToolCall["kind"], number> = {
-    unknown: 0,
-    tool: 1,
-    think: 2,
-    todo: 2,
-    fetch: 2,
-    search: 2,
-    read: 3,
-    write: 3,
-    shell: 3,
-    skill: 3,
-    subagent: 3,
-    mcp: 4,
-  };
-  return rank[incomingKind] > rank[currentKind];
+  if (!incoming) {
+    return current ?? "";
+  }
+  if (!current || incoming.startsWith(current)) {
+    return incoming;
+  }
+  if (current.startsWith(incoming) || current.endsWith(incoming)) {
+    return current;
+  }
+  const overlapped = mergeTextByLineOverlap(current, incoming);
+  if (overlapped) {
+    return overlapped;
+  }
+  return incoming.length >= current.length ? incoming : current;
+}
+
+function mergeTextByLineOverlap(currentText: string, incomingText: string) {
+  const currentLines = currentText.split(/\r?\n/u);
+  const incomingLines = incomingText.split(/\r?\n/u);
+  const overlapLineCount = Math.min(currentLines.length, incomingLines.length);
+  for (let size = overlapLineCount; size >= 1; size -= 1) {
+    const currentSlice = currentLines.slice(-size).join("\n");
+    const incomingSlice = incomingLines.slice(0, size).join("\n");
+    if (currentSlice !== incomingSlice) {
+      continue;
+    }
+    const suffix = incomingLines.slice(size).join("\n");
+    return suffix ? `${currentText}\n${suffix}` : currentText;
+  }
+  return null;
 }
 
 function resolveToolCallTitle(
@@ -257,11 +496,86 @@ function isFallbackToolCallTitle(title: string | undefined) {
   return /^Tool call\b/u.test(title?.trim() ?? "");
 }
 
-function parseSessionRuntimeEvent(payloadJson: string): SessionRuntimeEvent | null {
+export function parsePersistedSessionEvent(payloadJson: string): PersistedSessionEvent | null {
   try {
-    const parsed = JSON.parse(payloadJson) as Partial<SessionRuntimeEvent>;
-    return typeof parsed?.type === "string" ? parsed as SessionRuntimeEvent : null;
+    const parsed = JSON.parse(payloadJson) as Partial<PersistedSessionEvent>;
+    return typeof parsed?.type === "string"
+      ? normalizeSessionUpdateEvent(parsed as PersistedSessionEvent)
+      : null;
   } catch {
     return null;
+  }
+}
+
+function normalizeSessionUpdateEvent(event: PersistedSessionEvent): PersistedSessionEvent {
+  if (event.type === "message") {
+    const normalized = { ...event };
+    delete normalized.origin;
+    return normalized;
+  }
+  if (event.type === "tool-call") {
+    const normalized = {
+      ...event,
+      toolCall: compactBinaryToolCallOutput(event.toolCall),
+    };
+    delete normalized.origin;
+    return normalized;
+  }
+  return event;
+}
+
+function backfillSessionUpdateEventMeta(
+  event: SessionRuntimeEvent,
+  record: Pick<SessionUpdateRecord, "sequence" | "receivedAt">,
+): SessionRuntimeEvent {
+  switch (event.type) {
+    case "message":
+      return event.message.sequence === undefined
+        ? {
+          ...event,
+          message: {
+            ...event.message,
+            sequence: record.sequence,
+            timestamp: record.receivedAt,
+          },
+        }
+        : event;
+    case "tool-call":
+      return event.toolCall.sequence === undefined
+        ? {
+          ...event,
+          toolCall: {
+            ...event.toolCall,
+            sequence: record.sequence,
+            timestamp: record.receivedAt,
+            updatedAt: record.receivedAt,
+          },
+        }
+        : event;
+    case "command-output":
+      return {
+        ...event,
+        chunk: event.chunk.sequence === undefined
+          ? {
+            ...event.chunk,
+            sequence: record.sequence,
+            timestamp: record.receivedAt,
+          }
+          : event.chunk,
+        ...(event.toolCall && event.toolCall.sequence === undefined
+          ? {
+            toolCall: {
+              ...event.toolCall,
+              sequence: record.sequence,
+              timestamp: record.receivedAt,
+              updatedAt: record.receivedAt,
+            },
+          }
+          : event.toolCall
+            ? { toolCall: event.toolCall }
+            : {}),
+      };
+    default:
+      return event;
   }
 }

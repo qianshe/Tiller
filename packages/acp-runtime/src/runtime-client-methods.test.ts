@@ -45,3 +45,45 @@ test("runtime client methods suppress OpenCode count-only todo updates", async (
 
   assert.deepEqual(events, []);
 });
+
+test("runtime client methods emit a mapped command batch in canonical order", async () => {
+  const events: SessionRuntimeEvent[] = [];
+  const client = createRuntimeClientMethods({
+    options: {
+      sessionId: "local-session",
+      worktree: { name: "Worktree", path: "D:/repo" },
+      agent: {
+        id: "generic",
+        name: "Generic",
+        command: "agent",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      onEvent: (event) => events.push(event),
+    },
+    launchCwd: "D:/repo",
+    childEnv: {},
+    protocolLog: createNoopProtocolLogSink(),
+    terminals: new Map(),
+    pendingPermissionReplies: new Map(),
+    getSessionToken: () => "runtime-session",
+    setCurrentConfigOptions: () => undefined,
+    nextPermissionRequestId: (prefix) => `${prefix}-1`,
+    nextTerminalId: () => "terminal-1",
+  });
+
+  await client.sessionUpdate({
+    sessionId: "runtime-session",
+    update: {
+      type: "command_output",
+      commandId: "command-1",
+      stream: "stdout",
+      output: "done",
+    },
+  });
+
+  assert.deepEqual(events.map((event) => event.type), [
+    "tool-call",
+    "command-output",
+  ]);
+});

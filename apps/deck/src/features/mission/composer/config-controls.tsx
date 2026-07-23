@@ -40,6 +40,7 @@ type MissionConfigControlsProps = {
   showReasoningSelect: boolean;
   resolveReasoningLabel: (value: SessionReasoningEffort) => string;
   reasoningOptions: SessionReasoningEffort[];
+  onOpenModelPicker?: () => void;
 };
 
 export function MissionConfigControls({
@@ -64,6 +65,7 @@ export function MissionConfigControls({
   showReasoningSelect,
   resolveReasoningLabel,
   reasoningOptions,
+  onOpenModelPicker,
 }: MissionConfigControlsProps) {
   const acpConfigOptions = resolveRenderableSessionConfigOptions(configOptions);
 
@@ -89,7 +91,13 @@ export function MissionConfigControls({
                 aria-expanded={picker === pickerId}
                 disabled={values.length === 0}
                 onClick={() =>
-                  setPicker((current) => (current === pickerId ? null : pickerId))
+                  setPicker((current) => {
+                    const next = current === pickerId ? null : pickerId;
+                    if (next === pickerId && option.category === "model") {
+                      onOpenModelPicker?.();
+                    }
+                    return next;
+                  })
                 }
               >
                 <span>{currentLabel}</span>
@@ -194,7 +202,13 @@ export function MissionConfigControls({
           aria-expanded={picker === "model"}
           disabled={modelDisabled}
           onClick={() =>
-            setPicker((current) => (current === "model" ? null : "model"))
+            setPicker((current) => {
+              const next = current === "model" ? null : "model";
+              if (next === "model") {
+                onOpenModelPicker?.();
+              }
+              return next;
+            })
           }
         >
           <span>{modelLabel}</span>
@@ -302,10 +316,10 @@ export function MissionConfigControls({
                         option,
                         allModelOptions,
                       ),
-                      reasoningEffort: option,
-                    });
-                    setPicker(null);
-                  }}
+                    reasoningEffort: option,
+                  });
+                  setPicker(null);
+                }}
                 >
                   {resolveReasoningLabel(option)}
                 </button>

@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 10
-- Total lines: 1767
+- Total lines: 1780
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 735
-- Top-level selectors: 150
+- Lines: 748
+- Top-level selectors: 154
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -24,6 +24,9 @@ Selectors:
 - `.h-ctl-md`
 - `.h-ctl-sm`
 - `.h-ctl-xs`
+- `.markdown-message > .markdown-heading:last-child`
+- `.markdown-message > .markdown-paragraph`
+- `.markdown-message > .markdown-paragraph:last-child`
 - `.min-h-ctl-md`
 - `.mission-display-tab-strip`
 - `.mission-display-tab-strip::-webkit-scrollbar`
@@ -76,6 +79,7 @@ Selectors:
 - `.mission-responsive-mode .mission-session-overview-content`
 - `.mission-responsive-mode .mission-session-overview-header`
 - `.mission-responsive-mode [data-mission-mobile-pane]`
+- `.mission-responsive-mode [data-mission-mobile-pane] .mission-inspector-commit-editor .mission-inspector-commit-submit`
 - `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="above-dock"]`
 - `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom-position="bottom"]`
 - `.mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom]`
