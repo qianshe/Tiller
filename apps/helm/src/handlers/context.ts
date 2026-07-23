@@ -44,6 +44,7 @@ import type { SessionRuntimeEventState } from "../runtime/session/event/runtime-
 import type { RuntimeMetrics } from "../logging/runtime-metrics";
 import type { SessionTimelineWorkerRegistry } from "../runtime/session-timeline/worker-registry";
 import type { TillerLogger } from "../logging/logger";
+import type { SessionSubagentDetailService } from "../runtime/session/subagent-detail-service";
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -146,6 +147,7 @@ export type HelmHandlerContext = {
   sessionTimelineFlushScheduler?: SessionTimelineFlushScheduler;
   sessionLiveStateStore?: SessionLiveStateStore;
   sessionApprovalStateStore?: SessionApprovalStateStore;
+  sessionSubagentDetailService?: SessionSubagentDetailService;
   sessionRuntimeEventState?: SessionRuntimeEventState;
   runtimeMetrics?: RuntimeMetrics;
   sessionUpdateStore: SessionUpdateStore;

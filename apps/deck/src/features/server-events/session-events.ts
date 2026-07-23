@@ -1,16 +1,19 @@
 import type { MutableRefObject } from "react";
-import type {
-  AgentMessage,
-  AgentPromptContent,
-  AgentPromptImageContent,
-  AgentToolCall,
-  SessionConfigOption,
-  SessionLiveStateSnapshot,
-  LegacyEvidenceAvailability,
-  LegacyEvidencePage,
-  SessionSummary,
-  SessionTimelineBatch,
-  SessionTimelineEntry,
+import {
+  sortSessionTimelineEntries,
+  type AgentMessage,
+  type AgentPromptContent,
+  type AgentPromptImageContent,
+  type AgentToolCall,
+  type SessionConfigOption,
+  type SessionLiveStateSnapshot,
+  type LegacyEvidenceAvailability,
+  type LegacyEvidencePage,
+  type SessionSummary,
+  type SessionSubagentDetailDelta,
+  type SessionTimelineBatch,
+  type SessionTimelineEntry,
+  type SessionSubagentDetail,
 } from "@tiller/shared";
 import { toast } from "../toast";
 import { dropActiveThinkingToolCalls } from "../logbook";
@@ -281,6 +284,12 @@ export function applySessionResult(
         store.setHistoricalDiffIncompleteBySession((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
+        store.setSessionSubagentDetails((current) => {
+          const activeSessionIds = new Set(nextSessions.map((session) => session.id));
+          return Object.fromEntries(
+            Object.entries(current).filter(([key]) => activeSessionIds.has(key.split("\0", 1)[0] ?? "")),
+          );
+        });
         store.setSessionLiveStates((current) =>
           pruneSessionScopedMap(current, nextSessions),
         );
@@ -856,6 +865,34 @@ function pruneTimelineIndexCaches(sessions: SessionSummary[]) {
   }
 }
 
+function subagentDetailKey(sessionId: string, parentToolCallId: string) {
+  return `${sessionId}\0${parentToolCallId}`;
+}
+
+function applySubagentDetailDelta(store: ReturnType<typeof useDeckStore.getState>, delta: SessionSubagentDetailDelta) {
+  const key = subagentDetailKey(delta.sessionId, delta.parentToolCallId);
+  store.setSessionSubagentDetails((current) => {
+    const existing = current[key];
+    if (!existing) return current;
+    const base: SessionSubagentDetail = existing;
+    const entries = new Map(base.entries.map((entry) => [`${entry.kind}:${entry.id}`, entry]));
+    const stale = delta.batch.lastSequence < base.throughSequence;
+    for (const entry of delta.batch.entries) {
+      const entryKey = `${entry.kind}:${entry.id}`;
+      if (!stale || !entries.has(entryKey)) entries.set(entryKey, entry);
+    }
+    const sortedEntries = sortSessionTimelineEntries([...entries.values()]);
+    return {
+      ...current,
+      [key]: {
+        ...base,
+        throughSequence: Math.max(base.throughSequence, delta.batch.lastSequence),
+        entries: sortedEntries,
+      },
+    };
+  });
+}
+
 export function applySessionUpdate(
   params: SessionUpdateParams,
   context: SessionServerEventContext,
@@ -927,6 +964,9 @@ export function applySessionUpdate(
         const snapshot = update.snapshot as SessionLiveStateSnapshot;
         applySessionLiveStateSnapshot(store, sessionId, snapshot, context.toolCallsRef);
       }
+      return true;
+    case "subagent_detail":
+      applySubagentDetailDelta(store, update.delta);
       return true;
     default:
       return false;

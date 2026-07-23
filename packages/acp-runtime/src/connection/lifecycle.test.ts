@@ -819,6 +819,106 @@ test("idle prompt observation emits a delayed Claude subagent completion", async
   }
 });
 
+test("idle Claude transcript tool updates inherit the origin of the live ACP tool", async () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-idle-child-origin-"));
+  const tempHome = join(tempDir, "home");
+  const originalHome = process.env.HOME;
+  const originalUserProfile = process.env.USERPROFILE;
+  let connection: AcpConnection | undefined;
+  try {
+    process.env.HOME = tempHome;
+    process.env.USERPROFILE = tempHome;
+    writeFileSync(join(tempDir, "marker.txt"), "assistant response", "utf8");
+    const { agentPath } = writeInitializeOnlyAgent(tempDir);
+    connection = await AcpConnection.open({
+      provider: { ...createProvider("node", [agentPath]), id: "claude", name: "Claude" },
+      worktree: { ...worktree, path: tempDir },
+    });
+    const events: SessionRuntimeEvent[] = [];
+    const handle = await connection.openOrCreateSession({
+      tillerSessionId: "session-1",
+      worktree: { ...worktree, path: tempDir },
+      kind: "new",
+      onEvent: (event) => events.push(event),
+    });
+    await handle.prompt("finish the foreground prompt");
+
+    (connection as unknown as { handleSessionUpdate(params: unknown): void }).handleSessionUpdate({
+      sessionId: "runtime-session-1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-child-shell",
+        title: "Tool call call-child-shell",
+        kind: "shell",
+        status: "running",
+        _meta: { claudeCode: { parentToolUseId: "call-root-subagent" } },
+      },
+    });
+
+    const transcriptPath = resolveClaudeTranscriptPath({
+      runtimeSessionId: "runtime-session-1",
+      cwd: tempDir,
+    });
+    const subagentDir = join(dirname(transcriptPath), "runtime-session-1", "subagents");
+    mkdirSync(subagentDir, { recursive: true });
+    writeFileSync(
+      join(subagentDir, "agent-child.jsonl"),
+      [
+        JSON.stringify({
+          timestamp: "2026-07-23T00:00:00.000Z",
+          message: {
+            role: "assistant",
+            content: [{
+              type: "tool_use",
+              id: "call-child-shell",
+              name: "Bash",
+              input: { command: "git status --short" },
+            }],
+          },
+        }),
+        JSON.stringify({
+          timestamp: "2026-07-23T00:00:01.000Z",
+          message: {
+            role: "user",
+            content: [{
+              type: "tool_result",
+              tool_use_id: "call-child-shell",
+              content: " M apps/deck/src/...",
+              is_error: false,
+            }],
+          },
+        }),
+      ].join("\n"),
+      "utf8",
+    );
+
+    assert.equal(
+      await waitForCondition(() => events.some((event) =>
+        event.type === "tool-call" &&
+        event.toolCall.id === "call-child-shell" &&
+        event.toolCall.title === "git status --short" &&
+        event.origin?.parentToolCallId === "call-root-subagent",
+      )),
+      true,
+    );
+  } finally {
+    await connection?.dispose();
+    if (originalHome === undefined) {
+      delete process.env.HOME;
+    } else {
+      process.env.HOME = originalHome;
+    }
+    if (originalUserProfile === undefined) {
+      delete process.env.USERPROFILE;
+    } else {
+      process.env.USERPROFILE = originalUserProfile;
+    }
+    if (existsSync(tempDir)) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  }
+});
+
 test("automatic Claude compaction reaches the session through ACP without a follow-up prompt", async () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-acp-automatic-compaction-"));
   let connection: AcpConnection | undefined;

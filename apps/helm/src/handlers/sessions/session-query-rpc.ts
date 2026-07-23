@@ -183,6 +183,27 @@ export async function listTimeline(
   };
 }
 
+export function getSubagentDetail(
+  params: { sessionId: string; parentToolCallId: string },
+  context: HelmHandlerContext,
+) {
+  if (!context.sessionStore.get(params.sessionId) && !context.sessions.has(params.sessionId)) {
+    throw new Error("Session not found");
+  }
+  if (!context.sessionSubagentDetailService) {
+    return {
+      sessionId: params.sessionId,
+      parentToolCallId: params.parentToolCallId,
+      throughSequence: 0,
+      entries: [],
+    };
+  }
+  return context.sessionSubagentDetailService.getDetail(
+    params.sessionId,
+    params.parentToolCallId,
+  );
+}
+
 export function listLegacyEvidence(
   params: { sessionId: string; source: import("@tiller/shared").LegacyEvidenceSource; limit?: number; after?: string },
   context: HelmHandlerContext,

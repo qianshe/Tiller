@@ -1159,6 +1159,47 @@ test("runtime compaction summary enrichment updates the existing compaction row 
   );
 });
 
+test("subagent events bypass all canonical timeline preprocessing", () => {
+  const context = createTestContext([], { broadcasts: [], detailBroadcasts: [], persisted: [] }, "session-subagent-bypass");
+  const captured: unknown[] = [];
+  delete (context as any).sessionTimelineWorkers;
+  delete (context as any).sessionTimelineDispatcher;
+  delete (context as any).sessionTimelineFlushScheduler;
+  delete (context as any).sessionLiveStateStore;
+  (context as any).sessionSubagentDetailService = {
+    handleEvent: (...args: unknown[]) => captured.push(args),
+  };
+
+  handleRuntimeEvent("session-subagent-bypass", {
+    type: "tool-call",
+    origin: { scope: "subagent", parentToolCallId: "root-subagent" },
+    toolCall: {
+      id: "child-read",
+      kind: "read",
+      title: "Read",
+      status: "running",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:00.000Z",
+    },
+  }, context);
+
+  assert.equal(captured.length, 1);
+  assert.equal((captured[0] as unknown[])[1], "root-subagent");
+});
+
+test("terminal runtime status flushes pending subagent detail before session completion", () => {
+  const context = createTestContext([], { broadcasts: [], detailBroadcasts: [], persisted: [] }, "session-subagent-flush");
+  const flushed: string[] = [];
+  (context as any).sessionSubagentDetailService = {
+    handleEvent: () => undefined,
+    flush: (sessionId: string) => flushed.push(sessionId),
+  };
+
+  handleRuntimeEvent("session-subagent-flush", { type: "status", status: "idle" }, context);
+
+  assert.deepEqual(flushed, ["session-subagent-flush"]);
+});
+
 test("runtime keeps a delayed Claude compaction summary after its /compact user message", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

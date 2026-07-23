@@ -1030,7 +1030,7 @@ test("runtime subagent child tools do not split cumulative assistant text", () =
   const assistantEntries = capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
   const toolEntries = capture.timelineEntries?.filter((entry) => entry.kind === "tool_call") ?? [];
   assert.equal(assistantEntries.length, 1);
-  assert.equal(toolEntries.length, 2);
+  assert.equal(toolEntries.length, 0);
   assert.equal(
     capture.sessionUpdates?.some((update) =>
       Object.hasOwn(JSON.parse(update.payloadJson) as object, "origin")

@@ -30,6 +30,7 @@ import * as sessionListTimeline from "./session/list-timeline";
 import * as sessionRepairTimeline from "./session/repair-timeline";
 import * as sessionListLegacyEvidence from "./session/list-legacy-evidence";
 import * as sessionGetArtifacts from "./session/get-artifacts";
+import * as sessionGetSubagentDetail from "./session/get-subagent-detail";
 import * as sessionCheckResume from "./session/check-resume";
 import * as sessionResume from "./session/resume";
 import * as sessionPrompt from "./session/prompt";
@@ -92,6 +93,7 @@ const METHOD_DESCRIPTORS = {
   [sessionRepairTimeline.method]: sessionRepairTimeline.descriptor,
   [sessionListLegacyEvidence.method]: sessionListLegacyEvidence.descriptor,
   [sessionGetArtifacts.method]: sessionGetArtifacts.descriptor,
+  [sessionGetSubagentDetail.method]: sessionGetSubagentDetail.descriptor,
   [sessionCheckResume.method]: sessionCheckResume.descriptor,
   [sessionResume.method]: sessionResume.descriptor,
   [sessionPrompt.method]: sessionPrompt.descriptor,
@@ -156,6 +158,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionRepairTimeline.method,
   sessionListLegacyEvidence.method,
   sessionGetArtifacts.method,
+  sessionGetSubagentDetail.method,
   sessionCheckResume.method,
   sessionResume.method,
   sessionPrompt.method,

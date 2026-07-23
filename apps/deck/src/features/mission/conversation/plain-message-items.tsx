@@ -1,6 +1,11 @@
-import { memo, useEffect, useRef, useState, type UIEvent } from "react";
+import { memo, useEffect, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { createPortal } from "react-dom";
-import type { AgentMessage, AgentPromptImageContent, AgentToolCall } from "@tiller/shared";
+import type {
+  AgentMessage,
+  AgentPromptImageContent,
+  AgentToolCall,
+  SessionSubagentDetail,
+} from "@tiller/shared";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
 import { Badge, Button, Icon } from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
@@ -779,17 +784,24 @@ export const PlainToolGroupItem = memo(function PlainToolGroupItem({
 export function PlainSubagentItem({
   item,
   hasNewerContent = false,
+  detail,
+  detailContent,
+  onToggleDetail,
 }: {
   item: ConversationToolCallItem;
   hasNewerContent?: boolean;
+  detail?: SessionSubagentDetail & { loading?: boolean; failed?: boolean };
+  detailContent?: ReactNode;
+  onToggleDetail?: (open: boolean) => void;
 }) {
   const codexPresentation = resolveCodexSubagentPresentation(item);
   const isRunning = isActiveToolStatus(item.status);
   const shouldAutoOpen = isRunning && !hasNewerContent;
   const [open, setOpen] = useState(shouldAutoOpen);
-  const text = codexPresentation?.text ||
+  const lastDetailOpenRef = useRef<boolean | undefined>(undefined);
+  const fallbackText = codexPresentation?.text ||
     resolveSubagentOutput(item.text) ||
-    formatToolInputPreview(item.input) ||
+    resolveSubagentPrompt(item.input) ||
     "暂无 Subagent 内容";
   const summary = codexPresentation?.summary ?? resolveSubagentSummary(item);
   const label = codexPresentation?.label ?? resolveSubagentLabel(item);
@@ -798,6 +810,19 @@ export function PlainSubagentItem({
   useEffect(() => {
     setOpen(shouldAutoOpen);
   }, [shouldAutoOpen]);
+
+  useEffect(() => {
+    if (lastDetailOpenRef.current === undefined && !open) {
+      lastDetailOpenRef.current = false;
+      return;
+    }
+    if (lastDetailOpenRef.current === open) return;
+    lastDetailOpenRef.current = open;
+    onToggleDetail?.(open);
+  }, [onToggleDetail, open]);
+
+  const hasDetail = (detail?.entries.length ?? 0) > 0;
+  const isDetailLoading = Boolean(onToggleDetail && (!detail || detail.loading)) && !hasDetail;
 
   return (
     <div className={`plain-subagent-row ${ASSISTANT_MESSAGE_FRAME_CLASS} grid ${ASSISTANT_MESSAGE_RAIL_CLASS} items-start text-muted-foreground`}>
@@ -839,12 +864,28 @@ export function PlainSubagentItem({
             <Icon name="chevronDown" size={12} />
           </span>
         </summary>
-        <div className="plain-subagent-content pt-1 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground">
-          <MarkdownMessage text={text} />
+        <div
+          className="plain-subagent-content max-h-[min(22rem,55vh)] min-w-0 overflow-y-auto overscroll-contain pr-1 pt-1 text-[12.5px] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere] [scrollbar-gutter:stable] [&::-webkit-scrollbar-button]:hidden [&_.markdown-message]:text-muted-foreground [&_.markdown-paragraph]:text-muted-foreground"
+          data-mission-swipe-lock="true"
+        >
+          {hasDetail ? (
+            detailContent
+          ) : isDetailLoading ? (
+            <span className="text-muted-foreground/70">正在加载 Subagent 会话…</span>
+          ) : detail?.failed ? (
+            <span className="text-muted-foreground/70">Subagent 会话加载失败，收起后可重试</span>
+          ) : (
+            <MarkdownMessage text={fallbackText} />
+          )}
         </div>
       </details>
     </div>
   );
+}
+
+function resolveSubagentPrompt(input: string) {
+  const metadata = parseSubagentMetadata(input);
+  return metadata.prompt ?? metadata.description ?? formatToolInputPreview(input);
 }
 
 function resolveSubagentLabel(item: ConversationToolCallItem) {
@@ -924,7 +965,8 @@ function resolveSubagentOutput(text: string) {
     .replace(/\r?\n?<!--\s*OMO_INTERNAL_INITIATOR\s*-->/giu, "")
     .replace(/\r?\n*<task_metadata>[\s\S]*?<\/task_metadata>/giu, "")
     .replace(/\r?\n*to continue:\s*task\([\s\S]*$/iu, "")
-    .replace(/\r?\n+agentId:\s*\S+\s+\(use SendMessage[\s\S]*$/iu, "")
+    .replace(/(?:^|\r?\n)agentId:\s*\S+\s+\(use SendMessage[\s\S]*$/iu, "")
+    .replace(/(?:^|\r?\n)<usage>[\s\S]*?<\/usage>/giu, "")
     .replace(/^\(Subagent completed but returned no output\.\)$/iu, "")
     .trim();
 }
@@ -961,6 +1003,13 @@ function parseSubagentMetadata(input: string) {
       "name",
       "label",
     ]);
+    const prompt = firstString(record, [
+      "prompt",
+      "message",
+      "query",
+      "instructions",
+      "task",
+    ]);
     const description = firstString(record, [
       "description",
       "task",
@@ -969,8 +1018,8 @@ function parseSubagentMetadata(input: string) {
       "message",
       "instructions",
     ]);
-    if (name || description) {
-      return { name, description };
+    if (name || description || prompt) {
+      return { name, description, prompt };
     }
   }
   return {};
@@ -1008,7 +1057,7 @@ type PlainToolCallItemProps = {
   item: ConversationToolCallItem;
 };
 
-const PlainToolCallItem = memo(function PlainToolCallItem({
+export const PlainToolCallItem = memo(function PlainToolCallItem({
   item,
 }: PlainToolCallItemProps) {
   const tone = resolveToolCallTone(item.toolKind, item.title);

@@ -48,6 +48,9 @@ import { createSessionTimelineWorkerRegistry } from "../session-timeline/worker-
 import { resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary } from "./worktree-resolution";
 import type { TillerLogger } from "../../logging/logger";
 import type { AcpProtocolLoggingOptions } from "@tiller/acp-runtime";
+import { createSessionSubagentDetailService } from "./subagent-detail-service";
+import type { SessionSubagentDetailStore } from "@tiller/persistence";
+import { materializeRuntimeCommandOutputChunk } from "./event/effects";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
 
@@ -75,6 +78,7 @@ export type SessionServicesOptions = {
   sessionUpdateStore: HelmSessionStores["sessionUpdateStore"];
   sessionStateStore: HelmSessionStores["sessionStateStore"];
   sessionApprovalStore: HelmSessionStores["sessionApprovalStore"];
+  sessionSubagentDetailStore?: SessionSubagentDetailStore;
   getAgents: () => AcpAgentProvider[];
   getProjects: () => ProjectSummary[];
   getWorktrees: () => WorktreeSummary[];
@@ -125,6 +129,24 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionTimelineStore: options.sessionTimelineStore,
     sessionUpdateStore: options.sessionUpdateStore,
   });
+  const sessionSubagentDetailService = options.sessionSubagentDetailStore
+    ? createSessionSubagentDetailService({
+        store: options.sessionSubagentDetailStore,
+        materializeCommandOutput: (sessionId, chunk) =>
+          materializeRuntimeCommandOutputChunk(
+            options.createHandlerContext(),
+            sessionId,
+            chunk,
+          ),
+        publish: (sessionId, delta) => {
+          createSessionEventPublisher(options.createHandlerContext()).sessionUpdate(sessionId, {
+            kind: "subagent_detail",
+            delta,
+          });
+        },
+        logError: options.logError,
+      })
+    : undefined;
   const diffHydration = createSessionDiffHydrationService({
     sessions: options.sessions,
     sessionStore: options.sessionStore,
@@ -299,6 +321,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
 
   function deleteLocalSessionData(sessionId: string) {
     resetSessionTimelineRuntimeState(sessionId);
+    sessionSubagentDetailService?.remove(sessionId);
     sessionPersistence.deleteLocalSessionData(sessionId);
   }
 
@@ -332,6 +355,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionLiveStateStore,
     sessionApprovalStateStore,
     sessionRuntimeEventState,
+    sessionSubagentDetailService,
     sessionTimelineDispatcher,
     sessionTimelineFlushScheduler,
     sessionTimelineWorkers,
@@ -352,8 +376,10 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         cleanupRuntimeEventState(sessionId, context);
         sessionTimelineFlushScheduler.remove(sessionId);
         sessionTimelineWorkers.remove(sessionId);
+        sessionSubagentDetailService?.flush(sessionId);
       }
       sessionTimelineFlushScheduler.dispose();
+      sessionSubagentDetailService?.dispose();
       diffHydration.dispose();
     },
     startSessionResume,

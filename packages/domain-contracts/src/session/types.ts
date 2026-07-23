@@ -69,6 +69,11 @@ export type SessionLiveStateUpdate<Snapshot = unknown> = {
   snapshot: Snapshot;
 };
 
+export type SessionSubagentDetailUpdate<Delta = unknown> = {
+  kind: "subagent_detail";
+  delta: Delta;
+};
+
 export const CANONICAL_CONVERSATION_UPDATE_KINDS = ["timeline_batch"] as const;
 
 export const COMPATIBILITY_CONVERSATION_UPDATE_KINDS = [
@@ -104,9 +109,11 @@ export type SessionRealtimeUpdate<
   Summary = SessionSummary,
   TimelineEntry = unknown,
   LiveStateSnapshot = unknown,
+  SubagentDetailDelta = unknown,
 > =
   | SessionAgentMessageUpdate<Message>
   | SessionToolCallUpdate<ToolCall>
   | SessionUpdatedUpdate<Summary>
   | SessionTimelineBatchUpdate<TimelineEntry>
-  | SessionLiveStateUpdate<LiveStateSnapshot>;
+  | SessionLiveStateUpdate<LiveStateSnapshot>
+  | SessionSubagentDetailUpdate<SubagentDetailDelta>;

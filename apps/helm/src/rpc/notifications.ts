@@ -68,5 +68,6 @@ function isSessionDetailUpdate(update: unknown): boolean {
   return kind === "agent_message"
     || kind === "tool_call"
     || kind === "timeline_batch"
-    || kind === "live_state";
+    || kind === "live_state"
+    || kind === "subagent_detail";
 }

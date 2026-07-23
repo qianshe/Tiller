@@ -1,5 +1,9 @@
 import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
-import type { SessionTimelineBatch, SessionUpdateRecord } from "@tiller/shared";
+import type {
+  SessionTimelineBatch,
+  SessionTimelineEntry,
+  SessionUpdateRecord,
+} from "@tiller/shared";
 import {
   applySessionRuntimeEventInPlace,
   buildSessionTimelineBatch,
@@ -26,6 +30,7 @@ export type SessionTimelineWorkerOptions = {
   sessionId: string;
   providerId?: string;
   lastSequence?: number;
+  initialEntries?: SessionTimelineEntry[];
 };
 
 export function createSessionTimelineWorker(
@@ -35,10 +40,11 @@ export function createSessionTimelineWorker(
     providerId: options.providerId,
     lastSequence: options.lastSequence,
   });
+  aggregate.entries = [...(options.initialEntries ?? [])];
   let lastFlushed = { ...aggregate, entries: [...aggregate.entries] };
   let pendingUpdates: SessionUpdateRecord[] = [];
   let pendingEntries = new Map<string, import("@tiller/shared").SessionTimelineEntry>();
-  const mutationIndex = createSessionTimelineMutationIndex();
+  const mutationIndex = createSessionTimelineMutationIndex(aggregate.entries);
 
   return {
     sessionId: options.sessionId,

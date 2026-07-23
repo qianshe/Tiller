@@ -119,6 +119,74 @@ test("websocket stream coalesces streaming entities above soft high-water", asyn
   assert.equal((sent[0] ?? "").includes('"text":"ab"'), true);
 });
 
+test("websocket stream coalesces subagent entries by identity and sends latest sequences in order", async () => {
+  const sent: string[] = [];
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 3,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  } as any;
+  const stream = createWebSocketJsonRpcStream(socket, () => undefined, {
+    softHighWaterBytes: 2,
+    hardHighWaterBytes: 10,
+    retryDelayMs: 1,
+  });
+  const update = (entryId: string, sequence: number, text: string) => ({
+    jsonrpc: "2.0" as const,
+    method: "session/update",
+    params: {
+      sessionId: "s1",
+      update: {
+        kind: "subagent_detail",
+        delta: {
+          sessionId: "s1",
+          parentToolCallId: "root-1",
+          batch: {
+            replace: false,
+            deliverySequence: sequence,
+            lastSequence: sequence,
+            entries: [{
+              id: entryId,
+              kind: "assistant_message",
+              chunks: [{
+                id: `${entryId}:content`,
+                kind: "content",
+                text,
+                timestamp: "2026-07-22T00:00:00.000Z",
+                sequence,
+              }],
+              timestamp: "2026-07-22T00:00:00.000Z",
+              updatedAt: "2026-07-22T00:00:00.000Z",
+              sequence,
+            }],
+          },
+        },
+      },
+    },
+  });
+
+  stream.send(update("reply-a", 1, "old") as any);
+  stream.send(update("reply-b", 2, "second") as any);
+  stream.send(update("reply-a", 3, "latest") as any);
+  assert.equal(sent.length, 0);
+
+  socket.bufferedAmount = 0;
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const messages = decodeMessages(sent);
+  assert.deepEqual(
+    messages.map((message) => message.params.update.delta.batch.lastSequence),
+    [2, 3],
+  );
+  assert.deepEqual(
+    messages.map((message) => message.params.update.delta.batch.entries[0].chunks[0].text),
+    ["second", "latest"],
+  );
+  stream.close();
+});
+
 test("websocket stream encodes one message object once before repeated sends", () => {
   const sent: string[] = [];
   let encodes = 0;

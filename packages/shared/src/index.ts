@@ -5,6 +5,7 @@ export * from "./session-approval";
 export * from "./session-legacy-evidence";
 export * from "./session-transcript";
 export * from "./session-update-record";
+export * from "./session-subagent-detail";
 export * from "./prompt-trace";
 export * from "./stream-text";
 export * from "./utils/continuation-summary";

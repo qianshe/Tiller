@@ -29,15 +29,29 @@ type ClaudeToolCallRule = (
 ) => AgentToolCall | null;
 
 const CLAUDE_TOOL_CALL_RULES: ClaudeToolCallRule[] = [
+  normalizeClaudeUnavailableThinkingToolCall,
   normalizeClaudeCompletedSubagentToolCall,
   normalizeClaudeTaskOutputToolCall,
-  normalizeClaudeTitleSubagentToolCall,
   normalizeClaudePayloadSubagentToolCall,
+  normalizeClaudeTitleSubagentToolCall,
   normalizeClaudeSubagentMessageToolCall,
   normalizeClaudeSkillToolCall,
   normalizeClaudeMcpToolCall,
   normalizeClaudeShellSearchToolCall,
 ];
+
+function normalizeClaudeUnavailableThinkingToolCall({
+  toolCall,
+  source,
+}: ClaudeToolCallNormalizationContext) {
+  if (toolCall.kind !== "think" || toolCall.status !== "failed") {
+    return null;
+  }
+  const output = extractClaudeToolOutputText(toolCall, source);
+  return /no such tool available:\s*think\b/iu.test(output ?? "")
+    ? { ...toolCall, kind: "tool" as const }
+    : null;
+}
 
 type ClaudeToolCallProjection = {
   id: string;
@@ -306,12 +320,19 @@ function normalizeClaudePayloadSubagentToolCall(
       context.toolCall.input,
   );
   const description = stringFrom(input?.description)?.trim();
+  const prompt = stringFrom(input?.prompt)?.trim() ?? "";
+  const finalOutput = context.toolCall.status === "completed"
+    ? resolveClaudeSubagentResult(output ?? "", prompt)
+    : undefined;
   const normalizedInput = input &&
       (!context.toolCall.input || context.toolCall.input === "{}")
     ? JSON.stringify(input)
     : context.toolCall.input;
+  const normalizedToolCall = context.toolCall.status === "completed"
+    ? omitToolCallOutput(context.toolCall)
+    : context.toolCall;
   return {
-    ...context.toolCall,
+    ...normalizedToolCall,
     kind: "subagent" as const,
     title: description && isGenericSubagentTitle(context.toolCall.title)
       ? description
@@ -321,6 +342,7 @@ function normalizeClaudePayloadSubagentToolCall(
       ? { status: "running" as const }
       : {}),
     ...(agentId ? { commandId: `subagent:${agentId}` } : {}),
+    ...(finalOutput ? { output: finalOutput } : {}),
   };
 }
 
@@ -795,4 +817,78 @@ function extractClaudeTaskLifecycleId(
 function extractClaudeTaskOutput(output: string | undefined) {
   const match = output?.match(/<output>\s*([\s\S]*?)\s*<\/output>/iu);
   return match?.[1]?.trim() || undefined;
+}
+
+function omitToolCallOutput(toolCall: AgentToolCall) {
+  const { output: _output, ...withoutOutput } = toolCall;
+  return withoutOutput;
+}
+
+function resolveClaudeSubagentResult(output: string, prompt: string) {
+  const trimmed = output.trim();
+  if (!trimmed) return undefined;
+  const parsed = parseLeadingClaudeJsonValues(trimmed);
+  for (let index = parsed.values.length - 1; index >= 0; index -= 1) {
+    const text = sanitizeClaudeSubagentResult(
+      extractClaudeText(parsed.values[index]) ?? "",
+      prompt,
+    );
+    if (text) return text;
+  }
+  return sanitizeClaudeSubagentResult(parsed.remainder || trimmed, prompt) || undefined;
+}
+
+function sanitizeClaudeSubagentResult(value: string, prompt: string) {
+  const text = value
+    .replace(/(?:^|\r?\n)agentId:\s*\S+\s+\(use SendMessage[\s\S]*$/iu, "")
+    .replace(/(?:^|\r?\n)<usage>[\s\S]*?<\/usage>/giu, "")
+    .trim();
+  return text === prompt.trim() ? "" : text;
+}
+
+function parseLeadingClaudeJsonValues(input: string) {
+  const values: unknown[] = [];
+  let offset = 0;
+  while (offset < input.length) {
+    while (/\s/u.test(input[offset] ?? "")) offset += 1;
+    const opening = input[offset];
+    if (opening !== "[" && opening !== "{") break;
+    const end = findClaudeJsonValueEnd(input, offset);
+    if (end < 0) break;
+    try {
+      values.push(JSON.parse(input.slice(offset, end)) as unknown);
+      offset = end;
+    } catch {
+      break;
+    }
+  }
+  return { values, remainder: input.slice(offset).trim() };
+}
+
+function findClaudeJsonValueEnd(input: string, start: number) {
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < input.length; index += 1) {
+    const character = input[index]!;
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === '"') inString = false;
+      continue;
+    }
+    if (character === '"') {
+      inString = true;
+      continue;
+    }
+    if (character === "[" || character === "{") {
+      stack.push(character === "[" ? "]" : "}");
+      continue;
+    }
+    if (character === stack[stack.length - 1]) {
+      stack.pop();
+      if (stack.length === 0) return index + 1;
+    }
+  }
+  return -1;
 }

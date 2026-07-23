@@ -357,6 +357,12 @@ function coalescibleUpdateKey(sessionId: string, update: any) {
   if (update.kind === "tool_call" && update.toolCall?.status === "running" && update.toolCall?.id) {
     return `${sessionId}:tool:${update.toolCall.id}`;
   }
+  if (update.kind === "subagent_detail" && update.delta?.batch?.entries?.length === 1) {
+    const [entry] = update.delta.batch.entries;
+    if (entry?.id) {
+      return `${sessionId}:subagent:${update.delta.parentToolCallId}:${entry.kind}:${entry.id}`;
+    }
+  }
   return undefined;
 }
 

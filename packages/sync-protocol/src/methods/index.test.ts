@@ -38,6 +38,7 @@ const expectedRequests = [
   "session/repair_timeline",
   "session/list_legacy_evidence",
   "session/get_artifacts",
+  "session/get_subagent_detail",
   "session/check_resume",
   "session/resume",
   "session/prompt",

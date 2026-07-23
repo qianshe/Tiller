@@ -10,7 +10,7 @@ import {
   resolveAcpLaunchConfig,
 } from "../adapters";
 import { resolveSessionCapabilities, type DetectedAcpSessionCapabilities } from "../capabilities";
-import { extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotificationBatch, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
+import { attachTrackedRuntimeEventOrigin, clearRuntimeEventOriginTrackerSession, createRuntimeEventOriginTracker, extractAcpModelState, extractSessionConfigOptions, findSessionConfigOptionId, hasSessionConfigOptionIdValue, hasSessionConfigOptionValue, mapSessionUpdateNotificationBatch, resolveCombinedSessionConfigState, resolveSessionConfigState, summarizeSessionUpdateNotification } from "../events";
 import { createProtocolLogSink, writeChunkLog, writeLogLine, type AcpProtocolLoggingOptions, type ProtocolLogSink } from "../protocol-logging";
 import { createProtocolStdoutStream, resolveLaunchSpec, terminateChildProcessAndWait } from "../process";
 import { mapPromptContentToSdkBlocks, mapSdkPermissionRequest, mapTillerMcpServersToSdkMcpServers, SDK_RUNTIME_CLIENT_CAPABILITIES } from "../sdk-helpers";
@@ -124,6 +124,7 @@ export class AcpConnection {
   private permissionRequestCounter = 0;
   private readonly terminalClient: ConnectionTerminalClient;
   private suppressExitError = false;
+  private readonly originTracker = createRuntimeEventOriginTracker();
 
   private constructor(private readonly state: AcpConnectionState) {
     this.terminalClient = new ConnectionTerminalClient({
@@ -135,6 +136,7 @@ export class AcpConnection {
       this.stopIdlePromptObservations();
       for (const session of this.sessions.values()) {
         disposeAdapterSession(this.state.provider, session.runtimeSessionId);
+        clearRuntimeEventOriginTrackerSession(this.originTracker, session.runtimeSessionId);
       }
       if (this.suppressExitError) {
         return;
@@ -304,6 +306,7 @@ export class AcpConnection {
       this.stopIdlePromptObservation(tillerSessionId);
       this.sessions.delete(tillerSessionId);
       disposeAdapterSession(this.state.provider, runtimeSessionId);
+      clearRuntimeEventOriginTrackerSession(this.originTracker, runtimeSessionId);
       if (this.state.capabilities.sessionClose) {
         await this.closeRemoteSession(runtimeSessionId);
       }
@@ -336,6 +339,7 @@ export class AcpConnection {
     this.stopIdlePromptObservation(tillerSessionId);
     this.sessions.delete(tillerSessionId);
     disposeAdapterSession(this.state.provider, session.runtimeSessionId);
+    clearRuntimeEventOriginTrackerSession(this.originTracker, session.runtimeSessionId);
     if (this.state.capabilities.sessionClose) {
       await this.closeRemoteSession(session.runtimeSessionId);
     }
@@ -499,7 +503,12 @@ export class AcpConnection {
     session.promptReportedError = false;
     let observedManualCompaction = false;
     const publishPromptEvents = () => {
-      for (const event of pollAdapterPromptEvents(this.state.provider, promptObservation)) {
+      for (const rawEvent of pollAdapterPromptEvents(this.state.provider, promptObservation)) {
+        const event = attachTrackedRuntimeEventOrigin(
+          promptObservation.runtimeSessionId,
+          rawEvent,
+          this.originTracker,
+        );
         if (promptObservation.observeCompaction && event.type === "compaction") {
           observedManualCompaction = true;
         }
@@ -599,7 +608,13 @@ export class AcpConnection {
         this.stopIdlePromptObservation(tillerSessionId);
         return;
       }
-      const events = pollAdapterPromptEvents(this.state.provider, promptObservation);
+      const events = pollAdapterPromptEvents(this.state.provider, promptObservation).map((rawEvent) =>
+        attachTrackedRuntimeEventOrigin(
+          promptObservation.runtimeSessionId,
+          rawEvent,
+          this.originTracker,
+        ),
+      );
       for (const event of events) {
         session.onEvent(event);
       }
@@ -848,6 +863,7 @@ export class AcpConnection {
         provider: this.state.provider,
         providerId: this.state.provider.id,
         sessionCwd: session?.worktree.path,
+        originTracker: this.originTracker,
       },
     );
     writeLogLine(
@@ -912,6 +928,7 @@ export class AcpConnection {
     this.stopIdlePromptObservations();
     for (const session of this.sessions.values()) {
       disposeAdapterSession(this.state.provider, session.runtimeSessionId);
+      clearRuntimeEventOriginTrackerSession(this.originTracker, session.runtimeSessionId);
     }
     if (this.state.child.pid) {
       await terminateChildProcessAndWait(this.state.child);

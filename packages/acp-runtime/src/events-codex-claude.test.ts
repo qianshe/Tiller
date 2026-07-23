@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { mapSessionUpdateNotificationBatch } from "./runtime";
-import { mapSessionUpdateNotification } from "./events";
+import { attachTrackedRuntimeEventOrigin, clearRuntimeEventOriginTrackerSession, createRuntimeEventOriginTracker, mapSessionUpdateNotification } from "./events";
 
 test("mapSessionUpdateNotification maps Claude synthetic authentication errors to ACP errors", () => {
   const provider = {
@@ -103,6 +103,273 @@ test("mapSessionUpdateNotification maps Claude subagent update metadata to runti
       parentToolCallId: "call-parent-subagent",
     });
   }
+});
+
+test("Claude failed Think tool calls stay tools instead of becoming reasoning", () => {
+  const provider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-code-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const payload = {
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "session-claude-failed-think-tool",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "call-failed-think",
+        title: "Think",
+        status: "failed",
+        rawOutput: "[]<tool_use_error>Error: No such tool available: Think</tool_use_error>",
+        _meta: {
+          claudeCode: {
+            parentToolUseId: "call-parent-subagent",
+          },
+        },
+      },
+    },
+  };
+  const mapped = mapSessionUpdateNotification(payload, {
+    provider,
+    providerId: provider.id,
+  });
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "tool");
+  assert.equal(mapped.event.toolCall.title, "Think");
+  assert.equal(mapped.event.toolCall.status, "failed");
+  assert.deepEqual(mapped.event.origin, {
+    scope: "subagent",
+    parentToolCallId: "call-parent-subagent",
+  });
+
+  const generic = mapSessionUpdateNotification(payload, { providerId: "generic" });
+  assert.equal(generic?.event.type, "tool-call");
+  assert.equal(
+    generic?.event.type === "tool-call" ? generic.event.toolCall.kind : undefined,
+    "think",
+  );
+});
+
+test("Claude command output inherits only an explicitly tracked subagent origin", () => {
+  const provider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-code-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const originTracker = createRuntimeEventOriginTracker();
+  const explicit = mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-command-origin",
+      update: {
+        type: "command_output",
+        commandId: "command-child-1",
+        output: "first",
+        stream: "stdout",
+        _meta: { claudeCode: { parentToolUseId: "root-subagent-1" } },
+      },
+    },
+  }, { provider, providerId: provider.id, originTracker });
+  assert.deepEqual(explicit?.events.map((event) => event.type), ["tool-call", "command-output"]);
+  assert.ok(explicit?.events.every((event) =>
+    (event.type === "tool-call" || event.type === "command-output") &&
+    event.origin?.parentToolCallId === "root-subagent-1"
+  ));
+
+  const inherited = mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-command-origin",
+      update: {
+        type: "command_output",
+        commandId: "command-child-1",
+        output: "second",
+        stream: "stdout",
+      },
+    },
+  }, { provider, providerId: provider.id, originTracker });
+  assert.ok(inherited?.events.every((event) =>
+    (event.type === "tool-call" || event.type === "command-output") &&
+    event.origin?.parentToolCallId === "root-subagent-1"
+  ));
+
+  const unrelated = mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-command-origin",
+      update: {
+        type: "command_output",
+        commandId: "command-unrelated",
+        output: "main",
+        stream: "stdout",
+      },
+    },
+  }, { provider, providerId: provider.id, originTracker });
+  assert.ok(unrelated?.events.every((event) =>
+    event.type !== "tool-call" && event.type !== "command-output" || event.origin === undefined
+  ));
+
+  const otherSession = mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-command-origin-other",
+      update: {
+        type: "command_output",
+        commandId: "command-child-1",
+        output: "main in another session",
+        stream: "stdout",
+      },
+    },
+  }, { provider, providerId: provider.id, originTracker });
+  assert.ok(otherSession?.events.every((event) =>
+    event.type !== "tool-call" && event.type !== "command-output" || event.origin === undefined
+  ));
+
+  clearRuntimeEventOriginTrackerSession(originTracker, "session-command-origin");
+  const cleared = mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-command-origin",
+      update: {
+        type: "command_output",
+        commandId: "command-child-1",
+        output: "after close",
+        stream: "stdout",
+      },
+    },
+  }, { provider, providerId: provider.id, originTracker });
+  assert.ok(cleared?.events.every((event) =>
+    event.type !== "tool-call" && event.type !== "command-output" || event.origin === undefined
+  ));
+});
+
+test("transcript observer events inherit the exact origin tracked by the ACP tool ID", () => {
+  const tracker = createRuntimeEventOriginTracker();
+  const mapped = mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-transcript-origin",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-child-shell",
+        title: "Tool call call-child-shell",
+        kind: "shell",
+        status: "running",
+        _meta: { claudeCode: { parentToolUseId: "call-root-subagent" } },
+      },
+    },
+  }, {
+    provider: {
+      id: "claudecode",
+      name: "ClaudeCode",
+      command: "claude-code-acp",
+      transport: "stdio",
+      protocol: "acp",
+    },
+    providerId: "claudecode",
+    originTracker: tracker,
+  });
+  assert.equal(mapped?.events[0]?.type, "tool-call");
+
+  const restored = attachTrackedRuntimeEventOrigin(
+    "session-transcript-origin",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-child-shell",
+        kind: "shell",
+        title: "git status --short",
+        status: "completed",
+        timestamp: "2026-07-23T00:00:00.000Z",
+        updatedAt: "2026-07-23T00:00:01.000Z",
+      },
+    },
+    tracker,
+  );
+  assert.ok(restored.type === "tool-call");
+  assert.deepEqual(restored.origin, {
+    scope: "subagent",
+    parentToolCallId: "call-root-subagent",
+  });
+  assert.equal(
+    restored.type === "tool-call" ? restored.toolCall.title : "",
+    "git status --short",
+  );
+
+  const unrelated = attachTrackedRuntimeEventOrigin(
+    "session-transcript-origin",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-main-shell",
+        kind: "shell",
+        title: "git status --short",
+        status: "completed",
+        timestamp: "2026-07-23T00:00:00.000Z",
+        updatedAt: "2026-07-23T00:00:01.000Z",
+      },
+    },
+    tracker,
+  );
+  assert.ok(unrelated.type === "tool-call");
+  assert.equal(unrelated.origin, undefined);
+});
+
+test("Claude tool updates inherit origin when commandId appears after the initial tool id", () => {
+  const provider = {
+    id: "claudecode",
+    name: "ClaudeCode",
+    command: "claude-code-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const originTracker = createRuntimeEventOriginTracker();
+  mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-late-command-id",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "tool-child-1",
+        title: "Read",
+        kind: "read",
+        status: "pending",
+        _meta: { claudeCode: { parentToolUseId: "root-subagent-1" } },
+      },
+    },
+  }, { provider, providerId: provider.id, originTracker });
+
+  const inherited = mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-late-command-id",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "tool-child-1",
+        title: "Read",
+        kind: "read",
+        status: "completed",
+        details: { commandId: "command-child-1" },
+      },
+    },
+  }, { provider, providerId: provider.id, originTracker });
+
+  const inheritedEvent = inherited?.events[0];
+  assert.equal(
+    inheritedEvent && (inheritedEvent.type === "tool-call" || inheritedEvent.type === "command-output")
+      ? inheritedEvent.origin?.parentToolCallId
+      : undefined,
+    "root-subagent-1",
+  );
 });
 
 test("mapSessionUpdateNotification does not infer subagent origins without valid Claude metadata", () => {

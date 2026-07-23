@@ -8,6 +8,7 @@ import type {
   LegacyEvidencePage,
   LegacyEvidenceSource,
   SessionTimelineEntry,
+  SessionSubagentDetail,
 } from "@tiller/shared";
 import type { StateCreator } from "zustand";
 
@@ -33,6 +34,11 @@ export type SessionLegacyEvidenceState = {
   loading: Partial<Record<LegacyEvidenceSource, boolean>>;
 };
 
+export type SessionSubagentDetailState = SessionSubagentDetail & {
+  loading?: boolean;
+  failed?: boolean;
+};
+
 export type MessagesSlice = {
   messages: Record<string, AgentMessage[]>;
   sessionTimeline: Record<string, SessionTimelineEntry[]>;
@@ -45,6 +51,7 @@ export type MessagesSlice = {
   dismissedCompletedSessionPlanKeys: Record<string, string>;
   diffs: Record<string, FileDiffSummary[]>;
   historicalDiffIncompleteBySession: Record<string, boolean>;
+  sessionSubagentDetails: Record<string, SessionSubagentDetailState | undefined>;
   setMessages: (updater: Updater<Record<string, AgentMessage[]>>) => void;
   setSessionTimeline: (updater: Updater<Record<string, SessionTimelineEntry[]>>) => void;
   setSessionTimelineDeliveryState: (
@@ -64,6 +71,9 @@ export type MessagesSlice = {
   setHistoricalDiffIncompleteBySession: (
     updater: Updater<Record<string, boolean>>,
   ) => void;
+  setSessionSubagentDetails: (
+    updater: Updater<Record<string, SessionSubagentDetailState | undefined>>,
+  ) => void;
 };
 
 export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
@@ -78,6 +88,7 @@ export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
   dismissedCompletedSessionPlanKeys: {},
   diffs: {},
   historicalDiffIncompleteBySession: {},
+  sessionSubagentDetails: {},
   setMessages: (updater) =>
     set((state) => ({
       messages: typeof updater === "function" ? updater(state.messages) : updater,
@@ -137,5 +148,10 @@ export const createMessagesSlice: StateCreator<MessagesSlice> = (set) => ({
         typeof updater === "function"
           ? updater(state.historicalDiffIncompleteBySession)
           : updater,
+    })),
+  setSessionSubagentDetails: (updater) =>
+    set((state) => ({
+      sessionSubagentDetails:
+        typeof updater === "function" ? updater(state.sessionSubagentDetails) : updater,
     })),
 });

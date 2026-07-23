@@ -11,6 +11,7 @@ import {
   createSqliteSessionStateStore,
   createSqliteSessionApprovalStore,
   createSqliteSessionUpdateStore,
+  createSqliteSessionSubagentDetailStore,
   migrateJsonSessionDataToSqlite,
   type HelmSessionStores,
   type JsonSessionStorePaths,
@@ -104,5 +105,6 @@ export function createHelmSessionStores(
     sessionUpdateStore: createSqliteSessionUpdateStore(options.sqlitePath),
     sessionStateStore: createSqliteSessionStateStore(options.sqlitePath),
     sessionApprovalStore: createSqliteSessionApprovalStore(options.sqlitePath),
+    sessionSubagentDetailStore: createSqliteSessionSubagentDetailStore(options.sqlitePath),
   };
 }

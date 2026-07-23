@@ -6,6 +6,7 @@ import type {
   PermissionDecision,
   PermissionRequest,
   SessionPromptQueueSnapshot,
+  SessionSubagentDetail,
   SessionSummary,
   SessionTimelineEntry,
 } from "@tiller/shared";
@@ -126,6 +127,8 @@ type MissionChatPaneProps = {
   onLoadOlderMessages: (sessionId: string) => void;
   onLoadLegacyEvidence: (sessionId: string, source: LegacyEvidenceSource, after?: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
+  onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
   activityLoading: MissionToolActivity | null;
   pendingToolPresent: boolean;
   pendingApprovals: ReadonlyArray<{
@@ -200,6 +203,8 @@ export function MissionChatPane({
   onLoadOlderMessages,
   onLoadLegacyEvidence,
   onToggleExpandedMessage,
+  subagentDetails = {},
+  onToggleSubagentDetail,
   activityLoading,
   pendingToolPresent,
   pendingApprovals,
@@ -939,6 +944,8 @@ export function MissionChatPane({
                   onLoadOlderMessages={handleLoadOlderMessages}
                   onLoadLegacyEvidence={onLoadLegacyEvidence}
                   onToggleExpandedMessage={handleToggleExpandedMessage}
+                  subagentDetails={subagentDetails}
+                  onToggleSubagentDetail={onToggleSubagentDetail}
                   onUpdateQueuedPrompt={onUpdateQueuedPrompt}
                   onDeleteQueuedPrompt={onDeleteQueuedPrompt}
                   onRespondToPermission={handleRespondToPermission}
@@ -1010,6 +1017,8 @@ type MissionChatSessionCardProps = {
   onRename: (session: SessionSummary) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
+  onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
   onUpdateQueuedPrompt: (sessionId: string, queueItemId: string, text: string) => void;
   onDeleteQueuedPrompt: (sessionId: string, queueItemId: string) => void;
   onHandoffAssistantMessage?: (
@@ -1058,6 +1067,8 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   onRename,
   onRespondToPermission,
   onToggleExpandedMessage,
+  subagentDetails,
+  onToggleSubagentDetail,
   onUpdateQueuedPrompt,
   onDeleteQueuedPrompt,
   onHandoffAssistantMessage,
@@ -1185,6 +1196,8 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
           historyStateBySession={historyStateBySession}
           onLoadOlderMessages={onLoadOlderMessages}
           onToggleExpandedMessage={onToggleExpandedMessage}
+          subagentDetails={subagentDetails}
+          onToggleSubagentDetail={onToggleSubagentDetail}
         />
       ) : (
         <SessionPreviewMessages

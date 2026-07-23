@@ -1,4 +1,11 @@
-import type { AgentMessage, FileDiffSummary, LegacyEvidenceSource, SessionSummary } from "@tiller/shared";
+import {
+  sortSessionTimelineEntries,
+  type AgentMessage,
+  type FileDiffSummary,
+  type LegacyEvidenceSource,
+  type SessionSubagentDetail,
+  type SessionSummary,
+} from "@tiller/shared";
 import { useState, useCallback, useEffect, useRef } from "react";
 import {
   canGenerateAssistantHandoff,
@@ -233,6 +240,89 @@ export function MissionWorktree(props: any) {
   } = props;
   const sessionLegacyEvidence = useDeckStore((state) => state.sessionLegacyEvidence);
   const setSessionLegacyEvidence = useDeckStore((state) => state.setSessionLegacyEvidence);
+  const sessionSubagentDetails = useDeckStore((state) => state.sessionSubagentDetails);
+  const setSessionSubagentDetails = useDeckStore((state) => state.setSessionSubagentDetails);
+  const subagentDetailGenerationsRef = useRef(new Map<string, number>());
+  const previousActiveSessionIdRef = useRef<string | null>(activeSessionId ?? null);
+
+  const loadSubagentDetail = useCallback((sessionId: string, parentToolCallId: string) => {
+    const client = rpcClientRef.current;
+    const key = `${sessionId}\0${parentToolCallId}`;
+    if (!client || client.socket.readyState !== WebSocket.OPEN) {
+      setSessionSubagentDetails((current) => ({
+        ...current,
+        [key]: {
+          ...(current[key] ?? {
+            sessionId,
+            parentToolCallId,
+            throughSequence: 0,
+            entries: [],
+          }),
+          loading: false,
+          failed: true,
+        },
+      }));
+      return;
+    }
+    const generation = (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1;
+    subagentDetailGenerationsRef.current.set(key, generation);
+    setSessionSubagentDetails((current) => ({
+      ...current,
+      [key]: {
+        ...(current[key] ?? {
+          sessionId,
+          parentToolCallId,
+          throughSequence: 0,
+          entries: [],
+        }),
+        loading: true,
+        failed: false,
+      },
+    }));
+    void client.request("session/get_subagent_detail", { sessionId, parentToolCallId })
+      .then((result: unknown) => {
+        if (subagentDetailGenerationsRef.current.get(key) !== generation) return;
+        const snapshot = result as SessionSubagentDetail;
+        setSessionSubagentDetails((current) => {
+          if (!current[key]) return current;
+          return {
+            ...current,
+            [key]: {
+              ...mergeSubagentDetailSnapshot(snapshot, current[key]),
+              loading: false,
+              failed: false,
+            },
+          };
+        });
+      })
+      .catch(() => {
+        if (subagentDetailGenerationsRef.current.get(key) !== generation) return;
+        setSessionSubagentDetails((current) => {
+          const existing = current[key];
+          return existing
+            ? { ...current, [key]: { ...existing, loading: false, failed: true } }
+            : current;
+        });
+      });
+  }, [rpcClientRef, setSessionSubagentDetails]);
+
+  const toggleSubagentDetail = useCallback((sessionId: string, parentToolCallId: string, open: boolean) => {
+    const key = `${sessionId}\0${parentToolCallId}`;
+    if (open) {
+      loadSubagentDetail(sessionId, parentToolCallId);
+      return;
+    }
+    subagentDetailGenerationsRef.current.set(
+      key,
+      (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1,
+    );
+    setSessionSubagentDetails((current) => {
+      if (!current[key]) return current;
+      const next = { ...current };
+      delete next[key];
+      return next;
+    });
+  }, [loadSubagentDetail, setSessionSubagentDetails]);
   const pendingLegacyEvidenceRequestsRef = useRef(new Set<string>());
   const loadSessionLegacyEvidence = useCallback((
     sessionId: string,
@@ -898,6 +988,30 @@ export function MissionWorktree(props: any) {
     name: agent.name ?? agent.id,
   }));
   const helmConnected = pairingState === "paired";
+  useEffect(() => {
+    const previousSessionId = previousActiveSessionIdRef.current;
+    const nextSessionId = activeSessionId ?? null;
+    previousActiveSessionIdRef.current = nextSessionId;
+    if (!previousSessionId || previousSessionId === nextSessionId) return;
+    const prefix = `${previousSessionId}\0`;
+    for (const key of subagentDetailGenerationsRef.current.keys()) {
+      if (key.startsWith(prefix)) {
+        subagentDetailGenerationsRef.current.set(
+          key,
+          (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1,
+        );
+      }
+    }
+    setSessionSubagentDetails((current) => Object.fromEntries(
+      Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
+    ));
+  }, [activeSessionId, setSessionSubagentDetails]);
+  useEffect(() => {
+    if (!helmConnected) return;
+    for (const detail of Object.values(useDeckStore.getState().sessionSubagentDetails)) {
+      if (detail) loadSubagentDetail(detail.sessionId, detail.parentToolCallId);
+    }
+  }, [helmConnected, loadSubagentDetail]);
   const shouldShowComposer = Boolean(helmConnected && (activeSession || draftChatWindow));
   const shouldShowDraftPreparing = Boolean(helmConnected && !activeSession && selectedAgentId && !selectedDraftConnection);
   const shouldShowRestoreGateNotice = Boolean(
@@ -1044,6 +1158,8 @@ export function MissionWorktree(props: any) {
           onLoadOlderMessages={loadOlderMessages}
           onLoadLegacyEvidence={loadSessionLegacyEvidence}
           onToggleExpandedMessage={toggleExpandedMessage}
+          subagentDetails={sessionSubagentDetails}
+          onToggleSubagentDetail={toggleSubagentDetail}
           activityLoading={missionActivityLoading}
           pendingToolPresent={Boolean(pendingToolActivity)}
           pendingApprovals={pendingApprovals}
@@ -1263,4 +1379,27 @@ export function MissionWorktree(props: any) {
       </ResizablePanelGroup>{" "}
     </MissionPage>
   );
+}
+
+function mergeSubagentDetailSnapshot(
+  snapshot: SessionSubagentDetail,
+  buffered: SessionSubagentDetail | undefined,
+): SessionSubagentDetail {
+  if (!buffered || buffered.throughSequence <= snapshot.throughSequence) {
+    if (!buffered) return snapshot;
+    const snapshotKeys = new Set(snapshot.entries.map((entry) => `${entry.kind}:${entry.id}`));
+    const missingBufferedEntries = buffered.entries.filter(
+      (entry) => !snapshotKeys.has(`${entry.kind}:${entry.id}`),
+    );
+    return missingBufferedEntries.length === 0
+      ? snapshot
+      : { ...snapshot, entries: sortSessionTimelineEntries([...snapshot.entries, ...missingBufferedEntries]) };
+  }
+  const entries = new Map(snapshot.entries.map((entry) => [`${entry.kind}:${entry.id}`, entry]));
+  for (const entry of buffered.entries) entries.set(`${entry.kind}:${entry.id}`, entry);
+  return {
+    ...snapshot,
+    throughSequence: buffered.throughSequence,
+    entries: sortSessionTimelineEntries([...entries.values()]),
+  };
 }

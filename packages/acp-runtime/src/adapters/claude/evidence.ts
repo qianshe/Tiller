@@ -20,6 +20,9 @@ export function createClaudeToolEvidenceCollector() {
       return evidenceFromProjectedToolCall({
         observation,
         projected,
+        strength: projected.kind === "tool" && observation.toolCall.kind === "think"
+          ? 500
+          : undefined,
         subagentAction: projected?.kind === "subagent"
           ? resolveClaudeSubagentAction(observation, projected)
           : undefined,

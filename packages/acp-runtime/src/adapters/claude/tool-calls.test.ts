@@ -38,6 +38,37 @@ test("normalizeClaudeToolCall classifies task payloads with subagent_type as sub
   assert.equal(normalized.kind, "subagent");
 });
 
+test("normalizeClaudeToolCall extracts a foreground subagent final reply", () => {
+  const prompt = "Inspect the repository";
+  const finalReply = "The repository is implementing nested Subagent conversations.";
+  const output = `${JSON.stringify([
+    { type: "content", content: { type: "text", text: prompt } },
+  ])}${JSON.stringify([
+    { type: "text", text: finalReply },
+    {
+      type: "text",
+      text: "agentId: child-1 (use SendMessage to continue)\n<usage>tool_uses: 1</usage>",
+    },
+  ])}${finalReply}\nagentId: child-1 (use SendMessage to continue)\n<usage>tool_uses: 1</usage>`;
+  const normalized = normalizeClaudeToolCall(
+    baseToolCall({
+      title: "Agent",
+      status: "completed",
+      input: JSON.stringify({ prompt, subagent_type: "general-purpose" }),
+      output,
+    }),
+    {
+      toolCall: {
+        rawInput: { prompt, subagent_type: "general-purpose" },
+        rawOutput: output,
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.output, finalReply);
+});
+
 test("normalizeClaudeToolCall upgrades MCP payloads from raw input", () => {
   const normalized = normalizeClaudeToolCall(
     baseToolCall({

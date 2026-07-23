@@ -73,6 +73,7 @@ export type SessionRuntimeEvent =
       type: "command-output";
       chunk: CommandChunk;
       toolCall?: AgentToolCall;
+      origin?: RuntimeEventOrigin;
     }
   | {
       type: "diff-update";

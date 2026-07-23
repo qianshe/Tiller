@@ -59,6 +59,7 @@ function resetStore() {
     sessionPlans: {},
     diffs: {},
     historicalDiffIncompleteBySession: {},
+    sessionSubagentDetails: {},
     activityHistoryState: {},
     approvalItemsById: {},
     pendingApprovalIds: [],
@@ -68,6 +69,61 @@ function resetStore() {
     pairingFeedback: "",
   } as any);
 }
+
+test("subagent detail deltas update only expanded cached details and ignore stale sequences", () => {
+  resetStore();
+  const context = createSessionEventContext();
+  const update = (throughSequence: number, text: string) => ({
+    sessionId: "s1",
+    update: {
+      kind: "subagent_detail" as const,
+      delta: {
+        sessionId: "s1",
+        parentToolCallId: "root-1",
+        batch: {
+          replace: false,
+          deliverySequence: throughSequence,
+          lastSequence: throughSequence,
+          entries: [{
+            id: "reply-1",
+            kind: "assistant_message" as const,
+            chunks: [{
+              id: "reply-1:content",
+              kind: "content" as const,
+              text,
+              timestamp: "2026-07-22T00:00:00.000Z",
+              sequence: 1,
+            }],
+            timestamp: "2026-07-22T00:00:00.000Z",
+            updatedAt: "2026-07-22T00:00:00.000Z",
+            sequence: 1,
+          }],
+        },
+      },
+    },
+  });
+
+  assert.equal(applySessionUpdate(update(1, "ignored"), context), true);
+  assert.deepEqual(useDeckStore.getState().sessionSubagentDetails, {});
+
+  useDeckStore.getState().setSessionSubagentDetails({
+    ["s1\0root-1"]: {
+      sessionId: "s1",
+      parentToolCallId: "root-1",
+      throughSequence: 0,
+      entries: [],
+    },
+  });
+  applySessionUpdate(update(2, "latest"), context);
+  applySessionUpdate(update(1, "stale"), context);
+  const detail = useDeckStore.getState().sessionSubagentDetails["s1\0root-1"];
+  assert.equal(detail?.throughSequence, 2);
+  const reply = detail?.entries[0];
+  assert.equal(
+    reply?.kind === "assistant_message" ? reply.chunks[0]?.text : undefined,
+    "latest",
+  );
+});
 
 function createSessionEventContext(overrides: Record<string, unknown> = {}) {
   return {

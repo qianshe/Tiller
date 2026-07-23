@@ -3,6 +3,7 @@ import type { SessionSummary } from "@tiller/domain-contracts";
 import type {
   AgentMessage,
   AgentToolCall,
+  SessionSubagentDetailDelta,
 } from "@tiller/shared";
 import { typedUnknown } from "../../schemas";
 import { notificationDescriptor } from "../descriptor";
@@ -17,6 +18,10 @@ export const SessionUpdateSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("session_updated"), session: typedUnknown<SessionSummary>() }),
   z.object({ kind: z.literal("timeline_batch"), batch: typedUnknown<import("@tiller/shared").SessionTimelineBatch>() }),
   z.object({ kind: z.literal("live_state"), snapshot: z.unknown() }),
+  z.object({
+    kind: z.literal("subagent_detail"),
+    delta: typedUnknown<SessionSubagentDetailDelta>(),
+  }),
 ]);
 
 export const method = "session/update" as const;

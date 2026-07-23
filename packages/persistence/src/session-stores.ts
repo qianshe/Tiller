@@ -4,6 +4,7 @@ import type {
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
+  SessionSubagentDetail,
   SessionTimelineBatch,
   SessionTimelineEntry,
   SessionUpdateRecord,
@@ -89,6 +90,16 @@ export type SessionUpdateStore = {
   remove: (sessionId: string) => void;
 };
 
+export type SessionSubagentDetailStore = {
+  get: (sessionId: string, parentToolCallId: string) => SessionSubagentDetail;
+  commitBatch: (
+    sessionId: string,
+    parentToolCallId: string,
+    batch: SessionTimelineBatch,
+  ) => void;
+  remove: (sessionId: string) => void;
+};
+
 export type SessionStores = {
   sessionStore: SessionSummaryStore;
   sessionMessageStore: SessionMessageStore;
@@ -103,6 +114,7 @@ export type SessionStores = {
   sessionUpdateStore: SessionUpdateStore;
   sessionStateStore: SessionStateStore;
   sessionApprovalStore: SessionApprovalStore;
+  sessionSubagentDetailStore: SessionSubagentDetailStore;
 };
 
 export type HelmSessionStores = SessionStores;

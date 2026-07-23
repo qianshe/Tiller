@@ -3,6 +3,7 @@ import type {
   AgentMessage,
   AgentToolCall,
   SessionTimelineEntry,
+  SessionSubagentDetail,
 } from "@tiller/shared";
 import { resolveConversationHistoryFlags } from "../history/model";
 import { PlainMessages } from "./plain-messages";
@@ -34,6 +35,8 @@ type MissionMessageTimelineProps = {
   historyStateBySession: Record<string, MessageHistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
+  onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
 };
 
 /**
@@ -55,6 +58,8 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   historyStateBySession,
   onLoadOlderMessages,
   onToggleExpandedMessage,
+  subagentDetails,
+  onToggleSubagentDetail,
 }: MissionMessageTimelineProps) {
   const loadOlderMessages = useCallback(() => {
     if (sessionId) {
@@ -83,6 +88,8 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       historyState={historyState}
       onLoadOlderMessages={loadOlderMessages}
       onToggleExpandedMessage={onToggleExpandedMessage}
+      subagentDetails={subagentDetails}
+      onToggleSubagentDetail={onToggleSubagentDetail}
     />
   );
 });

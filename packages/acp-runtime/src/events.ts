@@ -46,7 +46,26 @@ export type SessionUpdateMappingOptions = {
   provider?: AcpRuntimeProviderConfig;
   providerId?: string;
   sessionCwd?: string;
+  originTracker?: RuntimeEventOriginTracker;
 };
+
+export type RuntimeEventOriginTracker = {
+  commandOrigins: Map<string, RuntimeEventOrigin>;
+};
+
+export function createRuntimeEventOriginTracker(): RuntimeEventOriginTracker {
+  return { commandOrigins: new Map() };
+}
+
+export function clearRuntimeEventOriginTrackerSession(
+  tracker: RuntimeEventOriginTracker,
+  sessionId: string,
+) {
+  const prefix = `${sessionId}\0`;
+  for (const key of tracker.commandOrigins.keys()) {
+    if (key.startsWith(prefix)) tracker.commandOrigins.delete(key);
+  }
+}
 
 /** @internal Kept for package characterization tests; package consumers use the batch mapper. */
 export function mapSessionUpdateNotification(
@@ -89,19 +108,51 @@ export function mapSessionUpdateNotificationBatch(
   };
   const origin = resolveAdapterRuntimeEventOrigin(options.provider, adapterContext);
   const events = projectSessionUpdate(envelope, options).map((event) =>
-    attachRuntimeEventOrigin(event, origin),
+    attachRuntimeEventOrigin(envelope.sessionId, event, origin, options.originTracker),
   );
   return events.length ? { sessionId: envelope.sessionId, events } : null;
 }
 
 function attachRuntimeEventOrigin(
+  sessionId: string,
   event: SessionRuntimeEvent,
   origin: RuntimeEventOrigin | undefined,
+  tracker: RuntimeEventOriginTracker | undefined,
 ): SessionRuntimeEvent {
-  if (!origin || (event.type !== "message" && event.type !== "tool-call")) {
+  const commandIds = event.type === "command-output"
+    ? [event.chunk.commandId]
+    : event.type === "tool-call"
+      ? [event.toolCall.commandId, event.toolCall.id].filter((value): value is string => Boolean(value))
+      : [];
+  const effectiveOrigin = origin ?? commandIds
+    .map((commandId) => tracker?.commandOrigins.get(originTrackerKey(sessionId, commandId)))
+    .find((candidate): candidate is RuntimeEventOrigin => Boolean(candidate));
+  if (effectiveOrigin && tracker) {
+    for (const commandId of commandIds) {
+      tracker.commandOrigins.set(originTrackerKey(sessionId, commandId), effectiveOrigin);
+    }
+  }
+  if (!effectiveOrigin || (event.type !== "message" && event.type !== "tool-call" && event.type !== "command-output")) {
     return event;
   }
-  return { ...event, origin };
+  return { ...event, origin: effectiveOrigin };
+}
+
+/**
+ * Applies only an origin previously established for the same session/tool ID.
+ * Transcript observers use this to enrich delayed projections without making
+ * a new subagent inference.
+ */
+export function attachTrackedRuntimeEventOrigin(
+  sessionId: string,
+  event: SessionRuntimeEvent,
+  tracker: RuntimeEventOriginTracker,
+): SessionRuntimeEvent {
+  return attachRuntimeEventOrigin(sessionId, event, undefined, tracker);
+}
+
+function originTrackerKey(sessionId: string, commandId: string) {
+  return `${sessionId}\0${commandId}`;
 }
 
 function projectSessionUpdate(

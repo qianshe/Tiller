@@ -46,6 +46,7 @@ test("session/update accepts only canonical state, timeline, lifecycle, and live
     "session_updated",
     "timeline_batch",
     "live_state",
+    "subagent_detail",
   ]) {
     sessionUpdate.ParamsSchema.parse({
       sessionId: "s1",
@@ -55,6 +56,8 @@ test("session/update accepts only canonical state, timeline, lifecycle, and live
           ? { kind, batch: { replace: false, deliverySequence: 1, lastSequence: 1, entries: [] } }
           : kind === "live_state"
             ? { kind, snapshot: {} }
+            : kind === "subagent_detail"
+              ? { kind, delta: {} }
             : kind === "agent_message"
               ? { kind, message: {} }
               : { kind, toolCall: {} },

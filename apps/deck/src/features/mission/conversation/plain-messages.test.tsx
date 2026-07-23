@@ -2896,6 +2896,322 @@ test("plain messages renders subagents as standalone timeline rows", () => {
   assert.ok(html.indexOf("准备委派。") < html.indexOf("spawn_agents_on_csv"));
 });
 
+test("plain messages renders persisted subagent tools and replies inside the root row", () => {
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-subagent-detail",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "completed",
+      input: JSON.stringify({
+        description: "Explore repository",
+        prompt: "先读取 README，再执行 git status --short",
+      }),
+      output: "Root envelope that must not replace the generated text",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:03.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-subagent-detail"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-subagent-detail",
+        throughSequence: 3,
+        entries: [
+          {
+            id: "subagent-prompt:tool-subagent-detail",
+            kind: "user_message",
+            message: {
+              id: "subagent-prompt:tool-subagent-detail",
+              role: "user",
+              text: "先读取 README，再执行 git status --short",
+              timestamp: "2026-07-22T00:00:00.000Z",
+              sequence: 0,
+            },
+            timestamp: "2026-07-22T00:00:00.000Z",
+            updatedAt: "2026-07-22T00:00:00.000Z",
+            sequence: 0,
+          },
+          {
+            id: "reply-1",
+            kind: "assistant_message",
+            chunks: [
+              {
+                id: "reply-1:thinking",
+                kind: "thinking",
+                text: "先分析 README",
+                title: "Thinking",
+                status: "completed",
+                timestamp: "2026-07-22T00:00:01.000Z",
+                updatedAt: "2026-07-22T00:00:01.000Z",
+                sequence: 1,
+              },
+              {
+                id: "reply-1:content",
+                kind: "content",
+                text: "Subagent final reply",
+                timestamp: "2026-07-22T00:00:03.000Z",
+                sequence: 3,
+              },
+            ],
+            timestamp: "2026-07-22T00:00:01.000Z",
+            updatedAt: "2026-07-22T00:00:03.000Z",
+            sequence: 1,
+          },
+          {
+            id: "tool:read-1",
+            kind: "tool_call",
+            toolCall: {
+              id: "read-1",
+              kind: "read",
+              title: "Read README.md",
+              status: "completed",
+              output: "README body",
+              timestamp: "2026-07-22T00:00:02.000Z",
+              updatedAt: "2026-07-22T00:00:02.000Z",
+              sequence: 2,
+            },
+            timestamp: "2026-07-22T00:00:02.000Z",
+            updatedAt: "2026-07-22T00:00:02.000Z",
+            sequence: 2,
+          },
+        ],
+      },
+    },
+  });
+
+  assert.match(html, /README\.md/);
+  assert.match(html, /README body/);
+  assert.match(html, /先分析 README/);
+  assert.match(html, /Subagent final reply/);
+  assert.match(html, /先读取 README，再执行 git status --short/);
+  assert.ok(html.indexOf("先读取 README") < html.indexOf("先分析 README"));
+  assert.ok(html.indexOf("先分析 README") < html.indexOf("README.md"));
+  assert.ok(html.indexOf("README.md") < html.indexOf("Subagent final reply"));
+  assert.doesNotMatch(html, /Root envelope that must not replace the generated text/);
+  assert.match(html, /data-subagent-conversation/);
+  assert.doesNotMatch(html, /plain-tool-group-content/);
+});
+
+test("plain messages renders a subagent timeline without root-output concatenation", () => {
+  const prompt = "读取项目说明并检查工作区状态";
+  const finalReply = "README 已读取，git status 已完成。";
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-claude-subagent-fallback-reply",
+      kind: "subagent",
+      title: "读取 README 并执行 git status",
+      status: "completed",
+      input: JSON.stringify({
+        description: "读取 README 并执行 git status",
+        prompt,
+      }),
+      output: "Root output must not be rendered inside the detail",
+      timestamp: "2026-07-23T00:00:00.000Z",
+      updatedAt: "2026-07-23T00:00:03.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-claude-subagent-fallback-reply"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-claude-subagent-fallback-reply",
+        throughSequence: 2,
+        entries: [
+          {
+            id: "subagent-prompt:tool-claude-subagent-fallback-reply",
+            kind: "user_message",
+            message: {
+              id: "subagent-prompt:tool-claude-subagent-fallback-reply",
+              role: "user",
+              text: prompt,
+              timestamp: "2026-07-23T00:00:00.000Z",
+              sequence: 0,
+            },
+            timestamp: "2026-07-23T00:00:00.000Z",
+            updatedAt: "2026-07-23T00:00:00.000Z",
+            sequence: 0,
+          },
+          {
+            id: "tool:read-1",
+            kind: "tool_call",
+            toolCall: {
+              id: "read-1",
+              kind: "read",
+              title: "Read README.md",
+              status: "completed",
+              input: JSON.stringify({ file_path: "docs/README.md" }),
+              output: "README body",
+              timestamp: "2026-07-23T00:00:01.000Z",
+              updatedAt: "2026-07-23T00:00:01.000Z",
+            },
+            timestamp: "2026-07-23T00:00:01.000Z",
+            updatedAt: "2026-07-23T00:00:01.000Z",
+            sequence: 1,
+          },
+          {
+            id: "tool:shell-1",
+            kind: "tool_call",
+            toolCall: {
+              id: "shell-1",
+              kind: "shell",
+              title: "Run git status",
+              status: "completed",
+              input: JSON.stringify({ command: "git status --short" }),
+              output: "clean",
+              timestamp: "2026-07-23T00:00:02.000Z",
+              updatedAt: "2026-07-23T00:00:02.000Z",
+            },
+            timestamp: "2026-07-23T00:00:02.000Z",
+            updatedAt: "2026-07-23T00:00:02.000Z",
+            sequence: 2,
+          },
+          {
+            id: "reply-1",
+            kind: "assistant_message",
+            chunks: [{
+              id: "reply-1:content",
+              kind: "content",
+              text: finalReply,
+              timestamp: "2026-07-23T00:00:03.000Z",
+              sequence: 3,
+              streaming: false,
+              streamMode: "snapshot",
+            }],
+            timestamp: "2026-07-23T00:00:03.000Z",
+            updatedAt: "2026-07-23T00:00:03.000Z",
+            sequence: 3,
+          },
+        ],
+      },
+    },
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /docs\/README\.md/);
+  assert.match(html, /git status --short/);
+  assert.match(html, /README 已读取，git status 已完成。/);
+  assert.equal(html.split(prompt).length - 1, 1);
+  assert.equal(html.split(finalReply).length - 1, 1);
+  assert.ok(html.indexOf(prompt) < html.indexOf("docs/README.md"));
+  assert.ok(html.indexOf("git status --short") < html.indexOf(finalReply));
+  assert.doesNotMatch(html, /Root output must not be rendered/);
+  assert.doesNotMatch(html, /plain-tool-group/);
+  assert.match(
+    html,
+    /class="border-t border-border-ghost\/70 pb-0\.5 pt-1\.5"><details class="plain-tool-call/,
+  );
+  assert.match(
+    html,
+    /class="pb-0\.5 pt-0\.5"><details class="plain-tool-call/,
+  );
+  assert.match(html, /plain-subagent-content max-h-\[min\(22rem,55vh\)\] min-w-0 overflow-y-auto overscroll-contain pr-1 pt-1/);
+  assert.match(html, /plain-subagent-content[^>]*data-mission-swipe-lock="true"/);
+});
+
+test("plain messages keeps the root output hidden while subagent detail is loading", () => {
+  const html = renderPlainMessages({
+    items: [],
+    toolCalls: [{
+      id: "tool-subagent-loading",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "running",
+      input: JSON.stringify({
+        description: "Explore repository",
+        prompt: "先读取 README，再执行 git status --short",
+      }),
+      output: "Root envelope that must stay out of the loading state",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-subagent-loading"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-subagent-loading",
+        throughSequence: 0,
+        entries: [],
+        loading: true,
+      },
+    },
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /正在加载 Subagent 会话/);
+  assert.doesNotMatch(html, /先读取 README，再执行 git status --short/);
+  assert.doesNotMatch(html, /Root envelope that must stay out of the loading state/);
+});
+
+test("plain messages primes the loading state before a completed subagent is expanded", () => {
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-subagent-before-expand",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "completed",
+      output: "Root reply must not flash before the detail request starts",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    }],
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /正在加载 Subagent 会话/);
+  assert.doesNotMatch(html, /Root reply must not flash before the detail request starts/);
+});
+
+test("plain messages falls back to the root reply only after an empty detail snapshot loads", () => {
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-subagent-empty-detail",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "completed",
+      output: "Root reply retained for an empty subagent conversation",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-subagent-empty-detail"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-subagent-empty-detail",
+        throughSequence: 0,
+        entries: [],
+        loading: false,
+        failed: false,
+      },
+    },
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /Root reply retained for an empty subagent conversation/);
+  assert.doesNotMatch(html, /正在加载 Subagent 会话/);
+});
+
+test("plain messages reports detail load failures without rendering the root reply", () => {
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-subagent-failed-detail",
+      kind: "subagent",
+      title: "Explore repository",
+      status: "completed",
+      output: "Root reply must not mask a detail request failure",
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-subagent-failed-detail"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-subagent-failed-detail",
+        throughSequence: 0,
+        entries: [],
+        failed: true,
+      },
+    },
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /Subagent 会话加载失败，收起后可重试/);
+  assert.doesNotMatch(html, /Root reply must not mask a detail request failure/);
+});
+
 test("plain messages keeps subagents out of adjacent normal tool groups", () => {
   const html = renderPlainMessages({
     items: [
@@ -2998,10 +3314,10 @@ test("plain messages surfaces subagent type and task summary when available", ()
   assert.match(html, /运行中/);
   assert.match(html, /<summary class="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost \[\&amp;::-webkit-details-marker\]:hidden"/);
   assert.match(html, /class="flex min-w-0 flex-1 items-center gap-2"/);
-  assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center"/);
-  assert.match(html, /class="inline-flex h-4 shrink-0 items-center font-medium leading-none"/);
+  assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-amber-500\/10/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center font-medium leading-none text-amber-700/);
   assert.match(html, /class="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground\/70"/);
-  assert.match(html, /class="inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0\.5 text-2xs font-semibold leading-none/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0\.5 text-2xs font-semibold leading-none bg-accent/);
   assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground\/60 transition-transform duration-150 rotate-180"/);
 });
 
@@ -3348,8 +3664,8 @@ test("plain messages removes vertical guide lines from thinking, subagent, and t
     ],
   });
 
-  assert.match(html, /class="plain-thinking-content pt-1 text-\[12\.5px\]/);
-  assert.match(html, /class="plain-subagent-content pt-1 text-\[12\.5px\]/);
+  assert.match(html, /class="plain-thinking min-w-0 w-full/);
+  assert.match(html, /class="plain-subagent-content max-h-\[min\(22rem,55vh\)\]/);
   assert.match(html, /plain-thinking[\s\S]*?bg-violet-500\/10[\s\S]*?text-violet-700/);
   assert.match(html, /plain-tool-group[\s\S]*?bg-sky-500\/10[\s\S]*?text-sky-700/);
   assert.match(html, /plain-subagent[\s\S]*?bg-amber-500\/10[\s\S]*?text-amber-700/);

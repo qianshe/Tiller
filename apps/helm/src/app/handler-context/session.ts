@@ -22,6 +22,7 @@ export type HandlerSessionContext = Pick<
   | "sessionTimelineFlushScheduler"
   | "sessionLiveStateStore"
   | "sessionApprovalStateStore"
+  | "sessionSubagentDetailService"
   | "sessionRuntimeEventState"
   | "sessionUpdateStore"
   | "liveMessageBuffer"
@@ -73,6 +74,7 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   sessionTimelineFlushScheduler: unknown;
   sessionLiveStateStore?: unknown;
   sessionApprovalStateStore?: unknown;
+  sessionSubagentDetailService?: unknown;
   sessionRuntimeEventState?: unknown;
   sessionUpdateStore: unknown;
   liveMessageBuffer: unknown;
@@ -135,6 +137,7 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         sessionTimelineFlushScheduler: options.sessionTimelineFlushScheduler,
         sessionLiveStateStore: options.sessionLiveStateStore,
         sessionApprovalStateStore: options.sessionApprovalStateStore,
+        sessionSubagentDetailService: options.sessionSubagentDetailService,
         sessionRuntimeEventState: options.sessionRuntimeEventState,
         sessionUpdateStore: options.sessionUpdateStore,
         liveMessageBuffer: options.liveMessageBuffer,

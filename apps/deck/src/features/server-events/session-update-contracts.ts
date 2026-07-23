@@ -4,6 +4,7 @@ import type {
   RuntimeSessionSummary,
   SessionLiveStateSnapshot,
   SessionTimelineEntry,
+  SessionSubagentDetailDelta,
 } from "@tiller/shared";
 import {
   isCanonicalConversationUpdateKind as isDomainCanonicalConversationUpdateKind,
@@ -17,7 +18,8 @@ export type DeckSessionRealtimeUpdate =
       AgentToolCall,
       RuntimeSessionSummary,
       SessionTimelineEntry,
-      SessionLiveStateSnapshot
+      SessionLiveStateSnapshot,
+      SessionSubagentDetailDelta
     >;
 
 export type SessionUpdateParams = {

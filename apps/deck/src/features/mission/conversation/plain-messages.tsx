@@ -3,12 +3,14 @@ import type {
   AgentMessage,
   AgentToolCall,
   SessionTimelineEntry,
+  SessionSubagentDetail,
 } from "@tiller/shared";
 import {
   normalizeComparableReplayText,
   isTranscriptEventEntry,
   looksLikeCompactionLifecycleMessage,
   looksLikeContinuationSummary,
+  sortSessionTimelineEntries,
 } from "@tiller/shared";
 import { normalizeLocalCommandMessageText } from "../../../shared/utils/local-command-message";
 import { cn } from "../../../shared/utils/cn";
@@ -19,7 +21,13 @@ import {
   sortAgentMessagesByTimeline,
   type ConversationToolCallItem,
 } from "../../logbook";
-import { PlainMessageItem, PlainSubagentItem, PlainThinkingItem, PlainToolGroupItem } from "./plain-message-items";
+import {
+  PlainMessageItem,
+  PlainSubagentItem,
+  PlainThinkingItem,
+  PlainToolCallItem,
+  PlainToolGroupItem,
+} from "./plain-message-items";
 import { TranscriptEventRow } from "./transcript-event-row";
 
 export const INITIAL_PLAIN_MESSAGE_RENDER_LIMIT = 96;
@@ -48,6 +56,8 @@ type PlainMessagesProps = {
   };
   onLoadOlderMessages: () => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  subagentDetails?: Record<string, (SessionSubagentDetail & { loading?: boolean; failed?: boolean }) | undefined>;
+  onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
 };
 
 export function PlainMessages({
@@ -66,6 +76,8 @@ export function PlainMessages({
   historyState,
   onLoadOlderMessages,
   onToggleExpandedMessage,
+  subagentDetails = {},
+  onToggleSubagentDetail,
 }: PlainMessagesProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const localScrollSnapshotRef = useRef<ScrollSnapshot | null>(null);
@@ -371,12 +383,28 @@ export function PlainMessages({
             </div>
           );
         }
+        if (renderItem.kind === "tool") {
+          return (
+            <div key={renderItem.renderKey} className={spacingClassName}>
+              <PlainToolCallItem item={renderItem.toolCall} />
+            </div>
+          );
+        }
         if (renderItem.kind === "subagent") {
           return (
             <div key={renderItem.renderKey} className={spacingClassName}>
               <PlainSubagentItem
                 item={renderItem.toolCall}
                 hasNewerContent={index < renderMessages.length - 1}
+                detail={sessionId ? subagentDetails[`${sessionId}\0${renderItem.toolCall.id}`] : undefined}
+                detailContent={sessionId ? (
+                  <PlainSubagentConversation
+                    detail={subagentDetails[`${sessionId}\0${renderItem.toolCall.id}`]}
+                  />
+                ) : undefined}
+                onToggleDetail={sessionId && onToggleSubagentDetail
+                  ? (open) => onToggleSubagentDetail(sessionId, renderItem.toolCall.id, open)
+                  : undefined}
               />
             </div>
           );
@@ -408,6 +436,64 @@ export function PlainMessages({
   );
 }
 
+function PlainSubagentConversation({
+  detail,
+}: {
+  detail?: SessionSubagentDetail & { loading?: boolean; failed?: boolean };
+}) {
+  if (!detail?.entries.length) return null;
+  const items = resolvePlainConversationDisplayItems({
+    displayMessages: [],
+    timelineItems: sortSessionTimelineEntries(detail.entries),
+    showThinking: true,
+    thinkingToolCalls: [],
+    toolCalls: [],
+    groupTools: false,
+  });
+  const renderItems = resolvePlainMessageRenderItems(items);
+  return (
+    <div className="grid" data-subagent-conversation>
+      {renderItems.map((item, index) => {
+        const previousKind = renderItems[index - 1]?.kind;
+        const startsSection = index > 0 &&
+          !(item.kind === "tool" && previousKind === "tool");
+        const className = item.kind === "tool"
+          ? `${startsSection ? "border-t border-border-ghost/70 " : ""}pb-0.5 ${startsSection ? "pt-1.5" : "pt-0.5"}`
+          : `${startsSection ? "border-t border-border-ghost/70 pt-2 " : ""}pb-2`;
+        if (item.kind === "message") {
+          return (
+            <div key={item.renderKey} className={className}>
+              <PlainMessageItem
+                isExpanded={false}
+                message={item.message}
+                onToggleExpandedMessage={() => undefined}
+              />
+            </div>
+          );
+        }
+        if (item.kind === "thinking") {
+          return (
+            <div key={item.renderKey} className={className}>
+              <PlainThinkingItem
+                item={item.toolCall}
+                hasNewerContent={index < renderItems.length - 1}
+              />
+            </div>
+          );
+        }
+        if (item.kind === "tool") {
+          return (
+            <div key={item.renderKey} className={className}>
+              <PlainToolCallItem item={item.toolCall} />
+            </div>
+          );
+        }
+        return null;
+      })}
+    </div>
+  );
+}
+
 type ScrollSnapshot = {
   scrollHeight: number;
   scrollTop: number;
@@ -423,6 +509,7 @@ type PlainConversationItem =
   | { kind: "message"; sourceIndex?: number; timestamp: string; sequence?: number; message: AgentMessage }
   | { kind: "thinking"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: AgentToolCall }
   | { kind: "subagent"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: ConversationToolCallItem }
+  | { kind: "tool"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: ConversationToolCallItem }
   | { kind: "tool-group"; sourceIndex?: number; timestamp: string; sequence?: number; group: ConversationToolCallItem[] }
   | { kind: "transcript-event"; sourceIndex?: number; timestamp: string; sequence?: number; entry: Extract<SessionTimelineEntry, { kind: "context_compaction" | "history_gap" }> };
 
@@ -439,6 +526,11 @@ export type PlainMessageRenderItem =
       kind: "thinking";
       renderKey: string;
       toolCall: AgentToolCall;
+    }
+  | {
+      kind: "tool";
+      renderKey: string;
+      toolCall: ConversationToolCallItem;
     }
   | {
       group: ConversationToolCallItem[];
@@ -513,6 +605,16 @@ export function resolvePlainMessageRenderItems(
         toolCall: item.toolCall,
       };
     }
+    if (item.kind === "tool") {
+      const baseKey = `tool-${item.toolCall.id}`;
+      const seenCount = seenKeys.get(baseKey) ?? 0;
+      seenKeys.set(baseKey, seenCount + 1);
+      return {
+        kind: "tool",
+        renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
+        toolCall: item.toolCall,
+      };
+    }
     if (item.kind === "tool-group") {
       const baseKey = `tool-group-${item.group[0]?.id}`;
       const seenCount = seenKeys.get(baseKey) ?? 0;
@@ -572,6 +674,14 @@ function resolvePlainMessageRenderSignaturePart(item: PlainMessageRenderItem) {
     );
   }
   if (item.kind === "subagent") {
+    return resolveToolRenderSignaturePart(
+      item.renderKey,
+      item.toolCall,
+      item.toolCall.text,
+      item.toolCall.input,
+    );
+  }
+  if (item.kind === "tool") {
     return resolveToolRenderSignaturePart(
       item.renderKey,
       item.toolCall,
@@ -797,6 +907,7 @@ export function resolvePlainConversationDisplayItems({
   showThinking,
   thinkingToolCalls,
   toolCalls,
+  groupTools = true,
 }: {
   sessionId?: string | null;
   displayMessages: AgentMessage[];
@@ -804,6 +915,7 @@ export function resolvePlainConversationDisplayItems({
   showThinking: boolean;
   thinkingToolCalls: AgentToolCall[];
   toolCalls: AgentToolCall[];
+  groupTools?: boolean;
 }) {
   if (!timelineItems.length) {
     return buildPlainConversationItems(
@@ -811,10 +923,15 @@ export function resolvePlainConversationDisplayItems({
       showThinking ? thinkingToolCalls : [],
       toolCalls,
       showThinking,
+      groupTools,
     );
   }
 
-  const canonicalItems = buildPlainConversationItemsFromTimeline(timelineItems, showThinking);
+  const canonicalItems = buildPlainConversationItemsFromTimeline(
+    timelineItems,
+    showThinking,
+    groupTools,
+  );
   const canonicalToolCallIds = new Set(
     timelineItems.flatMap((entry) => {
       if (entry.kind === "tool_call") {
@@ -826,18 +943,20 @@ export function resolvePlainConversationDisplayItems({
       return [];
     }),
   );
-  const liveToolItems = groupToolCalls(
+  const liveToolCalls = groupToolCalls(
     toolCalls.filter((toolCall) =>
       toolCall.kind !== "think" && !canonicalToolCallIds.has(toolCall.id)
     ),
-  ).map((toolCall, index) =>
-    toPlainToolConversationItem(toolCall, canonicalItems.length + index)
+  );
+  const liveToolItems = liveToolCalls.map((toolCall, index) =>
+    toPlainToolConversationItem(toolCall, canonicalItems.length + index, !groupTools)
   );
   const canonicalAndLiveItems = liveToolItems.length
-    ? mergeAdjacentToolItems(
+    ? maybeMergeAdjacentToolItems(
         mergeAdjacentThinkingItems(
           [...canonicalItems, ...liveToolItems].sort(comparePlainConversationItems),
         ),
+        groupTools,
       )
     : canonicalItems;
   const optimisticMessages = resolveOptimisticTimelineSupplementMessages(
@@ -853,11 +972,13 @@ export function resolvePlainConversationDisplayItems({
     [],
     [],
     showThinking,
+    groupTools,
   );
-  return mergeAdjacentToolItems(
+  return maybeMergeAdjacentToolItems(
     mergeAdjacentThinkingItems(
       [...canonicalAndLiveItems, ...optimisticItems],
     ),
+    groupTools,
   );
 }
 
@@ -1022,6 +1143,7 @@ function buildPlainConversationItems(
   thinkingToolCalls: AgentToolCall[],
   toolCalls: AgentToolCall[],
   showThinking: boolean,
+  groupTools = true,
 ): PlainConversationItem[] {
   const visibleToolCalls = toolCalls.filter((toolCall) => toolCall.kind !== "think");
   const messageItems = messages.flatMap<PlainConversationItem>((message, index) => {
@@ -1057,17 +1179,20 @@ function buildPlainConversationItems(
     sequence: toolCall.sequence,
     toolCall,
   }));
-  const toolItems = groupToolCalls(visibleToolCalls).map((toolCall, index) => toPlainToolConversationItem(
+  const normalizedToolCalls = groupToolCalls(visibleToolCalls);
+  const toolItems = normalizedToolCalls.map((toolCall, index) => toPlainToolConversationItem(
     toolCall,
     messages.length + thinkingItems.length + index,
+    !groupTools,
   ));
   const sorted = [...messageItems, ...thinkingItems, ...toolItems].sort(comparePlainConversationItems);
-  return mergeAdjacentToolItems(mergeAdjacentThinkingItems(sorted));
+  return maybeMergeAdjacentToolItems(mergeAdjacentThinkingItems(sorted), groupTools);
 }
 
 function buildPlainConversationItemsFromTimeline(
   timelineItems: SessionTimelineEntry[],
   showThinking: boolean,
+  groupTools = true,
 ): PlainConversationItem[] {
   const items: PlainConversationItem[] = [];
   const hasCompactionTranscriptEvent = timelineItems.some(
@@ -1176,6 +1301,7 @@ function buildPlainConversationItemsFromTimeline(
             sequence: entry.sequence,
           },
           sourceIndex,
+          !groupTools,
         ));
         sourceIndex += 1;
       }
@@ -1183,8 +1309,9 @@ function buildPlainConversationItemsFromTimeline(
   }
 
   const orderedItems = [...items].sort(compareSequencedPlainConversationItems);
-  return mergeAdjacentToolItems(
+  return maybeMergeAdjacentToolItems(
     mergeAdjacentThinkingItems(mergeAdjacentMessageItems(orderedItems)),
+    groupTools,
   );
 }
 
@@ -1213,7 +1340,17 @@ function compareSequencedPlainConversationItems(
 function toPlainToolConversationItem(
   toolCall: ConversationToolCallItem,
   sourceIndex: number,
+  flat = false,
 ): PlainConversationItem {
+  if (flat) {
+    return {
+      kind: "tool",
+      sourceIndex,
+      timestamp: toolCall.timestamp,
+      sequence: toolCall.sequence,
+      toolCall,
+    };
+  }
   if (isSubagentToolCall(toolCall)) {
     return {
       kind: "subagent",
@@ -1230,6 +1367,13 @@ function toPlainToolConversationItem(
     sequence: toolCall.sequence,
     group: [toolCall],
   };
+}
+
+function maybeMergeAdjacentToolItems(
+  items: PlainConversationItem[],
+  groupTools: boolean,
+) {
+  return groupTools ? mergeAdjacentToolItems(items) : items;
 }
 
 function isSubagentToolCall(toolCall: ConversationToolCallItem) {
@@ -1480,7 +1624,7 @@ function plainConversationKindRank(item: PlainConversationItem) {
   if (item.kind === "subagent") {
     return 1;
   }
-  if (item.kind === "tool-group") {
+  if (item.kind === "tool" || item.kind === "tool-group") {
     return 2;
   }
   return 3;

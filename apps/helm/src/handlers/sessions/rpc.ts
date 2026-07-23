@@ -30,6 +30,7 @@ import { repairTimeline } from "./timeline-repair-rpc";
 import {
   checkResume,
   getArtifacts,
+  getSubagentDetail,
   listLegacyEvidence,
   listSessions,
   listTimeline,
@@ -76,6 +77,11 @@ export async function handleSessionRpcRequest(
     case "session/get_artifacts":
       return getArtifacts(
         params as { sessionId: string; limit?: number; before?: string },
+        context,
+      );
+    case "session/get_subagent_detail":
+      return getSubagentDetail(
+        params as { sessionId: string; parentToolCallId: string },
         context,
       );
     case "session/check_resume":
@@ -328,6 +334,7 @@ async function cleanupSession(params: { sessionId: string }, context: HelmHandle
     );
     throw new Error("Session not found");
   }
+  context.sessionSubagentDetailService?.beginDelete(summary.id);
   const provider =
     record?.agent ?? context.resolveProviderById(summary.agentId, context.getAgents());
   let remoteResult;

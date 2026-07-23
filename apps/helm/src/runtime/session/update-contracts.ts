@@ -3,6 +3,7 @@ import type {
   AgentToolCall,
   RuntimeSessionSummary,
   SessionLiveStateSnapshot,
+  SessionSubagentDetailDelta,
   SessionTimelineBatch,
   SessionTimelineEntry,
 } from "@tiller/shared";
@@ -37,5 +38,6 @@ export type SessionRealtimeUpdate = DomainSessionRealtimeUpdate<
   AgentToolCall,
   RuntimeSessionSummary,
   SessionTimelineEntry,
-  SessionLiveStateSnapshot
+  SessionLiveStateSnapshot,
+  SessionSubagentDetailDelta
 >;

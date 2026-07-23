@@ -71,6 +71,26 @@ export function handleRuntimeEvent(
   if (!context.sessions.has(sessionId) && !context.sessionStore.get(sessionId)) {
     return;
   }
+  if (
+    (event.type === "message" || event.type === "tool-call" || event.type === "command-output") &&
+    event.origin?.scope === "subagent"
+  ) {
+    context.sessionSubagentDetailService?.handleEvent(
+      sessionId,
+      event.origin.parentToolCallId,
+      event,
+    );
+    return;
+  }
+  if (event.type === "tool-call" && event.toolCall.kind === "subagent") {
+    context.sessionSubagentDetailService?.registerRoot(sessionId, event.toolCall);
+  }
+  if (
+    event.type === "status" &&
+    (event.status === "idle" || event.status === "error" || event.status === "cancelled")
+  ) {
+    context.sessionSubagentDetailService?.flush(sessionId);
+  }
   assertCanonicalTimelinePipeline(context);
   ensureLiveEventSequenceForSession(sessionId, context);
   if (shouldIgnoreLateRuntimeEvent(sessionId, event, context)) {

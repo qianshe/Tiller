@@ -36,4 +36,5 @@ export type { SessionStateStore } from "./session-state-store";
 export type { SessionApprovalStore } from "./session-approval-store";
 export { createSqliteSessionApprovalStore } from "./sqlite/session-approval-store";
 export { createSqliteSessionUpdateStore } from "./sqlite/session-update-store";
+export { createSqliteSessionSubagentDetailStore } from "./sqlite/subagent-detail-store";
 export { createSqliteTimelineBlockStore } from "./sqlite/timeline-block-store";

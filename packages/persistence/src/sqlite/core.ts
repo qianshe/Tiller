@@ -197,6 +197,26 @@ export function openSessionDatabase(dbPath: string) {
       payload_json TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS session_subagent_details(
+      session_id TEXT NOT NULL,
+      parent_tool_call_id TEXT NOT NULL,
+      revision INTEGER NOT NULL,
+      through_sequence INTEGER NOT NULL,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY(session_id, parent_tool_call_id)
+    );
+
+    CREATE TABLE IF NOT EXISTS session_subagent_entries(
+      session_id TEXT NOT NULL,
+      parent_tool_call_id TEXT NOT NULL,
+      entry_kind TEXT NOT NULL,
+      entry_id TEXT NOT NULL,
+      first_sequence INTEGER NOT NULL,
+      updated_sequence INTEGER NOT NULL,
+      payload_json TEXT NOT NULL,
+      PRIMARY KEY(session_id, parent_tool_call_id, entry_kind, entry_id)
+    );
+
     CREATE INDEX IF NOT EXISTS idx_session_summaries_updated_at ON session_summaries(updated_at);
     CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_tool_calls_page ON session_tool_calls(session_id, updated_at, id);
@@ -213,6 +233,7 @@ export function openSessionDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_session_diff_bodies_sha256 ON session_diff_bodies(sha256);
     CREATE INDEX IF NOT EXISTS idx_session_diffs_session ON session_diffs(session_id);
     CREATE INDEX IF NOT EXISTS idx_session_plans_updated_at ON session_plans(updated_at);
+    CREATE INDEX IF NOT EXISTS idx_session_subagent_entries_order ON session_subagent_entries(session_id, parent_tool_call_id, first_sequence);
   `);
   ensureSessionMessagePositions(db);
   db.exec("DROP INDEX IF EXISTS idx_session_messages_page");
