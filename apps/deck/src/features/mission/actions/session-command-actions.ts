@@ -2,6 +2,7 @@ import type {
   AcpAgentProvider,
   AgentPromptContent,
   AgentPromptImageContent,
+  MissionPromptContextItem,
   PermissionDecision,
   PermissionRequest,
   ProjectSummary,
@@ -40,6 +41,7 @@ type MutableRef<T> = { current: T };
 type UseSessionCommandActionsOptions = {
   prompt: string;
   promptImages: AgentPromptImageContent[];
+  draftContexts: MissionPromptContextItem[];
   socketRef: MutableRef<WebSocket | null>;
   rpcClientRef: MutableRef<DeckRpcClient | null>;
   setImagePasteNotice: (value: string) => void;
@@ -67,6 +69,8 @@ type UseSessionCommandActionsOptions = {
   isMobile?: boolean;
   setPrompt: Dispatch<SetStateAction<string>>;
   setPromptImages: Dispatch<SetStateAction<AgentPromptImageContent[]>>;
+  clearDraftContexts: () => void;
+  setCommandRetentionNotice?: (value: string | null) => void;
   createClientUserMessageId: (sessionId: string) => string;
   appendUserMessage: (
     sessionId: string,
@@ -96,6 +100,7 @@ function mergeWorktreeOptions(
 export function useSessionCommandActions({
   prompt,
   promptImages,
+  draftContexts,
   socketRef,
   rpcClientRef,
   setImagePasteNotice,
@@ -123,6 +128,8 @@ export function useSessionCommandActions({
   isMobile = false,
   setPrompt,
   setPromptImages,
+  clearDraftContexts,
+  setCommandRetentionNotice,
   createClientUserMessageId,
   appendUserMessage,
   permissionRequests,
@@ -230,6 +237,9 @@ export function useSessionCommandActions({
       createSession,
       setPrompt,
       setPromptImages,
+      clearDraftContexts,
+      setCommandRetentionNotice,
+      draftContexts,
       createClientUserMessageId,
       appendUserMessage,
       dispatch,

@@ -1,6 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createSession } from "./session-actions.js";
+
+const sessionActionsSource = readFileSync(
+  resolve(dirname(fileURLToPath(import.meta.url)), "./session-actions.ts"),
+  "utf8",
+);
 
 (globalThis as any).WebSocket ??= { OPEN: 1 };
 
@@ -309,4 +317,10 @@ test("createSession allows prompts for different draft scopes concurrently", asy
   resolveClaudePrompt({});
   await new Promise<void>((resolve) => setImmediate(resolve));
   assert.equal(pendingScopesRef.current.size, 0);
+});
+
+test("submitPrompt threads draft contexts and retention setters into prompt submission", () => {
+  assert.match(sessionActionsSource, /draftContexts/);
+  assert.match(sessionActionsSource, /clearDraftContexts/);
+  assert.match(sessionActionsSource, /setCommandRetentionNotice/);
 });
