@@ -15,7 +15,7 @@ export function ToolCallDiffPreview({
     >
       {diff ? (
         <div className="max-h-56 min-w-0 overflow-y-auto [&_.mission-diff-line]:px-2 [&_.mission-diff-patch]:text-[12px]">
-          {renderDiffPatch(diff.patch)}
+          {renderDiffPatch({ patch: diff.patch })}
         </div>
       ) : (
         <div className="tool-call-diff-empty px-3 py-2.5 text-xs text-muted-foreground">

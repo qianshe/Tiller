@@ -28,7 +28,7 @@ test("diff patch renders hunk lines with semantic colors and horizontal scrollin
     "+const newValue = 2;",
   ].join("\n");
 
-  const html = renderToStaticMarkup(renderDiffPatch(patch));
+  const html = renderToStaticMarkup(renderDiffPatch({ patch }));
 
   assert.match(html, /max-w-full/);
   assert.match(html, /min-w-0/);
@@ -65,6 +65,25 @@ test("diff tree compacts single-directory chains", () => {
   assert.equal(apps?.path, "apps");
   assert.equal(compactDeck?.path, "apps/deck/src/features/mission");
   assert.equal(compactDeck?.count, 2);
+});
+
+test("renderDiffPatch exposes selectable patch lines when an onSelectRange handler is provided", () => {
+  const html = renderToStaticMarkup(
+    renderDiffPatch({
+      patch: [
+        "@@ -1,2 +1,3 @@",
+        " const keep = true;",
+        "-const oldValue = 1;",
+        "+const newValue = 2;",
+      ].join("\n"),
+      selectedLineKeys: new Set<string>(),
+      onSelectRange: () => undefined,
+    }),
+  );
+
+  assert.match(html, /data-diff-line-key=/);
+  assert.match(html, /aria-pressed="false"/);
+  assert.match(html, /<button/);
 });
 
 test("diff stats color additions and deletions by semantic value", () => {

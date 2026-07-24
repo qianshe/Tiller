@@ -1,5 +1,5 @@
-import type { FileDiffSummary } from "@tiller/shared";
-import { useEffect, useState, type CSSProperties } from "react";
+import type { FileDiffSummary, MissionPromptContextItem } from "@tiller/shared";
+import { useEffect, useState, type CSSProperties, type MouseEvent } from "react";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import {
@@ -7,6 +7,13 @@ import {
   renderDiffPatch,
   renderDiffStats,
 } from "./diff-tree";
+import {
+  buildDiffSelectionSnapshot,
+  diffLineKey,
+  parseDiffPatchLines,
+  selectContiguousDiffLines,
+  type ParsedDiffLine,
+} from "./diff-comment-selection";
 import { GitGraphPanel } from "./git-graph-panel";
 import type { MissionPanelPage } from "./panels";
 import type { GitStatusState, GitGraphState } from "../../../store/facade";
@@ -59,6 +66,7 @@ type MissionDisplayPanelProps = {
   onDeletePage: (pageId: string) => void;
   onOpenDiffDetail: (path: string) => void;
   onCloseDiffFile: (path: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
   onCollapse: () => void;
 };
 
@@ -77,6 +85,7 @@ export function MissionDisplayPanel({
   onSelectPage,
   onOpenDiffDetail,
   onCloseDiffFile,
+  onAddDraftContext,
   onCollapse,
 }: MissionDisplayPanelProps) {
   const isGraphTabSelected = selectedPage.id === "graph";
@@ -96,6 +105,45 @@ export function MissionDisplayPanel({
   const showTabStrip = showGraphTab || displayTabs.length > 0;
 
   const selectedDisplayDiff = diffs.find((file) => file.path === selectedDiffFilePath);
+  const [selectedLineKeys, setSelectedLineKeys] = useState<Set<string>>(new Set());
+  const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
+  const [draftComment, setDraftComment] = useState("");
+  useEffect(() => {
+    setSelectedLineKeys(new Set());
+    setSelectionAnchorKey(null);
+    setDraftComment("");
+  }, [selectedDisplayDiff?.path, selectedDisplayDiff?.patch]);
+  const handleSelectDiffLine = (line: ParsedDiffLine, event: MouseEvent<HTMLButtonElement>) => {
+    const visibleLines = parseDiffPatchLines(selectedDisplayDiff?.patch ?? "");
+    const lineKey = diffLineKey(line);
+    if (event.shiftKey && selectionAnchorKey) {
+      const range = selectContiguousDiffLines(visibleLines, selectionAnchorKey, lineKey);
+      setSelectedLineKeys(new Set(range.map((entry) => diffLineKey(entry))));
+      return;
+    }
+    setSelectionAnchorKey(lineKey);
+    setSelectedLineKeys(new Set(line.kind === "hunk" ? [] : [lineKey]));
+  };
+  const clearDiffSelection = () => {
+    setSelectedLineKeys(new Set());
+    setSelectionAnchorKey(null);
+    setDraftComment("");
+  };
+  const submitDraftDiffContext = () => {
+    if (!selectedDisplayDiff || !onAddDraftContext) {
+      return;
+    }
+    const visibleLines = parseDiffPatchLines(selectedDisplayDiff.patch ?? "");
+    const selectedLines = visibleLines.filter((line) => selectedLineKeys.has(diffLineKey(line)));
+    onAddDraftContext(
+      buildDiffSelectionSnapshot({
+        filePath: selectedDisplayDiff.path,
+        selectedLines,
+        comment: draftComment,
+      }),
+    );
+    clearDiffSelection();
+  };
   const displayFilePath = selectedDisplayDiff ? selectedDiffFilePath : "未选择文件";
   const closeGraphTab = () => {
     setGraphTabDismissed(true);
@@ -198,7 +246,20 @@ export function MissionDisplayPanel({
         {isGraphTabSelected ? (
           <GitGraphPanel gitGraph={gitGraph} />
         ) : (
-          renderDiffDetailPage({ selectedDiffFilePath, diffs, noDiffSummary, historicalDiffIncomplete })
+          renderDiffDetailPage({
+            selectedDiffFilePath,
+            diffs,
+            noDiffSummary,
+            historicalDiffIncomplete,
+            selectedLineKeys,
+            selectionAnchorKey,
+            draftComment,
+            setDraftComment,
+            onSelectDiffLine: handleSelectDiffLine,
+            onClearDiffSelection: clearDiffSelection,
+            onSubmitDraftDiffContext: submitDraftDiffContext,
+            onAddDraftContext,
+          })
         )}
       </section>
       
@@ -256,6 +317,14 @@ type RenderDiffDetailPageInput = {
   diffs: FileDiffSummary[];
   noDiffSummary: string;
   historicalDiffIncomplete?: boolean;
+  selectedLineKeys: ReadonlySet<string>;
+  selectionAnchorKey: string | null;
+  draftComment: string;
+  setDraftComment: (value: string) => void;
+  onSelectDiffLine: (line: ParsedDiffLine, event: MouseEvent<HTMLButtonElement>) => void;
+  onClearDiffSelection: () => void;
+  onSubmitDraftDiffContext: () => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
 };
 
 function renderDiffDetailPage({
@@ -263,6 +332,13 @@ function renderDiffDetailPage({
   diffs,
   noDiffSummary,
   historicalDiffIncomplete,
+  selectedLineKeys,
+  draftComment,
+  setDraftComment,
+  onSelectDiffLine,
+  onClearDiffSelection,
+  onSubmitDraftDiffContext,
+  onAddDraftContext,
 }: RenderDiffDetailPageInput) {
   const selectedFile = selectedDiffFilePath
     ? diffs.find((file) => file.path === selectedDiffFilePath)
@@ -274,12 +350,17 @@ function renderDiffDetailPage({
       </div>
     );
   }
+  const canCompose = Boolean(onAddDraftContext) && selectedLineKeys.size > 0;
   return (
     <div className="mission-panel-page mission-diff-detail grid min-h-0 overflow-hidden" aria-label="Diff 文件详情">
       <div className="mission-diff-file min-w-0 overflow-hidden bg-transparent">
         {selectedFile.patch ? (
           <>
-            {renderDiffPatch(selectedFile.patch)}
+            {renderDiffPatch({
+              patch: selectedFile.patch,
+              selectedLineKeys: onAddDraftContext ? selectedLineKeys : undefined,
+              onSelectRange: onAddDraftContext ? onSelectDiffLine : undefined,
+            })}
             {selectedFile.patchTruncated && selectedFile.patchRef ? (
               <div className="border-t border-border-ghost px-3 py-2 text-xs text-muted-foreground">
                 <a
@@ -309,6 +390,30 @@ function renderDiffDetailPage({
               : "该 diff 事件没有携带 patch/hunk 内容。"}
           </div>
         )}
+        {canCompose ? (
+          <div className="mission-diff-comment-composer border-t border-border-ghost p-3">
+            <strong className="block text-sm text-foreground">本地评论</strong>
+            <p className="mt-1 text-2xs text-muted-foreground">{selectedFile.path}</p>
+            <textarea
+              value={draftComment}
+              onChange={(event) => setDraftComment(event.currentTarget.value)}
+              className="mt-2 min-h-20 w-full resize-none rounded-md bg-surface px-2 py-2 text-section"
+              placeholder="请求更改 / 解释这段 diff / 让我在对话里追问"
+            />
+            <div className="mt-2 flex justify-end gap-2">
+              <button type="button" onClick={onClearDiffSelection}>
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={!draftComment.trim()}
+                onClick={onSubmitDraftDiffContext}
+              >
+                添加到对话
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -695,8 +695,8 @@ test("mission compact chrome avoids wrapping and over-indentation", () => {
 });
 
 test("mission diff and inspector commit controls support full-row review", () => {
-  assert.match(diffTreeSource, /visibleLines = patch\.split/);
-  assert.match(diffTreeSource, /isDiffHeaderLine/);
+  assert.match(diffTreeSource, /parseDiffPatchLines|visibleLines = patch\.split/);
+  assert.match(diffTreeSource, /parseDiffPatchLines|isDiffHeaderLine/);
   assert.match(diffPanelSource, /selectedCommitDiffPaths/);
   assert.match(diffPanelSource, /onToggleCommitDiffDirectory/);
   assert.match(diffPanelSource, /collectDiffFilePaths/);

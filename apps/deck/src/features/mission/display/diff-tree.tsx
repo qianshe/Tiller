@@ -1,4 +1,11 @@
+import type { MouseEvent } from "react";
 import type { FileDiffSummary } from "@tiller/shared";
+import {
+  diffLineKey,
+  parseDiffPatchLines,
+  type ParsedDiffLine,
+} from "./diff-comment-selection";
+import { cn } from "../../../shared/utils/cn";
 
 export type MissionDiffTreeNode = {
   id: string;
@@ -139,24 +146,59 @@ function resolveDiffStatClass(value: number, kind: "additions" | "deletions") {
   return kind === "additions" ? "text-success" : "text-destructive";
 }
 
-export function renderDiffPatch(patch: string) {
-  const visibleLines = patch.split(/\r?\n/u).filter((line) => !isDiffHeaderLine(line));
+export function renderDiffPatch(input: {
+  patch: string;
+  selectedLineKeys?: ReadonlySet<string>;
+  onSelectRange?: (line: ParsedDiffLine, event: MouseEvent<HTMLButtonElement>) => void;
+}) {
+  const { patch, selectedLineKeys, onSelectRange } = input;
+  const visibleLines = parseDiffPatchLines(patch);
+  const selectable = Boolean(onSelectRange);
 
   return (
     <pre className="mission-diff-patch block w-full max-w-full min-w-0 overflow-x-auto bg-transparent font-mono text-xs leading-5 text-foreground">
       <code className="mission-diff-content grid w-max min-w-full">
-        {visibleLines.map((line, index) => (
-          <span
-            key={`${index}-${line.slice(0, 12)}`}
-            className={`mission-diff-line grid w-full grid-cols-[2.5rem_max-content] whitespace-pre px-3 ${resolveDiffLineStyleClass(resolveDiffLineClass(line))}`}
-            style={{ display: "grid" }}
-          >
-            <span className="select-none text-right text-muted-foreground/70">
-              {index + 1}
+        {visibleLines.map((line) => {
+          const lineKey = diffLineKey(line);
+          const selected = selectedLineKeys?.has(lineKey) ?? false;
+          const lineClassName = resolveDiffLineStyleClass(resolveDiffLineClass(line.text));
+          if (selectable) {
+            return (
+              <button
+                key={lineKey}
+                type="button"
+                data-diff-line-key={lineKey}
+                aria-pressed={selected}
+                className={cn(
+                  "mission-diff-line grid w-full min-w-full grid-cols-[2.5rem_max-content] whitespace-pre px-3 text-left",
+                  lineClassName,
+                  selected && "ring-1 ring-primary",
+                )}
+                onClick={(event) => onSelectRange!(line, event)}
+              >
+                <span className="select-none text-right text-muted-foreground/70">
+                  {line.newLineNumber ?? line.oldLineNumber ?? line.displayLineNumber}
+                </span>
+                <span className="pl-3">{line.text || " "}</span>
+              </button>
+            );
+          }
+          return (
+            <span
+              key={lineKey}
+              className={cn(
+                "mission-diff-line grid w-full grid-cols-[2.5rem_max-content] whitespace-pre px-3",
+                lineClassName,
+              )}
+              style={{ display: "grid" }}
+            >
+              <span className="select-none text-right text-muted-foreground/70">
+                {line.newLineNumber ?? line.oldLineNumber ?? line.displayLineNumber}
+              </span>
+              <span className="pl-3">{line.text || " "}</span>
             </span>
-            <span className="pl-3">{line || " "}</span>
-          </span>
-        ))}
+          );
+        })}
       </code>
     </pre>
   );

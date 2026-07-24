@@ -1324,6 +1324,7 @@ export function MissionWorktree(props: any) {
             onDeletePage={() => {}}
             onOpenDiffDetail={openDiffDetail}
             onCloseDiffFile={closeMissionDiffFile}
+            onAddDraftContext={addDraftContext}
             onCollapse={onToggleDisplay}
         />{" "}
           </ResizablePanel>

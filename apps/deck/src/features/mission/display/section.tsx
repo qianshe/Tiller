@@ -3,6 +3,7 @@ import type {
   AgentToolCall,
   CommandChunk,
   FileDiffSummary,
+  MissionPromptContextItem,
   SessionSummary,
 } from "@tiller/shared";
 import type { CSSProperties } from "react";
@@ -41,6 +42,7 @@ type MissionDisplaySectionProps = {
   onDeletePage: (pageId: string) => void;
   onOpenDiffDetail: (path: string) => void;
   onCloseDiffFile: (path: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
   onCollapse: () => void;
 };
 
@@ -70,6 +72,7 @@ export function MissionDisplaySection({
   onDeletePage,
   onOpenDiffDetail,
   onCloseDiffFile,
+  onAddDraftContext,
   onCollapse,
 }: MissionDisplaySectionProps) {
   return (
@@ -96,6 +99,7 @@ export function MissionDisplaySection({
       onDeletePage={onDeletePage}
       onOpenDiffDetail={onOpenDiffDetail}
       onCloseDiffFile={onCloseDiffFile}
+      onAddDraftContext={onAddDraftContext}
       onCollapse={onCollapse}
     />
   );
