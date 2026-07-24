@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentMessage, SessionSummary } from "@tiller/shared";
+import { buildMissionPromptText } from "@tiller/shared";
 import { applyAgentMessageToSummary, applyUserPromptToSummary } from "./updates";
 
 function createSummary(overrides: Partial<SessionSummary> = {}): SessionSummary {
@@ -68,4 +69,36 @@ test("Tiller summary count remains send-based across streamed agent chunks", () 
 
   assert.equal(summary.messageCount, 2);
   assert.equal(summary.lastMessagePreview, "第二轮任务");
+});
+
+test("applyUserPromptToSummary strips mission prompt markers before preview/title", () => {
+  const summary = createSummary({ title: undefined });
+  const compiled = buildMissionPromptText("帮我展开", [{
+    id: "ctx-1",
+    kind: "quote",
+    label: "assistant 引用",
+    comment: "继续追问",
+    excerpt: "use MCP first",
+    source: { kind: "quote", messageId: "a1", role: "assistant" },
+  }]);
+
+  const next = applyUserPromptToSummary(summary, compiled, "2026-07-06T10:00:00.000Z");
+  assert.equal(next.lastMessagePreview, "帮我展开");
+  assert.equal(next.title, "帮我展开");
+});
+
+test("applyUserPromptToSummary falls back to first context label for context-only sends", () => {
+  const summary = createSummary({ title: undefined });
+  const compiled = buildMissionPromptText("", [{
+    id: "ctx-1",
+    kind: "diff",
+    label: "panel.tsx:44-46",
+    comment: "问问这里",
+    excerpt: "+ new",
+    source: { kind: "diff", filePath: "panel.tsx", startLine: 44, endLine: 46 },
+  }]);
+
+  const next = applyUserPromptToSummary(summary, compiled, "2026-07-06T10:00:00.000Z");
+  assert.equal(next.lastMessagePreview, "panel.tsx:44-46");
+  assert.equal(next.title, "panel.tsx:44-46");
 });

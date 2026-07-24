@@ -17,6 +17,15 @@ const sidebarProjectNodeSource = readFileSync(
 );
 const sessionRowSource = readFileSync(resolve(currentDir, "../navigation/session-row.tsx"), "utf8");
 const displayPanelSource = readFileSync(resolve(currentDir, "../display/panel.tsx"), "utf8");
+const displaySectionSource = readFileSync(resolve(currentDir, "../display/section.tsx"), "utf8");
+const promptSubmissionSource = readFileSync(
+  resolve(currentDir, "../orchestration/prompt-submission.ts"),
+  "utf8",
+);
+const sessionActionsSource = readFileSync(
+  resolve(currentDir, "../actions/session-actions.ts"),
+  "utf8",
+);
 const diffPanelSource = readFileSync(resolve(currentDir, "../display/diff-panel.tsx"), "utf8");
 const diffTreeSource = readFileSync(resolve(currentDir, "../display/diff-tree.tsx"), "utf8");
 const mobilePagerSource = readFileSync(resolve(currentDir, "../workspace/mobile-pager.tsx"), "utf8");
@@ -1160,6 +1169,18 @@ test("mission inspector git scope follows the explicitly selected worktree", () 
     missionSelectionEffectsSource,
     /const effectiveGitCwd = selectedCwd \?\? activeSession\?\.cwd;/,
   );
+});
+
+test("mission comment context plan keeps the full prompt-context wiring chain", () => {
+  assert.match(promptSubmissionSource, /buildMissionPromptPayload|buildMissionPromptText/);
+  assert.match(promptSubmissionSource, /mode === "slash"|mode: "slash"/);
+  assert.match(promptSubmissionSource, /clearDraftContexts/);
+  assert.match(promptSubmissionSource, /setCommandRetentionNotice/);
+  assert.match(sessionActionsSource, /draftContexts/);
+  assert.match(displaySectionSource, /onAddDraftContext/);
+  assert.match(plainMessagesSource, /onAddDraftContext/);
+  assert.match(composerAttachmentsSource, /待发送评论上下文/);
+  assert.match(composerSource, /reviewContext/);
 });
 
 test("mission inspector header keeps primary actions visible on one line", () => {
