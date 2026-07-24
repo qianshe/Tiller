@@ -185,6 +185,59 @@ test("common lifecycle keeps spawned entities running and reuses their identity"
   disposeToolRecognitionSession("codex", sessionId);
 });
 
+test("common lifecycle returns a completed entity to the running set when messaged", () => {
+  const sessionId = "recognition-resumed-lifecycle";
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "spawn-call" }),
+    }),
+    subagentEvidence({ action: "spawn", entityIds: ["agent-1"], background: true }),
+  );
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "spawn-call", status: "completed" }),
+    }),
+    subagentEvidence({ action: "result", entityIds: ["agent-1"], terminal: true }),
+  );
+
+  const [continued] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "message-call", status: "completed" }),
+    }),
+    subagentEvidence({ action: "message", entityIds: ["agent-1"] }),
+  ).toolCalls;
+  assert.equal(continued?.id, "spawn-call");
+  assert.equal(continued?.status, "running");
+
+  const [anonymousWait] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "wait-call" }),
+    }),
+    subagentEvidence({ action: "wait" }),
+  ).toolCalls;
+  assert.equal(anonymousWait?.id, "spawn-call");
+
+  const [completedViaMessageAlias] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "message-call", status: "completed" }),
+    }),
+    subagentEvidence({ action: "result", terminal: true }),
+  ).toolCalls;
+  assert.equal(completedViaMessageAlias?.id, "spawn-call");
+  assert.equal(completedViaMessageAlias?.status, "completed");
+  disposeToolRecognitionSession("claude", sessionId);
+});
+
 test("common lifecycle expands batch delegation with stable entity ids", () => {
   const observation = createToolObservation({
     providerId: "codex",
@@ -388,8 +441,116 @@ test("a background launch result with a different tool id reuses the only uniden
   disposeToolRecognitionSession("claude", sessionId);
 });
 
-test("a launch result does not guess between multiple unidentified spawns", () => {
+test("a stale provider id cannot replace an established subagent identity", () => {
+  const sessionId = "recognition-stale-provider-identity";
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "stale-provider-id" }),
+    }),
+    subagentEvidence({ action: "spawn", entityIds: ["old-agent"], background: true }),
+  );
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "stale-provider-id", status: "completed" }),
+    }),
+    subagentEvidence({ action: "result", entityIds: ["old-agent"], terminal: true }),
+  );
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "current-call", status: "running" }),
+    }),
+    subagentEvidence({ action: "spawn", background: true }),
+  );
+
+  const [linked] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({
+        id: "stale-provider-id",
+        status: "running",
+        output: "Async agent launched successfully.",
+      }),
+    }),
+    subagentEvidence({
+      action: "spawn",
+      background: true,
+      entityIds: ["current-agent"],
+    }),
+  ).toolCalls;
+  assert.equal(linked?.id, "current-call");
+  assert.equal(linked?.commandId, "subagent:current-agent");
+
+  const [oldCompletion] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "stale-provider-id", status: "completed" }),
+    }),
+    subagentEvidence({ action: "result", entityIds: ["old-agent"], terminal: true }),
+  ).toolCalls;
+  assert.equal(oldCompletion?.id, "stale-provider-id");
+  assert.equal(oldCompletion?.commandId, "subagent:old-agent");
+  disposeToolRecognitionSession("claude", sessionId);
+});
+
+test("a terminal result with a conflicting provider id stays separate", () => {
+  const sessionId = "recognition-conflicting-terminal-id";
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "reused-call" }),
+    }),
+    subagentEvidence({ action: "spawn", entityIds: ["old-agent"], background: true }),
+  );
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "reused-call", status: "completed" }),
+    }),
+    subagentEvidence({ action: "result", entityIds: ["old-agent"], terminal: true }),
+  );
+
+  const [conflictingResult] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "reused-call", status: "completed" }),
+    }),
+    subagentEvidence({ action: "result", entityIds: ["new-agent"], terminal: true }),
+  ).toolCalls;
+  assert.notEqual(conflictingResult?.id, "reused-call");
+  assert.equal(conflictingResult?.commandId, "subagent:new-agent");
+  assert.equal(conflictingResult?.status, "completed");
+  disposeToolRecognitionSession("claude", sessionId);
+});
+
+test("an ambiguous launch result waits for a transcript identity instead of creating a duplicate", () => {
   const sessionId = "recognition-ambiguous-background-launch-result";
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "stale-provider-id" }),
+    }),
+    subagentEvidence({ action: "spawn", entityIds: ["old-agent"], background: true }),
+  );
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "stale-provider-id", status: "completed" }),
+    }),
+    subagentEvidence({ action: "result", entityIds: ["old-agent"], terminal: true }),
+  );
   for (const id of ["call-agent-1", "call-agent-2"]) {
     recognizeToolObservation(
       createToolObservation({
@@ -401,7 +562,7 @@ test("a launch result does not guess between multiple unidentified spawns", () =
     );
   }
 
-  const [unlinked] = recognizeToolObservation(
+  const ambiguous = recognizeToolObservation(
     createToolObservation({
       providerId: "claude",
       sessionId,
@@ -418,8 +579,38 @@ test("a launch result does not guess between multiple unidentified spawns", () =
     }),
   ).toolCalls;
 
-  assert.equal(unlinked?.id, "stale-provider-id");
-  assert.equal(unlinked?.commandId, "subagent:agent-1");
+  assert.equal(ambiguous.length, 0);
+
+  const [completed] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({
+        id: "call-agent-1",
+        commandId: "subagent:agent-1",
+        status: "completed",
+      }),
+    }),
+    subagentEvidence({
+      action: "result",
+      entityIds: ["agent-1"],
+      terminal: true,
+    }),
+  ).toolCalls;
+  assert.equal(completed?.id, "call-agent-1");
+  assert.equal(completed?.commandId, "subagent:agent-1");
+  assert.equal(completed?.status, "completed");
+
+  const [oldCompletion] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({ id: "stale-provider-id", status: "completed" }),
+    }),
+    subagentEvidence({ action: "result", entityIds: ["old-agent"], terminal: true }),
+  ).toolCalls;
+  assert.equal(oldCompletion?.id, "stale-provider-id");
+  assert.equal(oldCompletion?.commandId, "subagent:old-agent");
   disposeToolRecognitionSession("claude", sessionId);
 });
 

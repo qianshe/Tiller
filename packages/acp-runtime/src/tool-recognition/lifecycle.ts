@@ -37,22 +37,22 @@ export function createToolLifecycleCorrelator() {
         const ids = entityIds.length ? entityIds : [toolCall.id];
         if (!batch || ids.length === 1) {
           const entityId = ids[0] ?? toolCall.id;
-          const existing = ids
-            .map((id) => session.byAlias.get(id))
-            .find((candidate): candidate is SubagentEntity => Boolean(candidate))
-            ?? session.byAlias.get(toolCall.id)
+          const commandId = toolCall.commandId ??
+            (entityIds.length ? `subagent:${entityId}` : undefined);
+          const existing = resolveByAliases(session, [toolCall.commandId, ...entityIds])
+            ?? resolveCompatibleSpawnAlias(session, toolCall, commandId)
             ?? resolveOnlyUnidentifiedSpawn(session, entityIds, toolCall);
-          const commandId = entityId === toolCall.id && !toolCall.commandId
-            ? undefined
-            : `subagent:${entityId}`;
+          if (!existing && hasAmbiguousUnidentifiedSpawns(session, entityIds, toolCall)) {
+            return [];
+          }
           const entity = existing ?? {
-            id: toolCall.id,
+            id: resolveNewEntityId(session, toolCall, entityId),
             title: toolCall.title,
             input: toolCall.input,
             aliases: new Set<string>(),
           };
-          entity.commandId = commandId ?? entity.commandId ?? toolCall.commandId;
-          addAliases(session, entity, [toolCall.id, ...ids, entity.commandId]);
+          entity.commandId = entity.commandId ?? commandId;
+          addAliases(session, entity, [entity.id, toolCall.id, ...ids, entity.commandId]);
           session.running.add(entity);
           return [{
             ...toolCall,
@@ -74,11 +74,11 @@ export function createToolLifecycleCorrelator() {
             input: toolCall.input,
             aliases: new Set<string>(),
           };
-          entity.commandId = commandId ?? entity.commandId ?? toolCall.commandId;
+          entity.commandId = entity.commandId ?? commandId ?? toolCall.commandId;
           addAliases(
             session,
             entity,
-            [entityId, entity.commandId],
+            [entity.id, entityId, entity.commandId],
           );
           session.running.add(entity);
           return {
@@ -94,8 +94,14 @@ export function createToolLifecycleCorrelator() {
 
       const entity = resolveEntity(session, entityIds, toolCall);
       if (!entity) {
+        const resolvedCommandId = toolCall.commandId ??
+          (entityIds[0] ? `subagent:${entityIds[0]}` : undefined);
         return [{
           ...toolCall,
+          id: session.byAlias.has(toolCall.id)
+            ? resolveNewEntityId(session, toolCall, resolvedCommandId ?? toolCall.id)
+            : toolCall.id,
+          ...(resolvedCommandId ? { commandId: resolvedCommandId } : {}),
           status: terminalStatus(action, terminal, toolCall.status),
         }];
       }
@@ -106,6 +112,8 @@ export function createToolLifecycleCorrelator() {
       const status = terminalStatus(action, terminal, toolCall.status);
       if (["completed", "failed", "cancelled"].includes(status)) {
         session.running.delete(entity);
+      } else {
+        session.running.add(entity);
       }
       return [{
         ...toolCall,
@@ -134,6 +142,54 @@ function resolveOnlyUnidentifiedSpawn(
   return candidates.length === 1 ? candidates[0] : undefined;
 }
 
+function hasAmbiguousUnidentifiedSpawns(
+  session: SessionLifecycle,
+  entityIds: string[],
+  toolCall: AgentToolCall,
+): boolean {
+  if (entityIds.length !== 1 || toolCall.input || !toolCall.output) {
+    return false;
+  }
+  return [...session.running].filter((entity) => !entity.commandId).length > 1;
+}
+
+function resolveCompatibleSpawnAlias(
+  session: SessionLifecycle,
+  toolCall: AgentToolCall,
+  commandId: string | undefined,
+): SubagentEntity | undefined {
+  const entity = session.byAlias.get(toolCall.id);
+  if (!entity || !session.running.has(entity)) {
+    return undefined;
+  }
+  if (entity.commandId && commandId && !sameAlias(entity.commandId, commandId)) {
+    return undefined;
+  }
+  if (!commandId && entity.input && toolCall.input && entity.input !== toolCall.input) {
+    return undefined;
+  }
+  return entity;
+}
+
+function resolveNewEntityId(
+  session: SessionLifecycle,
+  toolCall: AgentToolCall,
+  identity: string,
+): string {
+  if (!session.byAlias.has(toolCall.id)) {
+    return toolCall.id;
+  }
+  const suffix = normalizeAlias(identity) || toolCall.timestamp;
+  const base = `${toolCall.id}::${suffix}`;
+  let candidate = base;
+  let index = 2;
+  while (session.byAlias.has(candidate)) {
+    candidate = `${base}::${index}`;
+    index += 1;
+  }
+  return candidate;
+}
+
 function strongestSubagentEvidence(evidence: ToolEvidence[]): ToolEvidence | undefined {
   return evidence
     .filter((item) => item.subagent)
@@ -145,13 +201,51 @@ function resolveEntity(
   entityIds: string[],
   toolCall: AgentToolCall,
 ): SubagentEntity | undefined {
-  for (const alias of [toolCall.commandId, ...entityIds, toolCall.id]) {
+  const explicitAliases = [toolCall.commandId, ...entityIds].filter(
+    (alias): alias is string => Boolean(alias),
+  );
+  const explicitEntity = resolveByAliases(session, explicitAliases);
+  if (explicitEntity) {
+    return explicitEntity;
+  }
+  const invocationEntity = resolveByAliases(session, [toolCall.id]);
+  if (
+    invocationEntity &&
+    (
+      explicitAliases.length === 0 ||
+      !invocationEntity.commandId ||
+      explicitAliases.some((alias) => sameAlias(alias, invocationEntity.commandId!))
+    )
+  ) {
+    return invocationEntity;
+  }
+  if (session.running.size !== 1) {
+    return undefined;
+  }
+  const onlyRunning = [...session.running][0];
+  return explicitAliases.length === 0 || !onlyRunning?.commandId
+    ? onlyRunning
+    : undefined;
+}
+
+function resolveByAliases(
+  session: SessionLifecycle,
+  aliases: Array<string | undefined>,
+): SubagentEntity | undefined {
+  for (const alias of aliases) {
     if (!alias) continue;
-    const normalized = alias.startsWith("subagent:") ? alias.slice("subagent:".length) : alias;
-    const entity = session.byAlias.get(alias) ?? session.byAlias.get(normalized);
+    const entity = session.byAlias.get(alias) ?? session.byAlias.get(normalizeAlias(alias));
     if (entity) return entity;
   }
-  return session.running.size === 1 ? [...session.running][0] : undefined;
+  return undefined;
+}
+
+function sameAlias(left: string, right: string): boolean {
+  return normalizeAlias(left) === normalizeAlias(right);
+}
+
+function normalizeAlias(alias: string): string {
+  return alias.startsWith("subagent:") ? alias.slice("subagent:".length) : alias;
 }
 
 function addAliases(
