@@ -1,11 +1,27 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import {
+  buildMissionPromptText,
+  parseMissionPromptContext,
+} from "@tiller/shared";
 import {
   isThinkingScrollNearBottom,
   resolveToolCallDisplayTitle,
   resolveThinkingContentClassName,
   writeClipboardText,
 } from "./plain-message-items.js";
+import { PlainMessageItem } from "./plain-message-items.js";
+
+const currentDir = dirname(fileURLToPath(import.meta.url));
+const plainMessageItemsSource = readFileSync(
+  resolve(currentDir, "./plain-message-items.tsx"),
+  "utf8",
+);
 
 test("resolveToolCallDisplayTitle removes the redundant Tool prefix after the MCP badge", () => {
   assert.equal(
@@ -76,4 +92,53 @@ test("resolveThinkingContentClassName keeps short running thinking panels conten
     }),
     /max-h-64/,
   );
+});
+
+test("plain message parser renders sent context chips and hides raw markers", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainMessageItem, {
+      isExpanded: true,
+      onToggleExpandedMessage: () => undefined,
+      message: {
+        id: "m1",
+        role: "user",
+        timestamp: "2026-07-03T10:00:00.000Z",
+        text: buildMissionPromptText("帮我展开", [{
+          id: "ctx-1",
+          kind: "quote",
+          label: "assistant 引用",
+          comment: "继续追问",
+          excerpt: "use MCP tools first",
+          source: { kind: "quote", messageId: "a1", role: "assistant" },
+        }]),
+      },
+      onAddDraftContext: () => undefined,
+    } as any),
+  );
+
+  assert.match(html, /继续追问/);
+  assert.match(html, /帮我展开/);
+  assert.doesNotMatch(html, /\[TILLER_CONTEXT/u);
+});
+
+test("plain message copy path strips compiled prompt markers before writing to clipboard", () => {
+  assert.match(plainMessageItemsSource, /stripMissionPromptContext\(message\.text\)/);
+});
+
+test("end-to-end codec: buildMissionPromptText output parses back into chips and body", () => {
+  const compiled = buildMissionPromptText("看看改动", [{
+    id: "ctx-e2e",
+    kind: "diff",
+    label: "a.ts:10-12",
+    comment: "end-to-end 校验",
+    excerpt: "+ hello",
+    source: { kind: "diff", filePath: "a.ts", startLine: 10, endLine: 12 },
+  }]);
+  const parsed = parseMissionPromptContext(compiled);
+
+  assert.equal(parsed.body, "看看改动");
+  assert.equal(parsed.contexts.length, 1);
+  assert.equal(parsed.contexts[0]?.comment, "end-to-end 校验");
+  assert.equal(parsed.contexts[0]?.label, "a.ts:10-12");
+  assert.equal(parsed.contexts[0]?.excerpt, "+ hello");
 });

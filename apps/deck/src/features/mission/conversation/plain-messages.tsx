@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type {
   AgentMessage,
   AgentToolCall,
+  MissionPromptContextItem,
   SessionTimelineEntry,
   SessionSubagentDetail,
 } from "@tiller/shared";
@@ -56,6 +57,7 @@ type PlainMessagesProps = {
   };
   onLoadOlderMessages: () => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
   subagentDetails?: Record<string, (SessionSubagentDetail & { loading?: boolean; failed?: boolean }) | undefined>;
   onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
 };
@@ -76,6 +78,7 @@ export function PlainMessages({
   historyState,
   onLoadOlderMessages,
   onToggleExpandedMessage,
+  onAddDraftContext,
   subagentDetails = {},
   onToggleSubagentDetail,
 }: PlainMessagesProps) {
@@ -428,6 +431,7 @@ export function PlainMessages({
               message={renderItem.message}
               onDismiss={renderItem.message.role === "system" ? dismissSystemMessage : undefined}
               onToggleExpandedMessage={onToggleExpandedMessage}
+              onAddDraftContext={onAddDraftContext}
             />
           </div>
         );

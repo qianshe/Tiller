@@ -4,7 +4,12 @@ import type {
   AgentMessage,
   AgentPromptImageContent,
   AgentToolCall,
+  MissionPromptContextItem,
   SessionSubagentDetail,
+} from "@tiller/shared";
+import {
+  parseMissionPromptContext,
+  stripMissionPromptContext,
 } from "@tiller/shared";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
 import { Badge, Button, Icon } from "../../../shared/ui";
@@ -26,6 +31,7 @@ import {
 } from "./tool-call-change-stats";
 import { ToolCallDiffPreview } from "./tool-call-diff-preview";
 import { resolveCodexSubagentPresentation } from "./codex-subagent-presentation";
+import { normalizeQuotedSelection } from "./text-selection";
 
 const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
@@ -210,6 +216,7 @@ type PlainMessageItemProps = {
   message: AgentMessage;
   onDismiss?: (messageId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
 };
 
 type AssistantMessageActions = {
@@ -225,20 +232,26 @@ export const PlainMessageItem = memo(function PlainMessageItem({
   message,
   onDismiss,
   onToggleExpandedMessage,
+  onAddDraftContext,
 }: PlainMessageItemProps) {
   const isSystem = message.role === "system";
   const isAssistant = message.role === "assistant";
   const isStreaming = isAssistant && message.streaming;
+  const renderedUserPrompt = message.role === "user"
+    ? parseMissionPromptContext(message.text)
+    : null;
+  const userBodyText = renderedUserPrompt?.body ?? message.text;
   const isCollapsible =
-    message.role === "user" && shouldCollapsePlainMessage(message.text);
+    message.role === "user" && shouldCollapsePlainMessage(userBodyText);
   const messageBodyClassName =
     isCollapsible && !isExpanded
       ? "plain-message-body plain-message-body-collapsed"
       : "plain-message-body";
   const [previewImage, setPreviewImage] = useState<PlainMessageImagePreview | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [quoteDraft, setQuoteDraft] = useState<{ excerpt: string; comment: string } | null>(null);
   const copyResetTimeoutRef = useRef<number | null>(null);
-  const hasCopyableUserText = message.role === "user" && Boolean(message.text.trim());
+  const hasCopyableUserText = message.role === "user" && Boolean(userBodyText.trim());
   const hasCopyableAssistantText = isAssistant && Boolean(assistantActions?.copyText.trim());
   const hasAssistantHandoff =
     hasCopyableAssistantText &&
@@ -284,7 +297,22 @@ export const PlainMessageItem = memo(function PlainMessageItem({
       resetCopyStateAfter(1800);
       return;
     }
-    await copyMessageText(message.text);
+    await copyMessageText(stripMissionPromptContext(message.text));
+  }
+
+  function captureQuoteSelection() {
+    if (!onAddDraftContext || message.role === "system") {
+      return;
+    }
+    const selection = typeof window !== "undefined"
+      ? window.getSelection()?.toString() ?? ""
+      : "";
+    const normalized = normalizeQuotedSelection(selection);
+    if (!normalized) {
+      setQuoteDraft(null);
+      return;
+    }
+    setQuoteDraft({ excerpt: normalized.excerpt, comment: "" });
   }
 
   async function copyAssistantMessage() {
@@ -365,6 +393,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
                 `${messageBodyClassName} ${USER_MESSAGE_RAIL_CLASS} min-w-0 break-words text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
                 "rounded-[14px] border border-primary/30 bg-primary-soft/35 px-3 py-2 shadow-[0_10px_28px_rgb(0_0_0/0.16)]",
               )}
+              onMouseUp={captureQuoteSelection}
             >
               {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
             </div>
@@ -378,6 +407,37 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
           </div>
         )}
+        {quoteDraft && onAddDraftContext ? (
+          <div className="plain-message-quote-draft w-full max-w-full justify-self-end gap-2 rounded-md border border-border-ghost bg-surface px-3 py-2 text-left">
+            <div className="text-2xs text-muted-foreground">{quoteDraft.excerpt}</div>
+            <textarea
+              value={quoteDraft.comment}
+              onChange={(event) => setQuoteDraft((current) => current ? { ...current, comment: event.currentTarget.value } : current)}
+              className="min-h-20 w-full resize-none rounded-md bg-surface-sunken px-2 py-2 text-section"
+              placeholder="请求继续追问 / 解释这段回答 / 让我在输入框里带上这段引用"
+            />
+            <div className="flex justify-end gap-2">
+              <button type="button" onClick={() => setQuoteDraft(null)}>取消</button>
+              <button
+                type="button"
+                disabled={!quoteDraft.comment.trim()}
+                onClick={() => {
+                  onAddDraftContext({
+                    id: `${message.id}:${quoteDraft.excerpt}`,
+                    kind: "quote",
+                    label: `${message.role} 引用`,
+                    comment: quoteDraft.comment.trim(),
+                    excerpt: quoteDraft.excerpt,
+                    source: { kind: "quote", messageId: message.id, role: message.role },
+                  });
+                  setQuoteDraft(null);
+                }}
+              >
+                添加到输入框
+              </button>
+            </div>
+          </div>
+        ) : null}
         {message.role === "user" && hasUserMessageActions ? (
           <div
             className={cn(
@@ -1179,13 +1239,32 @@ function renderPlainMessageContent(
   streaming = false,
 ) {
   if (message.role === "user") {
+    const parsed = parseMissionPromptContext(message.text);
     return (
-      <div
-        className={
-          collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
-        }
-      >
-        {message.text}
+      <div className="grid gap-2">
+        {parsed.contexts.length ? (
+          <div
+            aria-hidden="true"
+            className="mission-attachment-strip flex max-w-full flex-wrap gap-2"
+          >
+            {parsed.contexts.map((item) => (
+              <span
+                key={item.id}
+                className="mission-attachment-chip inline-flex select-none items-center gap-1 rounded border border-border-ghost bg-surface-emphasis px-2 py-1 text-xs"
+              >
+                <span className="text-muted-foreground">{item.kind === "diff" ? "↕" : "❝"}</span>
+                <span className="truncate">{item.comment || item.label}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div
+          className={
+            collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
+          }
+        >
+          {parsed.body}
+        </div>
       </div>
     );
   }

@@ -3,6 +3,7 @@ import type {
   AgentMessage,
   AgentToolCall,
   LegacyEvidenceSource,
+  MissionPromptContextItem,
   PermissionDecision,
   PermissionRequest,
   SessionPromptQueueSnapshot,
@@ -127,6 +128,7 @@ type MissionChatPaneProps = {
   onLoadOlderMessages: (sessionId: string) => void;
   onLoadLegacyEvidence: (sessionId: string, source: LegacyEvidenceSource, after?: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
   subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
   onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
   activityLoading: MissionToolActivity | null;
@@ -203,6 +205,7 @@ export function MissionChatPane({
   onLoadOlderMessages,
   onLoadLegacyEvidence,
   onToggleExpandedMessage,
+  onAddDraftContext,
   subagentDetails = {},
   onToggleSubagentDetail,
   activityLoading,
@@ -944,6 +947,7 @@ export function MissionChatPane({
                   onLoadOlderMessages={handleLoadOlderMessages}
                   onLoadLegacyEvidence={onLoadLegacyEvidence}
                   onToggleExpandedMessage={handleToggleExpandedMessage}
+                  onAddDraftContext={onAddDraftContext}
                   subagentDetails={subagentDetails}
                   onToggleSubagentDetail={onToggleSubagentDetail}
                   onUpdateQueuedPrompt={onUpdateQueuedPrompt}
@@ -1017,6 +1021,7 @@ type MissionChatSessionCardProps = {
   onRename: (session: SessionSummary) => void;
   onRespondToPermission: (approvalRequestId: string, decision: PermissionDecision) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
   subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
   onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
   onUpdateQueuedPrompt: (sessionId: string, queueItemId: string, text: string) => void;
@@ -1067,6 +1072,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   onRename,
   onRespondToPermission,
   onToggleExpandedMessage,
+  onAddDraftContext,
   subagentDetails,
   onToggleSubagentDetail,
   onUpdateQueuedPrompt,
@@ -1196,6 +1202,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
           historyStateBySession={historyStateBySession}
           onLoadOlderMessages={onLoadOlderMessages}
           onToggleExpandedMessage={onToggleExpandedMessage}
+          onAddDraftContext={onAddDraftContext}
           subagentDetails={subagentDetails}
           onToggleSubagentDetail={onToggleSubagentDetail}
         />

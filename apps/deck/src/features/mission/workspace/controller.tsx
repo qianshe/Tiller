@@ -1164,6 +1164,7 @@ export function MissionWorktree(props: any) {
           onLoadOlderMessages={loadOlderMessages}
           onLoadLegacyEvidence={loadSessionLegacyEvidence}
           onToggleExpandedMessage={toggleExpandedMessage}
+          onAddDraftContext={addDraftContext}
           subagentDetails={sessionSubagentDetails}
           onToggleSubagentDetail={toggleSubagentDetail}
           activityLoading={missionActivityLoading}

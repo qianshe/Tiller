@@ -2,6 +2,7 @@ import { memo, useCallback } from "react";
 import type {
   AgentMessage,
   AgentToolCall,
+  MissionPromptContextItem,
   SessionTimelineEntry,
   SessionSubagentDetail,
 } from "@tiller/shared";
@@ -35,6 +36,7 @@ type MissionMessageTimelineProps = {
   historyStateBySession: Record<string, MessageHistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
   subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
   onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
 };
@@ -58,6 +60,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   historyStateBySession,
   onLoadOlderMessages,
   onToggleExpandedMessage,
+  onAddDraftContext,
   subagentDetails,
   onToggleSubagentDetail,
 }: MissionMessageTimelineProps) {
@@ -88,6 +91,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       historyState={historyState}
       onLoadOlderMessages={loadOlderMessages}
       onToggleExpandedMessage={onToggleExpandedMessage}
+      onAddDraftContext={onAddDraftContext}
       subagentDetails={subagentDetails}
       onToggleSubagentDetail={onToggleSubagentDetail}
     />
