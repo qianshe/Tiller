@@ -21,6 +21,7 @@ export function buildMissionWorktreeModel(input: any) {
   const {
     prompt,
     promptImages,
+    draftContexts = [],
     socketRef,
     activeSessionId,
     selectedProjectId,
@@ -96,7 +97,7 @@ export function buildMissionWorktreeModel(input: any) {
     composerSessionRestoreGate.canChat &&
     composerConversationLoaded &&
     composerSessionStatus !== "starting" &&
-    (prompt.trim() || promptImages.length) &&
+    (prompt.trim() || promptImages.length || draftContexts.length) &&
     socketRef.current &&
     (effectiveComposerSessionId ||
       (effectiveProjectId && effectiveWorktreeId && effectiveAgentId)) &&

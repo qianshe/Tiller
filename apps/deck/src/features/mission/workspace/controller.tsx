@@ -177,6 +177,12 @@ export function MissionWorktree(props: any) {
     slashWrapperRef,
     removePromptImage,
     imagePasteNotice,
+    draftContexts,
+    clearDraftContexts,
+    addDraftContext,
+    removeDraftContext,
+    commandRetentionNotice,
+    setCommandRetentionNotice,
     missionPromptRef,
     setPrompt,
     handleMissionPromptKeyDown,
@@ -1273,6 +1279,11 @@ export function MissionWorktree(props: any) {
               cancelSession={cancelSession}
               onOpenModelPicker={handleOpenModelPicker}
               canSend={canSend}
+              reviewContext={{
+                draftContexts,
+                commandRetentionNotice,
+                removeDraftContext,
+              }}
             />
           ) : null}{" "}
         </MissionChatPane>{" "}

@@ -124,6 +124,12 @@ export function renderMissionRoute(source: MissionRouteSource) {
     slashWrapperRef,
     removePromptImage,
     imagePasteNotice,
+    draftContexts,
+    clearDraftContexts,
+    addDraftContext,
+    removeDraftContext,
+    commandRetentionNotice,
+    setCommandRetentionNotice,
     missionPromptRef,
     setPrompt,
     handleMissionPromptKeyDown,
@@ -312,6 +318,12 @@ export function renderMissionRoute(source: MissionRouteSource) {
       slashWrapperRef={slashWrapperRef}
       removePromptImage={removePromptImage}
       imagePasteNotice={imagePasteNotice}
+      draftContexts={draftContexts}
+      clearDraftContexts={clearDraftContexts}
+      addDraftContext={addDraftContext}
+      removeDraftContext={removeDraftContext}
+      commandRetentionNotice={commandRetentionNotice}
+      setCommandRetentionNotice={setCommandRetentionNotice}
       missionPromptRef={missionPromptRef}
       setPrompt={setPrompt}
       handleMissionPromptKeyDown={handleMissionPromptKeyDown}

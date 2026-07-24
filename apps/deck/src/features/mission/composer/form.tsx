@@ -18,6 +18,7 @@ import type {
   AcpAgentProvider,
   AgentPromptImageContent,
   AvailableCommand,
+  MissionPromptContextItem,
   ProjectSummary,
   SessionConfigOption,
   SessionReasoningEffort,
@@ -126,6 +127,11 @@ type MissionComposerProps = {
   cancelSession: (sessionId: string) => void;
   onOpenModelPicker?: () => void;
   canSend: boolean;
+  reviewContext?: {
+    draftContexts: MissionPromptContextItem[];
+    commandRetentionNotice: string | null;
+    removeDraftContext: (id: string) => void;
+  };
 };
 
 export function insertTextAtSelection(
@@ -217,6 +223,7 @@ export function MissionComposer({
   cancelSession,
   onOpenModelPicker,
   canSend,
+  reviewContext,
 }: MissionComposerProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [contextPicker, setContextPicker] = useState<"project" | "worktree" | null>("worktree");
@@ -463,7 +470,13 @@ export function MissionComposer({
           <ComposerAttachments
             promptImages={promptImages}
             removePromptImage={removePromptImage}
+            reviewContext={reviewContext}
           />
+          {reviewContext?.commandRetentionNotice ? (
+            <p className="mission-composer-notice px-1 text-2xs text-muted-foreground">
+              {reviewContext.commandRetentionNotice}
+            </p>
+          ) : null}
           <Textarea
             id="mission-prompt-input"
             name="missionPrompt"
