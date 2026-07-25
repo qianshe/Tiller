@@ -1,4 +1,12 @@
-import { memo, useEffect, useRef, useState, type ReactNode, type UIEvent } from "react";
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type MouseEvent,
+  type ReactNode,
+  type UIEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import type {
   AgentMessage,
@@ -12,7 +20,11 @@ import {
   stripMissionPromptContext,
 } from "@tiller/shared";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
-import { Badge, Button, Icon } from "../../../shared/ui";
+import {
+  Badge,
+  Button,
+  Icon,
+} from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import type { ConversationToolCallItem } from "../../logbook";
 import { resolveToolCallTone } from "../../logbook/tool-call-tone";
@@ -31,7 +43,9 @@ import {
 } from "./tool-call-change-stats";
 import { ToolCallDiffPreview } from "./tool-call-diff-preview";
 import { resolveCodexSubagentPresentation } from "./codex-subagent-presentation";
-import { normalizeQuotedSelection } from "./text-selection";
+import { normalizeQuotedSelection, resolveReviewContextTitle } from "./text-selection";
+import { SelectionCommentPopover } from "../ui/selection-comment-popover";
+import { PromptContextMenu } from "../ui/prompt-context-menu";
 
 const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
@@ -241,6 +255,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
     ? parseMissionPromptContext(message.text)
     : null;
   const userBodyText = renderedUserPrompt?.body ?? message.text;
+  const userPromptContexts = renderedUserPrompt?.contexts ?? [];
   const isCollapsible =
     message.role === "user" && shouldCollapsePlainMessage(userBodyText);
   const messageBodyClassName =
@@ -249,7 +264,11 @@ export const PlainMessageItem = memo(function PlainMessageItem({
       : "plain-message-body";
   const [previewImage, setPreviewImage] = useState<PlainMessageImagePreview | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const [quoteDraft, setQuoteDraft] = useState<{ excerpt: string; comment: string } | null>(null);
+  const [quoteDraft, setQuoteDraft] = useState<{
+    anchorRange: Range;
+    comment: string;
+    excerpt: string;
+  } | null>(null);
   const copyResetTimeoutRef = useRef<number | null>(null);
   const hasCopyableUserText = message.role === "user" && Boolean(userBodyText.trim());
   const hasCopyableAssistantText = isAssistant && Boolean(assistantActions?.copyText.trim());
@@ -300,19 +319,58 @@ export const PlainMessageItem = memo(function PlainMessageItem({
     await copyMessageText(stripMissionPromptContext(message.text));
   }
 
-  function captureQuoteSelection() {
+  const [quoteSelection, setQuoteSelection] = useState<{
+    anchorRange: Range;
+    excerpt: string;
+  } | null>(null);
+
+  function captureQuoteSelection(event: MouseEvent<HTMLElement>) {
     if (!onAddDraftContext || message.role === "system") {
       return;
     }
-    const selection = typeof window !== "undefined"
-      ? window.getSelection()?.toString() ?? ""
-      : "";
-    const normalized = normalizeQuotedSelection(selection);
-    if (!normalized) {
-      setQuoteDraft(null);
+    // 流式消息(DOM 仍在更新)禁用 quote 选区,避免 anchorRange 失效导致 popover 飘移。
+    // 既看闭包 isStreaming,也看 DOM 实时 data-streaming,双保险防闭包过期。
+    const streamingNode = event.currentTarget.closest('[data-streaming="true"]');
+    if (isStreaming || streamingNode) {
       return;
     }
-    setQuoteDraft({ excerpt: normalized.excerpt, comment: "" });
+    const selection = typeof window !== "undefined" ? window.getSelection() : null;
+    const anchorNode = selection?.anchorNode;
+    const focusNode = selection?.focusNode;
+    if (
+      !selection ||
+      selection.rangeCount === 0 ||
+      !anchorNode ||
+      !focusNode ||
+      !event.currentTarget.contains(anchorNode) ||
+      !event.currentTarget.contains(focusNode)
+    ) {
+      setQuoteSelection(null);
+      return;
+    }
+    const normalized = normalizeQuotedSelection(selection.toString());
+    if (!normalized) {
+      setQuoteSelection(null);
+      return;
+    }
+    setQuoteDraft(null);
+    setQuoteSelection({
+      anchorRange: selection.getRangeAt(0).cloneRange(),
+      excerpt: normalized.excerpt,
+    });
+  }
+
+  function startQuoteDraft() {
+    if (!quoteSelection) return;
+    setQuoteDraft({ ...quoteSelection, comment: "" });
+    setQuoteSelection(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function clearQuoteInteraction() {
+    setQuoteSelection(null);
+    setQuoteDraft(null);
+    window.getSelection()?.removeAllRanges();
   }
 
   async function copyAssistantMessage() {
@@ -369,6 +427,9 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             ))}
           </div>
         ) : null}
+        {message.role === "user" && userPromptContexts.length ? (
+          <SentPromptContexts contexts={userPromptContexts} />
+        ) : null}
         {isSystem ? (
           <div className="flex min-w-0 items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] leading-[1.5] text-foreground/80">
             <div className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
@@ -403,40 +464,43 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             className={cn(
               `${messageBodyClassName} min-w-0 max-w-full overflow-hidden text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
             )}
+            onMouseUp={captureQuoteSelection}
           >
             {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
           </div>
         )}
+        {quoteSelection ? (
+          <SelectionCommentPopover
+            anchor={quoteSelection.anchorRange}
+            mode="actions"
+            onCancel={clearQuoteInteraction}
+            onOpenComposer={startQuoteDraft}
+          />
+        ) : null}
         {quoteDraft && onAddDraftContext ? (
-          <div className="plain-message-quote-draft w-full max-w-full justify-self-end gap-2 rounded-md border border-border-ghost bg-surface px-3 py-2 text-left">
-            <div className="text-2xs text-muted-foreground">{quoteDraft.excerpt}</div>
-            <textarea
-              value={quoteDraft.comment}
-              onChange={(event) => setQuoteDraft((current) => current ? { ...current, comment: event.currentTarget.value } : current)}
-              className="min-h-20 w-full resize-none rounded-md bg-surface-sunken px-2 py-2 text-section"
-              placeholder="请求继续追问 / 解释这段回答 / 让我在输入框里带上这段引用"
-            />
-            <div className="flex justify-end gap-2">
-              <button type="button" onClick={() => setQuoteDraft(null)}>取消</button>
-              <button
-                type="button"
-                disabled={!quoteDraft.comment.trim()}
-                onClick={() => {
-                  onAddDraftContext({
-                    id: `${message.id}:${quoteDraft.excerpt}`,
-                    kind: "quote",
-                    label: `${message.role} 引用`,
-                    comment: quoteDraft.comment.trim(),
-                    excerpt: quoteDraft.excerpt,
-                    source: { kind: "quote", messageId: message.id, role: message.role },
-                  });
-                  setQuoteDraft(null);
-                }}
-              >
-                添加到输入框
-              </button>
-            </div>
-          </div>
+          <SelectionCommentPopover
+            anchor={quoteDraft.anchorRange}
+            comment={quoteDraft.comment}
+            context={(
+              <span className="line-clamp-2 min-w-0">“{quoteDraft.excerpt}”</span>
+            )}
+            mode="composer"
+            onCancel={clearQuoteInteraction}
+            onChangeComment={(comment) => setQuoteDraft((current) => current
+              ? { ...current, comment }
+              : current)}
+            onSubmit={() => {
+              onAddDraftContext({
+                id: `${message.id}:${quoteDraft.excerpt}`,
+                kind: "quote",
+                label: `${message.role} 引用`,
+                comment: quoteDraft.comment.trim(),
+                excerpt: quoteDraft.excerpt,
+                source: { kind: "quote", messageId: message.id, role: message.role },
+              });
+              clearQuoteInteraction();
+            }}
+          />
         ) : null}
         {message.role === "user" && hasUserMessageActions ? (
           <div
@@ -1233,6 +1297,18 @@ function summarizeToolGroupTitle(labels: string[]) {
   return labels.slice(0, 3).join(" / ");
 }
 
+function SentPromptContexts({ contexts }: { contexts: MissionPromptContextItem[] }) {
+  return (
+    <div className="mission-message-attachments ml-auto flex w-fit max-w-full flex-wrap justify-end gap-2 justify-self-end" aria-label="已发送评论">
+      <PromptContextMenu
+        contexts={contexts}
+        align="end"
+        resolveTitle={resolveReviewContextTitle}
+      />
+    </div>
+  );
+}
+
 function renderPlainMessageContent(
   message: AgentMessage,
   collapsed: boolean,
@@ -1241,30 +1317,12 @@ function renderPlainMessageContent(
   if (message.role === "user") {
     const parsed = parseMissionPromptContext(message.text);
     return (
-      <div className="grid gap-2">
-        {parsed.contexts.length ? (
-          <div
-            aria-hidden="true"
-            className="mission-attachment-strip flex max-w-full flex-wrap gap-2"
-          >
-            {parsed.contexts.map((item) => (
-              <span
-                key={item.id}
-                className="mission-attachment-chip inline-flex select-none items-center gap-1 rounded border border-border-ghost bg-surface-emphasis px-2 py-1 text-xs"
-              >
-                <span className="text-muted-foreground">{item.kind === "diff" ? "↕" : "❝"}</span>
-                <span className="truncate">{item.comment || item.label}</span>
-              </span>
-            ))}
-          </div>
-        ) : null}
-        <div
-          className={
-            collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
-          }
-        >
-          {parsed.body}
-        </div>
+      <div
+        className={
+          collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
+        }
+      >
+        {parsed.body}
       </div>
     );
   }

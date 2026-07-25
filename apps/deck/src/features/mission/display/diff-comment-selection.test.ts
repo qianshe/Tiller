@@ -1,11 +1,29 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  buildDiffLineRangeLabel,
   buildDiffSelectionSnapshot,
   diffLineKey,
   parseDiffPatchLines,
   selectContiguousDiffLines,
 } from "./diff-comment-selection";
+
+test("buildDiffLineRangeLabel uses the selected real line range", () => {
+  const patch = [
+    "@@ -10,2 +10,3 @@",
+    " const keep = true;",
+    "-const oldValue = 1;",
+    "+const newValue = 2;",
+    "+const newerValue = 3;",
+  ].join("\n");
+  const lines = parseDiffPatchLines(patch);
+  const selectedLineKeys = new Set([
+    diffLineKey(lines[2]!),
+    diffLineKey(lines[4]!),
+  ]);
+
+  assert.equal(buildDiffLineRangeLabel(selectedLineKeys, { patch }), "L11-12");
+});
 
 test("parseDiffPatchLines keeps actual old/new line numbers", () => {
   const patch = [

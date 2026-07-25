@@ -73,6 +73,21 @@ export function selectContiguousDiffLines(
   return lines.slice(start, end + 1).filter((line) => line.kind !== "hunk");
 }
 
+export function buildDiffLineRangeLabel(
+  selectedLineKeys: ReadonlySet<string>,
+  file: { patch?: string } | null,
+): string {
+  if (!file?.patch) return "";
+  const visibleLines = parseDiffPatchLines(file.patch);
+  const selected = visibleLines.filter((line) => selectedLineKeys.has(diffLineKey(line)));
+  const lineNumbers = selected
+    .flatMap((line) => [line.newLineNumber ?? line.oldLineNumber].filter((v): v is number => typeof v === "number"));
+  if (lineNumbers.length === 0) return "";
+  const start = Math.min(...lineNumbers);
+  const end = Math.max(...lineNumbers);
+  return start === end ? `L${start}` : `L${start}-${end}`;
+}
+
 export function buildDiffSelectionSnapshot(input: {
   filePath: string;
   selectedLines: ParsedDiffLine[];

@@ -94,7 +94,7 @@ test("resolveThinkingContentClassName keeps short running thinking panels conten
   );
 });
 
-test("plain message parser renders sent context chips and hides raw markers", () => {
+test("plain message parser keeps sent context trigger above the message bubble", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessageItem, {
       isExpanded: true,
@@ -116,9 +116,14 @@ test("plain message parser renders sent context chips and hides raw markers", ()
     } as any),
   );
 
-  assert.match(html, /继续追问/);
+  assert.match(html, /aria-label="评论 1，展开查看"/u);
+  assert.match(html, /aria-expanded="false"/u);
+  assert.ok(html.indexOf('aria-label="已发送评论"') < html.indexOf("plain-message-user-row"));
+  assert.doesNotMatch(html, /继续追问/u);
   assert.match(html, /帮我展开/);
   assert.doesNotMatch(html, /\[TILLER_CONTEXT/u);
+  assert.match(plainMessageItemsSource, /<PromptContextMenu[\s\S]*align="end"/u);
+  assert.doesNotMatch(plainMessageItemsSource, /item\.excerpt/u);
 });
 
 test("plain message copy path strips compiled prompt markers before writing to clipboard", () => {

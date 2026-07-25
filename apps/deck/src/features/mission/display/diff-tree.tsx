@@ -6,6 +6,7 @@ import {
   type ParsedDiffLine,
 } from "./diff-comment-selection";
 import { cn } from "../../../shared/utils/cn";
+import { Icon } from "../../../shared/ui";
 
 export type MissionDiffTreeNode = {
   id: string;
@@ -162,40 +163,46 @@ export function renderDiffPatch(input: {
           const lineKey = diffLineKey(line);
           const selected = selectedLineKeys?.has(lineKey) ?? false;
           const lineClassName = resolveDiffLineStyleClass(resolveDiffLineClass(line.text));
-          if (selectable) {
-            return (
-              <button
-                key={lineKey}
-                type="button"
-                data-diff-line-key={lineKey}
-                aria-pressed={selected}
-                className={cn(
-                  "mission-diff-line grid w-full min-w-full grid-cols-[2.5rem_max-content] whitespace-pre px-3 text-left",
-                  lineClassName,
-                  selected && "ring-1 ring-primary",
-                )}
-                onClick={(event) => onSelectRange!(line, event)}
-              >
-                <span className="select-none text-right text-muted-foreground/70">
-                  {line.newLineNumber ?? line.oldLineNumber ?? line.displayLineNumber}
-                </span>
-                <span className="pl-3">{line.text || " "}</span>
-              </button>
-            );
-          }
+          const lineNumber = line.newLineNumber ?? line.oldLineNumber ?? line.displayLineNumber;
+          const canComment = selectable && line.kind !== "hunk";
           return (
             <span
               key={lineKey}
+              data-diff-line-key={lineKey}
               className={cn(
-                "mission-diff-line grid w-full grid-cols-[2.5rem_max-content] whitespace-pre px-3",
+                "mission-diff-line group grid w-full min-w-full grid-cols-[2.5rem_max-content] whitespace-pre px-0.5 text-left",
                 lineClassName,
+                selected && "ring-1 ring-inset ring-primary/70",
               )}
               style={{ display: "grid" }}
             >
-              <span className="select-none text-right text-muted-foreground/70">
-                {line.newLineNumber ?? line.oldLineNumber ?? line.displayLineNumber}
+              <span className="relative flex min-w-0 items-center justify-end pr-1 text-right text-muted-foreground/70">
+                <span
+                  className={cn(
+                    "select-none transition-opacity",
+                    canComment && "group-hover:opacity-0 group-focus-within:opacity-0",
+                    selected && "opacity-0",
+                  )}
+                >
+                  {lineNumber}
+                </span>
+                {canComment ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      "mission-diff-comment-trigger absolute right-1 top-1/2 grid size-4 -translate-y-1/2 place-items-center rounded border border-border-ghost bg-surface-elevated text-muted-foreground opacity-0 shadow-sm transition-[opacity,color,background-color] hover:bg-surface-emphasis hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 group-hover:opacity-100",
+                      selected && "bg-primary text-primary-foreground opacity-100 hover:bg-primary-strong hover:text-primary-foreground",
+                    )}
+                    aria-label={`添加第 ${lineNumber} 行评论`}
+                    aria-pressed={selected}
+                    title="添加评论"
+                    onClick={(event) => onSelectRange!(line, event)}
+                  >
+                    <Icon name="plus" size={10} strokeWidth={2} />
+                  </button>
+                ) : null}
               </span>
-              <span className="pl-3">{line.text || " "}</span>
+              <span className="pl-2">{line.text || " "}</span>
             </span>
           );
         })}

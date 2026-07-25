@@ -309,7 +309,7 @@ test("composer renders context usage indicator at row tail", () => {
   );
 });
 
-test("composer renders review context chips beside image chips and shows the retention notice", () => {
+test("composer collapses review contexts beside image chips and shows the retention notice", () => {
   const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
     reviewContext: {
       draftContexts: [{
@@ -328,7 +328,8 @@ test("composer renders review context chips beside image chips and shows the ret
 
   assert.match(html, /待发送图片/);
   assert.match(html, /待发送评论上下文/);
-  assert.match(html, /panel\.tsx:44-46/);
+  assert.match(html, /aria-label="评论 1，展开查看"/u);
+  assert.doesNotMatch(html, /panel\.tsx:44-46/);
   assert.match(html, /已仅发送命令/);
   assert.match(html, /mission-composer-notice/);
 });

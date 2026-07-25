@@ -67,7 +67,7 @@ test("diff tree compacts single-directory chains", () => {
   assert.equal(compactDeck?.count, 2);
 });
 
-test("renderDiffPatch exposes selectable patch lines when an onSelectRange handler is provided", () => {
+test("renderDiffPatch exposes a hover comment button in the left gutter", () => {
   const html = renderToStaticMarkup(
     renderDiffPatch({
       patch: [
@@ -83,7 +83,11 @@ test("renderDiffPatch exposes selectable patch lines when an onSelectRange handl
 
   assert.match(html, /data-diff-line-key=/);
   assert.match(html, /aria-pressed="false"/);
-  assert.match(html, /<button/);
+  assert.match(html, /mission-diff-comment-trigger/);
+  assert.match(html, /group-hover:opacity-100/);
+  assert.match(html, /grid-cols-\[2\.5rem_max-content\]/u);
+  assert.match(html, /mission-diff-comment-trigger[^\"]*absolute/);
+  assert.match(html, /aria-label="添加第 1 行评论"/u);
 });
 
 test("diff stats color additions and deletions by semantic value", () => {

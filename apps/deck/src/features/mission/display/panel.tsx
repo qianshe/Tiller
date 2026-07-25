@@ -8,6 +8,7 @@ import {
   renderDiffStats,
 } from "./diff-tree";
 import {
+  buildDiffLineRangeLabel,
   buildDiffSelectionSnapshot,
   diffLineKey,
   parseDiffPatchLines,
@@ -17,6 +18,7 @@ import {
 import { GitGraphPanel } from "./git-graph-panel";
 import type { MissionPanelPage } from "./panels";
 import type { GitStatusState, GitGraphState } from "../../../store/facade";
+import { SelectionCommentPopover } from "../ui/selection-comment-popover";
 
 export type RuntimeOverviewItem = {
   id: string;
@@ -107,10 +109,14 @@ export function MissionDisplayPanel({
   const selectedDisplayDiff = diffs.find((file) => file.path === selectedDiffFilePath);
   const [selectedLineKeys, setSelectedLineKeys] = useState<Set<string>>(new Set());
   const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
+  const [selectionAnchorElement, setSelectionAnchorElement] = useState<HTMLButtonElement | null>(null);
+  const [diffCommentMode, setDiffCommentMode] = useState<"actions" | "composer">("actions");
   const [draftComment, setDraftComment] = useState("");
   useEffect(() => {
     setSelectedLineKeys(new Set());
     setSelectionAnchorKey(null);
+    setSelectionAnchorElement(null);
+    setDiffCommentMode("actions");
     setDraftComment("");
   }, [selectedDisplayDiff?.path, selectedDisplayDiff?.patch]);
   const handleSelectDiffLine = (line: ParsedDiffLine, event: MouseEvent<HTMLButtonElement>) => {
@@ -119,14 +125,22 @@ export function MissionDisplayPanel({
     if (event.shiftKey && selectionAnchorKey) {
       const range = selectContiguousDiffLines(visibleLines, selectionAnchorKey, lineKey);
       setSelectedLineKeys(new Set(range.map((entry) => diffLineKey(entry))));
+      setSelectionAnchorElement(range.length ? event.currentTarget : null);
+      setDiffCommentMode("actions");
+      setDraftComment("");
       return;
     }
     setSelectionAnchorKey(lineKey);
     setSelectedLineKeys(new Set(line.kind === "hunk" ? [] : [lineKey]));
+    setSelectionAnchorElement(line.kind === "hunk" ? null : event.currentTarget);
+    setDiffCommentMode("actions");
+    setDraftComment("");
   };
   const clearDiffSelection = () => {
     setSelectedLineKeys(new Set());
     setSelectionAnchorKey(null);
+    setSelectionAnchorElement(null);
+    setDiffCommentMode("actions");
     setDraftComment("");
   };
   const submitDraftDiffContext = () => {
@@ -252,16 +266,33 @@ export function MissionDisplayPanel({
             noDiffSummary,
             historicalDiffIncomplete,
             selectedLineKeys,
-            selectionAnchorKey,
-            draftComment,
-            setDraftComment,
             onSelectDiffLine: handleSelectDiffLine,
-            onClearDiffSelection: clearDiffSelection,
-            onSubmitDraftDiffContext: submitDraftDiffContext,
             onAddDraftContext,
           })
         )}
       </section>
+
+      {selectedDisplayDiff && selectionAnchorElement && selectedLineKeys.size > 0 && onAddDraftContext ? (
+        <SelectionCommentPopover
+          anchor={selectionAnchorElement}
+          comment={draftComment}
+          context={(
+            <>
+              <span className="shrink-0 rounded bg-surface-emphasis px-1.5 py-0.5 font-mono text-foreground">
+                {buildDiffLineRangeLabel(selectedLineKeys, selectedDisplayDiff)}
+              </span>
+              <span className="min-w-0 truncate" title={selectedDisplayDiff.path}>
+                {selectedDisplayDiff.path.split(/[\\/]/u).at(-1) ?? selectedDisplayDiff.path}
+              </span>
+            </>
+          )}
+          mode={diffCommentMode}
+          onCancel={clearDiffSelection}
+          onChangeComment={setDraftComment}
+          onOpenComposer={() => setDiffCommentMode("composer")}
+          onSubmit={submitDraftDiffContext}
+        />
+      ) : null}
       
       {/* Status bar - only show when diff tab selected */}
       {!isGraphTabSelected ? (
@@ -318,12 +349,7 @@ type RenderDiffDetailPageInput = {
   noDiffSummary: string;
   historicalDiffIncomplete?: boolean;
   selectedLineKeys: ReadonlySet<string>;
-  selectionAnchorKey: string | null;
-  draftComment: string;
-  setDraftComment: (value: string) => void;
   onSelectDiffLine: (line: ParsedDiffLine, event: MouseEvent<HTMLButtonElement>) => void;
-  onClearDiffSelection: () => void;
-  onSubmitDraftDiffContext: () => void;
   onAddDraftContext?: (item: MissionPromptContextItem) => void;
 };
 
@@ -333,11 +359,7 @@ function renderDiffDetailPage({
   noDiffSummary,
   historicalDiffIncomplete,
   selectedLineKeys,
-  draftComment,
-  setDraftComment,
   onSelectDiffLine,
-  onClearDiffSelection,
-  onSubmitDraftDiffContext,
   onAddDraftContext,
 }: RenderDiffDetailPageInput) {
   const selectedFile = selectedDiffFilePath
@@ -350,7 +372,6 @@ function renderDiffDetailPage({
       </div>
     );
   }
-  const canCompose = Boolean(onAddDraftContext) && selectedLineKeys.size > 0;
   return (
     <div className="mission-panel-page mission-diff-detail grid min-h-0 overflow-hidden" aria-label="Diff 文件详情">
       <div className="mission-diff-file min-w-0 overflow-hidden bg-transparent">
@@ -390,30 +411,6 @@ function renderDiffDetailPage({
               : "该 diff 事件没有携带 patch/hunk 内容。"}
           </div>
         )}
-        {canCompose ? (
-          <div className="mission-diff-comment-composer border-t border-border-ghost p-3">
-            <strong className="block text-sm text-foreground">本地评论</strong>
-            <p className="mt-1 text-2xs text-muted-foreground">{selectedFile.path}</p>
-            <textarea
-              value={draftComment}
-              onChange={(event) => setDraftComment(event.currentTarget.value)}
-              className="mt-2 min-h-20 w-full resize-none rounded-md bg-surface px-2 py-2 text-section"
-              placeholder="请求更改 / 解释这段 diff / 让我在对话里追问"
-            />
-            <div className="mt-2 flex justify-end gap-2">
-              <button type="button" onClick={onClearDiffSelection}>
-                取消
-              </button>
-              <button
-                type="button"
-                disabled={!draftComment.trim()}
-                onClick={onSubmitDraftDiffContext}
-              >
-                添加到对话
-              </button>
-            </div>
-          </div>
-        ) : null}
       </div>
     </div>
   );
