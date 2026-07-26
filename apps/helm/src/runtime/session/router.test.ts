@@ -1150,3 +1150,32 @@ test("cancelSessionRuntime broadcasts an error when the runtime is missing", asy
   assert.equal(broadcasts.at(-1)?.method, "notification/raised");
   assert.equal(broadcasts.at(-1)?.params.message, "Session not found");
 });
+
+test("cancelSessionRuntime treats persisted sessions without live runtime as idempotent cancel", async () => {
+  const { context, broadcasts } = createContext({ summary: { status: "running" } });
+  const { cancelSessionRuntime } = await import("./router");
+
+  const handled = await cancelSessionRuntime("session-1", context);
+
+  assert.equal(handled, true);
+  assert.equal(
+    broadcasts.some((item) => item.method === "notification/raised"),
+    false,
+  );
+  assert.equal(context.sessionStore.get("session-1")?.status, "cancelled");
+  const liveStateUpdates = broadcasts.filter((item) =>
+    item.method === "session/update" && item.params?.update?.kind === "live_state"
+  );
+  assert.equal(liveStateUpdates.at(-1)?.params.update.snapshot.status.effectiveStatus, "cancelled");
+});
+
+test("cancelSessionRuntime leaves terminal persisted sessions untouched", async () => {
+  const { context, broadcasts } = createContext({ summary: { status: "idle" } });
+  const { cancelSessionRuntime } = await import("./router");
+
+  const handled = await cancelSessionRuntime("session-1", context);
+
+  assert.equal(handled, true);
+  assert.deepEqual(broadcasts, []);
+  assert.equal(context.sessionStore.get("session-1")?.status, "idle");
+});

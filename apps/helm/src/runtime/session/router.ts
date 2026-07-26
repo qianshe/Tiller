@@ -599,13 +599,37 @@ export async function configureSessionRuntime(
   };
 }
 
+const ACTIVE_SESSION_STATUSES: ReadonlySet<string> = new Set([
+  "starting",
+  "running",
+  "waiting_for_permission",
+]);
+
 export async function cancelSessionRuntime(
   sessionId: string,
   context: HelmHandlerContext,
 ): Promise<boolean> {
   const record = context.sessions.get(sessionId);
   if (!record) {
-    createSessionEventPublisher(context).errorRaised({ sessionId, message: "Session not found" });
+    const persisted = context.sessionStore.get(sessionId);
+    if (!persisted) {
+      createSessionEventPublisher(context).errorRaised({ sessionId, message: "Session not found" });
+      return true;
+    }
+    // Helm 重启后持久化摘要可能仍停留在活跃状态,但内存 runtime 已不存在;
+    // 对这类会话取消是幂等操作:修正过期状态即可,不是错误。
+    if (ACTIVE_SESSION_STATUSES.has(persisted.status)) {
+      context.updateSessionSummary(sessionId, (current) => ({
+        ...current,
+        status: "cancelled",
+        updatedAt: new Date().toISOString(),
+      }));
+      publishCanonicalSessionStateEvent(sessionId, {
+        type: "status",
+        status: "cancelled",
+        message: "Cancelled by user",
+      }, context);
+    }
     return true;
   }
 
