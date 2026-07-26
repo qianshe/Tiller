@@ -1169,13 +1169,22 @@ test("cancelSessionRuntime treats persisted sessions without live runtime as ide
   assert.equal(liveStateUpdates.at(-1)?.params.update.snapshot.status.effectiveStatus, "cancelled");
 });
 
-test("cancelSessionRuntime leaves terminal persisted sessions untouched", async () => {
-  const { context, broadcasts } = createContext({ summary: { status: "idle" } });
+test("cancelSessionRuntime re-broadcasts terminal status so stale clients reconcile", async () => {
+  // 客户端可能因 helm 重启持有过期的"运行中"状态;对终态会话按取消时,
+  // 不改库,但必须回播权威状态,否则过期客户端永远收不到纠正。
+  const { context, broadcasts } = createContext({ summary: { status: "cancelled" } });
   const { cancelSessionRuntime } = await import("./router");
 
   const handled = await cancelSessionRuntime("session-1", context);
 
   assert.equal(handled, true);
-  assert.deepEqual(broadcasts, []);
-  assert.equal(context.sessionStore.get("session-1")?.status, "idle");
+  assert.equal(
+    broadcasts.some((item) => item.method === "notification/raised"),
+    false,
+  );
+  assert.equal(context.sessionStore.get("session-1")?.status, "cancelled");
+  const liveStateUpdates = broadcasts.filter((item) =>
+    item.method === "session/update" && item.params?.update?.kind === "live_state"
+  );
+  assert.equal(liveStateUpdates.at(-1)?.params.update.snapshot.status.effectiveStatus, "cancelled");
 });

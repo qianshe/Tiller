@@ -629,7 +629,14 @@ export async function cancelSessionRuntime(
         status: "cancelled",
         message: "Cancelled by user",
       }, context);
+      return true;
     }
+    // 终态会话不改库,但客户端会按取消通常意味着它还拿着过期的"运行中"
+    // 状态(如 helm 重启前的缓存);回播一次权威状态让过期客户端收敛。
+    publishCanonicalSessionStateEvent(sessionId, {
+      type: "status",
+      status: persisted.status,
+    }, context);
     return true;
   }
 
