@@ -2,6 +2,8 @@ import {
   deleteProjectFromConfig,
   saveProjectToConfig,
 } from "@tiller/agent-registry";
+import { realpathSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../context";
 import { listProjectDirectories, listProjectFiles, resolveProjectFileRoot } from "./project-files";
@@ -17,14 +19,86 @@ import {
   resolveGitRoot,
   resolveProjectRoot,
   getProjectGitStatus,
+  type GitStatusSnapshot,
   commitProjectGitChanges,
+  discardProjectGitChanges,
   getProjectGitGraph,
+  emptyGitSnapshot,
+  pushProjectGitChanges,
+  pullProjectGitChanges,
+  resolveGitQueueRoot,
+  type GitCommit,
+  type GitCommitFile,
+  getProjectGitCommitDetail,
 } from "./project-git";
 
-// Request deduplication maps to prevent concurrent duplicate Git operations
-const pendingGitStatusRequests = new Map<string, Promise<any>>();
-const pendingGitCommitRequests = new Map<string, Promise<any>>();
-const pendingGitGraphRequests = new Map<string, Promise<any>>();
+// Per-git-root serial queue: all Git operations for the same repository
+// (including linked worktrees sharing the same git-common-dir) are serialized
+// via this queue, preventing concurrent ref writes to the same repo.
+type GitStatusRpcResult = {
+  ok: boolean;
+  projectId: string;
+  cwd: string;
+  message: string;
+} & GitStatusSnapshot;
+
+type GitCommitRpcResult = GitStatusRpcResult & {
+  commitHash?: string;
+};
+
+type GitGraphRpcResult = {
+  ok: boolean;
+  projectId: string;
+  cwd: string;
+  head?: string;
+  commits: GitCommit[];
+  message: string;
+};
+
+type GitCommitDetailRpcResult = {
+  ok: boolean;
+  projectId: string;
+  cwd: string;
+  commitHash: string;
+  files: GitCommitFile[];
+  message: string;
+};
+
+type ResolvedProjectGitContext = {
+  project: ProjectSummary;
+  cwd: string;
+};
+
+const gitOperationQueues = new Map<string, Promise<unknown>>();
+
+async function withGitQueue<T>(
+  cwd: string,
+  operation: () => Promise<T>,
+): Promise<T> {
+  // Resolve the shared git-common-dir before enqueueing so linked worktrees
+  // with different cwd paths still map to the same queue slot.
+  const queueRoot = await resolveGitQueueRoot(cwd);
+  const previous = gitOperationQueues.get(queueRoot) ?? Promise.resolve();
+  const current = previous.catch(() => undefined).then(() => operation());
+  gitOperationQueues.set(queueRoot, current);
+  try {
+    return await current;
+  } finally {
+    if (gitOperationQueues.get(queueRoot) === current) {
+      gitOperationQueues.delete(queueRoot);
+    }
+  }
+}
+
+// Request deduplication maps to prevent concurrent duplicate Git operations.
+// Key includes refreshRemote to distinguish normal status from remote-aware refresh.
+const pendingGitStatusRequests = new Map<string, Promise<GitStatusRpcResult>>();
+const pendingGitCommitRequests = new Map<string, Promise<GitCommitRpcResult>>();
+const pendingGitDiscardRequests = new Map<string, Promise<GitStatusRpcResult>>();
+const pendingGitPushRequests = new Map<string, Promise<GitStatusRpcResult>>();
+const pendingGitPullRequests = new Map<string, Promise<GitStatusRpcResult>>();
+const pendingGitGraphRequests = new Map<string, Promise<GitGraphRpcResult>>();
+const pendingGitCommitDetailRequests = new Map<string, Promise<GitCommitDetailRpcResult>>();
 
 export async function listProjects(context: HelmHandlerContext) {
   let projects = await context.loadAvailableProjectsWithSemanticSummaries();
@@ -294,7 +368,8 @@ export async function createBranch(
     const gitInfo = await listGitBranches(gitRoot);
     const nextProject = context.resolveProjectById(project.id, nextProjects) ?? project;
     if (gitInfo.branches.length) {
-      persistProjectGitInfo(nextProject, gitInfo, worktree.path, context.configPath);
+      const projectRoot = resolveProjectRoot(nextProject, nextWorktrees) ?? worktree.path;
+      persistProjectGitInfo(nextProject, gitInfo, projectRoot, context.configPath);
     }
     return {
       ok: true,
@@ -325,18 +400,65 @@ function mergeWorktreeItems(
   return Array.from(byId.values());
 }
 
-export async function getGitStatus(
+async function resolveProjectGitContext(
   params: { projectId: string; cwd?: string },
   context: HelmHandlerContext,
-) {
-  // Deduplicate concurrent requests for the same project/cwd
-  const dedupeKey = `${params.projectId}:${params.cwd ?? ""}`;
+): Promise<ResolvedProjectGitContext | { projectId: string; cwd: string; message: string }> {
+  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
+  const worktrees = context.loadAvailableWorktrees();
+  const project = context.resolveProjectById(params.projectId, projects);
 
-  if (pendingGitStatusRequests.has(dedupeKey)) {
-    return await pendingGitStatusRequests.get(dedupeKey)!;
+  if (!project) {
+    return { projectId: params.projectId, cwd: params.cwd ?? "", message: "Project not found" };
   }
 
-  const promise = executeGetGitStatus(params, context);
+  const cwd = params.cwd ?? resolveProjectRoot(project, worktrees);
+  if (!cwd) {
+    return { projectId: project.id, cwd: "", message: "Project has no path or worktree path" };
+  }
+
+  if (!isProjectWorktree(project, worktrees, cwd)) {
+    return { projectId: project.id, cwd, message: "Working directory is not part of this project" };
+  }
+
+  return { project, cwd };
+}
+
+function gitSnapshotFailure(
+  projectId: string,
+  cwd: string,
+  message: string,
+  snapshot: GitStatusSnapshot = emptyGitSnapshot(),
+): GitStatusRpcResult {
+  return { ok: false, projectId, cwd, ...snapshot, message };
+}
+
+async function bestEffortGitSnapshot(cwd: string): Promise<GitStatusSnapshot> {
+  try {
+    return await getProjectGitStatus(cwd, { remoteConfirmed: false });
+  } catch {
+    return emptyGitSnapshot();
+  }
+}
+
+export async function getGitStatus(
+  params: { projectId: string; cwd?: string; refreshRemote?: boolean },
+  context: HelmHandlerContext,
+): Promise<GitStatusRpcResult> {
+  const resolved = await resolveProjectGitContext(params, context);
+  if (!("project" in resolved)) {
+    return gitSnapshotFailure(resolved.projectId, resolved.cwd, resolved.message);
+  }
+
+  const dedupeKey = `${resolved.project.id}:${resolved.cwd}:${params.refreshRemote ? "1" : "0"}`;
+  const pending = pendingGitStatusRequests.get(dedupeKey);
+  if (pending) {
+    return await pending;
+  }
+
+  const promise = withGitQueue(resolved.cwd, () =>
+    executeGetGitStatus(params, resolved),
+  );
   pendingGitStatusRequests.set(dedupeKey, promise);
 
   try {
@@ -347,87 +469,53 @@ export async function getGitStatus(
 }
 
 async function executeGetGitStatus(
-  params: { projectId: string; cwd?: string },
-  context: HelmHandlerContext,
-) {
-  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  const worktrees = context.loadAvailableWorktrees();
-  const project = context.resolveProjectById(params.projectId, projects);
-
-  if (!project) {
-    return {
-      ok: false,
-      projectId: params.projectId,
-      cwd: params.cwd ?? "",
-      branch: "",
-      clean: false,
-      files: [],
-      message: "Project not found",
-    };
-  }
-
-  const cwd = params.cwd ?? resolveProjectRoot(project, worktrees);
-  if (!cwd) {
-    return {
-      ok: false,
-      projectId: project.id,
-      cwd: "",
-      branch: "",
-      clean: false,
-      files: [],
-      message: "Project has no path or worktree path",
-    };
-  }
-
-  // Validate cwd belongs to this project
-  if (!isProjectWorktree(project, worktrees, cwd)) {
-    return {
-      ok: false,
-      projectId: project.id,
-      cwd,
-      branch: "",
-      clean: false,
-      files: [],
-      message: "Working directory is not part of this project",
-    };
-  }
+  params: { refreshRemote?: boolean },
+  resolved: ResolvedProjectGitContext,
+): Promise<GitStatusRpcResult> {
 
   try {
-    const { branch, clean, files } = await getProjectGitStatus(cwd);
+    const snapshot = await getProjectGitStatus(resolved.cwd, { refreshRemote: params.refreshRemote });
     return {
       ok: true,
-      projectId: project.id,
-      cwd,
-      branch,
-      clean,
-      files,
-      message: clean ? "Working tree clean" : `${files.length} file(s) changed`,
+      projectId: resolved.project.id,
+      cwd: resolved.cwd,
+      ...snapshot,
+      message: snapshot.clean ? "Working tree clean" : `${snapshot.files.length} file(s) changed`,
     };
   } catch (error) {
-    return {
-      ok: false,
-      projectId: project.id,
-      cwd,
-      branch: "",
-      clean: false,
-      files: [],
-      message: error instanceof Error ? error.message : "Failed to get Git status",
-    };
+    const snapshot = await bestEffortGitSnapshot(resolved.cwd);
+    return gitSnapshotFailure(
+      resolved.project.id,
+      resolved.cwd,
+      error instanceof Error ? error.message : "Failed to get Git status",
+      snapshot,
+    );
   }
 }
 
 export async function commitGitChanges(
   params: { projectId: string; cwd: string; message: string; paths: string[] },
   context: HelmHandlerContext,
-) {
-  // Deduplicate concurrent commit requests for the same project/cwd
-  const dedupeKey = `${params.projectId}:${params.cwd}`;
-
-  if (pendingGitCommitRequests.has(dedupeKey)) {
-    return await pendingGitCommitRequests.get(dedupeKey)!;
+) : Promise<GitCommitRpcResult> {
+  const resolved = await resolveProjectGitContext(params, context);
+  if (!("project" in resolved)) {
+    return { ...gitSnapshotFailure(resolved.projectId, resolved.cwd, resolved.message), commitHash: undefined };
   }
 
-  const promise = executeCommitGitChanges(params, context);
+  const dedupeKey = JSON.stringify([
+    resolved.project.id,
+    resolved.cwd,
+    params.message,
+    params.paths,
+  ]);
+  const pending = pendingGitCommitRequests.get(dedupeKey);
+  if (pending) {
+    return await pending;
+  }
+
+  const promise = withGitQueue(resolved.cwd, () =>
+    executeCommitGitChanges(params, resolved),
+  );
   pendingGitCommitRequests.set(dedupeKey, promise);
 
   try {
@@ -439,59 +527,185 @@ export async function commitGitChanges(
 
 async function executeCommitGitChanges(
   params: { projectId: string; cwd: string; message: string; paths: string[] },
-  context: HelmHandlerContext,
-) {
-  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  const worktrees = context.loadAvailableWorktrees();
-  const project = context.resolveProjectById(params.projectId, projects);
-
-  if (!project) {
-    return {
-      ok: false,
-      projectId: params.projectId,
-      cwd: params.cwd,
-      commitHash: undefined,
-      status: { branch: "", clean: false, files: [] },
-      message: "Project not found",
-    };
-  }
-
-  // Validate cwd belongs to this project
-  if (!isProjectWorktree(project, worktrees, params.cwd)) {
-    return {
-      ok: false,
-      projectId: project.id,
-      cwd: params.cwd,
-      commitHash: undefined,
-      status: { branch: "", clean: false, files: [] },
-      message: "Working directory is not part of this project",
-    };
-  }
-
+  resolved: ResolvedProjectGitContext,
+): Promise<GitCommitRpcResult> {
   try {
     const { commitHash, status } = await commitProjectGitChanges(
-      params.cwd,
+      resolved.cwd,
       params.message,
       params.paths,
     );
 
     return {
       ok: true,
-      projectId: project.id,
-      cwd: params.cwd,
+      projectId: resolved.project.id,
+      cwd: resolved.cwd,
       commitHash,
-      status,
+      ...status,
       message: `Committed ${params.paths.length} file(s)`,
     };
   } catch (error) {
+    const snapshot = await bestEffortGitSnapshot(resolved.cwd);
     return {
-      ok: false,
-      projectId: project.id,
-      cwd: params.cwd,
+      ...gitSnapshotFailure(
+        resolved.project.id,
+        resolved.cwd,
+        error instanceof Error ? error.message : "Failed to commit changes",
+        snapshot,
+      ),
       commitHash: undefined,
-      status: { branch: "", clean: false, files: [] },
-      message: error instanceof Error ? error.message : "Failed to commit changes",
     };
+  }
+}
+
+export async function discardGitChanges(
+  params: { projectId: string; cwd: string; paths?: string[]; all?: boolean },
+  context: HelmHandlerContext,
+): Promise<GitStatusRpcResult> {
+  const resolved = await resolveProjectGitContext(params, context);
+  if (!("project" in resolved)) {
+    return gitSnapshotFailure(resolved.projectId, resolved.cwd, resolved.message);
+  }
+
+  const dedupeKey = JSON.stringify([
+    resolved.project.id,
+    resolved.cwd,
+    params.all === true,
+    params.paths ?? [],
+  ]);
+  const pending = pendingGitDiscardRequests.get(dedupeKey);
+  if (pending) {
+    return await pending;
+  }
+
+  const promise = withGitQueue(resolved.cwd, async () => {
+    try {
+      const snapshot = await discardProjectGitChanges(resolved.cwd, params);
+      return {
+        ok: true,
+        projectId: resolved.project.id,
+        cwd: resolved.cwd,
+        ...snapshot,
+        message: params.all === true
+          ? "Discarded all Git changes"
+          : `Discarded ${params.paths?.length ?? 0} path(s)`,
+      };
+    } catch (error) {
+      const snapshot = await bestEffortGitSnapshot(resolved.cwd);
+      return gitSnapshotFailure(
+        resolved.project.id,
+        resolved.cwd,
+        error instanceof Error ? error.message : "Failed to discard Git changes",
+        snapshot,
+      );
+    }
+  });
+  pendingGitDiscardRequests.set(dedupeKey, promise);
+
+  try {
+    return await promise;
+  } finally {
+    pendingGitDiscardRequests.delete(dedupeKey);
+  }
+}
+
+export async function pushGitChanges(
+  params: { projectId: string; cwd: string },
+  context: HelmHandlerContext,
+) : Promise<GitStatusRpcResult> {
+  const resolved = await resolveProjectGitContext(params, context);
+  if (!("project" in resolved)) {
+    return gitSnapshotFailure(resolved.projectId, resolved.cwd, resolved.message);
+  }
+
+  const dedupeKey = `${resolved.project.id}:${resolved.cwd}`;
+  const pending = pendingGitPushRequests.get(dedupeKey);
+  if (pending) {
+    return await pending;
+  }
+
+  const promise = withGitQueue(resolved.cwd, () =>
+    executePushGitChanges(resolved),
+  );
+  pendingGitPushRequests.set(dedupeKey, promise);
+
+  try {
+    return await promise;
+  } finally {
+    pendingGitPushRequests.delete(dedupeKey);
+  }
+}
+
+async function executePushGitChanges(
+  resolved: ResolvedProjectGitContext,
+): Promise<GitStatusRpcResult> {
+  try {
+    const snapshot = await pushProjectGitChanges(resolved.cwd);
+    return {
+      ok: true,
+      projectId: resolved.project.id,
+      cwd: resolved.cwd,
+      ...snapshot,
+      message: "Pushed",
+    };
+  } catch (error) {
+    const snapshot = await bestEffortGitSnapshot(resolved.cwd);
+    return gitSnapshotFailure(
+      resolved.project.id,
+      resolved.cwd,
+      error instanceof Error ? error.message : "Failed to push changes",
+      snapshot,
+    );
+  }
+}
+
+export async function pullGitChanges(
+  params: { projectId: string; cwd: string },
+  context: HelmHandlerContext,
+) : Promise<GitStatusRpcResult> {
+  const resolved = await resolveProjectGitContext(params, context);
+  if (!("project" in resolved)) {
+    return gitSnapshotFailure(resolved.projectId, resolved.cwd, resolved.message);
+  }
+
+  const dedupeKey = `${resolved.project.id}:${resolved.cwd}`;
+  const pending = pendingGitPullRequests.get(dedupeKey);
+  if (pending) {
+    return await pending;
+  }
+
+  const promise = withGitQueue(resolved.cwd, () =>
+    executePullGitChanges(resolved),
+  );
+  pendingGitPullRequests.set(dedupeKey, promise);
+
+  try {
+    return await promise;
+  } finally {
+    pendingGitPullRequests.delete(dedupeKey);
+  }
+}
+
+async function executePullGitChanges(
+  resolved: ResolvedProjectGitContext,
+): Promise<GitStatusRpcResult> {
+  try {
+    const snapshot = await pullProjectGitChanges(resolved.cwd);
+    return {
+      ok: true,
+      projectId: resolved.project.id,
+      cwd: resolved.cwd,
+      ...snapshot,
+      message: "Fast-forwarded",
+    };
+  } catch (error) {
+    const snapshot = await bestEffortGitSnapshot(resolved.cwd);
+    return gitSnapshotFailure(
+      resolved.project.id,
+      resolved.cwd,
+      error instanceof Error ? error.message : "Failed to pull changes",
+      snapshot,
+    );
   }
 }
 
@@ -514,22 +728,45 @@ function isProjectWorktree(
 }
 
 function normalizeProjectPath(path: string | undefined) {
-  return path?.replace(/\\/g, "/").replace(/\/+$/u, "").toLowerCase() ?? "";
+  if (!path) {
+    return "";
+  }
+  let canonicalPath: string;
+  try {
+    canonicalPath = realpathSync.native(path);
+  } catch {
+    canonicalPath = resolvePath(path);
+  }
+  const normalized = canonicalPath.replace(/\\/g, "/").replace(/\/+$/u, "");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 
 export async function getGitGraph(
   params: { projectId: string; cwd?: string },
   context: HelmHandlerContext,
-) {
-  // Deduplicate concurrent requests for the same project/cwd
-  const dedupeKey = `${params.projectId}:${params.cwd ?? ""}`;
-
-  if (pendingGitGraphRequests.has(dedupeKey)) {
-    return await pendingGitGraphRequests.get(dedupeKey)!;
+) : Promise<GitGraphRpcResult> {
+  const resolved = await resolveProjectGitContext(params, context);
+  if (!("project" in resolved)) {
+    return {
+      ok: false,
+      projectId: resolved.projectId,
+      cwd: resolved.cwd,
+      head: undefined,
+      commits: [],
+      message: resolved.message,
+    };
   }
 
-  const promise = executeGetGitGraph(params, context);
+  const dedupeKey = `${resolved.project.id}:${resolved.cwd}`;
+  const pending = pendingGitGraphRequests.get(dedupeKey);
+  if (pending) {
+    return await pending;
+  }
+
+  const promise = withGitQueue(resolved.cwd, () =>
+    executeGetGitGraph(resolved),
+  );
   pendingGitGraphRequests.set(dedupeKey, promise);
 
   try {
@@ -540,54 +777,14 @@ export async function getGitGraph(
 }
 
 async function executeGetGitGraph(
-  params: { projectId: string; cwd?: string },
-  context: HelmHandlerContext,
-) {
-  const projects = await context.loadAvailableProjectsWithSemanticSummaries();
-  const worktrees = context.loadAvailableWorktrees();
-  const project = context.resolveProjectById(params.projectId, projects);
-
-  if (!project) {
-    return {
-      ok: false,
-      projectId: params.projectId,
-      cwd: params.cwd ?? "",
-      head: undefined,
-      commits: [],
-      message: "Project not found",
-    };
-  }
-
-  const cwd = params.cwd ?? resolveProjectRoot(project, worktrees);
-  if (!cwd) {
-    return {
-      ok: false,
-      projectId: project.id,
-      cwd: "",
-      head: undefined,
-      commits: [],
-      message: "Project has no path or worktree path",
-    };
-  }
-
-  // Validate cwd belongs to this project
-  if (!isProjectWorktree(project, worktrees, cwd)) {
-    return {
-      ok: false,
-      projectId: project.id,
-      cwd,
-      head: undefined,
-      commits: [],
-      message: "Working directory is not part of this project",
-    };
-  }
-
+  resolved: ResolvedProjectGitContext,
+): Promise<GitGraphRpcResult> {
   try {
-    const { head, commits } = await getProjectGitGraph(cwd);
+    const { head, commits } = await getProjectGitGraph(resolved.cwd);
     return {
       ok: true,
-      projectId: project.id,
-      cwd,
+      projectId: resolved.project.id,
+      cwd: resolved.cwd,
       head,
       commits,
       message: `Fetched ${commits.length} commit(s)`,
@@ -595,11 +792,61 @@ async function executeGetGitGraph(
   } catch (error) {
     return {
       ok: false,
-      projectId: project.id,
-      cwd,
+      projectId: resolved.project.id,
+      cwd: resolved.cwd,
       head: undefined,
       commits: [],
       message: error instanceof Error ? error.message : "Failed to fetch Git graph",
     };
+  }
+}
+
+export async function getGitCommitDetail(
+  params: { projectId: string; cwd: string; commitHash: string },
+  context: HelmHandlerContext,
+): Promise<GitCommitDetailRpcResult> {
+  const resolved = await resolveProjectGitContext(params, context);
+  if (!("project" in resolved)) {
+    return {
+      ok: false,
+      projectId: resolved.projectId,
+      cwd: resolved.cwd,
+      commitHash: params.commitHash,
+      files: [],
+      message: resolved.message,
+    };
+  }
+
+  const dedupeKey = `${resolved.project.id}:${resolved.cwd}:${params.commitHash}`;
+  const pending = pendingGitCommitDetailRequests.get(dedupeKey);
+  if (pending) {
+    return await pending;
+  }
+  const promise = withGitQueue(resolved.cwd, async () => {
+    try {
+      const detail = await getProjectGitCommitDetail(resolved.cwd, params.commitHash);
+      return {
+        ok: true,
+        projectId: resolved.project.id,
+        cwd: resolved.cwd,
+        ...detail,
+        message: `Fetched ${detail.files.length} file(s)`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        projectId: resolved.project.id,
+        cwd: resolved.cwd,
+        commitHash: params.commitHash,
+        files: [],
+        message: error instanceof Error ? error.message : "Failed to fetch commit detail",
+      };
+    }
+  });
+  pendingGitCommitDetailRequests.set(dedupeKey, promise);
+  try {
+    return await promise;
+  } finally {
+    pendingGitCommitDetailRequests.delete(dedupeKey);
   }
 }

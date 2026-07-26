@@ -22,7 +22,11 @@ import {
   saveProject,
   getGitStatus,
   commitGitChanges,
+  discardGitChanges,
+  pushGitChanges,
+  pullGitChanges,
   getGitGraph,
+  getGitCommitDetail,
 } from "./project-rpc";
 
 export async function handleConfigRpcRequest(
@@ -58,14 +62,31 @@ export async function handleConfigRpcRequest(
     case "project/git/create_worktree":
       return createBranch(params as { projectId: string; branchName: string }, context);
     case "project/git/status":
-      return getGitStatus(params as { projectId: string; cwd?: string }, context);
+      return getGitStatus(
+        params as { projectId: string; cwd?: string; refreshRemote?: boolean },
+        context,
+      );
     case "project/git/commit":
       return commitGitChanges(
         params as { projectId: string; cwd: string; message: string; paths: string[] },
         context,
       );
+    case "project/git/discard":
+      return discardGitChanges(
+        params as { projectId: string; cwd: string; paths?: string[]; all?: boolean },
+        context,
+      );
+    case "project/git/push":
+      return pushGitChanges(params as { projectId: string; cwd: string }, context);
+    case "project/git/pull":
+      return pullGitChanges(params as { projectId: string; cwd: string }, context);
     case "project/git/graph":
       return getGitGraph(params as { projectId: string; cwd?: string }, context);
+    case "project/git/commit_detail":
+      return getGitCommitDetail(
+        params as { projectId: string; cwd: string; commitHash: string },
+        context,
+      );
     case "agent/list":
       return listAgents(context);
     case "agent/save":
