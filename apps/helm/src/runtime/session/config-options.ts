@@ -1,4 +1,8 @@
-import type { SessionConfigOption, SessionReasoningEffort } from "@tiller/shared";
+import type {
+  SessionConfigOption,
+  SessionConfigOptionValue,
+  SessionReasoningEffort,
+} from "@tiller/shared";
 
 const REASONING_CONFIG_CATEGORIES = new Set([
   "reasoning",
@@ -55,6 +59,38 @@ export type ResolvedConfigOptions = {
   options: SessionConfigOption[] | undefined;
   authoritative: boolean;
 };
+
+export function applyStoredConfigSelection(
+  options: SessionConfigOption[] | undefined,
+  selection: {
+    agentMode?: string;
+    model?: string;
+    reasoningEffort?: SessionReasoningEffort;
+    configId?: string;
+    value?: SessionConfigOptionValue;
+  },
+): SessionConfigOption[] | undefined {
+  return options?.map((option) => {
+    const category = configOptionCategory(option);
+    const directValue = option.id === selection.configId ? selection.value : undefined;
+    const categoryValue = category === "mode"
+      ? selection.agentMode
+      : category === "model"
+        ? selection.model
+        : REASONING_CONFIG_CATEGORIES.has(category)
+          ? selection.reasoningEffort
+          : undefined;
+    const selectedValue = directValue ?? categoryValue;
+    return selectedValue === undefined
+      ? option
+      : {
+          ...option,
+          currentValue: selectedValue,
+          selectedValue,
+          value: selectedValue,
+        };
+  });
+}
 
 function alignConfigOptions(
   options: SessionConfigOption[] | undefined,

@@ -15,6 +15,7 @@ import {
   type SessionRuntimeEvent,
 } from "@tiller/acp-runtime";
 import type { HelmHandlerContext } from "../../handlers/context";
+import type { StoredSessionRuntimeDescriptor } from "../../sessions/facade";
 import { sendPromptToSession, drainPromptQueue } from "./router";
 import { createSessionPromptQueueManager } from "./prompt-queue";
 import { createLiveMessageBuffer } from "../live-message-buffer";
@@ -85,6 +86,16 @@ function createContext(options: {
   const traceEvents: PromptTraceEvent[] = [];
   const subscriptions: string[] = [];
   const sessionStates = new Map<string, CanonicalSessionState>();
+  const runtimeDescriptors = new Map<string, any>([
+    [sessionId, {
+      sessionId,
+      providerId: summary.agentId,
+      runtimeSessionId: summary.runtimeSessionId,
+      capabilities: { sessionLoad: true },
+      lastSeenAt: summary.updatedAt,
+      state: "resumeable",
+    }],
+  ]);
   let currentSummary = summary;
   const sessions = new Map<string, any>();
   if (options.activeRuntime) {
@@ -220,6 +231,50 @@ function createContext(options: {
       get: (targetSessionId: string) => targetSessionId === sessionId ? currentSummary : undefined,
       list: () => [currentSummary],
     },
+    sessionRuntimeStore: {
+      get: (targetSessionId: string) => runtimeDescriptors.get(targetSessionId),
+      upsert: (descriptor: any) => {
+        runtimeDescriptors.set(descriptor.sessionId, descriptor);
+        return descriptor;
+      },
+    },
+    persistRuntimeDescriptor: (
+      next: SessionSummary,
+      _agent: unknown,
+      capabilities: unknown,
+      pendingConfig?: StoredSessionRuntimeDescriptor["pendingConfig"] | null,
+    ) => {
+      const existing = runtimeDescriptors.get(next.id);
+      runtimeDescriptors.set(next.id, {
+        ...existing,
+        sessionId: next.id,
+        providerId: next.agentId,
+        runtimeSessionId: next.runtimeSessionId,
+        capabilities: capabilities ?? existing?.capabilities,
+        lastSeenAt: next.updatedAt,
+        state: "resumeable",
+        ...(pendingConfig === undefined
+          ? { pendingConfig: existing?.pendingConfig }
+          : pendingConfig === null
+            ? { pendingConfig: undefined }
+            : {
+                pendingConfig: {
+                  ...existing?.pendingConfig,
+                  ...pendingConfig,
+                  configOptions: [
+                    ...(existing?.pendingConfig?.configOptions ?? []).filter(
+                      (existingOption: { configId: string }) =>
+                        !(pendingConfig.configOptions ?? []).some(
+                          (nextOption: { configId: string }) =>
+                            nextOption.configId === existingOption.configId,
+                        ),
+                    ),
+                    ...(pendingConfig.configOptions ?? []),
+                  ],
+                },
+              }),
+      });
+    },
     broadcastNotification: (method: string, params: any) => broadcasts.push({ method, params }),
     broadcastSessionTopic: (_sessionId: string, method: string, params: any) => {
       broadcasts.push({ method, params });
@@ -260,6 +315,7 @@ function createContext(options: {
     sessions,
     traceEvents,
     subscriptions,
+    runtimeDescriptors,
   };
 }
 
@@ -1080,17 +1136,88 @@ test("configureSessionRuntime replaces stale selection with runtime-confirmed co
 });
 
 test("configureSessionRuntime saves config when no runtime is active", async () => {
-  const { context } = createContext();
+  const previousOptions = [{
+    id: "model",
+    name: "Model",
+    category: "model",
+    currentValue: "fable",
+    selectedValue: "fable",
+    value: "fable",
+    options: [
+      { value: "fable", label: "Fable" },
+      { value: "opus", label: "Opus" },
+    ],
+  }];
+  const { context, runtimeDescriptors } = createContext({
+    summary: { model: "fable", configOptions: previousOptions },
+  });
   const { configureSessionRuntime } = await import("./router");
 
   const result = await configureSessionRuntime(
-    { sessionId: "session-1", agentMode: "bypass", model: "provider-default" },
+    { sessionId: "session-1", configId: "model", value: "opus", model: "opus" },
     context,
   );
 
   assert.equal(result.message, "Session config saved.");
-  assert.equal(result.state.agentMode, "bypass");
-  assert.equal(result.state.model, "provider-default");
+  assert.equal(result.state.model, "opus");
+  assert.deepEqual(result.options[0], {
+    ...previousOptions[0],
+    currentValue: "opus",
+    selectedValue: "opus",
+    value: "opus",
+  });
+  assert.equal(context.sessionStore.get("session-1")?.configOptions?.[0]?.currentValue, "opus");
+  assert.deepEqual(runtimeDescriptors.get("session-1")?.pendingConfig, {
+    model: "opus",
+    configOptions: [{ configId: "model", value: "opus" }],
+  });
+});
+
+test("configureSessionRuntime saves a direct config option when no runtime is active", async () => {
+  const previousOptions = [{
+    id: "web-search",
+    name: "Web search",
+    currentValue: false,
+    selectedValue: false,
+    value: false,
+  }];
+  const { context, runtimeDescriptors } = createContext({
+    summary: { configOptions: previousOptions },
+  });
+  const { configureSessionRuntime } = await import("./router");
+
+  const result = await configureSessionRuntime(
+    { sessionId: "session-1", configId: "web-search", value: true },
+    context,
+  );
+
+  assert.equal(result.options[0]?.currentValue, true);
+  assert.deepEqual(runtimeDescriptors.get("session-1")?.pendingConfig, {
+    configOptions: [{ configId: "web-search", value: true }],
+  });
+});
+
+test("configureSessionRuntime clears pending config after ACP applies it", async () => {
+  const { context, runtimeDescriptors } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      sessionCapabilities: { sessionLoad: true },
+      configure: async () => ({
+        runtimeApplied: true,
+        state: { model: "opus" },
+        options: [{ id: "model", category: "model", currentValue: "opus" }],
+      }),
+    } as any,
+  });
+  runtimeDescriptors.get("session-1").pendingConfig = { model: "opus" };
+  const { configureSessionRuntime } = await import("./router");
+
+  await configureSessionRuntime(
+    { sessionId: "session-1", configId: "model", value: "opus", model: "opus" },
+    context,
+  );
+
+  assert.equal(runtimeDescriptors.get("session-1")?.pendingConfig, undefined);
 });
 
 test("cancelSessionRuntime canonicalizes active tools while keeping the runtime reusable", async () => {

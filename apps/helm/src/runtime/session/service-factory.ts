@@ -307,8 +307,14 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     summary: SessionSummary,
     agent: AcpAgentProvider | undefined,
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
+    pendingConfig?: StoredSessionRuntimeDescriptor["pendingConfig"] | null,
   ) {
-    runtimeDescriptorService.persistRuntimeDescriptor(summary, agent, capabilities);
+    runtimeDescriptorService.persistRuntimeDescriptor(
+      summary,
+      agent,
+      capabilities,
+      pendingConfig,
+    );
   }
 
   async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {

@@ -254,6 +254,7 @@ export type HelmHandlerContext = {
     summary: SessionSummary,
     agent: AcpAgentProvider | undefined,
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
+    pendingConfig?: StoredSessionRuntimeDescriptor["pendingConfig"] | null,
   ) => void;
   readSessionLiveState?: (sessionId: string) => SessionLiveStateSnapshot | undefined;
   updateSessionSummary: (

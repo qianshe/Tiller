@@ -14,7 +14,10 @@ import {
   markAcpPromptFailureReported,
   wasAcpPromptFailureReported,
 } from "@tiller/acp-runtime";
-import { applyUserPromptToSummary } from "../../sessions/facade";
+import {
+  applyUserPromptToSummary,
+  type StoredSessionRuntimeDescriptor,
+} from "../../sessions/facade";
 import { createSessionEventPublisher } from "./event/publisher";
 import {
   allocateLiveEventSequence,
@@ -28,6 +31,7 @@ import type { HelmHandlerContext } from "../../handlers/context";
 import { emitHelmPromptTrace } from "../prompt-trace";
 import { routeSessionRuntimeEvent } from "../session-timeline/event-router";
 import {
+  applyStoredConfigSelection,
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "./config-options";
@@ -56,6 +60,22 @@ export type SessionConfigureRequest = {
   configId?: string;
   value?: SessionConfigOptionValue;
 };
+
+function createPendingConfig(
+  params: SessionConfigureRequest,
+): StoredSessionRuntimeDescriptor["pendingConfig"] | undefined {
+  const pendingConfig = {
+    ...(params.agentMode !== undefined ? { agentMode: params.agentMode } : {}),
+    ...(params.model !== undefined ? { model: params.model } : {}),
+    ...(params.reasoningEffort !== undefined
+      ? { reasoningEffort: params.reasoningEffort }
+      : {}),
+    ...(params.configId !== undefined && params.value !== undefined
+      ? { configOptions: [{ configId: params.configId, value: params.value }] }
+      : {}),
+  };
+  return Object.keys(pendingConfig).length ? pendingConfig : undefined;
+}
 
 function logRuntimeDebug(context: HelmHandlerContext, event: string, fields: Record<string, unknown>) {
   if (context.logger) {
@@ -550,11 +570,16 @@ export async function configureSessionRuntime(
     ? (runtimeResult.state.model ?? runtimeResult.modelState?.currentModelId ?? current.model)
     : (params.model ?? current.model);
   const nextModelOptions = runtimeResult?.modelState?.options ?? current.modelOptions;
-  const resolvedConfigOptions = resolveConfigOptionsForSelection({
-    incomingOptions: runtimeResult?.options ?? activeRecord?.runtime.sessionConfigOptions,
-    previousOptions: current.configOptions,
-    selectedModel: nextModel,
-  });
+  const resolvedConfigOptions = activeRecord
+    ? resolveConfigOptionsForSelection({
+        incomingOptions: runtimeResult?.options ?? activeRecord.runtime.sessionConfigOptions,
+        previousOptions: current.configOptions,
+        selectedModel: nextModel,
+      })
+    : {
+        options: applyStoredConfigSelection(current.configOptions, params),
+        authoritative: false,
+      };
   const nextConfigOptions = resolvedConfigOptions.options ?? current.configOptions ?? [];
   const nextReasoning = resolveConfigReasoningEffortForOptions(
     runtimeResult
@@ -573,6 +598,12 @@ export async function configureSessionRuntime(
     updatedAt,
   });
   context.updateSessionSummary(params.sessionId, () => next);
+  context.persistRuntimeDescriptor(
+    next,
+    activeRecord?.agent,
+    activeRecord?.runtime.sessionCapabilities,
+    runtimeResult?.runtimeApplied ? null : createPendingConfig(params),
+  );
   publishCanonicalSessionStateEvent(
     params.sessionId,
     {

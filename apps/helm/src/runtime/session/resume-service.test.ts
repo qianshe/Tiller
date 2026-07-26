@@ -1168,6 +1168,243 @@ test("session restore prefers ACP-reported config over persisted values", async 
   assert.equal(stored.summary?.reasoningEffort, "medium");
 });
 
+test("session restore applies config saved while the runtime was inactive", async () => {
+  const sessionId = "session-pending-model";
+  const summary: SessionSummary = {
+    id: sessionId,
+    title: "Pending model",
+    status: "idle",
+    projectId: "project-1",
+    projectName: "Tiller",
+    helmId: "helm-1",
+    agentId: "codex",
+    agentName: "Codex",
+    cwd: "D:/repo",
+    createdAt: "2026-07-27T00:00:00.000Z",
+    updatedAt: "2026-07-27T00:01:00.000Z",
+    messageCount: 4,
+    runtimeSessionId: "runtime-old",
+    model: "opus",
+    reasoningEffort: "high",
+    configOptions: [{
+      id: "model",
+      category: "model",
+      currentValue: "opus",
+      selectedValue: "opus",
+      value: "opus",
+      options: [{ value: "fable" }, { value: "opus" }],
+    }, {
+      id: "web-search",
+      currentValue: true,
+      selectedValue: true,
+      value: true,
+    }],
+  };
+  const descriptor = {
+    sessionId,
+    providerId: "codex",
+    runtimeSessionId: "runtime-old",
+    capabilities: { sessionLoad: true },
+    lastSeenAt: summary.updatedAt,
+    state: "resumeable" as const,
+    pendingConfig: {
+      model: "opus",
+      reasoningEffort: "high" as const,
+      configOptions: [{ configId: "web-search", value: true }],
+    },
+  };
+  const configureInputs: Array<Record<string, unknown>> = [];
+  let persistedPendingConfig: Record<string, unknown> | null | undefined;
+
+  const service = createSessionResumeService({
+    sessions: new Map(),
+    sessionStore: {
+      get: () => summary,
+      upsert: () => undefined,
+    },
+    sessionRuntimeStore: { get: () => descriptor },
+    providerLifecycle: {
+      createRuntime: async () => ({
+        runtimeSessionId: "runtime-new",
+        sessionCapabilities: { sessionLoad: true },
+        sessionConfigState: { model: "fable", reasoningEffort: "medium" },
+        sessionModelState: {
+          currentModelId: "fable",
+          options: [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }],
+        },
+        sessionConfigOptions: [{
+          id: "model",
+          category: "model",
+          currentValue: "fable",
+          selectedValue: "fable",
+          value: "fable",
+          options: [{ value: "fable" }, { value: "opus" }],
+        }, {
+          id: "web-search",
+          currentValue: false,
+          selectedValue: false,
+          value: false,
+        }],
+        configure: async (input: Record<string, unknown>) => {
+          configureInputs.push(input);
+          return {
+            runtimeApplied: input.configId !== undefined,
+            state: { model: "opus", reasoningEffort: "high" },
+            modelState: {
+              currentModelId: "opus",
+              options: [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }],
+            },
+            options: [{
+              id: "model",
+              category: "model",
+              currentValue: "opus",
+              selectedValue: "opus",
+              value: "opus",
+              options: [{ value: "fable" }, { value: "opus" }],
+            }, {
+              id: "web-search",
+              currentValue: true,
+              selectedValue: true,
+              value: true,
+            }],
+          };
+        },
+        prompt: async () => undefined,
+        cancel: () => undefined,
+        close: async () => undefined,
+      }),
+    },
+    getAgents: () => [{
+      id: "codex",
+      name: "Codex",
+      command: "codex-acp",
+      transport: "stdio",
+      protocol: "acp",
+    }],
+    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+    resolveStoredSessionWorktree: () => ({ name: "main", path: "D:/repo" }),
+    buildResumeInfo: () => ({
+      mode: "same-provider",
+      state: "resume-available",
+      reason: "load",
+      checkedAt: "2026-07-27T00:00:00.000Z",
+      runtimeSessionId: "runtime-old",
+      restoreMethod: "session/load",
+    }),
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    persistRuntimeDescriptor: (
+      _next: SessionSummary,
+      _agent: AcpAgentProvider | undefined,
+      _capabilities: unknown,
+      pendingConfig?: Record<string, unknown> | null,
+    ) => {
+      persistedPendingConfig = pendingConfig;
+    },
+    handleRuntimeEvent: () => undefined,
+    logConnectionLifecycle: () => undefined,
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  const result = await service.startSessionResume(sessionId);
+
+  assert.equal(result.ok, true);
+  assert.equal(configureInputs[0]?.model, "opus");
+  assert.equal(configureInputs[0]?.reasoningEffort, "high");
+  assert.equal(configureInputs[1]?.configId, "web-search");
+  assert.equal(configureInputs[1]?.value, true);
+  assert.equal(result.session?.model, "opus");
+  assert.equal(result.session?.configOptions?.[0]?.currentValue, "opus");
+  assert.equal(result.session?.configOptions?.[1]?.currentValue, true);
+  assert.equal(persistedPendingConfig, null);
+});
+
+test("session restore keeps pending config when ACP applies only part of it", async () => {
+  const sessionId = "session-partial-pending-config";
+  const summary: SessionSummary = {
+    id: sessionId,
+    title: "Partial pending config",
+    status: "idle",
+    projectId: "project-1",
+    projectName: "Tiller",
+    helmId: "helm-1",
+    agentId: "codex",
+    agentName: "Codex",
+    cwd: "D:/repo",
+    createdAt: "2026-07-27T00:00:00.000Z",
+    updatedAt: "2026-07-27T00:01:00.000Z",
+    messageCount: 0,
+    runtimeSessionId: "runtime-old",
+    model: "opus",
+    reasoningEffort: "high",
+  };
+  const pendingConfig = { model: "opus", reasoningEffort: "high" as const };
+  let descriptorCleared = false;
+  let runtimeClosed = false;
+  const service = createSessionResumeService({
+    sessions: new Map(),
+    sessionStore: { get: () => summary, upsert: () => undefined },
+    sessionRuntimeStore: {
+      get: () => ({
+        sessionId,
+        providerId: "codex",
+        runtimeSessionId: "runtime-old",
+        capabilities: { sessionLoad: true },
+        lastSeenAt: summary.updatedAt,
+        state: "resumeable",
+        pendingConfig,
+      }),
+    },
+    providerLifecycle: {
+      createRuntime: async () => ({
+        runtimeSessionId: "runtime-new",
+        sessionCapabilities: { sessionLoad: true },
+        configure: async () => ({
+          runtimeApplied: true,
+          state: { model: "opus", reasoningEffort: "medium" },
+          modelState: { currentModelId: "opus", options: [] },
+          options: [],
+        }),
+        close: async () => {
+          runtimeClosed = true;
+        },
+      }),
+    },
+    getAgents: () => [{
+      id: "codex",
+      name: "Codex",
+      command: "codex-acp",
+      transport: "stdio",
+      protocol: "acp",
+    }],
+    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+    resolveStoredSessionWorktree: () => ({ name: "main", path: "D:/repo" }),
+    buildResumeInfo: () => ({
+      mode: "same-provider",
+      state: "resume-available",
+      reason: "load",
+      checkedAt: "2026-07-27T00:00:00.000Z",
+      runtimeSessionId: "runtime-old",
+      restoreMethod: "session/load",
+    }),
+    hydrateSessionSummary: (next: SessionSummary) => next,
+    persistRuntimeDescriptor: () => {
+      descriptorCleared = true;
+    },
+    handleRuntimeEvent: () => undefined,
+    logConnectionLifecycle: () => undefined,
+    logInfo: () => undefined,
+    logError: () => undefined,
+  } as any);
+
+  const result = await service.startSessionResume(sessionId);
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /could not be applied/u);
+  assert.equal(descriptorCleared, false);
+  assert.equal(runtimeClosed, true);
+});
+
 test("session restore falls back to persisted config when ACP reports no current config", async () => {
   const sessionId = "session-unsupported-model";
   const summary: SessionSummary = {
