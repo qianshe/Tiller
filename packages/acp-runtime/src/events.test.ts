@@ -293,6 +293,85 @@ test("mapSessionUpdateNotification maps Codex context compacted chunks into comp
   assert.equal(mapped.event.messageId, "msg_codex_compaction_chunk");
 });
 
+test("mapSessionUpdateNotification maps Codex context compacted tool markers into compaction events", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_compaction_tool",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_compaction",
+          kind: "other",
+          title: "Context compacted",
+          status: "completed",
+          timestamp: "2026-07-26T09:00:00.000Z",
+        },
+      },
+    },
+    {
+      provider: {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      providerId: "codex",
+    },
+  );
+
+  assert.ok(mapped);
+  assert.deepEqual(mapped.event, {
+    type: "compaction",
+    phase: "completed",
+    source: "provider",
+    timestamp: "2026-07-26T09:00:00.000Z",
+    messageId: "call_codex_compaction",
+  });
+});
+
+test("mapSessionUpdateNotification keeps a real Codex tool named Context compacted as a tool", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_context_compacted_mcp",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_context_compacted_mcp",
+          kind: "mcp",
+          title: "Context compacted",
+          status: "completed",
+          rawInput: {
+            server: "example",
+            tool: "context_compacted",
+            arguments: {},
+          },
+        },
+      },
+    },
+    {
+      provider: {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      providerId: "codex",
+    },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  assert.equal(
+    mapped?.event.type === "tool-call" ? mapped.event.toolCall.kind : undefined,
+    "mcp",
+  );
+});
+
 for (const provider of [
   {
     id: "claude-acp",
@@ -1042,6 +1121,41 @@ test("mapSessionUpdateNotification derives Codex mcp tool names from rawInput se
     tool: "activate_project",
     arguments: { project: "D:\\myProject\\tools\\Tiller" },
   }));
+});
+
+test("mapSessionUpdateNotification derives Codex write titles from diff content paths", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_write",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_write",
+          title: "Editing files",
+          kind: "edit",
+          status: "completed",
+          content: [
+            {
+              type: "diff",
+              path: "D:\\repo\\packages\\acp-runtime\\src\\events.ts",
+              oldText: "old",
+              newText: "new",
+            },
+          ],
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "write");
+  assert.equal(mapped.event.toolCall.title, "packages\\acp-runtime\\src\\events.ts");
 });
 
 test("mapSessionUpdateNotification prefers Codex rawInput over an empty input placeholder", () => {

@@ -30,13 +30,12 @@ test("replacePendingApprovals hydrates by-session index and orders by createdAt 
   assert.equal(store.getState().approvalItemsById["approval-1"]?.resolving, false);
 });
 
-test("upsertApproval appends to indexes and pushes a toast entry", () => {
+test("upsertApproval appends to indexes", () => {
   const store = createSlice();
   store.getState().upsertApproval({ sessionId: "s1", request });
 
   assert.deepEqual(store.getState().pendingApprovalIds, ["approval-1"]);
   assert.deepEqual(store.getState().pendingApprovalIdsBySession.s1, ["approval-1"]);
-  assert.deepEqual(store.getState().approvalToastQueue, ["approval-1"]);
 });
 
 test("upsertApproval is idempotent on the same request id", () => {
@@ -46,7 +45,6 @@ test("upsertApproval is idempotent on the same request id", () => {
 
   assert.deepEqual(store.getState().pendingApprovalIds, ["approval-1"]);
   assert.deepEqual(store.getState().pendingApprovalIdsBySession.s1, ["approval-1"]);
-  assert.deepEqual(store.getState().approvalToastQueue, ["approval-1"]);
 });
 
 test("markApprovalResolving toggles the resolving flag", () => {
@@ -72,17 +70,6 @@ test("resolveApproval drops the entry from every index", () => {
   assert.deepEqual(store.getState().pendingApprovalIds, ["approval-2"]);
   assert.deepEqual(store.getState().pendingApprovalIdsBySession.s1, ["approval-2"]);
   assert.equal(store.getState().approvalItemsById["approval-1"], undefined);
-  assert.deepEqual(store.getState().approvalToastQueue, ["approval-2"]);
-});
-
-test("dismissApprovalToast removes only from toast queue, not inventory", () => {
-  const store = createSlice();
-  store.getState().upsertApproval({ sessionId: "s1", request });
-  store.getState().dismissApprovalToast("approval-1");
-
-  assert.deepEqual(store.getState().approvalToastQueue, []);
-  assert.equal(store.getState().approvalItemsById["approval-1"]?.request.id, "approval-1");
-  assert.deepEqual(store.getState().pendingApprovalIds, ["approval-1"]);
 });
 
 test("approval slice indexes 100 pending approvals without losing entries", () => {
@@ -121,7 +108,6 @@ test("approval slice keeps performance stable when 100 pending approvals are ups
   }
 
   assert.equal(store.getState().pendingApprovalIds.length, 100);
-  assert.equal(store.getState().approvalToastQueue.length, 100);
   for (let bucket = 0; bucket < 5; bucket++) {
     assert.equal(store.getState().pendingApprovalIdsBySession[`s${bucket}`]?.length, 20);
   }

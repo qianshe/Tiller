@@ -3566,6 +3566,39 @@ test("plain write rows show per-call additions and deletions when evidence is av
   assert.equal(html.match(/src\/app\.ts/gu)?.length, 2);
 });
 
+test("plain write rows show aggregated stats from Codex ACP diff arrays", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-write-acp-diff-stats",
+        kind: "write",
+        title: "src/updated.ts",
+        status: "completed",
+        input: "",
+        output: JSON.stringify([
+          {
+            type: "diff",
+            path: "src/updated.ts",
+            oldText: "keep\nold\n",
+            newText: "keep\nnew\nextra\n",
+          },
+          {
+            type: "diff",
+            path: "src/created.ts",
+            oldText: null,
+            newText: "first\nsecond\n",
+          },
+        ]),
+        timestamp: "2026-07-14T00:00:01.000Z",
+        updatedAt: "2026-07-14T00:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /tool-call-additions[^\"]*text-success[^>]*>\+4</);
+  assert.match(html, /tool-call-deletions[^\"]*text-destructive[^>]*>-1</);
+});
+
 test("plain write rows keep the Diff shell when only counts are available", () => {
   const html = renderPlainMessages({
     toolCalls: [

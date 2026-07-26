@@ -26,6 +26,40 @@ export function mapCodexCompactionUpdate(
   };
 }
 
+export function mapCodexCompactionToolUpdate(
+  context: AcpSessionUpdateProjectionContext,
+): Extract<SessionRuntimeEvent, { type: "compaction" }> | null {
+  if (context.updateType !== "tool_call" && context.updateType !== "tool_call_update") {
+    return null;
+  }
+
+  const update = recordFrom(context.update);
+  const source = recordFrom(update.toolCall ?? update.tool_call ?? update.tool);
+  const kind = stringFrom(source.kind ?? update.kind)?.trim().toLowerCase();
+  if (kind && kind !== "other" && kind !== "tool") {
+    return null;
+  }
+  const title = stringFrom(
+    source.title ?? source.label ?? source.displayName ?? source.display_name ??
+      update.title ?? update.label ?? update.displayName ?? update.display_name,
+  );
+  const signal = title ? summarizeCodexCompactionSignal(title.trim()) : null;
+  if (!signal?.exactMatch) {
+    return null;
+  }
+
+  return {
+    type: "compaction",
+    phase: "completed",
+    source: "provider",
+    timestamp: stringFrom(source.timestamp ?? update.timestamp) ?? new Date().toISOString(),
+    messageId: stringFrom(
+      source.id ?? source.toolCallId ?? source.tool_call_id ??
+        update.toolCallId ?? update.tool_call_id ?? update.id,
+    ),
+  };
+}
+
 export function summarizeCodexCompactionSignal(text: string): AcpCompactionSignalSummary | null {
   const match = matchCodexCompactionPrefix(text);
   if (!match) {

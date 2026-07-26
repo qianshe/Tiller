@@ -12,7 +12,6 @@ export type ApprovalsSlice = {
   approvalItemsById: Record<string, ApprovalStoreItem>;
   pendingApprovalIds: string[];
   pendingApprovalIdsBySession: Record<string, string[]>;
-  approvalToastQueue: string[];
   replacePendingApprovals: (
     items: Array<{ sessionId: string; request: PermissionRequest; createdAt?: string }>,
   ) => void;
@@ -23,13 +22,8 @@ export type ApprovalsSlice = {
   }) => void;
   markApprovalResolving: (approvalRequestId: string, resolving: boolean) => void;
   resolveApproval: (approvalRequestId: string) => void;
-  dismissApprovalToast: (approvalRequestId: string) => void;
   dropSessionApprovals: (sessionId: string) => void;
 };
-
-function appendUnique(list: string[], id: string): string[] {
-  return list.includes(id) ? list : [...list, id];
-}
 
 function removeFromList(list: string[] | undefined, id: string): string[] {
   if (!list) {
@@ -43,7 +37,6 @@ export const createApprovalsSlice: StateCreator<ApprovalsSlice> = (set) => ({
   approvalItemsById: {},
   pendingApprovalIds: [],
   pendingApprovalIdsBySession: {},
-  approvalToastQueue: [],
   replacePendingApprovals: (items) =>
     set(() => {
       const approvalItemsById: Record<string, ApprovalStoreItem> = {};
@@ -66,7 +59,6 @@ export const createApprovalsSlice: StateCreator<ApprovalsSlice> = (set) => ({
         approvalItemsById,
         pendingApprovalIds,
         pendingApprovalIdsBySession,
-        approvalToastQueue: [],
       };
     }),
   upsertApproval: (item) =>
@@ -89,7 +81,6 @@ export const createApprovalsSlice: StateCreator<ApprovalsSlice> = (set) => ({
           ...state.pendingApprovalIdsBySession,
           [item.sessionId]: [...sessionBucket, id],
         },
-        approvalToastQueue: appendUnique(state.approvalToastQueue, id),
       };
     }),
   markApprovalResolving: (approvalRequestId, resolving) =>
@@ -123,13 +114,8 @@ export const createApprovalsSlice: StateCreator<ApprovalsSlice> = (set) => ({
         approvalItemsById: rest,
         pendingApprovalIds: removeFromList(state.pendingApprovalIds, approvalRequestId),
         pendingApprovalIdsBySession: nextBySession,
-        approvalToastQueue: removeFromList(state.approvalToastQueue, approvalRequestId),
       };
     }),
-  dismissApprovalToast: (approvalRequestId) =>
-    set((state) => ({
-      approvalToastQueue: removeFromList(state.approvalToastQueue, approvalRequestId),
-    })),
   dropSessionApprovals: (sessionId) =>
     set((state) => {
       const ids = state.pendingApprovalIdsBySession[sessionId];
@@ -147,7 +133,6 @@ export const createApprovalsSlice: StateCreator<ApprovalsSlice> = (set) => ({
         approvalItemsById: nextItems,
         pendingApprovalIds: state.pendingApprovalIds.filter((id) => !idSet.has(id)),
         pendingApprovalIdsBySession: nextBySession,
-        approvalToastQueue: state.approvalToastQueue.filter((id) => !idSet.has(id)),
       };
     }),
 });

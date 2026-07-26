@@ -10,7 +10,6 @@ function resetApprovals() {
     approvalItemsById: {},
     pendingApprovalIds: [],
     pendingApprovalIdsBySession: {},
-    approvalToastQueue: [],
   } as any);
 }
 

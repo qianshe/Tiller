@@ -52,6 +52,28 @@ test("resolveToolCallChangeStats reads unified patches from nested provider meta
   });
 });
 
+test("resolveToolCallChangeStats aggregates Codex ACP diff content arrays", () => {
+  const output = JSON.stringify([
+    {
+      type: "diff",
+      path: "src/updated.ts",
+      oldText: "keep\nold\n",
+      newText: "keep\nnew\nextra\n",
+    },
+    {
+      type: "diff",
+      path: "src/created.ts",
+      oldText: null,
+      newText: "first\nsecond\n",
+    },
+  ]);
+
+  assert.deepEqual(
+    resolveToolCallChangeStats("write", "", output),
+    { additions: 4, deletions: 1 },
+  );
+});
+
 test("resolveToolCallChangeStats counts successful Codex ACP apply_patch lines", () => {
   const updateCommand = "$patch = \"*** Begin Patch`n*** Update File: .codex-native-edit-test.txt`n@@`n-phase=create`n-status=temporary`n+phase=edited`n+status=verified`n*** End Patch\"; & 'F:\\devData\\codex-acp.exe' --codex-run-as-apply-patch $patch";
   const addCommand = "$patch = \"*** Begin Patch`n*** Add File: .codex-native-edit-test.txt`n+phase=create`n+status=temporary`n*** End Patch\"; & 'F:\\devData\\codex-acp.exe' --codex-run-as-apply-patch $patch";

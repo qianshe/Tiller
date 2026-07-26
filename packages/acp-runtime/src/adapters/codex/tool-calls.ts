@@ -14,6 +14,7 @@ type CodexToolCallNormalizationContext = {
   toolCall: AgentToolCall;
   input: Record<string, unknown> | null;
   descriptor: CodexToolDescriptor | null;
+  update: any;
 };
 
 type CodexToolCallRule = {
@@ -63,6 +64,16 @@ const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
         title: formatCodexSkillTitle(extractCodexSkillNameFromToolCall(toolCall, input)!),
       };
     },
+  },
+  {
+    match: ({ toolCall, input, update }) =>
+      toolCall.kind === "write" &&
+      isGenericCodexWriteTitle(toolCall.title) &&
+      resolveCodexWritePaths(input, update).length > 0,
+    normalize: ({ toolCall, input, update }) => ({
+      ...toolCall,
+      title: formatCodexWriteTitle(resolveCodexWritePaths(input, update)),
+    }),
   },
   {
     match: ({ toolCall, input, descriptor }) => Boolean(resolveCodexMcp(toolCall, input, descriptor)),
@@ -115,6 +126,7 @@ export function normalizeCodexToolCall(
     toolCall,
     input,
     descriptor,
+    update,
   };
   for (const rule of CODEX_TOOL_CALL_RULES) {
     if (rule.match(context)) {
@@ -122,6 +134,116 @@ export function normalizeCodexToolCall(
     }
   }
   return toolCall;
+}
+
+function resolveCodexWritePaths(
+  input: Record<string, unknown> | null,
+  update: any,
+) {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  const addPath = (value: unknown) => {
+    const path = stringValue(value);
+    if (!path) {
+      return;
+    }
+    const identity = path.replace(/\\/gu, "/");
+    if (!seen.has(identity)) {
+      seen.add(identity);
+      paths.push(path);
+    }
+  };
+
+  for (const source of [update, update?.toolCall, update?.tool_call]) {
+    collectCodexPathsFromContent(source?.content, addPath);
+    collectCodexPathsFromLocations(source?.locations, addPath);
+  }
+  collectCodexPathsFromChanges(input?.changes, addPath);
+  return paths;
+}
+
+function collectCodexPathsFromContent(
+  content: unknown,
+  addPath: (value: unknown) => void,
+) {
+  if (!Array.isArray(content)) {
+    return;
+  }
+  for (const item of content) {
+    const record = recordValue(item);
+    if (!record) {
+      continue;
+    }
+    if (record.type === "diff") {
+      addPath(record.path);
+    }
+  }
+}
+
+function collectCodexPathsFromLocations(
+  locations: unknown,
+  addPath: (value: unknown) => void,
+) {
+  if (!Array.isArray(locations)) {
+    return;
+  }
+  for (const location of locations) {
+    addPath(recordValue(location)?.path);
+  }
+}
+
+function collectCodexPathsFromChanges(
+  changes: unknown,
+  addPath: (value: unknown) => void,
+) {
+  if (Array.isArray(changes)) {
+    for (const change of changes) {
+      const record = recordValue(change);
+      addPath(record?.path ?? record?.file_path ?? record?.filePath);
+    }
+    return;
+  }
+  const record = recordValue(changes);
+  if (!record) {
+    return;
+  }
+  const directPath = record.path ?? record.file_path ?? record.filePath;
+  if (directPath) {
+    addPath(directPath);
+    return;
+  }
+  for (const [path, change] of Object.entries(record)) {
+    if (looksLikeCodexFileChange(change)) {
+      addPath(path);
+    }
+  }
+}
+
+function looksLikeCodexFileChange(value: unknown) {
+  const record = recordValue(value);
+  return Boolean(
+    record &&
+    (record.type === "add" ||
+      record.type === "delete" ||
+      record.type === "update" ||
+      record.kind ||
+      record.unified_diff),
+  );
+}
+
+function isGenericCodexWriteTitle(title: string) {
+  const normalized = title.trim();
+  return isOpaqueCodexToolTitle(title) ||
+    /^(?:Edit|Editing files?|Write|Writing files?)$/iu.test(normalized);
+}
+
+function formatCodexWriteTitle(paths: string[]) {
+  const firstPath = compactCodexWritePath(paths[0]!);
+  return paths.length === 1 ? firstPath : `${firstPath} (+${paths.length - 1} more)`;
+}
+
+function compactCodexWritePath(path: string) {
+  return path.match(/(?:^|[\\/])((?:apps|packages|docs|scripts)[\\/].*)$/u)?.[1] ?? path;
 }
 
 function resolveCodexWebToolTitle(descriptor: CodexToolDescriptor) {
@@ -388,6 +510,12 @@ function parseJsonRecordValue(input: unknown): Record<string, unknown> | null {
   if (typeof input === "string") {
     return parseJsonRecord(input);
   }
+  return input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : null;
+}
+
+function recordValue(input: unknown): Record<string, unknown> | null {
   return input && typeof input === "object" && !Array.isArray(input)
     ? input as Record<string, unknown>
     : null;

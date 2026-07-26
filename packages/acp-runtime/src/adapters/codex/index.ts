@@ -1,7 +1,12 @@
 import type { AcpAgentAdapter } from "../types";
 import { isCommandNamed, resolveDefaultLaunch } from "../shared";
 import { applyCodexSessionLaunchArgs } from "../session-config";
-import { expandCodexRuntimeEvent, mapCodexCompactionUpdate, summarizeCodexCompactionSignal } from "./compaction-events";
+import {
+  expandCodexRuntimeEvent,
+  mapCodexCompactionToolUpdate,
+  mapCodexCompactionUpdate,
+  summarizeCodexCompactionSignal,
+} from "./compaction-events";
 import { extractCodexPlanFromToolCall, isCodexPlanToolCall, mapCodexPlanUpdate } from "./plan-events";
 import { createCodexPromptToolCallObserver } from "./prompt-tool-calls";
 import { collectCodexToolEvidence } from "./evidence";
@@ -27,7 +32,8 @@ export function createCodexAcpAdapter(): AcpAgentAdapter {
       message: "Codex ACP does not expose remote session deletion yet.",
     }),
     mapMessageUpdate: mapCodexCompactionUpdate,
-    mapToolCallUpdate: mapCodexPlanUpdate,
+    mapToolCallUpdate: (context) =>
+      mapCodexCompactionToolUpdate(context) ?? mapCodexPlanUpdate(context),
     beginPromptObservation: (context) => promptToolCalls.begin(context),
     pollPromptToolObservations: (context) => promptEventsToToolObservations(
       promptToolCalls.poll(context),

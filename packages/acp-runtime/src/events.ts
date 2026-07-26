@@ -224,6 +224,9 @@ function projectSessionUpdate(
   if (isSuppressed(adapterToolEvent)) {
     return [];
   }
+  if (adapterToolEvent?.type === "compaction") {
+    return [adapterToolEvent];
+  }
   if (explicitToolCall) {
     const toolCalls = recognizeProviderToolCalls(options, sessionId, explicitToolCall, update);
     if (!toolCalls.length) {

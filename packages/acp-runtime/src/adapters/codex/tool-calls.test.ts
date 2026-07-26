@@ -108,6 +108,75 @@ test("normalizeCodexToolCall keeps a streaming shell command out of the title", 
   assert.equal(normalized.title, "Shell");
 });
 
+test("normalizeCodexToolCall derives Codex write titles from ACP diff content", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      kind: "write",
+      title: "Editing files",
+      status: "completed",
+    }),
+    {
+      sessionUpdate: "tool_call",
+      content: [
+        {
+          type: "diff",
+          path: "D:\\repo\\apps\\deck\\src\\first.tsx",
+          oldText: "old",
+          newText: "new",
+        },
+        {
+          type: "diff",
+          path: "D:\\repo\\packages\\shared\\src\\second.ts",
+          oldText: null,
+          newText: "new",
+        },
+      ],
+    },
+  );
+
+  assert.equal(normalized.kind, "write");
+  assert.equal(normalized.title, "apps\\deck\\src\\first.tsx (+1 more)");
+});
+
+test("normalizeCodexToolCall derives legacy Codex write titles from rawInput changes", () => {
+  const input = JSON.stringify({
+    call_id: "call-write",
+    changes: {
+      "apps/deck/src/example.tsx": {
+        type: "update",
+        unified_diff: "@@ -1 +1 @@",
+      },
+    },
+  });
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      kind: "write",
+      title: "Editing files",
+      input,
+    }),
+    {},
+  );
+
+  assert.equal(normalized.title, "apps/deck/src/example.tsx");
+  assert.equal(normalized.input, input);
+});
+
+test("normalizeCodexToolCall does not treat unrelated changes as a write", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({ title: "Update settings" }),
+    {
+      rawInput: {
+        changes: {
+          theme: { from: "light", to: "dark" },
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "tool");
+  assert.equal(normalized.title, "Update settings");
+});
+
 test("normalizeCodexToolCall prioritizes Codex skill commands over an incidental MCP descriptor", () => {
   const normalized = normalizeCodexToolCall(
     baseToolCall({

@@ -35,7 +35,6 @@ import {
   useSessionTitles,
   useSlashCommands,
 } from "../../features/mission";
-import { ApprovalToastStackContainer } from "../../features/approvals";
 import { useCodeActions } from "../../features/pairing";
 import {
   useDeckPreferenceActions,
@@ -623,11 +622,6 @@ export function App() {
           controllers.cleanupSession(sessionId);
           runtimeState.setPendingSessionCleanup(null);
         }}
-      />
-      <ApprovalToastStackContainer
-        onRespond={(approvalRequestId, decision) =>
-          controllers.respondToPermission(approvalRequestId, decision)
-        }
       />
       <RadialMenu
         activeView={route.activeView}

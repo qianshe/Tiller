@@ -64,7 +64,6 @@ function resetStore() {
     approvalItemsById: {},
     pendingApprovalIds: [],
     pendingApprovalIdsBySession: {},
-    approvalToastQueue: [],
     trustedDevices: [],
     pairingFeedback: "",
   } as any);
