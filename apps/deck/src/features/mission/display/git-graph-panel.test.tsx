@@ -2,8 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { GitGraphPanel } from "./git-graph-panel.js";
-import type { GitGraphState } from "../../../store/facade";
+import { CommitFileDiffs, GitGraphPanel } from "./git-graph-panel.js";
+import type { GitCommitDetailState, GitGraphState } from "../../../store/facade";
 
 const noop = () => undefined;
 
@@ -295,4 +295,62 @@ test("git graph panel renders commit file diffs and a hash copy action", () => {
   assert.match(html, /aria-label="复制提交哈希"/);
   assert.match(html, /README\.md/);
   assert.match(html, /\+two/);
+});
+
+const nestedCommitDetail: GitCommitDetailState = {
+  commitHash: "abc1234567890",
+  files: [
+    {
+      path: "src/utils/a.ts",
+      status: "modified",
+      additions: 2,
+      deletions: 1,
+      patch: "@@ -1 +1,2 @@\n one\n+two",
+    },
+    {
+      path: "src/utils/b.ts",
+      status: "added",
+      additions: 5,
+      deletions: 0,
+    },
+    {
+      path: "README.md",
+      status: "modified",
+      additions: 1,
+      deletions: 0,
+    },
+  ],
+};
+
+test("commit file diffs default to the flat list view with a tree toggle", () => {
+  const html = renderToStaticMarkup(
+    createElement(CommitFileDiffs, { detail: nestedCommitDetail }),
+  );
+
+  // 切换按钮成对出现,默认列表视图处于按下状态
+  assert.match(html, /aria-label="列表视图"[^>]*aria-pressed="true"/);
+  assert.match(html, /aria-label="树形视图"[^>]*aria-pressed="false"/);
+  // 列表视图展示完整路径,不出现目录分组行
+  assert.match(html, /src\/utils\/a\.ts/);
+  assert.match(html, /src\/utils\/b\.ts/);
+  assert.doesNotMatch(html, /data-commit-tree-directory/);
+});
+
+test("commit file diffs group files by directory in tree view", () => {
+  const html = renderToStaticMarkup(
+    createElement(CommitFileDiffs, {
+      detail: nestedCommitDetail,
+      defaultViewMode: "tree",
+    }),
+  );
+
+  // 目录分组行:压缩后的目录名 + 文件计数,默认展开且可收起
+  assert.match(html, /<details[^>]*data-commit-tree-directory="src\/utils"[^>]*open/);
+  assert.match(html, /<summary[^>]*>[\s\S]*?src\/utils/);
+  assert.match(html, /src\/utils/);
+  // 文件行只显示文件名,完整路径保留在 title 中,patch 仍可展开
+  assert.match(html, /title="src\/utils\/a\.ts"/);
+  assert.doesNotMatch(html, />src\/utils\/a\.ts</);
+  assert.match(html, /\+two/);
+  assert.match(html, /README\.md/);
 });
