@@ -15,5 +15,13 @@ export type { HelmInventoryBucket, HelmLoggingSettings } from "./slices/helms-sl
 export type { MessagesSlice, SessionLegacyEvidenceState } from "./slices/messages-slice";
 export type { PairingState } from "./slices/pairing-slice";
 export type { PromptTraceSlice } from "./slices/prompt-trace-slice";
-export type { GitCommit, GitGraphState, GitStatusState } from "./slices/projects-slice";
+export {
+  createGitStatusState,
+  type GitCommit,
+  type GitCommitDetailState,
+  type GitCommitFile,
+  type GitGraphState,
+  type GitStatusState,
+  type WorktreeGitState,
+} from "./slices/projects-slice";
 export type { SessionsSlice } from "./slices/sessions-slice";

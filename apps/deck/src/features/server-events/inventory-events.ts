@@ -9,6 +9,11 @@ import type {
 import type { AgentModelOptionsEntry } from "../agents/facade";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
+import {
+  createGitStatusState,
+  type GitGraphState,
+  type GitStatusState,
+} from "../../store/facade";
 
 type StoreUpdater<T> = T | ((current: T) => T);
 type StoreSetter<T> = (updater: StoreUpdater<T>) => void;
@@ -17,6 +22,71 @@ type ProjectFilesEntry = {
   message?: string;
   files: ProjectFileSummary[];
 };
+
+function pickGitSnapshot(payload: Record<string, unknown>): GitStatusState {
+  return createGitStatusState(
+    typeof payload.projectId === "string" ? payload.projectId : "",
+    typeof payload.cwd === "string" ? payload.cwd : "",
+    {
+      branch: typeof payload.branch === "string" ? payload.branch : "",
+      detached: Boolean(payload.detached),
+      upstreamBranch: typeof payload.upstreamBranch === "string" ? payload.upstreamBranch : undefined,
+      ahead: Number(payload.ahead ?? 0),
+      behind: Number(payload.behind ?? 0),
+      pushTarget: typeof payload.pushTarget === "string" ? payload.pushTarget : undefined,
+      trackingStale: Boolean(payload.trackingStale),
+      remoteRefreshError: typeof payload.remoteRefreshError === "string" ? payload.remoteRefreshError : undefined,
+      clean: Boolean(payload.clean),
+      files: Array.isArray(payload.files) ? payload.files as GitStatusState["files"] : [],
+      lastUpdated: new Date().toISOString(),
+      message: typeof payload.message === "string" ? payload.message : "",
+      error: typeof payload.remoteRefreshError === "string"
+        ? payload.remoteRefreshError
+        : undefined,
+    },
+  );
+}
+
+type GitBusyFlag = "loading" | "committing" | "discarding" | "pushing" | "pulling";
+
+export function applyGitOperationResult(
+  current: Record<string, GitStatusState>,
+  payload: Record<string, unknown>,
+  cwd: string,
+  busyFlag: GitBusyFlag,
+) {
+  const previous = current[cwd];
+  const snapshot = pickGitSnapshot(payload);
+  if (payload.ok === true) {
+    return {
+      ...current,
+      [cwd]: {
+        ...snapshot,
+        loading: false,
+        [busyFlag]: false,
+      },
+    };
+  }
+
+  return {
+    ...current,
+    [cwd]: {
+      ...(previous ?? snapshot),
+      projectId: typeof payload.projectId === "string"
+        ? payload.projectId
+        : previous?.projectId ?? snapshot.projectId,
+      cwd,
+      message: typeof payload.message === "string"
+        ? payload.message
+        : previous?.message ?? "",
+      error: typeof payload.message === "string"
+        ? payload.message
+        : previous?.error,
+      loading: false,
+      [busyFlag]: false,
+    },
+  };
+}
 
 function collectProjectWorktrees(projects: Array<{ worktrees?: WorktreeSummary[] }>) {
   const byPath = new Map<string, WorktreeSummary>();
@@ -286,15 +356,19 @@ export function applyInventoryResult(
     }
     case "project/git/list_branches":
     case "project/git/create_worktree":
-      store.setWorktreeGitByProject((current) => ({
-        ...current,
-        [payload.projectId]: {
-          branches: payload.branches,
-          currentBranch: payload.currentBranch,
-          message: payload.message,
-          loading: false,
-        },
-      }));
+      store.setWorktreeGitByProject((current) => {
+        const previous = current[payload.projectId];
+        return {
+          ...current,
+          [payload.projectId]: {
+            branches: payload.ok ? payload.branches : (previous?.branches ?? payload.branches),
+            currentBranch: payload.ok ? payload.currentBranch : previous?.currentBranch,
+            message: payload.message,
+            error: payload.ok ? undefined : payload.message,
+            loading: false,
+          },
+        };
+      });
       if (sourceIsCurrentHelm && payload.worktrees.length) {
         const nextCurrentHelmProjects = replaceProjectWorktrees(
           useDeckStore.getState().projects,
@@ -316,23 +390,14 @@ export function applyInventoryResult(
         setWorktreePickerOpen(false);
       }
       return true;
-    case "project/git/status":
+    case "project/git/status": {
       if (payload.cwd) {
-        store.setGitStatusByWorktree((current) => ({
-          ...current,
-          [payload.cwd]: {
-            projectId: payload.projectId,
-            cwd: payload.cwd,
-            branch: payload.ok ? payload.branch : (current[payload.cwd]?.branch ?? ""),
-            clean: payload.ok ? payload.clean : (current[payload.cwd]?.clean ?? false),
-            files: payload.ok ? payload.files : (current[payload.cwd]?.files ?? []),
-            loading: false,
-            lastUpdated: new Date().toISOString(),
-            message: payload.message,
-          },
-        }));
+        store.setGitStatusByWorktree((current) =>
+          applyGitOperationResult(current, payload, payload.cwd, "loading"),
+        );
       }
       return true;
+    }
     case "project/git/graph":
       if (payload.cwd) {
         store.setGitGraphByWorktree((current) => ({
@@ -342,31 +407,75 @@ export function applyInventoryResult(
             cwd: payload.cwd,
             head: payload.ok ? payload.head : current[payload.cwd]?.head,
             commits: payload.ok ? payload.commits : (current[payload.cwd]?.commits ?? []),
+            commitDetails: current[payload.cwd]?.commitDetails,
             loading: false,
             lastUpdated: new Date().toISOString(),
             message: payload.message,
+            error: payload.ok ? undefined : payload.message,
           },
         }));
       }
       return true;
-    case "project/git/commit":
-      if (payload.ok && payload.cwd) {
-        store.setGitStatusByWorktree((current) => ({
-          ...current,
-          [payload.cwd]: {
+    case "project/git/commit_detail":
+      if (payload.cwd) {
+        store.setGitGraphByWorktree((current) => {
+          const graph: GitGraphState = current[payload.cwd] ?? {
             projectId: payload.projectId,
             cwd: payload.cwd,
-            branch: payload.status.branch,
-            clean: payload.status.clean,
-            files: payload.status.files,
-            loading: false,
-            committing: false,
-            lastUpdated: new Date().toISOString(),
-            message: payload.message,
-          },
-        }));
+            commits: [],
+          };
+          const previousDetail = graph.commitDetails?.[payload.commitHash];
+          return {
+            ...current,
+            [payload.cwd]: {
+              ...graph,
+              commitDetails: {
+                ...graph.commitDetails,
+                [payload.commitHash]: {
+                  commitHash: payload.commitHash,
+                  files: payload.ok ? payload.files : (previousDetail?.files ?? []),
+                  loading: false,
+                  message: payload.message,
+                  error: payload.ok ? undefined : payload.message,
+                },
+              },
+            },
+          };
+        });
       }
       return true;
+    case "project/git/commit": {
+      if (payload.cwd) {
+        store.setGitStatusByWorktree((current) =>
+          applyGitOperationResult(current, payload, payload.cwd, "committing"),
+        );
+      }
+      return true;
+    }
+    case "project/git/discard": {
+      if (payload.cwd) {
+        store.setGitStatusByWorktree((current) =>
+          applyGitOperationResult(current, payload, payload.cwd, "discarding"),
+        );
+      }
+      return true;
+    }
+    case "project/git/push": {
+      if (payload.cwd) {
+        store.setGitStatusByWorktree((current) =>
+          applyGitOperationResult(current, payload, payload.cwd, "pushing"),
+        );
+      }
+      return true;
+    }
+    case "project/git/pull": {
+      if (payload.cwd) {
+        store.setGitStatusByWorktree((current) =>
+          applyGitOperationResult(current, payload, payload.cwd, "pulling"),
+        );
+      }
+      return true;
+    }
     case "agent/list":
       store.applyHelmInventory(sourceHelmKey, { agents: payload.agents });
       if (sourceIsCurrentHelm) {
