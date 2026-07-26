@@ -80,7 +80,10 @@ export function MissionInspector({
   const [discardConfirmOpen, setDiscardConfirmOpen] = useState(false);
   const pickerRef = useRef<HTMLDivElement | null>(null);
 
-  const title = resolveInspectorTitle(activeSessionPresent, worktreeCount, diffCount);
+  // 面板的 Git 能力(diff/同步计数/提交)跑在选中的 worktree 上,不依赖任务;
+  // 草稿模式或重连窗口期没有 activeSession 时,只要有 worktree 上下文就照常展示。
+  const hasWorktreeContext = activeSessionPresent || worktreeCount > 0 || Boolean(gitStatus);
+  const title = resolveInspectorTitle(hasWorktreeContext, worktreeCount, diffCount);
   const commitScopeLabel = selectedDiffCount > 0 ? `${selectedDiffCount}/${diffCount} Diff` : `${diffCount} Diff`;
   const allDiffsSelected = diffCount > 0 && selectedDiffCount === diffCount;
   const resolvedWorktreeList = isValidElement(worktreeList)
@@ -263,7 +266,7 @@ export function MissionInspector({
               >
                 <Icon name="branch" size={11} className="text-muted-foreground" />
                 <span className="min-w-0 flex-1 truncate font-mono text-2xs tabular">
-                  {activeSessionPresent ? worktreeSummaryLabel : "未选择任务"}
+                  {hasWorktreeContext ? worktreeSummaryLabel : "未选择任务"}
                 </span>
                 {status && (status.behind > 0 || status.ahead > 0) ? (
                   <span
@@ -447,11 +450,11 @@ export function resolveGitOperationBusy(
 }
 
 function resolveInspectorTitle(
-  activeSessionPresent: boolean,
+  hasWorktreeContext: boolean,
   worktreeCount: number,
   diffCount: number,
 ) {
-  if (!activeSessionPresent) {
+  if (!hasWorktreeContext) {
     return "未选择任务";
   }
   return worktreeCount > 0 ? `${worktreeCount} 个 Worktree` : "暂无 Worktree";

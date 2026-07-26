@@ -84,6 +84,60 @@ test("mission inspector marks stale sync counts with a Fetch hint", () => {
   assert.match(html, /aria-label="待 Push 1 个提交"/);
 });
 
+test("mission inspector keeps worktree label without an active session when worktree context exists", () => {
+  // 草稿模式或 helm 重连窗口期没有 activeSession,但面板仍运行在选中的
+  // worktree 上(diff/同步计数/提交可用),标签不应回退成"未选择任务"。
+  const html = renderToStaticMarkup(
+    createElement(MissionInspector, {
+      collapsed: false,
+      style: {},
+      activeSessionPresent: false,
+      worktreeCount: 1,
+      worktreeSummaryLabel: "Tiller / release/0.1.9",
+      worktreeList: createElement("div"),
+      diffCount: 0,
+      selectedDiffCount: 0,
+      diffPanel: createElement("div"),
+      resizer: createElement("div"),
+      gitStatus: {
+        projectId: "project-1",
+        cwd: "D:/repo",
+        branch: "release/0.1.9",
+        detached: false,
+        ahead: 10,
+        behind: 0,
+        trackingStale: false,
+        clean: false,
+        files: [],
+      },
+      onCollapse: noop,
+    }),
+  );
+
+  assert.match(html, /Tiller \/ release\/0\.1\.9/);
+  assert.doesNotMatch(html, /未选择任务/);
+});
+
+test("mission inspector falls back to no-task label without any worktree context", () => {
+  const html = renderToStaticMarkup(
+    createElement(MissionInspector, {
+      collapsed: false,
+      style: {},
+      activeSessionPresent: false,
+      worktreeCount: 0,
+      worktreeSummaryLabel: "0 Worktrees",
+      worktreeList: createElement("div"),
+      diffCount: 0,
+      selectedDiffCount: 0,
+      diffPanel: createElement("div"),
+      resizer: createElement("div"),
+      onCollapse: noop,
+    }),
+  );
+
+  assert.match(html, /未选择任务/);
+});
+
 test("git operation busy covers store-side pushing/pulling/committing flags", () => {
   const base: GitStatusState = {
     projectId: "project-1",
