@@ -613,7 +613,9 @@ body[data-density="cozy"] {
 
 [data-theme="dark"],
 [data-theme="system"],
-[data-theme="tiller"] {
+[data-theme="harbor"],
+[data-theme="voyage"],
+[data-theme="chart"] {
   color-scheme: var(--deck-color-scheme);
   color: var(--color-text);
   background: var(--color-bg);
@@ -621,7 +623,9 @@ body[data-density="cozy"] {
 
 [data-theme="dark"] body,
 [data-theme="system"] body,
-[data-theme="tiller"] body {
+[data-theme="harbor"] body,
+[data-theme="voyage"] body,
+[data-theme="chart"] body {
   background: var(--deck-body-background);
 }
 
@@ -714,20 +718,26 @@ body[data-density="cozy"] {
 
 [data-theme="dark"] *,
 [data-theme="system"] *,
-[data-theme="tiller"] * {
+[data-theme="harbor"] *,
+[data-theme="voyage"] *,
+[data-theme="chart"] * {
   scrollbar-color: rgb(100 116 139 / 0.62) transparent;
 }
 
 [data-theme="dark"] *::-webkit-scrollbar-thumb,
 [data-theme="system"] *::-webkit-scrollbar-thumb,
-[data-theme="tiller"] *::-webkit-scrollbar-thumb {
+[data-theme="harbor"] *::-webkit-scrollbar-thumb,
+[data-theme="voyage"] *::-webkit-scrollbar-thumb,
+[data-theme="chart"] *::-webkit-scrollbar-thumb {
   background: rgb(100 116 139 / 0.46);
   background-clip: padding-box;
 }
 
 [data-theme="dark"] *::-webkit-scrollbar-thumb:hover,
 [data-theme="system"] *::-webkit-scrollbar-thumb:hover,
-[data-theme="tiller"] *::-webkit-scrollbar-thumb:hover {
+[data-theme="harbor"] *::-webkit-scrollbar-thumb:hover,
+[data-theme="voyage"] *::-webkit-scrollbar-thumb:hover,
+[data-theme="chart"] *::-webkit-scrollbar-thumb:hover {
   background: rgb(148 163 184 / 0.68);
   background-clip: padding-box;
 }

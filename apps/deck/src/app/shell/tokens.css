@@ -10,18 +10,22 @@
  *   3. semantic.css      — `@theme inline` bridges from CSS vars to utilities
  *   4. themes/light.css  — :root defaults + density variants
  *   5. themes/dark.css   — [data-theme="dark"]
- *   6. themes/tiller.css — [data-theme="tiller"]
- *   7. themes/system.css — prefers-color-scheme override for [data-theme="system"]
+ *   6. themes/harbor.css — [data-theme="harbor"] nautical light
+ *   7. themes/voyage.css — [data-theme="voyage"] night-chart dark
+ *   8. themes/chart.css  — [data-theme="chart"] paper-chart warm light
+ *   9. themes/system.css — prefers-color-scheme override for [data-theme="system"]
  */
 
 @import "tailwindcss";
 
-/* Tailwind v4 custom dark variant: bridge dark: utility to existing data-theme attribute */
-@custom-variant dark (&:where([data-theme="dark"] *));
+/* Tailwind v4 custom dark variant: bridge dark: utility to dark theme attributes */
+@custom-variant dark (&:where([data-theme="dark"] *, [data-theme="voyage"] *));
 
 @import "./tokens/brand.css";
 @import "./tokens/semantic.css";
 @import "./tokens/themes/light.css";
 @import "./tokens/themes/dark.css";
-@import "./tokens/themes/tiller.css";
+@import "./tokens/themes/harbor.css";
+@import "./tokens/themes/voyage.css";
+@import "./tokens/themes/chart.css";
 @import "./tokens/themes/system.css";

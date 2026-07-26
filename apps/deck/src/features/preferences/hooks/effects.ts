@@ -15,12 +15,7 @@ export function usePreferencesEffects() {
 
   useEffect(() => {
     const applyPreferences = () => {
-      const resolvedTheme =
-        theme === "system"
-          ? resolveSystemTheme()
-          : theme === "tiller"
-            ? "light"
-            : theme;
+      const resolvedTheme = theme === "system" ? resolveSystemTheme() : theme;
       document.documentElement.lang = language;
       document.documentElement.dataset.theme = resolvedTheme;
       document.documentElement.dataset.deckTheme = theme;

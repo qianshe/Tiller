@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "test": "tsx --test",
+    "test": "tsx --test \"src/**/*.test.ts\" \"src/**/*.test.tsx\"",
     "lint": "node scripts/lint-import-boundaries.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },

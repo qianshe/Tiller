@@ -112,15 +112,17 @@ export function SettingsPage({
       <div className="max-w-[640px]">
         {activeSection === "appearance" ? (
           <SettingsSectionFrame id={appearance.id} label={appearance.label} desc={appearance.desc}>
-            <SettingsRow label={settingsCopy.themeLabel} desc="保留 system / light / dark / tiller 四种现有偏好值。">
+            <SettingsRow label={settingsCopy.themeLabel}>
               <div className="flex flex-wrap gap-2">
-                {(["system", "light", "dark", "tiller"] as const).map((t) => {
+                {(["system", "light", "dark", "harbor", "voyage", "chart"] as const).map((t) => {
                   const active = deckPreferences.theme === t;
                   let bgVal = "";
                   if (t === "system") bgVal = "linear-gradient(135deg, #ffffff 50%, #1f1f1f 50%)";
                   else if (t === "light") bgVal = "#f9f9fb";
                   else if (t === "dark") bgVal = "#0e0e0e";
-                  else if (t === "tiller") bgVal = "#b8c1ca";
+                  else if (t === "harbor") bgVal = "linear-gradient(135deg, #e6ebf0 50%, #1a5d8f 50%)";
+                  else if (t === "voyage") bgVal = "linear-gradient(135deg, #0d1926 50%, #4fc3e8 50%)";
+                  else if (t === "chart") bgVal = "linear-gradient(135deg, #f2ede2 50%, #1e4e79 50%)";
 
                   return (
                     <button
@@ -146,13 +148,17 @@ export function SettingsPage({
                         ? settingsCopy.themeLight
                         : t === "dark"
                         ? settingsCopy.themeDark
-                        : settingsCopy.themeTiller}
+                        : t === "harbor"
+                        ? settingsCopy.themeHarbor
+                        : t === "voyage"
+                        ? settingsCopy.themeVoyage
+                        : settingsCopy.themeChart}
                     </button>
                   );
                 })}
               </div>
             </SettingsRow>
-            <SettingsRow label="控制密度" desc="调整整个界面的紧凑程度，影响高度与内边距。">
+            <SettingsRow label="控制密度">
               <div className="flex flex-wrap gap-2">
                 {(["compact", "default", "cozy"] as const).map((d) => {
                   const active = deckPreferences.density === d;
@@ -178,7 +184,7 @@ export function SettingsPage({
                 })}
               </div>
             </SettingsRow>
-            <SettingsRow label="字体" desc="UI 字体 · 代码字体">
+            <SettingsRow label="字体">
               <span className="font-mono text-2xs text-muted-foreground tabular">Inter · JetBrains Mono</span>
             </SettingsRow>
           </SettingsSectionFrame>

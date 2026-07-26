@@ -4,15 +4,15 @@
 
 ## Summary
 
-- CSS files: 10
-- Total lines: 1780
+- CSS files: 12
+- Total lines: 1943
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 748
-- Top-level selectors: 154
+- Lines: 758
+- Top-level selectors: 164
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -124,20 +124,30 @@ Selectors:
 - `.wb-pane-head-title`
 - `.wb-pane-sunken`
 - `.workspace-single`
+- `[data-theme="chart"]`
+- `[data-theme="chart"] *`
+- `[data-theme="chart"] *::-webkit-scrollbar-thumb`
+- `[data-theme="chart"] *::-webkit-scrollbar-thumb:hover`
+- `[data-theme="chart"] body`
 - `[data-theme="dark"] *`
 - `[data-theme="dark"] *::-webkit-scrollbar-thumb`
 - `[data-theme="dark"] *::-webkit-scrollbar-thumb:hover`
 - `[data-theme="dark"] body`
+- `[data-theme="harbor"]`
+- `[data-theme="harbor"] *`
+- `[data-theme="harbor"] *::-webkit-scrollbar-thumb`
+- `[data-theme="harbor"] *::-webkit-scrollbar-thumb:hover`
+- `[data-theme="harbor"] body`
 - `[data-theme="system"]`
 - `[data-theme="system"] *`
 - `[data-theme="system"] *::-webkit-scrollbar-thumb`
 - `[data-theme="system"] *::-webkit-scrollbar-thumb:hover`
 - `[data-theme="system"] body`
-- `[data-theme="tiller"]`
-- `[data-theme="tiller"] *`
-- `[data-theme="tiller"] *::-webkit-scrollbar-thumb`
-- `[data-theme="tiller"] *::-webkit-scrollbar-thumb:hover`
-- `[data-theme="tiller"] body`
+- `[data-theme="voyage"]`
+- `[data-theme="voyage"] *`
+- `[data-theme="voyage"] *::-webkit-scrollbar-thumb`
+- `[data-theme="voyage"] *::-webkit-scrollbar-thumb:hover`
+- `[data-theme="voyage"] body`
 - `} .wb-pulse`
 - `} [data-theme="dark"]`
 - `} @keyframes mission-loading-pulse`
@@ -178,7 +188,7 @@ Hard-coded colors:
 
 ### apps/deck/src/app/shell/tokens.css
 
-- Lines: 28
+- Lines: 32
 - Top-level selectors: 0
 - Hard-coded color tokens: 0
 
@@ -201,6 +211,43 @@ Selectors:
 Selectors:
 
 - `@theme inline`
+
+### apps/deck/src/app/shell/tokens/themes/chart.css
+
+- Lines: 66
+- Top-level selectors: 1
+- Hard-coded color tokens: 24
+
+Selectors:
+
+- `@layer base`
+
+Hard-coded colors:
+
+- `#1e4e79`
+- `#221f18`
+- `#262219`
+- `#2c5a1a`
+- `#2e6ba0`
+- `#33691e`
+- `#5c5648`
+- `#6f6857`
+- `#8a5f00`
+- `#97361f`
+- `#b3402e`
+- `#ddd5c2`
+- `#e5decd`
+- `#e5dfd0`
+- `#ece6d8`
+- `#f0ebe0`
+- `#f2ede2`
+- `#f6fff0`
+- `#f8fbff`
+- `#faf7ef`
+- `#fffdf7`
+- `#ffffff`
+- `rgb(`
+- `rgba(`
 
 ### apps/deck/src/app/shell/tokens/themes/dark.css
 
@@ -240,6 +287,41 @@ Hard-coded colors:
 - `#facc15`
 - `#fca5a5`
 - `#ff6b6b`
+- `rgb(`
+- `rgba(`
+
+### apps/deck/src/app/shell/tokens/themes/harbor.css
+
+- Lines: 67
+- Top-level selectors: 1
+- Hard-coded color tokens: 22
+
+Selectors:
+
+- `@layer base`
+
+Hard-coded colors:
+
+- `#111820`
+- `#17623d`
+- `#1a5d8f`
+- `#1e7a4e`
+- `#1f2933`
+- `#2e79b8`
+- `#48586b`
+- `#5b6b7d`
+- `#8a6114`
+- `#8e2a2a`
+- `#a83232`
+- `#c8d2db`
+- `#d5dde4`
+- `#d8dee6`
+- `#dde4ea`
+- `#e6ebf0`
+- `#e8eef5`
+- `#f3f6f9`
+- `#f7fafc`
+- `#ffffff`
 - `rgb(`
 - `rgba(`
 
@@ -331,11 +413,11 @@ Hard-coded colors:
 - `rgb(`
 - `rgba(`
 
-### apps/deck/src/app/shell/tokens/themes/tiller.css
+### apps/deck/src/app/shell/tokens/themes/voyage.css
 
 - Lines: 66
 - Top-level selectors: 1
-- Hard-coded color tokens: 21
+- Hard-coded color tokens: 23
 
 Selectors:
 
@@ -343,32 +425,34 @@ Selectors:
 
 Hard-coded colors:
 
-- `#111820`
-- `#1f2933`
-- `#1f5e90`
-- `#28734f`
-- `#314963`
-- `#33404d`
-- `#4b5563`
-- `#8b6419`
-- `#909ba6`
-- `#9b3131`
-- `#aeb7c0`
-- `#b8c1ca`
-- `#c6ced6`
-- `#d7dee5`
-- `#d8dee6`
-- `#e5ebf0`
-- `#e8eef5`
-- `#f7fafc`
-- `#ffffff`
+- `#06222e`
+- `#06301a`
+- `#0a141e`
+- `#0b1520`
+- `#0d1926`
+- `#101e2e`
+- `#142334`
+- `#1c2f44`
+- `#24384f`
+- `#4ade80`
+- `#4fc3e8`
+- `#7b90a5`
+- `#7dd6f2`
+- `#86efac`
+- `#8da3b8`
+- `#a5e3f5`
+- `#d4a843`
+- `#dbe7f1`
+- `#e8f0f7`
+- `#fca5a5`
+- `#ff7a7a`
 - `rgb(`
 - `rgba(`
 
 ### apps/deck/src/features/overview/ui/page.css
 
-- Lines: 439
-- Top-level selectors: 60
+- Lines: 451
+- Top-level selectors: 72
 - Hard-coded color tokens: 9
 
 Selectors:
@@ -413,12 +497,24 @@ Selectors:
 - `} .overview-session-item-btn`
 - `} @media (max-width: 720px)`
 - `@media (max-width: 1180px)`
+- `body[data-theme="chart"] .landing-github-link`
+- `body[data-theme="chart"] .landing-github-link:hover`
+- `body[data-theme="chart"] .landing-hero`
+- `body[data-theme="chart"] .landing-hero::before`
+- `body[data-theme="chart"] .landing-secondary`
+- `body[data-theme="chart"] .landing-secondary:hover`
 - `body[data-theme="dark"] .landing-github-link`
 - `body[data-theme="dark"] .landing-github-link:hover`
 - `body[data-theme="dark"] .landing-hero`
 - `body[data-theme="dark"] .landing-hero::before`
 - `body[data-theme="dark"] .landing-secondary`
 - `body[data-theme="dark"] .landing-secondary:hover`
+- `body[data-theme="harbor"] .landing-github-link`
+- `body[data-theme="harbor"] .landing-github-link:hover`
+- `body[data-theme="harbor"] .landing-hero`
+- `body[data-theme="harbor"] .landing-hero::before`
+- `body[data-theme="harbor"] .landing-secondary`
+- `body[data-theme="harbor"] .landing-secondary:hover`
 - `body[data-theme="light"] .landing-copy`
 - `body[data-theme="light"] .landing-eyebrow`
 - `body[data-theme="light"] .landing-hero`
@@ -427,12 +523,12 @@ Selectors:
 - `body[data-theme="light"] .landing-meta-item dd`
 - `body[data-theme="light"] .landing-secondary`
 - `body[data-theme="light"] .landing-secondary:hover`
-- `body[data-theme="tiller"] .landing-github-link`
-- `body[data-theme="tiller"] .landing-github-link:hover`
-- `body[data-theme="tiller"] .landing-hero`
-- `body[data-theme="tiller"] .landing-hero::before`
-- `body[data-theme="tiller"] .landing-secondary`
-- `body[data-theme="tiller"] .landing-secondary:hover`
+- `body[data-theme="voyage"] .landing-github-link`
+- `body[data-theme="voyage"] .landing-github-link:hover`
+- `body[data-theme="voyage"] .landing-hero`
+- `body[data-theme="voyage"] .landing-hero::before`
+- `body[data-theme="voyage"] .landing-secondary`
+- `body[data-theme="voyage"] .landing-secondary:hover`
 
 Hard-coded colors:
 
@@ -448,8 +544,8 @@ Hard-coded colors:
 
 ### apps/deck/src/features/toast/styles.css
 
-- Lines: 162
-- Top-level selectors: 25
+- Lines: 166
+- Top-level selectors: 29
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -475,6 +571,10 @@ Selectors:
 - `[data-theme="dark"] .toast-close:focus-visible`
 - `[data-theme="dark"] .toast-close:hover`
 - `[data-theme="dark"] .toast-item`
+- `[data-theme="voyage"] .toast-close`
+- `[data-theme="voyage"] .toast-close:focus-visible`
+- `[data-theme="voyage"] .toast-close:hover`
+- `[data-theme="voyage"] .toast-item`
 - `} @keyframes toast-exit`
 - `} @media (max-width: 860px)`
 - `@keyframes toast-enter`
