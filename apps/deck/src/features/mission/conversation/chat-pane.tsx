@@ -28,7 +28,10 @@ import { MissionQueuedPrompts } from "./queued-prompts";
 import type { MissionToolLoadingState } from "./tool-loading";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
-import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
+import {
+  buildParallelChatLayoutModel,
+  resolveParallelGridSingleRow,
+} from "./chat-pane-layout-model";
 import {
   hasSessionBodyScrollSnapshotChanged,
   pruneSessionCardScrollState,
@@ -329,37 +332,39 @@ export function MissionChatPane({
       setParallelGridSingleRow(false);
       return;
     }
-
-    const updateSingleRowState = () => {
-      if (isPaneResizing) {
-        return;
-      }
-      const cards = Array.from(grid.children).filter(
-        (child): child is HTMLElement => child instanceof HTMLElement,
-      );
-      const firstCard = cards[0];
-      if (!firstCard) {
-        setParallelGridSingleRow(false);
-        return;
-      }
-      const firstTop = firstCard.offsetTop;
-      setParallelGridSingleRow(
-        cards.every((card) => Math.abs(card.offsetTop - firstTop) <= 1),
-      );
-    };
-
     if (isPaneResizing) {
       return;
     }
-    updateSingleRowState();
+
+    // 只依据 grid 内容宽度推导(resolveParallelGridSingleRow),不读卡片
+    // offsetTop:单行判定改变 gridAutoRows 后不会反过来影响宽度判据,
+    // 从结构上杜绝测量↔布局的反馈回路;也因此无需再观察每张子卡片。
+    const applySingleRowFromWidth = (gridContentWidth: number) => {
+      setParallelGridSingleRow(
+        resolveParallelGridSingleRow({ gridContentWidth, cardCount }),
+      );
+    };
+    const readContentWidth = () => {
+      const styles = window.getComputedStyle(grid);
+      return (
+        grid.clientWidth -
+        (Number.parseFloat(styles.paddingLeft) || 0) -
+        (Number.parseFloat(styles.paddingRight) || 0)
+      );
+    };
     const ResizeObserverCtor = window.ResizeObserver;
     if (!ResizeObserverCtor) {
-      window.addEventListener("resize", updateSingleRowState);
-      return () => window.removeEventListener("resize", updateSingleRowState);
+      const handleWindowResize = () => applySingleRowFromWidth(readContentWidth());
+      handleWindowResize();
+      window.addEventListener("resize", handleWindowResize);
+      return () => window.removeEventListener("resize", handleWindowResize);
     }
-    const observer = new ResizeObserverCtor(updateSingleRowState);
+    const observer = new ResizeObserverCtor((entries) => {
+      const entry = entries[entries.length - 1];
+      applySingleRowFromWidth(entry?.contentRect.width ?? readContentWidth());
+    });
+    // observe() 会立即触发一次回调,无需手动初始化测量。
     observer.observe(grid);
-    Array.from(grid.children).forEach((child) => observer.observe(child));
     return () => observer.disconnect();
   }, [draftWindow, isPaneResizing, openSessions.length, paneResizeVersion]);
 

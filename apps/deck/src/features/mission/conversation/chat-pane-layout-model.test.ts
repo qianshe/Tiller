@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildParallelChatLayoutModel } from "./chat-pane-layout-model";
+import {
+  buildParallelChatLayoutModel,
+  resolveParallelGridSingleRow,
+} from "./chat-pane-layout-model";
 
 test("buildParallelChatLayoutModel compacts one or two cards", () => {
   assert.deepEqual(buildParallelChatLayoutModel({ sessionCount: 1, hasDraftWindow: false }), {
@@ -25,6 +28,16 @@ test("buildParallelChatLayoutModel expands three or more cards", () => {
   assert.equal(model.shouldLockChatMainScroll, false);
   assert.equal(model.shouldAnchorActiveParallelCard, true);
   assert.equal(model.parallelGridStyle.gridAutoRows, "minmax(360px, min(52vh, 560px))");
+});
+
+test("resolveParallelGridSingleRow derives single-row purely from container width", () => {
+  // 3 张卡,最小列宽 360 + 间距 8:恰好放下需要 3*360 + 2*8 = 1096。
+  assert.equal(resolveParallelGridSingleRow({ gridContentWidth: 1096, cardCount: 3 }), true);
+  assert.equal(resolveParallelGridSingleRow({ gridContentWidth: 1095, cardCount: 3 }), false);
+  assert.equal(resolveParallelGridSingleRow({ gridContentWidth: 2000, cardCount: 3 }), true);
+  assert.equal(resolveParallelGridSingleRow({ gridContentWidth: 720, cardCount: 3 }), false);
+  assert.equal(resolveParallelGridSingleRow({ gridContentWidth: 0, cardCount: 3 }), false);
+  assert.equal(resolveParallelGridSingleRow({ gridContentWidth: 500, cardCount: 0 }), false);
 });
 
 test("buildParallelChatLayoutModel fills the container while parallel cards stay on one row", () => {

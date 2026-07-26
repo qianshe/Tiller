@@ -52,6 +52,7 @@ import {
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
 import { RadialMenu, type RadialMenuItem } from "../../shared/ui";
+import { RouteErrorBoundary, formatRouteCrashNotification } from "./route-error-boundary";
 import { UI_COPY, type Locale } from "../../shared/utils/copy";
 import { formatRelativeTime } from "../../shared/utils/format-time";
 import {
@@ -575,6 +576,15 @@ export function App() {
 
   const appShell = (
     <main className={shellClassName}>
+      <RouteErrorBoundary
+        onError={(error, componentStack) => {
+          deckData.addNotification({
+            kind: "error",
+            source: "deck-ui",
+            message: formatRouteCrashNotification(error.message, componentStack),
+          });
+        }}
+      >
       <AppRoutes
         ctx={buildAppRouteContext({
           runtimeState,
@@ -614,6 +624,7 @@ export function App() {
           saveLoggingLevel,
         })}
       />
+      </RouteErrorBoundary>
       <SessionCleanupConfirmDialog
         session={runtimeState.pendingSessionCleanup}
         resolveSessionTitle={titleActions.resolveDisplaySessionTitle}
