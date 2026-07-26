@@ -40,6 +40,17 @@ test("renderMissionRoute forwards session plans to the mission worktree", () => 
   assert.match(source, /sessionPlans=\{sessionPlans\}/);
 });
 
+test("renderMissionRoute forwards git error tab bindings", () => {
+  const source = readFileSync(routePath, "utf8");
+
+  assert.match(source, /missionGitErrorTabOpen,/);
+  assert.match(source, /openMissionGitErrorTab,/);
+  assert.match(source, /closeMissionGitErrorTab,/);
+  assert.match(source, /missionGitErrorTabOpen=\{missionGitErrorTabOpen\}/);
+  assert.match(source, /openMissionGitErrorTab=\{openMissionGitErrorTab\}/);
+  assert.match(source, /closeMissionGitErrorTab=\{closeMissionGitErrorTab\}/);
+});
+
 test("renderMissionRoute forwards mobile pane state", () => {
   const source = readFileSync(routePath, "utf8");
 

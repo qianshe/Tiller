@@ -160,7 +160,11 @@ export function renderDiffPatch(input: {
     <pre className="mission-diff-patch block w-full max-w-full min-w-0 overflow-x-auto bg-transparent font-mono text-xs leading-5 text-foreground">
       <code className="mission-diff-content grid w-max min-w-full">
         {visibleLines.map((line) => {
-          const lineKey = diffLineKey(line);
+          // 语义键对 hunk 头恒为 "hunk:_:_"(无新旧行号),多个 hunk 会产生重复
+          // React key;hunk 不可选区,可安全叠加 display 行号保证唯一。
+          const lineKey = line.kind === "hunk"
+            ? `${diffLineKey(line)}:${line.displayLineNumber}`
+            : diffLineKey(line);
           const selected = selectedLineKeys?.has(lineKey) ?? false;
           const lineClassName = resolveDiffLineStyleClass(resolveDiffLineClass(line.text));
           const lineNumber = line.newLineNumber ?? line.oldLineNumber ?? line.displayLineNumber;

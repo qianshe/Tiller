@@ -50,6 +50,23 @@ test("diff patch renders hunk lines with semantic colors and horizontal scrollin
   assert.match(html, /bg-\[var\(--diff-hunk-bg\)\]/);
 });
 
+test("renderDiffPatch keeps line keys unique across multiple hunk headers", () => {
+  const patch = [
+    "@@ -1,1 +1,1 @@",
+    " const first = 1;",
+    "@@ -10,1 +10,1 @@",
+    " const second = 2;",
+  ].join("\n");
+
+  const html = renderToStaticMarkup(renderDiffPatch({ patch }));
+  const lineKeys = Array.from(html.matchAll(/data-diff-line-key="([^"]+)"/g)).map(
+    (match) => match[1],
+  );
+
+  assert.equal(lineKeys.length, 4);
+  assert.equal(new Set(lineKeys).size, lineKeys.length);
+});
+
 test("diff tree compacts single-directory chains", () => {
   const tree = buildMissionDiffTree([
     diff("apps/deck/src/features/mission/hooks/slash-commands.ts"),

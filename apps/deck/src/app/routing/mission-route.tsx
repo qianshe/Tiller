@@ -180,6 +180,9 @@ export function renderMissionRoute(source: MissionRouteSource) {
     setActivityVisibleCounts,
     loadOlderActivities,
     setSelectedMissionDisplayTabId,
+    missionGitErrorTabOpen,
+    openMissionGitErrorTab,
+    closeMissionGitErrorTab,
     openDiffDetail,
     toggleMissionDiffDirectory,
     collapsedMissionDiffDirectories,
@@ -374,6 +377,9 @@ export function renderMissionRoute(source: MissionRouteSource) {
       setActivityVisibleCounts={setActivityVisibleCounts}
       loadOlderActivities={loadOlderActivities}
       setSelectedMissionDisplayTabId={setSelectedMissionDisplayTabId}
+      missionGitErrorTabOpen={missionGitErrorTabOpen}
+      openMissionGitErrorTab={openMissionGitErrorTab}
+      closeMissionGitErrorTab={closeMissionGitErrorTab}
       openDiffDetail={openDiffDetail}
       toggleMissionDiffDirectory={toggleMissionDiffDirectory}
       collapsedMissionDiffDirectories={collapsedMissionDiffDirectories}
