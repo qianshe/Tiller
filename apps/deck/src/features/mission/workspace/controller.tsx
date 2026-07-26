@@ -690,6 +690,7 @@ export function MissionWorktree(props: any) {
     handlePull,
     handleCommit,
     handleDiscard,
+    handleFetchFileDiffs,
   } = useGitOperations({
     activeGitProjectId,
     activeGitCwd,
@@ -701,23 +702,69 @@ export function MissionWorktree(props: any) {
     setSelectedCommitDiffPaths,
   });
 
+  // Status 快照只带统计;选中文件缺 patch 时按需批量拉取,状态刷新后指纹
+  // (lastUpdated)变化会重新请求,避免对同一快照重复请求。
+  const requestedDiffPathsRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!selectedMissionDiffFilePath || !currentGitStatus?.lastUpdated) {
+      return;
+    }
+    const selectedDiff = syncedMissionDiffs.find(
+      (diff) => diff.path === selectedMissionDiffFilePath,
+    );
+    const inGitStatus = currentGitStatus.files?.some(
+      (file: { path: string }) => file.path === selectedMissionDiffFilePath,
+    );
+    if (!selectedDiff || selectedDiff.patch || !inGitStatus) {
+      return;
+    }
+    const fingerprint = currentGitStatus.lastUpdated;
+    if (requestedDiffPathsRef.current.get(selectedMissionDiffFilePath) === fingerprint) {
+      return;
+    }
+    requestedDiffPathsRef.current.set(selectedMissionDiffFilePath, fingerprint);
+    void handleFetchFileDiffs([selectedMissionDiffFilePath]);
+  }, [
+    selectedMissionDiffFilePath,
+    syncedMissionDiffs,
+    currentGitStatus,
+    handleFetchFileDiffs,
+  ]);
+
   const handleGenerateDescription = useCallback(async (): Promise<string> => {
     if (!deckPreferences.promptEnhancer.llm.enabled) {
       throw new Error("LLM not configured in preferences");
     }
 
+    const selectedChanges = syncedMissionDiffs
+      .filter((diff) => selectedCommitDiffPaths.has(diff.path))
+      .map((diff) => ({
+        path: diff.path,
+        status: diff.status,
+        patch: diff.patch,
+      }));
+
+    // 补齐缺失的 patch:直接使用返回值,不等待 store 回流。
+    const missingPaths = selectedChanges
+      .filter((change) => !change.patch)
+      .map((change) => change.path);
+    if (missingPaths.length > 0) {
+      const fetched = await handleFetchFileDiffs(missingPaths);
+      const patchByPath = new Map(
+        (fetched.files ?? []).map((file) => [file.path.replace(/\\/g, "/"), file.patch] as const),
+      );
+      for (const change of selectedChanges) {
+        change.patch ??= patchByPath.get(change.path.replace(/\\/g, "/"));
+      }
+    }
+
     return await generateCommitDescription({
-      selectedChanges: syncedMissionDiffs
-        .filter((diff) => selectedCommitDiffPaths.has(diff.path))
-        .map((diff) => ({
-          path: diff.path,
-          status: diff.status,
-          patch: diff.patch,
-        })),
+      selectedChanges,
       llmConfig: deckPreferences.promptEnhancer.llm,
     });
   }, [
     deckPreferences.promptEnhancer.llm,
+    handleFetchFileDiffs,
     selectedCommitDiffPaths,
     syncedMissionDiffs,
   ]);

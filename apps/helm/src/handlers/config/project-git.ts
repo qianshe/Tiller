@@ -5,7 +5,11 @@ import { basename, dirname, join, relative, resolve as resolvePath, sep } from "
 import { promisify } from "node:util";
 import { saveProjectYaml } from "@tiller/agent-registry";
 import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
-import { normalizeDiffPath, readWorktreeGitDiffs } from "../../sessions/facade";
+import {
+  normalizeDiffPath,
+  readWorktreeGitDiffStats,
+  readWorktreeGitFileDiffs,
+} from "../../sessions/facade";
 
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;
@@ -373,18 +377,18 @@ export async function getProjectGitStatus(
 
   let detailedFiles: typeof files = files;
   if (!clean) {
-    const gitDiffs = await readWorktreeGitDiffs(cwd);
-    const gitDiffsByPath = new Map(
-      gitDiffs.map((file) => [normalizeDiffPath(file.path), file] as const),
+    // Stats only — patch bodies are fetched on demand via project/git/file_diff.
+    const gitDiffStats = await readWorktreeGitDiffStats(cwd);
+    const statsByPath = new Map(
+      gitDiffStats.map((file) => [normalizeDiffPath(file.path), file] as const),
     );
 
     detailedFiles = files.map((file) => {
-      const detail = gitDiffsByPath.get(normalizeDiffPath(file.path));
+      const detail = statsByPath.get(normalizeDiffPath(file.path));
       return {
         ...file,
         additions: detail?.additions ?? 0,
         deletions: detail?.deletions ?? 0,
-        ...(detail?.patch ? { patch: detail.patch } : {}),
       };
     });
   }
@@ -899,6 +903,11 @@ function countPatchChanges(patch: string): { additions: number; deletions: numbe
     }
   }
   return { additions, deletions };
+}
+
+export async function getProjectGitFileDiffs(cwd: string, paths: string[]) {
+  const gitRoot = await resolveGitRoot(cwd);
+  return readWorktreeGitFileDiffs(gitRoot, paths);
 }
 
 export async function getProjectGitGraph(cwd: string, knownSignature?: string) {

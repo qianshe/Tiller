@@ -25,6 +25,7 @@ const expectedRequests = [
   "project/git/pull",
   "project/git/graph",
   "project/git/commit_detail",
+  "project/git/file_diff",
   "project/save",
   "project/delete",
   "agent/list",

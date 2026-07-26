@@ -352,7 +352,12 @@ try {
 }
 
 const httpServer = createServer(handleHttpRequest);
-const server = new WebSocketServer({ server: httpServer });
+const server = new WebSocketServer({
+  server: httpServer,
+  // Git diff/patch 等文本载荷压缩率高;仅压缩 >1KB 的消息,
+  // 本地少客户端场景下 zlib 上下文的内存开销可以忽略。
+  perMessageDeflate: { threshold: 1024 },
+});
 const stopWebSocketHeartbeat = installWebSocketHeartbeat(server);
 
 server.on("connection", (socket) => {

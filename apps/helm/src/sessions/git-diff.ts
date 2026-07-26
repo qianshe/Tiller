@@ -30,6 +30,114 @@ export async function readWorktreeGitDiffs(cwd: string): Promise<FileDiffSummary
   }
 }
 
+export type GitDiffStat = {
+  path: string;
+  additions: number;
+  deletions: number;
+  patchTruncated?: boolean;
+};
+
+/**
+ * Stats-only variant for status snapshots: numstat for tracked changes and a
+ * line count for untracked files. No patch bodies are built or transferred —
+ * those are fetched on demand via readWorktreeGitFileDiffs.
+ */
+export async function readWorktreeGitDiffStats(cwd: string): Promise<GitDiffStat[]> {
+  try {
+    const [trackedResult, untrackedResult] = await Promise.all([
+      readGitProcess(cwd, ["diff", "--no-ext-diff", "--find-renames=0", "--numstat", "-z", "HEAD", "--"]),
+      readGitProcess(cwd, ["ls-files", "--others", "--exclude-standard", "-z"]),
+    ]);
+    const trackedStats = parseGitNumstat(trackedResult);
+    const untrackedPaths = untrackedResult.split("\0").filter(Boolean);
+    const untrackedStats = await mapWithConcurrency(
+      untrackedPaths,
+      UNTRACKED_READ_CONCURRENCY,
+      (filePath) => buildUntrackedFileStat(cwd, filePath),
+    );
+    return [...trackedStats, ...untrackedStats];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * On-demand patch bodies for a selected set of worktree paths, covering both
+ * tracked changes and untracked files. Only the requested paths are returned.
+ */
+export async function readWorktreeGitFileDiffs(
+  cwd: string,
+  paths: string[],
+): Promise<FileDiffSummary[]> {
+  const requested = new Set(paths.map(normalizeDiffPath));
+  const [trackedResult, untrackedResult] = await Promise.all([
+    readGitProcess(cwd, [
+      "diff",
+      "--no-ext-diff",
+      "--find-renames=0",
+      "--patch",
+      "HEAD",
+      "--",
+      ...paths,
+    ]),
+    readGitProcess(cwd, ["ls-files", "--others", "--exclude-standard", "-z", "--", ...paths]),
+  ]);
+  const trackedDiffs = parseGitPatchSet(trackedResult);
+  const untrackedPaths = untrackedResult.split("\0").filter(Boolean);
+  const untrackedDiffs = await mapWithConcurrency(
+    untrackedPaths,
+    UNTRACKED_READ_CONCURRENCY,
+    (filePath) => buildUntrackedFileDiff(cwd, filePath),
+  );
+  return [...trackedDiffs, ...untrackedDiffs].filter((diff) =>
+    requested.has(normalizeDiffPath(diff.path)),
+  );
+}
+
+function parseGitNumstat(output: string): GitDiffStat[] {
+  // -z entries: "<additions>\t<deletions>\t<path>\0"; binary files use "-".
+  return output
+    .split("\0")
+    .filter(Boolean)
+    .map((entry): GitDiffStat | undefined => {
+      const [added, deleted, path] = entry.split("\t");
+      if (!path) {
+        return undefined;
+      }
+      const binary = added === "-" || deleted === "-";
+      return {
+        path: normalizeDiffPath(path),
+        additions: binary ? 0 : Number(added ?? 0) || 0,
+        deletions: binary ? 0 : Number(deleted ?? 0) || 0,
+        ...(binary ? { patchTruncated: true } : {}),
+      };
+    })
+    .filter((statEntry): statEntry is GitDiffStat => Boolean(statEntry));
+}
+
+async function buildUntrackedFileStat(cwd: string, filePath: string): Promise<GitDiffStat> {
+  try {
+    const absoluteWorktree = resolve(cwd);
+    const absoluteFile = resolve(absoluteWorktree, filePath);
+    if (
+      absoluteFile !== absoluteWorktree &&
+      !absoluteFile.startsWith(`${absoluteWorktree}${sep}`)
+    ) {
+      return { path: filePath, additions: 0, deletions: 0 };
+    }
+    const fileStat = await stat(absoluteFile);
+    if (fileStat.size > MAX_UNTRACKED_PATCH_BYTES) {
+      return { path: filePath, additions: 0, deletions: 0, patchTruncated: true };
+    }
+    const content = await readFile(absoluteFile, "utf8");
+    const normalized = content.replace(/\r\n/g, "\n");
+    const lineCount = normalized ? normalized.replace(/\n$/u, "").split("\n").length : 0;
+    return { path: filePath, additions: lineCount, deletions: 0 };
+  } catch {
+    return { path: filePath, additions: 0, deletions: 0 };
+  }
+}
+
 function readGitProcess(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolveResult, reject) => {
     const child = spawn("git", ["-C", cwd, ...args], {

@@ -17,6 +17,7 @@ import * as projectGitPush from "./project/git-push";
 import * as projectGitPull from "./project/git-pull";
 import * as projectGitGraph from "./project/git-graph";
 import * as projectGitCommitDetail from "./project/git-commit-detail";
+import * as projectGitFileDiff from "./project/git-file-diff";
 import * as projectSave from "./project/save";
 import * as projectDelete from "./project/delete";
 import * as agentList from "./agent/list";
@@ -84,6 +85,7 @@ const METHOD_DESCRIPTORS = {
   [projectGitPull.method]: projectGitPull.descriptor,
   [projectGitGraph.method]: projectGitGraph.descriptor,
   [projectGitCommitDetail.method]: projectGitCommitDetail.descriptor,
+  [projectGitFileDiff.method]: projectGitFileDiff.descriptor,
   [projectSave.method]: projectSave.descriptor,
   [projectDelete.method]: projectDelete.descriptor,
   [agentList.method]: agentList.descriptor,
@@ -153,6 +155,7 @@ export const CLIENT_REQUEST_METHODS = [
   projectGitPull.method,
   projectGitGraph.method,
   projectGitCommitDetail.method,
+  projectGitFileDiff.method,
   projectSave.method,
   projectDelete.method,
   agentList.method,

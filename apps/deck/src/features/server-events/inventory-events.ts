@@ -47,6 +47,44 @@ function pickGitSnapshot(payload: Record<string, unknown>): GitStatusState {
   );
 }
 
+/**
+ * Merges on-demand patch bodies into the matching status files. The status
+ * snapshot itself only carries stats; a later snapshot naturally drops these
+ * merged patches, which is exactly the cache invalidation we want.
+ */
+export function applyGitFileDiffResult(
+  current: Record<string, GitStatusState>,
+  payload: Record<string, unknown>,
+  cwd: string,
+): Record<string, GitStatusState> {
+  const entry = current[cwd];
+  if (!entry || payload.ok !== true || !Array.isArray(payload.files)) {
+    return current;
+  }
+  const diffs = new Map(
+    (payload.files as Array<{ path?: string; patch?: string }>)
+      .filter((file): file is { path: string; patch?: string } => typeof file.path === "string")
+      .map((file) => [normalizeDiffFilePath(file.path), file] as const),
+  );
+  if (!diffs.size) {
+    return current;
+  }
+  return {
+    ...current,
+    [cwd]: {
+      ...entry,
+      files: entry.files.map((file) => {
+        const diff = diffs.get(normalizeDiffFilePath(file.path));
+        return diff?.patch ? { ...file, patch: diff.patch } : file;
+      }),
+    },
+  };
+}
+
+function normalizeDiffFilePath(path: string) {
+  return path.replace(/\\/g, "/");
+}
+
 export function applyGitGraphResult(
   current: Record<string, GitGraphState>,
   payload: Record<string, unknown>,
@@ -437,6 +475,13 @@ export function applyInventoryResult(
       if (payload.cwd) {
         store.setGitGraphByWorktree((current) =>
           applyGitGraphResult(current, payload, payload.cwd),
+        );
+      }
+      return true;
+    case "project/git/file_diff":
+      if (payload.cwd) {
+        store.setGitStatusByWorktree((current) =>
+          applyGitFileDiffResult(current, payload, payload.cwd),
         );
       }
       return true;

@@ -11,6 +11,7 @@ import * as projectGitPush from "./project/git-push";
 import * as projectGitPull from "./project/git-pull";
 import * as projectGitGraph from "./project/git-graph";
 import * as projectGitCommitDetail from "./project/git-commit-detail";
+import * as projectGitFileDiff from "./project/git-file-diff";
 import * as sessionDraft from "./session/draft";
 import * as agentSave from "./agent/save";
 import * as projectDelete from "./project/delete";
@@ -439,6 +440,46 @@ test("project/git/graph negotiates unchanged payloads via signatures", () => {
   });
   assert.equal(unchanged.unchanged, true);
   assert.equal(unchanged.signature, "sig-1");
+});
+
+test("project/git/file_diff fetches patch bodies for selected paths on demand", () => {
+  assert.equal(projectGitFileDiff.method, "project/git/file_diff");
+
+  assert.deepEqual(
+    projectGitFileDiff.ParamsSchema.parse({
+      projectId: "p1",
+      cwd: "/repo",
+      paths: ["src/a.ts", "src/b.ts"],
+    }),
+    { projectId: "p1", cwd: "/repo", paths: ["src/a.ts", "src/b.ts"] },
+  );
+  // 至少要有一个路径,不接受空列表
+  assert.throws(() =>
+    projectGitFileDiff.ParamsSchema.parse({ projectId: "p1", cwd: "/repo", paths: [] }),
+  );
+
+  const result = projectGitFileDiff.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    files: [
+      {
+        path: "src/a.ts",
+        additions: 2,
+        deletions: 1,
+        patch: "@@ -1 +1,2 @@\n one\n+two",
+      },
+      {
+        path: "assets/big.bin",
+        additions: 0,
+        deletions: 0,
+        patchTruncated: true,
+      },
+    ],
+    message: "Fetched 2 file diff(s)",
+  });
+  assert.equal(result.files.length, 2);
+  assert.equal(result.files[1]?.patchTruncated, true);
 });
 
 test("project/git/commit_detail validates commit hashes and file diffs", () => {

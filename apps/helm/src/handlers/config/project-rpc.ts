@@ -30,6 +30,7 @@ import {
   type GitCommit,
   type GitCommitFile,
   getProjectGitCommitDetail,
+  getProjectGitFileDiffs,
 } from "./project-git";
 
 // Per-git-root serial queue: all Git operations for the same repository
@@ -63,6 +64,21 @@ type GitCommitDetailRpcResult = {
   cwd: string;
   commitHash: string;
   files: GitCommitFile[];
+  message: string;
+};
+
+type GitFileDiffRpcResult = {
+  ok: boolean;
+  projectId: string;
+  cwd: string;
+  files: Array<{
+    path: string;
+    originalPath?: string;
+    additions: number;
+    deletions: number;
+    patch?: string;
+    patchTruncated?: boolean;
+  }>;
   message: string;
 };
 
@@ -101,6 +117,7 @@ const pendingGitPushRequests = new Map<string, Promise<GitStatusRpcResult>>();
 const pendingGitPullRequests = new Map<string, Promise<GitStatusRpcResult>>();
 const pendingGitGraphRequests = new Map<string, Promise<GitGraphRpcResult>>();
 const pendingGitCommitDetailRequests = new Map<string, Promise<GitCommitDetailRpcResult>>();
+const pendingGitFileDiffRequests = new Map<string, Promise<GitFileDiffRpcResult>>();
 
 export async function listProjects(context: HelmHandlerContext) {
   let projects = await context.loadAvailableProjectsWithSemanticSummaries();
@@ -805,6 +822,70 @@ async function executeGetGitGraph(
       commits: [],
       message: error instanceof Error ? error.message : "Failed to fetch Git graph",
     };
+  }
+}
+
+export async function getGitFileDiffs(
+  params: { projectId: string; cwd: string; paths: string[] },
+  context: HelmHandlerContext,
+): Promise<GitFileDiffRpcResult> {
+  const resolved = await resolveProjectGitContext(params, context);
+  if (!("project" in resolved)) {
+    return {
+      ok: false,
+      projectId: resolved.projectId,
+      cwd: resolved.cwd,
+      files: [],
+      message: resolved.message,
+    };
+  }
+  if (!params.paths?.length) {
+    return {
+      ok: false,
+      projectId: resolved.project.id,
+      cwd: resolved.cwd,
+      files: [],
+      message: "At least one path is required",
+    };
+  }
+
+  const dedupeKey = `${resolved.project.id}:${resolved.cwd}:${[...params.paths].sort().join("\0")}`;
+  const pending = pendingGitFileDiffRequests.get(dedupeKey);
+  if (pending) {
+    return await pending;
+  }
+
+  const promise = withGitQueue(resolved.cwd, async (): Promise<GitFileDiffRpcResult> => {
+    try {
+      const diffs = await getProjectGitFileDiffs(resolved.cwd, params.paths);
+      return {
+        ok: true,
+        projectId: resolved.project.id,
+        cwd: resolved.cwd,
+        files: diffs.map((diff) => ({
+          path: diff.path,
+          additions: diff.additions,
+          deletions: diff.deletions,
+          ...(diff.patch ? { patch: diff.patch } : {}),
+          ...(diff.patchTruncated ? { patchTruncated: true } : {}),
+        })),
+        message: `Fetched ${diffs.length} file diff(s)`,
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        projectId: resolved.project.id,
+        cwd: resolved.cwd,
+        files: [],
+        message: error instanceof Error ? error.message : "Failed to read file diffs",
+      };
+    }
+  });
+  pendingGitFileDiffRequests.set(dedupeKey, promise);
+  try {
+    return await promise;
+  } finally {
+    pendingGitFileDiffRequests.delete(dedupeKey);
   }
 }
 

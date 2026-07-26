@@ -27,6 +27,7 @@ import {
   pullGitChanges,
   getGitGraph,
   getGitCommitDetail,
+  getGitFileDiffs,
 } from "./project-rpc";
 
 export async function handleConfigRpcRequest(
@@ -88,6 +89,11 @@ export async function handleConfigRpcRequest(
     case "project/git/commit_detail":
       return getGitCommitDetail(
         params as { projectId: string; cwd: string; commitHash: string },
+        context,
+      );
+    case "project/git/file_diff":
+      return getGitFileDiffs(
+        params as { projectId: string; cwd: string; paths: string[] },
         context,
       );
     case "agent/list":

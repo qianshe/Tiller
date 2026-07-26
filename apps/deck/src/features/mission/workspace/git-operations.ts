@@ -203,6 +203,35 @@ export async function runGitCommit(
   }
 }
 
+export type GitFileDiffPayload = GitDispatchResult & {
+  files?: Array<{
+    path: string;
+    additions: number;
+    deletions: number;
+    patch?: string;
+    patchTruncated?: boolean;
+  }>;
+};
+
+/**
+ * Batched on-demand patch fetch; the result event merges patch bodies back
+ * into the status snapshot (see applyGitFileDiffResult).
+ */
+export async function runGitFileDiffs(
+  context: GitOperationContext,
+  paths: string[],
+): Promise<GitFileDiffPayload> {
+  if (paths.length === 0) {
+    return { ok: false, message: "没有需要获取 diff 的文件" };
+  }
+  const { projectId, cwd } = context;
+  return await context.dispatch("project/git/file_diff", {
+    projectId,
+    cwd,
+    paths,
+  }) as GitFileDiffPayload;
+}
+
 export async function runGitDiscard(
   context: GitOperationContext,
   paths: string[],
@@ -357,6 +386,14 @@ export function useGitOperations(options: {
     return runGitDiscard(context, paths);
   }, [buildContext]);
 
+  const handleFetchFileDiffs = useCallback(async (paths: string[]): Promise<GitFileDiffPayload> => {
+    const context = buildContext();
+    if (!context) {
+      return { ok: false, message: "未选择 Git 工作区" };
+    }
+    return runGitFileDiffs(context, paths);
+  }, [buildContext]);
+
   return {
     refreshGitStatus,
     handleRefreshGitStatus,
@@ -365,5 +402,6 @@ export function useGitOperations(options: {
     handlePull,
     handleCommit,
     handleDiscard,
+    handleFetchFileDiffs,
   };
 }

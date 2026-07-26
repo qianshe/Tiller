@@ -4,6 +4,7 @@ import { createGitStatusState, type GitStatusState } from "../../../store/facade
 import type { GitDispatchResult } from "./git-sync.js";
 import {
   resolveFetchOutcome,
+  runGitFileDiffs,
   runGitCommit,
   runGitDiscard,
   runGitFetch,
@@ -246,6 +247,39 @@ test("runGitCommit keeps selection when commit fails", async () => {
   assert.equal(result?.ok, false);
   assert.equal(harness.commitSuccesses.length, 0);
   assert.equal(harness.currentStatus().committing, false);
+});
+
+test("runGitFileDiffs dispatches an on-demand batched patch request", async () => {
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+  const harness = createTestContext({
+    dispatch: async (method, params) => {
+      dispatched.push({ method, params });
+      return { ok: true };
+    },
+  });
+
+  const result = await runGitFileDiffs(harness.context, ["src/a.ts", "src/b.ts"]);
+
+  assert.equal(result?.ok, true);
+  assert.deepEqual(dispatched, [{
+    method: "project/git/file_diff",
+    params: { projectId: "p1", cwd: "/repo", paths: ["src/a.ts", "src/b.ts"] },
+  }]);
+});
+
+test("runGitFileDiffs refuses an empty path list without dispatching", async () => {
+  const dispatched: string[] = [];
+  const harness = createTestContext({
+    dispatch: async (method) => {
+      dispatched.push(method);
+      return { ok: true };
+    },
+  });
+
+  const result = await runGitFileDiffs(harness.context, []);
+
+  assert.equal(result?.ok, false);
+  assert.equal(dispatched.length, 0);
 });
 
 test("runGitDiscard reports discarded paths on success", async () => {

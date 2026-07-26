@@ -41,6 +41,10 @@ const runtimeOverviewActionsSource = readFileSync(resolve(currentDir, "../worksp
 const runtimeOverviewSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview.ts"), "utf8");
 const gitSyncSource = readFileSync(resolve(currentDir, "../workspace/git-sync.ts"), "utf8");
 const gitOperationsSource = readFileSync(resolve(currentDir, "../workspace/git-operations.ts"), "utf8");
+const inventoryEventsSource = readFileSync(
+  resolve(currentDir, "../../server-events/inventory-events.ts"),
+  "utf8",
+);
 const missionViewModelSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-view-model.ts"),
   "utf8",
@@ -1237,6 +1241,20 @@ test("mission inspector keeps Git actions inside a compact upward menu", () => {
   assert.doesNotMatch(inspectorSource, /gitSummaryParts|gitSummary|Git 未刷新|无 Git 状态|aria-live="polite"/);
   assert.match(worktreeSource, /onFetch=\{handleFetch\}/);
   assert.match(worktreeSource, /onOpenGitError=\{handleOpenGitError\}/);
+});
+
+test("mission diff patches load on demand instead of riding the status payload", () => {
+  // 打开的 diff 文件缺 patch 时按需批量拉取,并以 lastUpdated 指纹防重复请求
+  assert.match(gitOperationsSource, /"project\/git\/file_diff"/);
+  assert.match(worktreeSource, /handleFetchFileDiffs\(\[selectedMissionDiffFilePath\]\)/);
+  assert.match(worktreeSource, /requestedDiffPathsRef\.current\.get\(selectedMissionDiffFilePath\) === fingerprint/);
+  // 生成提交描述前补齐缺失 patch,直接消费返回值
+  assert.match(worktreeSource, /handleFetchFileDiffs\(missingPaths\)/);
+  // 结果事件把 patch 合并回 status 条目
+  assert.match(
+    inventoryEventsSource,
+    /case "project\/git\/file_diff":[\s\S]*applyGitFileDiffResult\(current, payload, payload\.cwd\)/,
+  );
 });
 
 test("mission Git actions notify success and refresh tracking after remote changes", () => {

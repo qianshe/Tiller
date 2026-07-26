@@ -322,7 +322,96 @@ test("config RPC git status returns diff details for modified files", async () =
   const readme = result.files.find((file) => file.path === "README.md");
   assert.equal(readme?.additions, 1);
   assert.equal(readme?.deletions, 0);
-  assert.match(readme?.patch ?? "", /diff --git a\/README\.md b\/README\.md/);
+  // Status 只携带统计;patch 正文改由 project/git/file_diff 按需批量获取。
+  assert.equal(readme?.patch, undefined);
+
+  const diffResult = await handleConfigRpcRequest("project/git/file_diff", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+    paths: ["README.md"],
+  }, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) => items.find((project) => project.id === id),
+  } as any) as {
+    ok: boolean;
+    files: Array<{ path: string; additions: number; deletions: number; patch?: string }>;
+  };
+
+  assert.equal(diffResult.ok, true);
+  assert.equal(diffResult.files.length, 1);
+  assert.equal(diffResult.files[0]?.additions, 1);
+  assert.match(diffResult.files[0]?.patch ?? "", /diff --git a\/README\.md b\/README\.md/);
+  assert.match(diffResult.files[0]?.patch ?? "", /\+two/);
+});
+
+test("config RPC git status payload stays small for large diffs (patch bodies stay on demand)", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-status-payload-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(repoPath);
+  commitFile(repoPath, "big.txt", "seed\n", "init");
+  // 约 400KB 的文本变更:旧行为会把整个 patch 塞进 status 响应
+  const bigContent = Array.from({ length: 10_000 }, (_, i) => `line-${i}-${"x".repeat(30)}`).join("\n");
+  writeFileSync(join(repoPath, "big.txt"), `${bigContent}\n`, "utf8");
+  saveRepoProject(configPath, "p1", repoPath);
+  const cwd = repoPath.replace(/\\/g, "/");
+
+  const status = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(status.ok, true);
+  const big = status.files.find((file: { path: string }) => file.path === "big.txt");
+  assert.equal(big?.additions, 10_000);
+  // 载荷回归护栏:状态响应不得随 diff 体积膨胀(旧行为约 400KB+)
+  const statusBytes = JSON.stringify(status).length;
+  assert.ok(statusBytes < 10_000, `status payload should stay small, got ${statusBytes} bytes`);
+
+  // patch 正文仍可按需取得,且体积与变更相称
+  const diff = await handleConfigRpcRequest("project/git/file_diff", {
+    projectId: "p1",
+    cwd,
+    paths: ["big.txt"],
+  }, repoContext(configPath)) as any;
+  assert.equal(diff.ok, true);
+  assert.ok((diff.files[0]?.patch?.length ?? 0) > 300_000);
+});
+
+test("config RPC git file_diff covers untracked files and only the requested paths", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-file-diff-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(repoPath);
+  commitFile(repoPath, "README.md", "one\n", "init");
+  writeFileSync(join(repoPath, "README.md"), "one\ntwo\n", "utf8");
+  writeFileSync(join(repoPath, "new-note.txt"), "hello\nworld\n", "utf8");
+  saveRepoProject(configPath, "p1", repoPath);
+  const cwd = repoPath.replace(/\\/g, "/");
+
+  // Status 对未跟踪文件同样只给统计
+  const status = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd,
+  }, repoContext(configPath)) as any;
+  const note = status.files.find((file: { path: string }) => file.path === "new-note.txt");
+  assert.equal(note?.additions, 2);
+  assert.equal(note?.patch, undefined);
+
+  // file_diff 只返回请求的路径,未跟踪文件合成 added patch
+  const diff = await handleConfigRpcRequest("project/git/file_diff", {
+    projectId: "p1",
+    cwd,
+    paths: ["new-note.txt"],
+  }, repoContext(configPath)) as any;
+
+  assert.equal(diff.ok, true);
+  assert.equal(diff.files.length, 1);
+  assert.equal(diff.files[0]?.path, "new-note.txt");
+  assert.equal(diff.files[0]?.additions, 2);
+  assert.match(diff.files[0]?.patch ?? "", /\+hello/);
 });
 
 test("config RPC git commit includes only selected paths and preserves unrelated staged changes", async () => {
