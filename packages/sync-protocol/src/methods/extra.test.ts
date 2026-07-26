@@ -6,7 +6,11 @@ import * as projectGitListBranches from "./project/git-list-branches";
 import * as projectGitCreateWorktree from "./project/git-create-worktree";
 import * as projectGitStatus from "./project/git-status";
 import * as projectGitCommit from "./project/git-commit";
+import * as projectGitDiscard from "./project/git-discard";
+import * as projectGitPush from "./project/git-push";
+import * as projectGitPull from "./project/git-pull";
 import * as projectGitGraph from "./project/git-graph";
+import * as projectGitCommitDetail from "./project/git-commit-detail";
 import * as sessionDraft from "./session/draft";
 import * as agentSave from "./agent/save";
 import * as projectDelete from "./project/delete";
@@ -67,12 +71,16 @@ test("project/git/create_worktree shares the list_branches result schema", () =>
   });
 });
 
-test("project/git/status validates params and returns worktree status", () => {
+test("project/git/status accepts refreshRemote and returns tracking snapshot", () => {
   assert.equal(projectGitStatus.method, "project/git/status");
 
   assert.deepEqual(
     projectGitStatus.ParamsSchema.parse({ projectId: "p1", cwd: "/repo" }),
     { projectId: "p1", cwd: "/repo" },
+  );
+  assert.deepEqual(
+    projectGitStatus.ParamsSchema.parse({ projectId: "p1", cwd: "/repo", refreshRemote: true }),
+    { projectId: "p1", cwd: "/repo", refreshRemote: true },
   );
   assert.deepEqual(
     projectGitStatus.ParamsSchema.parse({ projectId: "p1" }),
@@ -84,6 +92,12 @@ test("project/git/status validates params and returns worktree status", () => {
     projectId: "p1",
     cwd: "/repo",
     branch: "main",
+    detached: false,
+    upstreamBranch: "origin/main",
+    ahead: 2,
+    behind: 1,
+    pushTarget: "origin/main",
+    trackingStale: false,
     clean: false,
     files: [
       { path: "file.ts", indexStatus: "M", worktreeStatus: " " },
@@ -93,9 +107,74 @@ test("project/git/status validates params and returns worktree status", () => {
   });
   assert.equal(result.files.length, 2);
   assert.equal(result.clean, false);
+  assert.equal(result.detached, false);
+  assert.equal(result.upstreamBranch, "origin/main");
+  assert.equal(result.ahead, 2);
+  assert.equal(result.behind, 1);
+  assert.equal(result.pushTarget, "origin/main");
+  assert.equal(result.trackingStale, false);
 });
 
-test("project/git/commit requires non-empty paths and returns commit hash", () => {
+test("project/git/status tolerates detached / no-upstream snapshot", () => {
+  const detached = projectGitStatus.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "abc1234",
+    detached: true,
+    ahead: 0,
+    behind: 0,
+    trackingStale: false,
+    clean: true,
+    files: [],
+    message: "detached HEAD",
+  });
+  assert.equal(detached.detached, true);
+  assert.equal(detached.upstreamBranch, undefined);
+  assert.equal(detached.pushTarget, undefined);
+  assert.equal(detached.ahead, 0);
+  assert.equal(detached.behind, 0);
+});
+
+test("project/git/status ok:false still validates against the full snapshot schema", () => {
+  const failed = projectGitStatus.ResultSchema.parse({
+    ok: false,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "",
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    trackingStale: false,
+    clean: false,
+    files: [],
+    message: "not a git repo",
+  });
+  assert.equal(failed.ok, false);
+});
+
+test("project/git/status snapshot carries remoteRefreshError when stale", () => {
+  const stale = projectGitStatus.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "main",
+    detached: false,
+    upstreamBranch: "origin/main",
+    ahead: 0,
+    behind: 0,
+    pushTarget: "origin/main",
+    trackingStale: true,
+    remoteRefreshError: "network unreachable",
+    clean: true,
+    files: [],
+    message: "",
+  });
+  assert.equal(stale.trackingStale, true);
+  assert.equal(stale.remoteRefreshError, "network unreachable");
+});
+
+test("project/git/commit flattens snapshot fields and reuses shared schema", () => {
   assert.equal(projectGitCommit.method, "project/git/commit");
 
   assert.deepEqual(
@@ -127,15 +206,176 @@ test("project/git/commit requires non-empty paths and returns commit hash", () =
     projectId: "p1",
     cwd: "/repo",
     commitHash: "abc1234",
-    status: {
-      branch: "main",
-      clean: true,
-      files: [],
-    },
+    branch: "main",
+    detached: false,
+    upstreamBranch: "origin/main",
+    ahead: 1,
+    behind: 0,
+    pushTarget: "origin/main",
+    trackingStale: true,
+    clean: true,
+    files: [],
     message: "Committed 1 file",
   });
   assert.equal(result.commitHash, "abc1234");
-  assert.equal(result.status.clean, true);
+  assert.equal(result.clean, true);
+  assert.equal(result.branch, "main");
+  assert.equal(result.upstreamBranch, "origin/main");
+  assert.equal(result.trackingStale, true);
+});
+
+test("project/git/commit ok:false validates against flattened snapshot", () => {
+  const failed = projectGitCommit.ResultSchema.parse({
+    ok: false,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "main",
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    trackingStale: false,
+    clean: false,
+    files: [{ path: "file.ts", indexStatus: "M", worktreeStatus: " " }],
+    message: "nothing staged",
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.files.length, 1);
+});
+
+test("project/git/discard supports selected paths or the whole worktree", () => {
+  assert.equal(projectGitDiscard.method, "project/git/discard");
+  assert.deepEqual(
+    projectGitDiscard.ParamsSchema.parse({
+      projectId: "p1",
+      cwd: "/repo",
+      paths: ["file.ts"],
+    }),
+    { projectId: "p1", cwd: "/repo", paths: ["file.ts"] },
+  );
+  assert.deepEqual(
+    projectGitDiscard.ParamsSchema.parse({
+      projectId: "p1",
+      cwd: "/repo",
+      all: true,
+    }),
+    { projectId: "p1", cwd: "/repo", all: true },
+  );
+  assert.throws(() =>
+    projectGitDiscard.ParamsSchema.parse({ projectId: "p1", cwd: "/repo" }),
+  );
+  assert.throws(() =>
+    projectGitDiscard.ParamsSchema.parse({
+      projectId: "p1",
+      cwd: "/repo",
+      paths: ["file.ts"],
+      all: true,
+    }),
+  );
+
+  const result = projectGitDiscard.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "main",
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    trackingStale: true,
+    clean: true,
+    files: [],
+    message: "Discarded selected changes",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.clean, true);
+});
+
+test("project/git/push exposes flattened snapshot at top level", () => {
+  assert.equal(projectGitPush.method, "project/git/push");
+
+  assert.deepEqual(
+    projectGitPush.ParamsSchema.parse({ projectId: "p1", cwd: "/repo" }),
+    { projectId: "p1", cwd: "/repo" },
+  );
+
+  const ok = projectGitPush.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "main",
+    detached: false,
+    upstreamBranch: "origin/main",
+    ahead: 0,
+    behind: 0,
+    pushTarget: "origin/main",
+    trackingStale: false,
+    clean: true,
+    files: [],
+    message: "pushed",
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.pushTarget, "origin/main");
+  assert.equal(ok.upstreamBranch, "origin/main");
+
+  const failed = projectGitPush.ResultSchema.parse({
+    ok: false,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "main",
+    detached: false,
+    ahead: 1,
+    behind: 0,
+    pushTarget: "origin/main",
+    trackingStale: false,
+    clean: false,
+    files: [],
+    message: "no upstream",
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.ahead, 1);
+});
+
+test("project/git/pull exposes flattened snapshot at top level", () => {
+  assert.equal(projectGitPull.method, "project/git/pull");
+
+  assert.deepEqual(
+    projectGitPull.ParamsSchema.parse({ projectId: "p1", cwd: "/repo" }),
+    { projectId: "p1", cwd: "/repo" },
+  );
+
+  const ok = projectGitPull.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "main",
+    detached: false,
+    upstreamBranch: "origin/main",
+    ahead: 0,
+    behind: 0,
+    pushTarget: "origin/main",
+    trackingStale: false,
+    clean: true,
+    files: [],
+    message: "fast-forwarded",
+  });
+  assert.equal(ok.ok, true);
+  assert.equal(ok.behind, 0);
+
+  const failed = projectGitPull.ResultSchema.parse({
+    ok: false,
+    projectId: "p1",
+    cwd: "/repo",
+    branch: "main",
+    detached: false,
+    ahead: 0,
+    behind: 1,
+    pushTarget: "origin/main",
+    trackingStale: false,
+    clean: false,
+    files: [{ path: "file.ts", indexStatus: "M", worktreeStatus: " " }],
+    message: "dirty worktree",
+  });
+  assert.equal(failed.ok, false);
+  assert.equal(failed.behind, 1);
 });
 
 test("project/git/graph validates params and returns commit graph", () => {
@@ -184,6 +424,43 @@ test("project/git/graph validates params and returns commit graph", () => {
   assert.equal(result.commits.length, 2);
   assert.equal(result.commits[0]?.refs.length, 2);
   assert.equal(result.commits[0]?.refs[0]?.kind, "detached");
+});
+
+test("project/git/commit_detail validates commit hashes and file diffs", () => {
+  assert.equal(projectGitCommitDetail.method, "project/git/commit_detail");
+  assert.deepEqual(
+    projectGitCommitDetail.ParamsSchema.parse({
+      projectId: "p1",
+      cwd: "/repo",
+      commitHash: "abc1234",
+    }),
+    { projectId: "p1", cwd: "/repo", commitHash: "abc1234" },
+  );
+  assert.throws(() =>
+    projectGitCommitDetail.ParamsSchema.parse({
+      projectId: "p1",
+      cwd: "/repo",
+      commitHash: "HEAD~1",
+    }),
+  );
+
+  const result = projectGitCommitDetail.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    commitHash: "abc1234567890",
+    files: [
+      {
+        path: "src/index.ts",
+        status: "modified",
+        additions: 2,
+        deletions: 1,
+        patch: "@@ -1 +1,2 @@\n-old\n+new\n+line",
+      },
+    ],
+    message: "Fetched 1 file(s)",
+  });
+  assert.equal(result.files[0]?.additions, 2);
 });
 
 test("session/draft enforces deck and selected agent scope", () => {

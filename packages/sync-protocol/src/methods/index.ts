@@ -12,7 +12,11 @@ import * as projectGitListBranches from "./project/git-list-branches";
 import * as projectGitCreateWorktree from "./project/git-create-worktree";
 import * as projectGitStatus from "./project/git-status";
 import * as projectGitCommit from "./project/git-commit";
+import * as projectGitDiscard from "./project/git-discard";
+import * as projectGitPush from "./project/git-push";
+import * as projectGitPull from "./project/git-pull";
 import * as projectGitGraph from "./project/git-graph";
+import * as projectGitCommitDetail from "./project/git-commit-detail";
 import * as projectSave from "./project/save";
 import * as projectDelete from "./project/delete";
 import * as agentList from "./agent/list";
@@ -75,7 +79,11 @@ const METHOD_DESCRIPTORS = {
   [projectGitCreateWorktree.method]: projectGitCreateWorktree.descriptor,
   [projectGitStatus.method]: projectGitStatus.descriptor,
   [projectGitCommit.method]: projectGitCommit.descriptor,
+  [projectGitDiscard.method]: projectGitDiscard.descriptor,
+  [projectGitPush.method]: projectGitPush.descriptor,
+  [projectGitPull.method]: projectGitPull.descriptor,
   [projectGitGraph.method]: projectGitGraph.descriptor,
+  [projectGitCommitDetail.method]: projectGitCommitDetail.descriptor,
   [projectSave.method]: projectSave.descriptor,
   [projectDelete.method]: projectDelete.descriptor,
   [agentList.method]: agentList.descriptor,
@@ -140,7 +148,11 @@ export const CLIENT_REQUEST_METHODS = [
   projectGitCreateWorktree.method,
   projectGitStatus.method,
   projectGitCommit.method,
+  projectGitDiscard.method,
+  projectGitPush.method,
+  projectGitPull.method,
   projectGitGraph.method,
+  projectGitCommitDetail.method,
   projectSave.method,
   projectDelete.method,
   agentList.method,
