@@ -112,6 +112,53 @@ test("git graph panel renders merge commit indicator for multiple parents", () =
   assert.match(html, /data-graph-svg/);
 });
 
+test("git graph panel keeps truncated parent lanes visible through the loaded boundary", () => {
+  const gitGraph: GitGraphState = {
+    projectId: "test",
+    cwd: "/test",
+    commits: [
+      {
+        hash: "merge",
+        parents: ["main-parent-outside-window", "branch-tip"],
+        refs: [],
+        subject: "Merge branch",
+        authorName: "Merger",
+        authoredAt: new Date().toISOString(),
+      },
+      {
+        hash: "branch-tip",
+        parents: ["branch-root"],
+        refs: [],
+        subject: "Branch tip",
+        authorName: "Author",
+        authoredAt: new Date().toISOString(),
+      },
+      {
+        hash: "branch-root",
+        parents: [],
+        refs: [],
+        subject: "Branch root",
+        authorName: "Author",
+        authoredAt: new Date().toISOString(),
+      },
+    ],
+  };
+
+  const html = renderToStaticMarkup(
+    createElement(GitGraphPanel, {
+      gitGraph,
+      onSelectCommit: noop,
+    }),
+  );
+  const branchTipStart = html.indexOf('data-commit-index="1"');
+  const branchRootStart = html.indexOf('data-commit-index="2"');
+  const branchTipRow = html.slice(branchTipStart, branchRootStart);
+  const branchRootRow = html.slice(branchRootStart);
+
+  assert.equal((branchTipRow.match(/<line /gu) ?? []).length, 2);
+  assert.match(branchRootRow, /x1="7" y1="-3" x2="7" y2="35"/u);
+});
+
 test("git graph panel does not render commit hashes in the list body", () => {
   const gitGraph: GitGraphState = {
     projectId: "test",
@@ -204,4 +251,48 @@ test("git graph panel expands commit detail inline when a commit is preselected"
   assert.match(html, /作者/);
   assert.match(html, /John Doe/);
   assert.match(html, /abc1234567890/);
+});
+
+test("git graph panel renders commit file diffs and a hash copy action", () => {
+  const commitHash = "abc1234567890";
+  const gitGraph: GitGraphState = {
+    projectId: "test",
+    cwd: "/test",
+    commits: [
+      {
+        hash: commitHash,
+        parents: [],
+        refs: [],
+        subject: "Update readme",
+        authorName: "Tester",
+        authoredAt: new Date("2026-01-01T00:00:00Z").toISOString(),
+      },
+    ],
+    commitDetails: {
+      [commitHash]: {
+        commitHash,
+        files: [
+          {
+            path: "README.md",
+            status: "modified",
+            additions: 1,
+            deletions: 0,
+            patch: "@@ -1 +1,2 @@\n one\n+two",
+          },
+        ],
+      },
+    },
+  };
+
+  const html = renderToStaticMarkup(
+    createElement(GitGraphPanel, {
+      gitGraph,
+      selectedCommitHash: commitHash,
+      onSelectCommit: noop,
+    }),
+  );
+
+  assert.match(html, /aria-label="复制提交哈希"/);
+  assert.match(html, /README\.md/);
+  assert.match(html, /\+two/);
 });

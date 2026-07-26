@@ -10,6 +10,17 @@ export type GitStatusDiffFile = {
   patch?: string;
 };
 
+export type GitDispatchResult = {
+  ok?: boolean;
+  message?: string;
+  remoteRefreshError?: string;
+};
+
+export type GitDispatch = (
+  method: string,
+  params: Record<string, unknown>,
+) => Promise<GitDispatchResult>;
+
 export function reconcileMissionDiffs(
   sessionDiffs: FileDiffSummary[],
   gitStatusFiles: GitStatusDiffFile[] | undefined,
@@ -60,6 +71,42 @@ export function shouldPrimeGitGraphLoad(
   return !currentGraph?.loading &&
     !currentGraph?.lastUpdated &&
     (currentGraph?.commits?.length ?? 0) === 0;
+}
+
+/**
+ * Sequential orchestration for explicit status refresh and Fetch actions:
+ * status must resolve before graph is refreshed; refreshRemote controls
+ * whether remote refs are fetched first,
+ * and graph is only refreshed when the status result is ok and a graph
+ * is already tracked for this worktree.
+ *
+ * The dispatch callback is bound to a specific RPC client by the caller,
+ * so this function stays pure and unit-testable.
+ */
+export async function refreshGitStatusAndGraph(
+  dispatch: GitDispatch,
+  opts: {
+    projectId: string;
+    cwd: string;
+    hasGraph: boolean;
+    refreshRemote?: boolean;
+  },
+) {
+  const status = await dispatch("project/git/status", {
+    projectId: opts.projectId,
+    cwd: opts.cwd,
+    refreshRemote: opts.refreshRemote ?? false,
+  });
+  if (!status?.ok) {
+    return status;
+  }
+  if (opts.hasGraph) {
+    await dispatch("project/git/graph", {
+      projectId: opts.projectId,
+      cwd: opts.cwd,
+    });
+  }
+  return status;
 }
 
 function mapGitStatusToDiffStatus(indexStatus: string, worktreeStatus: string): FileDiffSummary["status"] {

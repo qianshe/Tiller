@@ -10,7 +10,7 @@ import type { CSSProperties } from "react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
 import { MissionDisplayPanel, type RuntimeOverviewItem } from "./panel";
 import type { MissionPanelPage } from "./panels";
-import type { GitGraphState } from "../../../store/facade";
+import type { GitGraphState, GitStatusState } from "../../../store/facade";
 
 type MissionDisplaySectionCopy = (typeof UI_COPY)[Locale];
 
@@ -33,6 +33,10 @@ type MissionDisplaySectionProps = {
   historicalDiffIncomplete?: boolean;
   onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   gitGraph?: GitGraphState;
+  gitStatus?: GitStatusState;
+  gitErrorTabOpen?: boolean;
+  onSelectGitCommit?: (hash: string) => void;
+  onCloseGitErrorTab?: () => void;
   onAddPage: () => void;
   onSelectPage: (pageId: string) => void;
   onDragStart: (pageId: string | null) => void;
@@ -63,6 +67,10 @@ export function MissionDisplaySection({
   historicalDiffIncomplete,
   onReconnectRuntime,
   gitGraph,
+  gitStatus,
+  gitErrorTabOpen,
+  onSelectGitCommit,
+  onCloseGitErrorTab,
   onAddPage,
   onSelectPage,
   onDragStart,
@@ -90,6 +98,10 @@ export function MissionDisplaySection({
       historicalDiffIncomplete={historicalDiffIncomplete}
       onReconnectRuntime={onReconnectRuntime}
       gitGraph={gitGraph}
+      gitStatus={gitStatus}
+      gitErrorTabOpen={gitErrorTabOpen}
+      onSelectGitCommit={onSelectGitCommit}
+      onCloseGitErrorTab={onCloseGitErrorTab}
       onAddPage={onAddPage}
       onSelectPage={onSelectPage}
       onDragStart={onDragStart}

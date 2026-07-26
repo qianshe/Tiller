@@ -13,6 +13,9 @@ export function buildMissionPanelContext(panelPages: any) {
   return {
     selectedMissionDisplayTabId: panelPages.selectedDisplayTabId,
     setSelectedMissionDisplayTabId: panelPages.setSelectedDisplayTabId,
+    missionGitErrorTabOpen: panelPages.gitErrorTabOpen,
+    openMissionGitErrorTab: panelPages.openGitErrorTab,
+    closeMissionGitErrorTab: panelPages.closeGitErrorTab,
     openedMissionDiffFilePaths: panelPages.openedDiffFilePaths,
     selectedMissionDiffFilePath: panelPages.selectedDiffFilePath,
     setSelectedMissionDiffFilePath: panelPages.setSelectedDiffFilePath,

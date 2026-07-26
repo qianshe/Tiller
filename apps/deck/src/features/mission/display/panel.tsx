@@ -16,6 +16,7 @@ import {
   type ParsedDiffLine,
 } from "./diff-comment-selection";
 import { GitGraphPanel } from "./git-graph-panel";
+import { GitErrorPanel } from "./git-error-panel";
 import type { MissionPanelPage } from "./panels";
 import type { GitStatusState, GitGraphState } from "../../../store/facade";
 import { SelectionCommentPopover } from "../ui/selection-comment-popover";
@@ -58,7 +59,10 @@ type MissionDisplayPanelProps = {
   onReconnectRuntime?: (runtime: RuntimeOverviewItem) => void;
   gitStatus?: GitStatusState;
   gitGraph?: GitGraphState;
+  gitErrorTabOpen?: boolean;
   onRefreshGitStatus?: () => void;
+  onSelectGitCommit?: (hash: string) => void;
+  onCloseGitErrorTab?: () => void;
   onAddPage: () => void;
   onSelectPage: (pageId: string) => void;
   onDragStart: (pageId: string | null) => void;
@@ -83,7 +87,10 @@ export function MissionDisplayPanel({
   historicalDiffIncomplete,
   gitStatus,
   gitGraph,
+  gitErrorTabOpen = false,
   onRefreshGitStatus,
+  onSelectGitCommit,
+  onCloseGitErrorTab,
   onSelectPage,
   onOpenDiffDetail,
   onCloseDiffFile,
@@ -91,6 +98,7 @@ export function MissionDisplayPanel({
   onCollapse,
 }: MissionDisplayPanelProps) {
   const isGraphTabSelected = selectedPage.id === "graph";
+  const isGitErrorTabSelected = selectedPage.id === "git-error";
   const [graphTabDismissed, setGraphTabDismissed] = useState(false);
   useEffect(() => {
     if (isGraphTabSelected) {
@@ -98,13 +106,14 @@ export function MissionDisplayPanel({
     }
   }, [isGraphTabSelected]);
   const showGraphTab = isGraphTabSelected || (Boolean(gitGraph) && !graphTabDismissed);
+  const showGitErrorTab = isGitErrorTabSelected || gitErrorTabOpen;
   const displayTabs = resolveDisplayTabs(
     diffs,
     openedDiffFilePaths,
     selectedDiffFilePath,
-    isGraphTabSelected ? null : selectedPage.id,
+    isGraphTabSelected || isGitErrorTabSelected ? null : selectedPage.id,
   );
-  const showTabStrip = showGraphTab || displayTabs.length > 0;
+  const showTabStrip = showGraphTab || showGitErrorTab || displayTabs.length > 0;
 
   const selectedDisplayDiff = diffs.find((file) => file.path === selectedDiffFilePath);
   const [selectedLineKeys, setSelectedLineKeys] = useState<Set<string>>(new Set());
@@ -165,6 +174,13 @@ export function MissionDisplayPanel({
       onSelectPage("diff-detail");
     }
   };
+  const closeGitErrorTab = () => {
+    if (onCloseGitErrorTab) {
+      onCloseGitErrorTab();
+      return;
+    }
+    onSelectPage("diff-detail");
+  };
 
   return (
     <aside
@@ -217,6 +233,33 @@ export function MissionDisplayPanel({
               </button>
             </div>
           ) : null}
+          {showGitErrorTab ? (
+            <div
+              className={cn(
+                "flex h-[22px] shrink-0 items-center gap-1 rounded px-1.5 text-2xs transition-colors",
+                isGitErrorTabSelected
+                  ? "bg-surface-emphasis text-foreground"
+                  : "text-muted-foreground hover:bg-surface-emphasis hover:text-foreground",
+              )}
+            >
+              <button
+                type="button"
+                className="flex shrink-0 items-center gap-1"
+                onClick={() => onSelectPage("git-error")}
+              >
+                <span className="font-medium">Git 错误</span>
+              </button>
+              <button
+                type="button"
+                className="grid h-4 w-4 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-surface hover:text-foreground"
+                aria-label="关闭 Git 错误"
+                title="关闭 Git 错误"
+                onClick={closeGitErrorTab}
+              >
+                <Icon name="x" size={9} className="shrink-0" />
+              </button>
+            </div>
+          ) : null}
           {displayTabs.map((page) => {
             const selected = page.id === selectedPage.id;
             return (
@@ -258,7 +301,9 @@ export function MissionDisplayPanel({
       {/* Content area */}
       <section className="mission-panel-content min-h-0 flex-1 overflow-auto p-0">
         {isGraphTabSelected ? (
-          <GitGraphPanel gitGraph={gitGraph} />
+          <GitGraphPanel gitGraph={gitGraph} onSelectCommit={onSelectGitCommit} />
+        ) : isGitErrorTabSelected ? (
+          <GitErrorPanel gitStatus={gitStatus} gitGraph={gitGraph} />
         ) : (
           renderDiffDetailPage({
             selectedDiffFilePath,
@@ -295,7 +340,7 @@ export function MissionDisplayPanel({
       ) : null}
       
       {/* Status bar - only show when diff tab selected */}
-      {!isGraphTabSelected ? (
+      {!isGraphTabSelected && !isGitErrorTabSelected ? (
         <div className="mission-display-status-bar flex items-center gap-2 border-t border-border-ghost px-2 py-1 text-2xs text-muted-foreground">
           <Icon name="fileText" size={10} />
           <span className="min-w-0 flex-1 truncate font-mono tabular">{displayFilePath}</span>

@@ -7,6 +7,7 @@ import { useState } from "react";
  */
 export function usePanelPages() {
   const [selectedDisplayTabId, setSelectedDisplayTabId] = useState("diff-detail");
+  const [gitErrorTabOpen, setGitErrorTabOpen] = useState(false);
   const [openedDiffFilePaths, setOpenedDiffFilePaths] = useState<string[]>([]);
   const [selectedDiffFilePath, setSelectedDiffFilePath] = useState<
     string | null
@@ -45,9 +46,24 @@ export function usePanelPages() {
     });
   }
 
+  function openGitErrorTab() {
+    setGitErrorTabOpen(true);
+    setSelectedDisplayTabId("git-error");
+  }
+
+  function closeGitErrorTab() {
+    setGitErrorTabOpen(false);
+    setSelectedDisplayTabId((current) =>
+      current === "git-error" ? "diff-detail" : current,
+    );
+  }
+
   return {
     selectedDisplayTabId,
     setSelectedDisplayTabId,
+    gitErrorTabOpen,
+    openGitErrorTab,
+    closeGitErrorTab,
     openedDiffFilePaths,
     selectedDiffFilePath,
     setSelectedDiffFilePath,

@@ -31,3 +31,9 @@ test("MissionWorktreeList closes the inspector picker after a worktree selection
   );
   assert.doesNotMatch(worktreeListSource, /连接/);
 });
+
+test("MissionWorktreeList only selects existing worktrees", () => {
+  assert.doesNotMatch(worktreeListSource, /打开分支/);
+  assert.doesNotMatch(worktreeListSource, /onCreateWorktree/);
+  assert.doesNotMatch(worktreeListSource, /filterAvailableWorktreeBranches/);
+});

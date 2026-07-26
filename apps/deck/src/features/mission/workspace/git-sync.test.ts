@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { FileDiffSummary } from "@tiller/shared";
-import { reconcileMissionDiffs, shouldPrimeGitGraphLoad } from "./git-sync.js";
+import { reconcileMissionDiffs, refreshGitStatusAndGraph, shouldPrimeGitGraphLoad } from "./git-sync.js";
 
 test("reconcileMissionDiffs uses git status diff details when session diffs are missing", () => {
   const result = reconcileMissionDiffs([], [
@@ -58,4 +58,85 @@ test("shouldPrimeGitGraphLoad only requests graph when no usable graph state exi
   assert.equal(shouldPrimeGitGraphLoad({ commits: [], loading: true }), false);
   assert.equal(shouldPrimeGitGraphLoad({ commits: [], lastUpdated: "2026-07-02T10:00:00.000Z" }), false);
   assert.equal(shouldPrimeGitGraphLoad({ commits: [{ hash: "abc" }] }), false);
+});
+
+test("refreshGitStatusAndGraph dispatches status then graph sequentially", async () => {
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  async function mockDispatch(method: string, params: Record<string, unknown>) {
+    dispatched.push({ method, params });
+    if (method === "project/git/status") {
+      return { ok: true, branch: "main" };
+    }
+    return { ok: true };
+  }
+
+  await refreshGitStatusAndGraph(mockDispatch, {
+    projectId: "p1",
+    cwd: "/repo",
+    hasGraph: true,
+    refreshRemote: false,
+  });
+
+  assert.equal(dispatched.length, 2);
+  assert.equal(dispatched[0]?.method, "project/git/status");
+  assert.equal(dispatched[0]?.params.refreshRemote, false);
+  assert.equal(dispatched[1]?.method, "project/git/graph");
+});
+
+test("refreshGitStatusAndGraph fetches remotes only when requested", async () => {
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  await refreshGitStatusAndGraph(async (method, params) => {
+    dispatched.push({ method, params });
+    return { ok: true };
+  }, {
+    projectId: "p1",
+    cwd: "/repo",
+    hasGraph: false,
+    refreshRemote: true,
+  });
+
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0]?.method, "project/git/status");
+  assert.equal(dispatched[0]?.params.refreshRemote, true);
+});
+
+test("refreshGitStatusAndGraph skips graph when hasGraph is false", async () => {
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  async function mockDispatch(method: string, params: Record<string, unknown>) {
+    dispatched.push({ method, params });
+    return { ok: true };
+  }
+
+  await refreshGitStatusAndGraph(mockDispatch, {
+    projectId: "p1",
+    cwd: "/repo",
+    hasGraph: false,
+  });
+
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0]?.method, "project/git/status");
+});
+
+test("refreshGitStatusAndGraph skips graph when status returns ok=false", async () => {
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  async function mockDispatch(method: string, params: Record<string, unknown>) {
+    dispatched.push({ method, params });
+    if (method === "project/git/status") {
+      return { ok: false, message: "not a git repo" };
+    }
+    return { ok: true };
+  }
+
+  const result = await refreshGitStatusAndGraph(mockDispatch, {
+    projectId: "p1",
+    cwd: "/repo",
+    hasGraph: true,
+  });
+
+  assert.equal(dispatched.length, 1);
+  assert.equal(result.ok, false);
 });

@@ -43,11 +43,6 @@ export function useMissionSelectionEffects(source: any) {
     setSelectedCwd,
     pairingState,
     rpcClientRef,
-    setWorktreeGitByProject,
-    gitStatusByWorktree,
-    setGitStatusByWorktree,
-    gitGraphByWorktree,
-    setGitGraphByWorktree,
     dispatch,
     selectedAgentId,
     filteredAgents,
@@ -62,11 +57,6 @@ export function useMissionSelectionEffects(source: any) {
     effectiveDraftAgentMode,
     selectedReasoningEffort,
   } = source;
-  const activeSessionGitProjectId = activeSession
-    ? resolveSessionProjectId(activeSession, projects)
-    : null;
-  const effectiveGitProjectId = activeSessionGitProjectId ?? selectedProjectId;
-  const effectiveGitCwd = selectedCwd ?? activeSession?.cwd;
   useEffect(() => {
     if (!worktreePickerOpen && !agentPickerOpen) {
       return;
@@ -188,70 +178,9 @@ export function useMissionSelectionEffects(source: any) {
     previousActiveSessionSyncKey = nextSyncKey;
     setSelectedCwd(activeSession.cwd);
   }, [activeSession?.cwd, activeSession?.id, setSelectedCwd]);
-  useEffect(() => {
-    if (
-      !selectedProjectId ||
-      pairingState !== "paired" ||
-      !rpcClientRef.current ||
-      rpcClientRef.current.socket.readyState !== WebSocket.OPEN
-    ) {
-      return;
-    }
-    setWorktreeGitByProject((current) => ({
-      ...current,
-      [selectedProjectId]: {
-        ...(current[selectedProjectId] ?? { branches: [] }),
-        loading: true,
-        message: "正在加载 worktree...",
-      },
-    }));
-    void dispatch(rpcClientRef.current, "project/git/list_branches", {
-      projectId: selectedProjectId,
-    });
-  }, [pairingState, selectedProjectId]);
-
-  useEffect(() => {
-    const client = rpcClientRef.current;
-    if (
-      pairingState !== "paired" ||
-      !client ||
-      client.socket.readyState !== WebSocket.OPEN ||
-      !effectiveGitProjectId ||
-      !effectiveGitCwd
-    ) {
-      return;
-    }
-
-    const currentStatus = gitStatusByWorktree?.[effectiveGitCwd];
-    if (currentStatus) {
-      return;
-    }
-
-    setGitStatusByWorktree?.((current: Record<string, any>) => ({
-      ...current,
-      [effectiveGitCwd]: {
-        projectId: effectiveGitProjectId,
-        cwd: effectiveGitCwd,
-        branch: "",
-        clean: false,
-        files: [],
-        loading: true,
-        message: "正在加载 Git 状态...",
-      },
-    }));
-
-    void dispatch(client, "project/git/status", {
-      projectId: effectiveGitProjectId,
-      cwd: effectiveGitCwd,
-    });
-  }, [
-    dispatch,
-    effectiveGitCwd,
-    effectiveGitProjectId,
-    gitStatusByWorktree,
-    pairingState,
-    setGitStatusByWorktree,
-  ]);
+  // REMOVED: automatic git status hydration on project/cwd change.
+  // Git state is now explicitly refreshed by the user via "刷新 Git" button.
+  // The effect below that auto-dispatched `project/git/status` has been deleted.
 
   useEffect(() => {
     if (!draftProject || !selectedAgentId) {
