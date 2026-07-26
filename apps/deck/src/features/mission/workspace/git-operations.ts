@@ -21,6 +21,8 @@ export type GitOperationContext = {
   projectId: string;
   cwd: string;
   hasGraph: boolean;
+  // Cached graph signature echoed to Helm so unchanged graphs skip the payload.
+  graphSignature?: string;
   dispatch: GitDispatch;
   updateStatus: (updater: (current: GitStatusState) => GitStatusState) => void;
   patchGraph?: (patch: { loading: boolean; message?: string; error?: string }) => void;
@@ -72,6 +74,7 @@ export async function runGitRefresh(
       cwd,
       hasGraph,
       refreshRemote: opts.refreshRemote,
+      graphSignature: context.graphSignature,
     });
     if (!status?.ok && hasGraph) {
       // Status events clear the status entry's loading flag, but the graph
@@ -184,7 +187,11 @@ export async function runGitCommit(
     context.onCommitSuccess?.();
     context.notify.success("提交成功");
     if (hasGraph) {
-      await context.dispatch("project/git/graph", { projectId, cwd });
+      await context.dispatch("project/git/graph", {
+        projectId,
+        cwd,
+        ...(context.graphSignature ? { knownSignature: context.graphSignature } : {}),
+      });
     }
     return result;
   } catch (error) {
@@ -260,6 +267,7 @@ export function useGitOperations(options: {
       projectId,
       cwd,
       hasGraph: Boolean(gitGraphByWorktree[cwd]),
+      graphSignature: gitGraphByWorktree[cwd]?.signature,
       dispatch: (method, params) =>
         dispatch(client, method, params) as Promise<GitDispatchResult>,
       updateStatus: (updater) => {

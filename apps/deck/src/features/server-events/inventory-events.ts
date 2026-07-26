@@ -47,6 +47,41 @@ function pickGitSnapshot(payload: Record<string, unknown>): GitStatusState {
   );
 }
 
+export function applyGitGraphResult(
+  current: Record<string, GitGraphState>,
+  payload: Record<string, unknown>,
+  cwd: string,
+): Record<string, GitGraphState> {
+  const previous = current[cwd];
+  const ok = payload.ok === true;
+  const unchanged = ok && payload.unchanged === true;
+  const signature = typeof payload.signature === "string" ? payload.signature : undefined;
+  return {
+    ...current,
+    [cwd]: {
+      projectId: typeof payload.projectId === "string"
+        ? payload.projectId
+        : previous?.projectId ?? "",
+      cwd,
+      head: ok && !unchanged
+        ? (typeof payload.head === "string" ? payload.head : undefined)
+        : previous?.head ?? (typeof payload.head === "string" ? payload.head : undefined),
+      // An unchanged answer carries no commits on purpose — keep the cache.
+      commits: ok && !unchanged
+        ? (Array.isArray(payload.commits) ? payload.commits as GitGraphState["commits"] : [])
+        : previous?.commits ?? [],
+      signature: ok ? (signature ?? previous?.signature) : previous?.signature,
+      commitDetails: previous?.commitDetails,
+      loading: false,
+      lastUpdated: new Date().toISOString(),
+      message: typeof payload.message === "string" ? payload.message : undefined,
+      error: ok
+        ? undefined
+        : typeof payload.message === "string" ? payload.message : undefined,
+    },
+  };
+}
+
 type GitBusyFlag = "loading" | "committing" | "discarding" | "pushing" | "pulling";
 
 export function applyGitOperationResult(
@@ -400,20 +435,9 @@ export function applyInventoryResult(
     }
     case "project/git/graph":
       if (payload.cwd) {
-        store.setGitGraphByWorktree((current) => ({
-          ...current,
-          [payload.cwd]: {
-            projectId: payload.projectId,
-            cwd: payload.cwd,
-            head: payload.ok ? payload.head : current[payload.cwd]?.head,
-            commits: payload.ok ? payload.commits : (current[payload.cwd]?.commits ?? []),
-            commitDetails: current[payload.cwd]?.commitDetails,
-            loading: false,
-            lastUpdated: new Date().toISOString(),
-            message: payload.message,
-            error: payload.ok ? undefined : payload.message,
-          },
-        }));
+        store.setGitGraphByWorktree((current) =>
+          applyGitGraphResult(current, payload, payload.cwd),
+        );
       }
       return true;
     case "project/git/commit_detail":

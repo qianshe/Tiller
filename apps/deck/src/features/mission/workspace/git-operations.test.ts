@@ -18,6 +18,7 @@ function createTestContext(options: {
   dispatch: (method: string, params: Record<string, unknown>) => Promise<GitDispatchResult>;
   hasGraph?: boolean;
   withGraphPatch?: boolean;
+  graphSignature?: string;
 }) {
   const statusSnapshots: GitStatusState[] = [];
   const graphPatches: Array<{ loading: boolean; message?: string; error?: string }> = [];
@@ -30,6 +31,7 @@ function createTestContext(options: {
     projectId: "p1",
     cwd: "/repo",
     hasGraph: options.hasGraph ?? false,
+    graphSignature: options.graphSignature,
     dispatch: options.dispatch,
     updateStatus: (updater) => {
       status = updater(status);
@@ -135,6 +137,45 @@ test("runGitRefresh clears status and graph loading when dispatch throws", async
     message: "socket closed",
     error: "socket closed",
   });
+});
+
+test("runGitRefresh forwards the cached graph signature to the graph dispatch", async () => {
+  const graphParams: Array<Record<string, unknown>> = [];
+  const harness = createTestContext({
+    dispatch: async (method, params) => {
+      if (method === "project/git/graph") {
+        graphParams.push(params);
+      }
+      return { ok: true };
+    },
+    hasGraph: true,
+    withGraphPatch: true,
+    graphSignature: "sig-1",
+  });
+
+  await runGitRefresh(harness.context, { refreshRemote: false });
+
+  assert.equal(graphParams.length, 1);
+  assert.equal(graphParams[0]?.knownSignature, "sig-1");
+});
+
+test("runGitCommit refreshes the graph with the cached signature", async () => {
+  const graphParams: Array<Record<string, unknown>> = [];
+  const harness = createTestContext({
+    dispatch: async (method, params) => {
+      if (method === "project/git/graph") {
+        graphParams.push(params);
+      }
+      return { ok: true };
+    },
+    hasGraph: true,
+    graphSignature: "sig-1",
+  });
+
+  await runGitCommit(harness.context, { message: "fix：test", paths: ["a.ts"] });
+
+  assert.equal(graphParams.length, 1);
+  assert.equal(graphParams[0]?.knownSignature, "sig-1");
 });
 
 test("runGitPush toggles pushing flag and refreshes status after success", async () => {

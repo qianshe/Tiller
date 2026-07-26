@@ -6,6 +6,9 @@ export const method = "project/git/graph" as const;
 export const ParamsSchema = z.object({
   projectId: z.string(),
   cwd: z.string().optional(),
+  // Client-cached graph signature; when it still matches, the server may
+  // answer with `unchanged: true` and skip the commit payload.
+  knownSignature: z.string().optional(),
 });
 
 export const GitRefSchema = z.object({
@@ -33,6 +36,10 @@ export const ResultSchema = z.object({
   cwd: z.string(),
   head: z.string().optional(), // Current HEAD commit hash
   commits: z.array(GitCommitSchema),
+  // Hash over HEAD + all refs; clients echo it back via knownSignature.
+  signature: z.string().optional(),
+  // True when knownSignature matched; commits is empty and the client keeps its cache.
+  unchanged: z.boolean().optional(),
   message: z.string(),
 });
 

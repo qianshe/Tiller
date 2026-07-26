@@ -417,6 +417,30 @@ test("project/git/graph validates params and returns commit graph", () => {
   assert.equal(result.commits[0]?.refs[0]?.kind, "detached");
 });
 
+test("project/git/graph negotiates unchanged payloads via signatures", () => {
+  assert.deepEqual(
+    projectGitGraph.ParamsSchema.parse({
+      projectId: "p1",
+      cwd: "/repo",
+      knownSignature: "sig-1",
+    }),
+    { projectId: "p1", cwd: "/repo", knownSignature: "sig-1" },
+  );
+
+  const unchanged = projectGitGraph.ResultSchema.parse({
+    ok: true,
+    projectId: "p1",
+    cwd: "/repo",
+    head: "abc1234567890abcdef",
+    commits: [],
+    signature: "sig-1",
+    unchanged: true,
+    message: "Graph unchanged",
+  });
+  assert.equal(unchanged.unchanged, true);
+  assert.equal(unchanged.signature, "sig-1");
+});
+
 test("project/git/commit_detail validates commit hashes and file diffs", () => {
   assert.equal(projectGitCommitDetail.method, "project/git/commit_detail");
   assert.deepEqual(

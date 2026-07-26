@@ -742,6 +742,7 @@ export function MissionWorktree(props: any) {
           projectId: activeGitProjectId,
           cwd: activeGitCwd,
           head: currentGraph?.head,
+          signature: currentGraph?.signature,
           commits: currentGraph?.commits ?? [],
           loading: true,
           message: "正在加载提交历史...",
@@ -751,6 +752,7 @@ export function MissionWorktree(props: any) {
     void dispatch(rpcClientRef.current, "project/git/graph", {
       projectId: activeGitProjectId,
       cwd: activeGitCwd,
+      ...(currentGraph?.signature ? { knownSignature: currentGraph.signature } : {}),
     });
   }, [activeGitProjectId, activeGitCwd, rpcClientRef, dispatch, gitGraphByWorktree, setSelectedMissionDisplayTabId, setMissionDisplayCollapsed, isMissionMobile, setSelectedMissionMobilePane]);
 

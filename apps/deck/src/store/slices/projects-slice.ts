@@ -103,6 +103,9 @@ export type GitGraphState = {
   projectId: string;
   cwd: string;
   head?: string;
+  // Server-computed refs signature; echoed back as knownSignature so an
+  // unchanged graph answers without the commit payload.
+  signature?: string;
   commits: GitCommit[];
   commitDetails?: Record<string, GitCommitDetailState>;
   loading?: boolean;

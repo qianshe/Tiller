@@ -561,6 +561,50 @@ test("config RPC git graph binds refs only to decorated commits", async () => {
   assert.equal(olderCommit?.refs.some((ref) => ref.name === "HEAD"), false);
 });
 
+test("config RPC git graph skips the payload when knownSignature still matches", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-graph-signature-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(repoPath);
+  commitFile(repoPath, "README.md", "one\n", "first");
+  saveRepoProject(configPath, "p1", repoPath);
+  const cwd = repoPath.replace(/\\/g, "/");
+
+  const first = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(first.ok, true);
+  assert.equal(typeof first.signature, "string");
+  assert.equal(first.commits.length, 1);
+
+  const unchanged = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd,
+    knownSignature: first.signature,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(unchanged.ok, true);
+  assert.equal(unchanged.unchanged, true);
+  assert.equal(unchanged.commits.length, 0);
+  assert.equal(unchanged.signature, first.signature);
+
+  // 新建分支不移动 HEAD,但 refs 变化必须使签名失效(例如 Fetch 后远端 ref 前移)。
+  execFileSync("git", ["-C", repoPath, "branch", "feature"], { stdio: "ignore" });
+
+  const afterRefChange = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd,
+    knownSignature: first.signature,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(afterRefChange.ok, true);
+  assert.notEqual(afterRefChange.unchanged, true);
+  assert.equal(afterRefChange.commits.length, 1);
+  assert.notEqual(afterRefChange.signature, first.signature);
+});
+
 test("config RPC git graph limits the initial history payload to 60 commits", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-graph-full-history-"));
   const repoPath = join(tempRoot, "repo");

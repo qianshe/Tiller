@@ -81,7 +81,10 @@ export async function handleConfigRpcRequest(
     case "project/git/pull":
       return pullGitChanges(params as { projectId: string; cwd: string }, context);
     case "project/git/graph":
-      return getGitGraph(params as { projectId: string; cwd?: string }, context);
+      return getGitGraph(
+        params as { projectId: string; cwd?: string; knownSignature?: string },
+        context,
+      );
     case "project/git/commit_detail":
       return getGitCommitDetail(
         params as { projectId: string; cwd: string; commitHash: string },

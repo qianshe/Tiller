@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile } from "node:fs/promises";
 import { basename, dirname, join, relative, resolve as resolvePath, sep } from "node:path";
 import { promisify } from "node:util";
@@ -818,8 +819,8 @@ export async function getProjectGitCommitDetail(
         resolvedHash,
       ]);
   const entries = parseCommitFileEntries(changed.stdout);
-  const files: GitCommitFile[] = [];
-  for (const entry of entries) {
+  // Per-file patch reads are independent read-only commands; run them concurrently.
+  const files: GitCommitFile[] = await Promise.all(entries.map(async (entry) => {
     const patchResult = await runGit(
       gitRoot,
       firstParent
@@ -847,12 +848,12 @@ export async function getProjectGitCommitDetail(
           ],
     );
     const patch = patchResult.stdout.trimEnd();
-    files.push({
+    return {
       ...entry,
       ...countPatchChanges(patch),
       ...(patch ? { patch } : {}),
-    });
-  }
+    };
+  }));
 
   return { commitHash: resolvedHash, files };
 }
@@ -900,7 +901,7 @@ function countPatchChanges(patch: string): { additions: number; deletions: numbe
   return { additions, deletions };
 }
 
-export async function getProjectGitGraph(cwd: string) {
+export async function getProjectGitGraph(cwd: string, knownSignature?: string) {
   const gitRoot = await resolveGitRoot(cwd);
 
   // Get current HEAD hash
@@ -910,6 +911,15 @@ export async function getProjectGitGraph(cwd: string) {
     head = headResult.stdout.trim();
   } catch {
     // Detached or no HEAD, will be handled
+  }
+
+  // Signature over HEAD + all refs: any ref movement (including remote refs
+  // after a fetch) must invalidate it, not just HEAD changes.
+  const signature = createHash("sha1")
+    .update(`${head ?? ""}\n${await readGitRefsSnapshot(gitRoot)}`)
+    .digest("hex");
+  if (knownSignature && knownSignature === signature) {
+    return { head, commits: [] as GitCommit[], signature, unchanged: true as const };
   }
 
   // Get symbolic-ref for current branch to determine if detached
@@ -975,7 +985,19 @@ export async function getProjectGitGraph(cwd: string) {
     });
   }
 
-  return { head, commits };
+  return { head, commits, signature, unchanged: false as const };
+}
+
+async function readGitRefsSnapshot(gitRoot: string) {
+  try {
+    const refs = await runGit(gitRoot, [
+      "for-each-ref",
+      "--format=%(refname)%00%(objectname)",
+    ]);
+    return refs.stdout;
+  } catch {
+    return "";
+  }
 }
 
 function parseRefs(

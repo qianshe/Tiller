@@ -52,6 +52,8 @@ type GitGraphRpcResult = {
   cwd: string;
   head?: string;
   commits: GitCommit[];
+  signature?: string;
+  unchanged?: boolean;
   message: string;
 };
 
@@ -740,7 +742,7 @@ function normalizeProjectPath(path: string | undefined) {
 
 
 export async function getGitGraph(
-  params: { projectId: string; cwd?: string },
+  params: { projectId: string; cwd?: string; knownSignature?: string },
   context: HelmHandlerContext,
 ) : Promise<GitGraphRpcResult> {
   const resolved = await resolveProjectGitContext(params, context);
@@ -755,14 +757,16 @@ export async function getGitGraph(
     };
   }
 
-  const dedupeKey = `${resolved.project.id}:${resolved.cwd}`;
+  // knownSignature participates in the key: an unchanged short-circuit for one
+  // client must not be replayed to a client that still needs the full payload.
+  const dedupeKey = `${resolved.project.id}:${resolved.cwd}:${params.knownSignature ?? ""}`;
   const pending = pendingGitGraphRequests.get(dedupeKey);
   if (pending) {
     return await pending;
   }
 
   const promise = withGitQueue(resolved.cwd, () =>
-    executeGetGitGraph(resolved),
+    executeGetGitGraph(resolved, params.knownSignature),
   );
   pendingGitGraphRequests.set(dedupeKey, promise);
 
@@ -775,16 +779,22 @@ export async function getGitGraph(
 
 async function executeGetGitGraph(
   resolved: ResolvedProjectGitContext,
+  knownSignature?: string,
 ): Promise<GitGraphRpcResult> {
   try {
-    const { head, commits } = await getProjectGitGraph(resolved.cwd);
+    const { head, commits, signature, unchanged } = await getProjectGitGraph(
+      resolved.cwd,
+      knownSignature,
+    );
     return {
       ok: true,
       projectId: resolved.project.id,
       cwd: resolved.cwd,
       head,
       commits,
-      message: `Fetched ${commits.length} commit(s)`,
+      signature,
+      ...(unchanged ? { unchanged } : {}),
+      message: unchanged ? "Graph unchanged" : `Fetched ${commits.length} commit(s)`,
     };
   } catch (error) {
     return {

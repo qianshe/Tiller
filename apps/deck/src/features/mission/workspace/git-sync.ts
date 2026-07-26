@@ -90,6 +90,8 @@ export async function refreshGitStatusAndGraph(
     cwd: string;
     hasGraph: boolean;
     refreshRemote?: boolean;
+    // Cached graph signature; lets the server answer "unchanged" without payload.
+    graphSignature?: string;
   },
 ) {
   const status = await dispatch("project/git/status", {
@@ -104,6 +106,7 @@ export async function refreshGitStatusAndGraph(
     await dispatch("project/git/graph", {
       projectId: opts.projectId,
       cwd: opts.cwd,
+      ...(opts.graphSignature ? { knownSignature: opts.graphSignature } : {}),
     });
   }
   return status;

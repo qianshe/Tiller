@@ -120,6 +120,40 @@ test("refreshGitStatusAndGraph skips graph when hasGraph is false", async () => 
   assert.equal(dispatched[0]?.method, "project/git/status");
 });
 
+test("refreshGitStatusAndGraph forwards the known graph signature", async () => {
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  await refreshGitStatusAndGraph(async (method, params) => {
+    dispatched.push({ method, params });
+    return { ok: true };
+  }, {
+    projectId: "p1",
+    cwd: "/repo",
+    hasGraph: true,
+    refreshRemote: false,
+    graphSignature: "sig-1",
+  });
+
+  assert.equal(dispatched[1]?.method, "project/git/graph");
+  assert.equal(dispatched[1]?.params.knownSignature, "sig-1");
+});
+
+test("refreshGitStatusAndGraph omits knownSignature when none is cached", async () => {
+  const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
+
+  await refreshGitStatusAndGraph(async (method, params) => {
+    dispatched.push({ method, params });
+    return { ok: true };
+  }, {
+    projectId: "p1",
+    cwd: "/repo",
+    hasGraph: true,
+  });
+
+  assert.equal(dispatched[1]?.method, "project/git/graph");
+  assert.equal("knownSignature" in (dispatched[1]?.params ?? {}), false);
+});
+
 test("refreshGitStatusAndGraph skips graph when status returns ok=false", async () => {
   const dispatched: Array<{ method: string; params: Record<string, unknown> }> = [];
 
