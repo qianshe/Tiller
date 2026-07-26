@@ -73,7 +73,7 @@ export async function handleConfigRpcRequest(
       );
     case "project/git/discard":
       return discardGitChanges(
-        params as { projectId: string; cwd: string; paths?: string[]; all?: boolean },
+        params as { projectId: string; cwd: string; paths: string[] },
         context,
       );
     case "project/git/push":

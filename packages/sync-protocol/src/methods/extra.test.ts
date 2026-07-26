@@ -242,7 +242,7 @@ test("project/git/commit ok:false validates against flattened snapshot", () => {
   assert.equal(failed.files.length, 1);
 });
 
-test("project/git/discard supports selected paths or the whole worktree", () => {
+test("project/git/discard only supports selected paths", () => {
   assert.equal(projectGitDiscard.method, "project/git/discard");
   assert.deepEqual(
     projectGitDiscard.ParamsSchema.parse({
@@ -252,14 +252,6 @@ test("project/git/discard supports selected paths or the whole worktree", () => 
     }),
     { projectId: "p1", cwd: "/repo", paths: ["file.ts"] },
   );
-  assert.deepEqual(
-    projectGitDiscard.ParamsSchema.parse({
-      projectId: "p1",
-      cwd: "/repo",
-      all: true,
-    }),
-    { projectId: "p1", cwd: "/repo", all: true },
-  );
   assert.throws(() =>
     projectGitDiscard.ParamsSchema.parse({ projectId: "p1", cwd: "/repo" }),
   );
@@ -267,7 +259,6 @@ test("project/git/discard supports selected paths or the whole worktree", () => 
     projectGitDiscard.ParamsSchema.parse({
       projectId: "p1",
       cwd: "/repo",
-      paths: ["file.ts"],
       all: true,
     }),
   );

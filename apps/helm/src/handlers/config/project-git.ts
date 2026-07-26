@@ -8,6 +8,7 @@ import { normalizeDiffPath, readWorktreeGitDiffs } from "../../sessions/facade";
 
 const execFileAsync = promisify(execFile);
 const GIT_COMMAND_TIMEOUT_MS = 8000;
+const GIT_GRAPH_INITIAL_COMMIT_LIMIT = 60;
 
 function normalizeGitBranchName(input: string) {
   return input.trim().replace(/\s+/g, "-");
@@ -650,19 +651,13 @@ export async function commitProjectGitChanges(
 
 export async function discardProjectGitChanges(
   cwd: string,
-  options: { paths?: string[]; all?: boolean },
+  selectedPaths: string[],
 ): Promise<GitStatusSnapshot> {
   const gitRoot = await resolveGitRoot(cwd);
 
-  if (options.all === true) {
-    await runGit(gitRoot, ["reset", "--hard", "HEAD"]);
-    await runGit(gitRoot, ["clean", "-fd", "-e", ".worktrees/"]);
-    return getProjectGitStatus(gitRoot, { remoteConfirmed: false });
-  }
-
-  const paths = Array.from(new Set(options.paths ?? []));
+  const paths = Array.from(new Set(selectedPaths));
   if (paths.length === 0) {
-    throw new Error("At least one path is required");
+    throw new Error("At least one selected path is required");
   }
   validateGitPaths(gitRoot, paths);
   validateDiscardPaths(gitRoot, paths);
@@ -905,7 +900,7 @@ function countPatchChanges(patch: string): { additions: number; deletions: numbe
   return { additions, deletions };
 }
 
-export async function getProjectGitGraph(cwd: string, commitCount: number = 60) {
+export async function getProjectGitGraph(cwd: string) {
   const gitRoot = await resolveGitRoot(cwd);
 
   // Get current HEAD hash
@@ -933,7 +928,7 @@ export async function getProjectGitGraph(cwd: string, commitCount: number = 60) 
   const logFormat = "%H%x00%P%x00%D%x00%s%x00%an%x00%aI%x00%b%x00%x1e";
   const logResult = await runGit(gitRoot, [
     "log",
-    `--max-count=${commitCount}`,
+    `--max-count=${GIT_GRAPH_INITIAL_COMMIT_LIMIT}`,
     `--format=${logFormat}`,
     "--decorate=full",
     "--topo-order",

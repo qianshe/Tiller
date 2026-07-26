@@ -559,7 +559,7 @@ async function executeCommitGitChanges(
 }
 
 export async function discardGitChanges(
-  params: { projectId: string; cwd: string; paths?: string[]; all?: boolean },
+  params: { projectId: string; cwd: string; paths: string[] },
   context: HelmHandlerContext,
 ): Promise<GitStatusRpcResult> {
   const resolved = await resolveProjectGitContext(params, context);
@@ -570,8 +570,7 @@ export async function discardGitChanges(
   const dedupeKey = JSON.stringify([
     resolved.project.id,
     resolved.cwd,
-    params.all === true,
-    params.paths ?? [],
+    params.paths,
   ]);
   const pending = pendingGitDiscardRequests.get(dedupeKey);
   if (pending) {
@@ -580,15 +579,13 @@ export async function discardGitChanges(
 
   const promise = withGitQueue(resolved.cwd, async () => {
     try {
-      const snapshot = await discardProjectGitChanges(resolved.cwd, params);
+      const snapshot = await discardProjectGitChanges(resolved.cwd, params.paths);
       return {
         ok: true,
         projectId: resolved.project.id,
         cwd: resolved.cwd,
         ...snapshot,
-        message: params.all === true
-          ? "Discarded all Git changes"
-          : `Discarded ${params.paths?.length ?? 0} path(s)`,
+        message: `Discarded ${params.paths.length} path(s)`,
       };
     } catch (error) {
       const snapshot = await bestEffortGitSnapshot(resolved.cwd);

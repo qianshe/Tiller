@@ -195,7 +195,7 @@ test("config RPC rejects git discard requests for another project's worktree", a
   const result = await handleConfigRpcRequest("project/git/discard", {
     projectId: "p1",
     cwd: "D:/repo-two",
-    all: true,
+    paths: ["file.ts"],
   }, {
     loadAvailableProjectsWithSemanticSummaries: async () => projects,
     loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
@@ -450,7 +450,7 @@ test("config RPC git discard restores selected paths and preserves other changes
   assert.deepEqual(result.files.map((file: { path: string }) => file.path), ["keep.txt"]);
 });
 
-test("config RPC git discard all resets tracked changes without deleting Tiller worktrees", async () => {
+test("config RPC git discard rejects requests without selected paths", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-discard-all-"));
   const repoPath = join(tempRoot, "repo");
   const configPath = join(tempRoot, "config.json");
@@ -475,10 +475,10 @@ test("config RPC git discard all resets tracked changes without deleting Tiller 
     all: true,
   }, repoContext(configPath)) as any;
 
-  assert.equal(result.ok, true);
-  assert.equal(result.clean, true);
-  assert.equal(readFileSync(join(repoPath, "tracked.txt"), "utf8").replace(/\r\n/gu, "\n"), "initial\n");
-  assert.equal(existsSync(join(repoPath, "untracked.txt")), false);
+  assert.equal(result.ok, false);
+  assert.match(result.message, /selected path/i);
+  assert.equal(readFileSync(join(repoPath, "tracked.txt"), "utf8").replace(/\r\n/gu, "\n"), "changed\n");
+  assert.equal(existsSync(join(repoPath, "untracked.txt")), true);
   assert.equal(existsSync(join(repoPath, ".worktrees", "keep.txt")), true);
 });
 
@@ -559,6 +559,53 @@ test("config RPC git graph binds refs only to decorated commits", async () => {
   assert.equal(headCommit?.refs.some((ref) => ref.name === "main" && ref.isCurrent), true);
   assert.equal(headCommit?.refs.some((ref) => ref.name === "v1.0.0" && ref.kind === "tag"), true);
   assert.equal(olderCommit?.refs.some((ref) => ref.name === "HEAD"), false);
+});
+
+test("config RPC git graph limits the initial history payload to 60 commits", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-graph-full-history-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  for (let index = 1; index <= 61; index += 1) {
+    execFileSync(
+      "git",
+      ["-C", repoPath, "commit", "--allow-empty", "-m", `commit ${index}`],
+      { stdio: "ignore" },
+    );
+  }
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  const result = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+  }, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) => items.find((project) => project.id === id),
+  } as any) as {
+    ok: boolean;
+    commits: Array<{ subject: string }>;
+  };
+
+  assert.equal(result.ok, true);
+  assert.equal(result.commits.length, 60);
+  assert.equal(result.commits.at(-1)?.subject, "commit 2");
 });
 
 test("config RPC returns file patches for a selected commit", async () => {

@@ -7,17 +7,7 @@ export const method = "project/git/discard" as const;
 export const ParamsSchema = z.object({
   projectId: z.string(),
   cwd: z.string(),
-  paths: z.array(z.string().min(1)).min(1).optional(),
-  all: z.literal(true).optional(),
-}).superRefine((value, context) => {
-  const hasPaths = Boolean(value.paths?.length);
-  const discardAll = value.all === true;
-  if (hasPaths === discardAll) {
-    context.addIssue({
-      code: "custom",
-      message: "Provide either paths or all=true",
-    });
-  }
+  paths: z.array(z.string().min(1)).min(1),
 });
 
 export const ResultSchema = GitOperationEnvelopeSchema.extend(
@@ -32,5 +22,5 @@ export const descriptor = requestDescriptor({
   method,
   paramsSchema: ParamsSchema,
   resultSchema: ResultSchema,
-  description: "Discard selected or all Git worktree changes.",
+  description: "Discard selected Git worktree changes.",
 });
