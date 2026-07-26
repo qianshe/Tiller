@@ -1,5 +1,9 @@
 import type { StateCreator } from "zustand";
-import type { PermissionRequest } from "@tiller/shared";
+import type {
+  ApprovalHistoryPage,
+  CanonicalApproval,
+  PermissionRequest,
+} from "@tiller/shared";
 
 export type ApprovalStoreItem = {
   sessionId: string;
@@ -12,8 +16,16 @@ export type ApprovalsSlice = {
   approvalItemsById: Record<string, ApprovalStoreItem>;
   pendingApprovalIds: string[];
   pendingApprovalIdsBySession: Record<string, string[]>;
+  approvalHistory: CanonicalApproval[];
+  approvalHistoryNextCursor?: string;
+  approvalHistoryHasMore: boolean;
   replacePendingApprovals: (
-    items: Array<{ sessionId: string; request: PermissionRequest; createdAt?: string }>,
+    items: Array<{
+      sessionId: string;
+      request: PermissionRequest;
+      status?: Extract<CanonicalApproval["status"], "pending" | "resolving">;
+      createdAt?: string;
+    }>,
   ) => void;
   upsertApproval: (item: {
     sessionId: string;
@@ -22,6 +34,9 @@ export type ApprovalsSlice = {
   }) => void;
   markApprovalResolving: (approvalRequestId: string, resolving: boolean) => void;
   resolveApproval: (approvalRequestId: string) => void;
+  replaceApprovalHistory: (page: ApprovalHistoryPage) => void;
+  upsertApprovalHistory: (approval: CanonicalApproval) => void;
+  clearProcessedApprovalHistory: () => void;
   dropSessionApprovals: (sessionId: string) => void;
 };
 
@@ -33,10 +48,28 @@ function removeFromList(list: string[] | undefined, id: string): string[] {
   return next.length === list.length ? list : next;
 }
 
+function approvalHistoryKey(approval: CanonicalApproval): string {
+  return JSON.stringify([
+    approval.sessionId,
+    approval.runtimeInstanceId,
+    approval.id,
+  ]);
+}
+
+function sortApprovalHistory(approvals: CanonicalApproval[]): CanonicalApproval[] {
+  return approvals.sort((left, right) => {
+    const timestampDelta = Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+    return timestampDelta || approvalHistoryKey(right).localeCompare(approvalHistoryKey(left));
+  });
+}
+
 export const createApprovalsSlice: StateCreator<ApprovalsSlice> = (set) => ({
   approvalItemsById: {},
   pendingApprovalIds: [],
   pendingApprovalIdsBySession: {},
+  approvalHistory: [],
+  approvalHistoryNextCursor: undefined,
+  approvalHistoryHasMore: false,
   replacePendingApprovals: (items) =>
     set(() => {
       const approvalItemsById: Record<string, ApprovalStoreItem> = {};
@@ -48,7 +81,7 @@ export const createApprovalsSlice: StateCreator<ApprovalsSlice> = (set) => ({
           sessionId: item.sessionId,
           request: item.request,
           createdAt: item.createdAt ?? new Date().toISOString(),
-          resolving: false,
+          resolving: item.status === "resolving",
         };
         pendingApprovalIds.push(id);
         const bucket = pendingApprovalIdsBySession[item.sessionId] ?? [];
@@ -116,15 +149,42 @@ export const createApprovalsSlice: StateCreator<ApprovalsSlice> = (set) => ({
         pendingApprovalIdsBySession: nextBySession,
       };
     }),
+  replaceApprovalHistory: (page) =>
+    set({
+      approvalHistory: page.approvals,
+      approvalHistoryNextCursor: page.nextCursor,
+      approvalHistoryHasMore: page.hasMore,
+    }),
+  upsertApprovalHistory: (approval) =>
+    set((state) => {
+      const key = approvalHistoryKey(approval);
+      const remaining = state.approvalHistory.filter(
+        (item) => approvalHistoryKey(item) !== key,
+      );
+      return {
+        approvalHistory: sortApprovalHistory([approval, ...remaining]),
+      };
+    }),
+  clearProcessedApprovalHistory: () =>
+    set((state) => ({
+      approvalHistory: state.approvalHistory.filter(
+        (approval) => approval.status === "pending" || approval.status === "resolving",
+      ),
+      approvalHistoryNextCursor: undefined,
+      approvalHistoryHasMore: false,
+    })),
   dropSessionApprovals: (sessionId) =>
     set((state) => {
       const ids = state.pendingApprovalIdsBySession[sessionId];
-      if (!ids || ids.length === 0) {
+      const nextHistory = state.approvalHistory.filter(
+        (approval) => approval.sessionId !== sessionId,
+      );
+      if ((!ids || ids.length === 0) && nextHistory.length === state.approvalHistory.length) {
         return state;
       }
-      const idSet = new Set(ids);
+      const idSet = new Set(ids ?? []);
       const nextItems = { ...state.approvalItemsById };
-      for (const id of ids) {
+      for (const id of ids ?? []) {
         delete nextItems[id];
       }
       const nextBySession = { ...state.pendingApprovalIdsBySession };
@@ -133,6 +193,7 @@ export const createApprovalsSlice: StateCreator<ApprovalsSlice> = (set) => ({
         approvalItemsById: nextItems,
         pendingApprovalIds: state.pendingApprovalIds.filter((id) => !idSet.has(id)),
         pendingApprovalIdsBySession: nextBySession,
+        approvalHistory: nextHistory,
       };
     }),
 });

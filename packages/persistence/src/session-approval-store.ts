@@ -1,4 +1,6 @@
 import type {
+  ApprovalHistoryPage,
+  CanonicalApproval,
   CanonicalApprovalState,
   CanonicalSessionState,
   SessionUpdateRecord,
@@ -11,7 +13,10 @@ export type SessionApprovalStore = {
     update: SessionUpdateRecord,
     approvalState: CanonicalApprovalState,
     sessionState: CanonicalSessionState,
+    historyRecord?: CanonicalApproval,
   ): CanonicalApprovalState;
+  listHistory(options?: { limit?: number; before?: string }): ApprovalHistoryPage;
+  clearProcessedHistory(): number;
   remove(sessionId: string): void;
   close(): void;
 };

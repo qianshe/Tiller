@@ -14,7 +14,7 @@ import type {
 } from "@tiller/shared";
 import { useDeckStore } from "../../store";
 import { applyActivityUpdate } from "./activity-events.js";
-import { applyApprovalResolved } from "./approval-events.js";
+import { applyApprovalCreated, applyApprovalResolved } from "./approval-events.js";
 import { applyDeviceResult } from "./device-events.js";
 import { applyInventoryResult } from "./inventory-events.js";
 import { applySessionResult, applySessionUpdate } from "./session-events.js";
@@ -64,6 +64,7 @@ function resetStore() {
     approvalItemsById: {},
     pendingApprovalIds: [],
     pendingApprovalIdsBySession: {},
+    approvalHistory: [],
     trustedDevices: [],
     pairingFeedback: "",
   } as any);
@@ -1643,6 +1644,35 @@ test("activity updates reject legacy plan updates without changing stored plans"
   ]);
 });
 
+test("approval created notifications hydrate active inventory and history", () => {
+  resetStore();
+  const approval = {
+    id: "approval-1",
+    sessionId: "s1",
+    runtimeInstanceId: "runtime-1",
+    sequence: 1,
+    status: "pending" as const,
+    request: {
+      id: "approval-1",
+      command: "Approve MCP tool call :: {}",
+      reason: "等待审核",
+      cwd: "D:/repo",
+    },
+    createdAt: "2026-07-26T10:00:00.000Z",
+    updatedAt: "2026-07-26T10:00:00.000Z",
+  };
+
+  const handled = applyApprovalCreated({
+    sessionId: "s1",
+    request: approval.request as any,
+    approval,
+  });
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().approvalItemsById["approval-1"]?.createdAt, approval.createdAt);
+  assert.deepEqual(useDeckStore.getState().approvalHistory, [approval]);
+});
+
 test("approval resolved notifications drop pending approvals from inventory", () => {
   resetStore();
   useDeckStore.getState().upsertApproval({
@@ -1659,11 +1689,28 @@ test("approval resolved notifications drop pending approvals from inventory", ()
     sessionId: "s1",
     approvalRequestId: "approval-1",
     decision: "allow" as any,
+    approval: {
+      id: "approval-1",
+      sessionId: "s1",
+      runtimeInstanceId: "runtime-1",
+      sequence: 2,
+      status: "resolved",
+      decision: "allow",
+      request: {
+        id: "approval-1",
+        command: "Approve MCP tool call :: {}",
+        reason: "等待审核",
+        cwd: "D:/repo",
+      },
+      createdAt: "2026-07-26T10:00:00.000Z",
+      updatedAt: "2026-07-26T10:01:00.000Z",
+    },
   });
 
   assert.equal(handled, true);
   assert.equal(useDeckStore.getState().approvalItemsById["approval-1"], undefined);
   assert.deepEqual(useDeckStore.getState().pendingApprovalIds, []);
+  assert.equal(useDeckStore.getState().approvalHistory[0]?.status, "resolved");
 });
 
 test("device RPC results sync trusted device inventory for the current helm", () => {
@@ -2738,7 +2785,7 @@ test("approval list results hydrate pending approval inventory", () => {
 
   const handled = applySessionResult(
     "approval/list_pending",
-    { approvals: [{ sessionId: "s1", request }] },
+    { approvals: [{ sessionId: "s1", request, status: "resolving" }] },
     "helm-1",
     true,
     {
@@ -2762,6 +2809,7 @@ test("approval list results hydrate pending approval inventory", () => {
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().pendingApprovalIds, ["approval-1"]);
   assert.equal(useDeckStore.getState().approvalItemsById["approval-1"]?.request.id, "approval-1");
+  assert.equal(useDeckStore.getState().approvalItemsById["approval-1"]?.resolving, true);
 });
 
 test("empty approval list clears stale pending approval inventory", () => {
@@ -2802,4 +2850,62 @@ test("empty approval list clears stale pending approval inventory", () => {
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().pendingApprovalIds, []);
   assert.deepEqual(useDeckStore.getState().approvalItemsById, {});
+});
+
+test("approval history list results replace the persisted dashboard projection", () => {
+  resetStore();
+  const approval = {
+    id: "approval-history-1",
+    sessionId: "s1",
+    runtimeInstanceId: "runtime-1",
+    sequence: 3,
+    status: "expired",
+    request: {
+      id: "approval-history-1",
+      command: "shell_command",
+      reason: "Run tests",
+      cwd: "D:/repo",
+    },
+    createdAt: "2026-07-26T10:00:00.000Z",
+    updatedAt: "2026-07-26T10:02:00.000Z",
+  } as any;
+
+  const context = {
+    setSelectedProjectId: () => undefined,
+    pendingPromptRef: { current: null },
+    pendingPromptContentRef: { current: undefined },
+    rpcClientRef: { current: null },
+    assignSessionTitleFromPrompt: () => undefined,
+    createClientUserMessageId: () => "m1",
+    appendUserMessage: () => undefined,
+    dispatch: async () => undefined,
+    toolCallsRef: { current: {} },
+    mergeSessionToolCalls: () => undefined,
+    shouldAutoStartSessionResume: () => false,
+    requestSessionResumeStart: () => undefined,
+    setResumeFeedback: () => undefined,
+    resumeStartRequestsRef: { current: new Set<string>() },
+  };
+  const handled = applySessionResult(
+    "approval/list",
+    { approvals: [approval], hasMore: false },
+    "helm-1",
+    true,
+    context,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().approvalHistory, [approval]);
+
+  const pending = { ...approval, id: "approval-pending", status: "pending" };
+  const clearHandled = applySessionResult(
+    "approval/clear_history",
+    { ok: true, removed: 1, approvals: [pending], hasMore: false },
+    "helm-1",
+    true,
+    context,
+  );
+
+  assert.equal(clearHandled, true);
+  assert.deepEqual(useDeckStore.getState().approvalHistory, [pending]);
 });

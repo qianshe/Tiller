@@ -1,6 +1,7 @@
 import type { MutableRefObject } from "react";
 import {
   sortSessionTimelineEntries,
+  type ApprovalHistoryPage,
   type AgentMessage,
   type AgentPromptContent,
   type AgentPromptImageContent,
@@ -433,8 +434,20 @@ export function applySessionResult(
           (payload.approvals ?? []).map((approval: any) => ({
             sessionId: approval.sessionId,
             request: approval.request,
+            status: approval.status,
+            createdAt: approval.createdAt,
           })),
         );
+      }
+      return true;
+    case "approval/list":
+      if (sourceIsCurrentHelm) {
+        store.replaceApprovalHistory(payload as ApprovalHistoryPage);
+      }
+      return true;
+    case "approval/clear_history":
+      if (sourceIsCurrentHelm) {
+        store.replaceApprovalHistory(payload as ApprovalHistoryPage);
       }
       return true;
     case "session/resume": {

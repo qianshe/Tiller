@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import type {
+  CanonicalApproval,
   CanonicalApprovalState,
   CanonicalSessionState,
   SessionUpdateRecord,
@@ -34,6 +35,21 @@ function approvalState(sequence: number): CanonicalApprovalState {
       },
     },
   };
+}
+
+function approvalRecord(
+  sequence: number,
+  status: CanonicalApproval["status"] = "pending",
+): CanonicalApproval {
+  const record: CanonicalApproval = {
+    ...approvalState(sequence).active["approval-1"]!,
+    status,
+    createdAt: "2026-07-11T17:30:00.000Z",
+    updatedAt: status === "pending"
+      ? "2026-07-11T17:30:00.000Z"
+      : "2026-07-11T17:31:00.000Z",
+  };
+  return status === "resolved" ? { ...record, decision: "allow" } : record;
 }
 
 function sessionState(sequence: number, pendingApprovalCount: number): CanonicalSessionState {
@@ -88,6 +104,55 @@ test("sqlite approval commit atomically writes update, approvals, and session st
   } finally {
     updates.close();
     states.close();
+    approvals.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
+test("sqlite approval history survives reopen and clear preserves pending records", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-approval-history-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  let approvals = createSqliteSessionApprovalStore(dbPath);
+
+  try {
+    const pending = approvalRecord(1);
+    approvals.commitUpdate(update(1), approvalState(1), sessionState(1, 1), pending);
+
+    assert.deepEqual(approvals.listHistory({ limit: 10 }), {
+      approvals: [pending],
+      nextCursor: undefined,
+      hasMore: false,
+    });
+    assert.equal(approvals.clearProcessedHistory(), 0);
+
+    const resolved = approvalRecord(2, "resolved");
+    approvals.commitUpdate(
+      update(2),
+      { sequence: 2, active: {} },
+      sessionState(2, 0),
+      resolved,
+    );
+    approvals.close();
+    approvals = createSqliteSessionApprovalStore(dbPath);
+
+    assert.deepEqual(approvals.listHistory({ limit: 10 }), {
+      approvals: [resolved],
+      nextCursor: undefined,
+      hasMore: false,
+    });
+    assert.equal(approvals.clearProcessedHistory(), 1);
+    assert.deepEqual(approvals.listHistory({ limit: 10 }).approvals, []);
+
+    const pendingAfterClear = approvalRecord(3);
+    approvals.commitUpdate(
+      update(3),
+      approvalState(3),
+      sessionState(3, 1),
+      pendingAfterClear,
+    );
+    approvals.remove("session-1");
+    assert.deepEqual(approvals.listHistory({ limit: 10 }).approvals, []);
+  } finally {
     approvals.close();
     rmSync(tempDir, { force: true, recursive: true });
   }

@@ -67,6 +67,7 @@ export async function requestInitialSync(
     throw error;
   }
   await dispatch(client, "approval/list_pending", {});
+  await dispatch(client, "approval/list", { limit: 100 });
   await dispatch(client, "device/list", {});
 }
 

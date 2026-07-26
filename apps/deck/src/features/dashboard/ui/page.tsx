@@ -43,11 +43,13 @@ export type DashboardPageProps = {
   sessions?: DashboardSession[];
   helms?: DashboardHelm[];
   approvals?: DashboardApproval[];
+  approvalHistory?: DashboardActivityApproval[];
   notifications?: DashboardNotification[];
   onNavigateAgents: () => void;
   onOpenSession?: (sessionId: string) => void;
   onRespondApproval?: (approvalRequestId: string, decision: PermissionDecision) => void;
   onClearNotifications?: () => void;
+  onClearApprovalHistory?: () => void;
   isMobile?: boolean;
 };
 
@@ -122,11 +124,13 @@ export function DashboardPage({
   sessions = [],
   helms = [],
   approvals = [],
+  approvalHistory = approvals,
   notifications = [],
   onNavigateAgents,
   onOpenSession,
   onRespondApproval,
   onClearNotifications,
+  onClearApprovalHistory,
   isMobile = false,
 }: DashboardPageProps) {
   const approvalRows = approvals;
@@ -232,10 +236,11 @@ export function DashboardPage({
 
         <DashboardActivityStream
           sessions={sessions}
-          approvals={approvals}
+          approvals={approvalHistory}
           planSessionCount={planSessionCount}
           toolCallCount={toolCallCount}
           onOpenSession={onOpenSession}
+          onClearApprovalHistory={onClearApprovalHistory}
           isMobile
         />
       </div>
@@ -265,12 +270,13 @@ export function DashboardPage({
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <DashboardActivityStream
           sessions={sessions}
-          approvals={approvals}
+          approvals={approvalHistory}
           planSessionCount={planSessionCount}
           toolCallCount={toolCallCount}
           notifications={notifications}
           onOpenSession={onOpenSession}
           onClearNotifications={onClearNotifications}
+          onClearApprovalHistory={onClearApprovalHistory}
         />
 
         <aside className="flex flex-col gap-3">

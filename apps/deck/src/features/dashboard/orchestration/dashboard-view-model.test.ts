@@ -83,6 +83,7 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
       "approval-1": {
         id: "approval-1",
         sessionId: "session-1",
+        resolving: true,
         request: {
           id: "approval-1",
           sessionId: "session-1",
@@ -91,6 +92,39 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
         },
       },
     },
+    approvalHistory: [
+      {
+        id: "approval-1",
+        sessionId: "session-1",
+        runtimeInstanceId: "runtime-1",
+        sequence: 1,
+        status: "pending",
+        request: {
+          id: "approval-1",
+          command: "file.write",
+          reason: "Write file",
+          cwd: "D:/repo",
+        },
+        createdAt: "2026-05-29T10:00:20.000Z",
+        updatedAt: "2026-05-29T10:00:20.000Z",
+      },
+      {
+        id: "approval-history-1",
+        sessionId: "session-1",
+        runtimeInstanceId: "runtime-1",
+        sequence: 2,
+        status: "resolved",
+        decision: "deny",
+        request: {
+          id: "approval-history-1",
+          command: "shell_command",
+          reason: "Run focused tests",
+          cwd: "D:/repo",
+        },
+        createdAt: "2026-05-29T10:00:30.000Z",
+        updatedAt: "2026-05-29T10:00:45.000Z",
+      },
+    ],
     notifications: [{
       id: "notification-1",
       kind: "error",
@@ -121,6 +155,12 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
   assert.equal(model.approvals[0]?.sessionName, "Review plan");
   assert.equal(model.approvals[0]?.projectName, "Tiller");
   assert.equal(model.approvals[0]?.worktreeName, "main");
+  const resolvingHistory = model.approvalHistory.find((approval) => approval.kind === "file.write");
+  const resolvedHistory = model.approvalHistory.find((approval) => approval.decision === "deny");
+  assert.equal(resolvingHistory?.status, "resolving");
+  assert.equal(resolvedHistory?.status, "resolved");
+  assert.equal(resolvedHistory?.createdAt, "2026-05-29T10:00:30.000Z");
+  assert.equal(resolvedHistory?.updatedAt, "2026-05-29T10:00:45.000Z");
   assert.equal(model.sessions[0]?.status, "waiting_for_permission");
   assert.equal(model.sessions[0]?.selected, true);
   assert.equal(model.sessions[0]?.projectName, "Tiller");

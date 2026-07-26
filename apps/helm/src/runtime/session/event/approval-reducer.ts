@@ -69,6 +69,35 @@ export function applyApprovalEvent(
   }
 }
 
+export function resolveApprovalHistoryRecord(
+  state: CanonicalApprovalState,
+  event: CanonicalApprovalEvent,
+): CanonicalApproval | undefined {
+  if (event.type === "requested") {
+    return {
+      ...event.approval,
+      createdAt: event.approval.createdAt ?? event.approval.updatedAt,
+    };
+  }
+  const current = state.active[event.approvalId];
+  if (!current) {
+    return undefined;
+  }
+  const base = {
+    ...current,
+    createdAt: current.createdAt ?? current.updatedAt,
+    updatedAt: event.updatedAt,
+  };
+  switch (event.type) {
+    case "status-changed":
+      return { ...base, status: event.status };
+    case "resolved":
+      return { ...base, status: "resolved", decision: event.decision };
+    case "expired":
+      return { ...base, status: "expired" };
+  }
+}
+
 export function expireActiveApprovals(
   state: CanonicalApprovalState,
   sequence: number,

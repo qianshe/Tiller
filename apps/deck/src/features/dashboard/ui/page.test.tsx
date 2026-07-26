@@ -307,6 +307,35 @@ test("DashboardPage keeps permission activity details compact", () => {
   assert.doesNotMatch(html, /Approve MCP tool call with a long permission reason/);
 });
 
+test("DashboardPage renders persisted approval outcomes and exposes processed-history cleanup", () => {
+  const html = renderToStaticMarkup(
+    createElement(DashboardPage, {
+      ...commonProps,
+      approvals: [],
+      approvalHistory: [
+        {
+          id: "history-1",
+          sessionId: "session-1",
+          kind: "shell_command",
+          target: "Run tests",
+          status: "resolved",
+          decision: "deny",
+          createdAt: "2026-06-02T00:00:00.000Z",
+          updatedAt: "2026-06-02T00:01:00.000Z",
+          agentName: "Codex",
+          projectName: "Tiller",
+          worktreeName: "feature/0.1.6",
+        },
+      ],
+      onClearApprovalHistory: () => undefined,
+    } as any),
+  );
+
+  assert.match(html, /已拒绝/);
+  assert.match(activityStreamSource, /title="清理已处理"/);
+  assert.match(activityStreamSource, /activeTab === "权限"/);
+});
+
 test("DashboardPage puts desktop notifications after the permission tab and keeps mobile notifications after approvals", () => {
   const desktopHtml = renderToStaticMarkup(createElement(DashboardPage, commonProps));
   const mobileHtml = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));

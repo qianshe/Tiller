@@ -49,6 +49,8 @@ import * as sessionCleanup from "./session/cleanup";
 import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
 import * as approvalListPending from "./approval/list-pending";
+import * as approvalList from "./approval/list";
+import * as approvalClearHistory from "./approval/clear-history";
 import * as approvalRespond from "./approval/respond";
 import * as approvalCreated from "./approval/created";
 import * as approvalResolved from "./approval/resolved";
@@ -118,6 +120,8 @@ const METHOD_DESCRIPTORS = {
   [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [approvalListPending.method]: approvalListPending.descriptor,
+  [approvalList.method]: approvalList.descriptor,
+  [approvalClearHistory.method]: approvalClearHistory.descriptor,
   [approvalRespond.method]: approvalRespond.descriptor,
   [approvalCreated.method]: approvalCreated.descriptor,
   [approvalResolved.method]: approvalResolved.descriptor,
@@ -188,6 +192,8 @@ export const CLIENT_REQUEST_METHODS = [
   permissionListPending.method,
   permissionRespond.method,
   approvalListPending.method,
+  approvalList.method,
+  approvalClearHistory.method,
   approvalRespond.method,
   deviceList.method,
   deviceRevoke.method,

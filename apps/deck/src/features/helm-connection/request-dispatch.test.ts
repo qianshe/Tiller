@@ -165,6 +165,10 @@ test("requestInitialSync rehydrates approvals after reconnect", async () => {
     calls.some((call) => call.method === "approval/list_pending"),
     true,
   );
+  assert.equal(
+    calls.some((call) => call.method === "approval/list"),
+    true,
+  );
 });
 
 test("requestInitialSync dispatches initial JSON-RPC methods in order", async () => {
@@ -187,6 +191,7 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "logging/get", params: {} },
     { method: "session/list", params: { limit: 25 } },
     { method: "approval/list_pending", params: {} },
+    { method: "approval/list", params: { limit: 100 } },
     { method: "device/list", params: {} },
   ]);
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);
@@ -214,6 +219,7 @@ test("requestInitialSync keeps loading inventory when logging settings fail", as
     "logging/get",
     "session/list",
     "approval/list_pending",
+    "approval/list",
     "device/list",
   ]);
 });

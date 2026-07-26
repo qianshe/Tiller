@@ -87,12 +87,31 @@ test("approval boundary creates a manual pending approval when no policy matches
 
   assert.equal(context.approvalIndex.get("approval-1")?.sessionId, "session-1");
   assert.equal(summaryUpdates.length, 1);
+  const createdApproval = (
+    notifications[0]?.params as
+      | { approval?: { createdAt: string; updatedAt: string } }
+      | undefined
+  )?.approval;
+  assert.ok(createdApproval);
+  assert.equal(createdApproval.createdAt, createdApproval.updatedAt);
+  assert.ok(Number.isFinite(Date.parse(createdApproval.createdAt)));
   assert.deepEqual(notifications, [
     {
       method: "approval/created",
       params: {
         sessionId: "session-1",
         request,
+        approval: {
+          id: "approval-1",
+          sessionId: "session-1",
+          runtimeInstanceId: "session-1",
+          toolCallId: undefined,
+          sequence: 1,
+          status: "pending",
+          request,
+          createdAt: createdApproval.createdAt,
+          updatedAt: createdApproval.updatedAt,
+        },
         session: { id: "session-1", agentId: "codex", projectId: "tiller" },
       },
     },

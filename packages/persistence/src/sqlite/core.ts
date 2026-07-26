@@ -197,6 +197,19 @@ export function openSessionDatabase(dbPath: string) {
       payload_json TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS session_approval_history(
+      record_key TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      runtime_instance_id TEXT NOT NULL,
+      approval_request_id TEXT NOT NULL,
+      status TEXT NOT NULL,
+      sequence INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      UNIQUE(session_id, runtime_instance_id, approval_request_id)
+    );
+
     CREATE TABLE IF NOT EXISTS session_subagent_details(
       session_id TEXT NOT NULL,
       parent_tool_call_id TEXT NOT NULL,
@@ -233,6 +246,9 @@ export function openSessionDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_session_diff_bodies_sha256 ON session_diff_bodies(sha256);
     CREATE INDEX IF NOT EXISTS idx_session_diffs_session ON session_diffs(session_id);
     CREATE INDEX IF NOT EXISTS idx_session_plans_updated_at ON session_plans(updated_at);
+    CREATE INDEX IF NOT EXISTS idx_session_approval_history_page ON session_approval_history(updated_at DESC, record_key DESC);
+    CREATE INDEX IF NOT EXISTS idx_session_approval_history_status ON session_approval_history(status, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_session_approval_history_session ON session_approval_history(session_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_session_subagent_entries_order ON session_subagent_entries(session_id, parent_tool_call_id, first_sequence);
   `);
   ensureSessionMessagePositions(db);

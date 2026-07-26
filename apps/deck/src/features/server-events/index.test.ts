@@ -50,6 +50,7 @@ function resetStore() {
     approvalItemsById: {},
     pendingApprovalIds: [],
     pendingApprovalIdsBySession: {},
+    approvalHistory: [],
     trustedDevices: [],
     pairingFeedback: "",
   });

@@ -8,6 +8,7 @@ import {
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
 import { useEffectiveViewport } from "../../features/preferences";
+import { clearProcessedApprovalHistory } from "../../features/approvals";
 
 const OverviewPage = lazy(() =>
   import("../../features/overview/ui/page").then((module) => ({
@@ -67,6 +68,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     notifications,
     clearNotifications,
     approvalItemsById,
+    approvalHistory,
     toolCalls,
     navigateToView,
     respondToPermission,
@@ -194,6 +196,7 @@ function renderDashboard() {
     sessionPlans,
     toolCalls,
     approvalItemsById,
+    approvalHistory,
     notifications,
     resolveDisplaySessionTitle,
   });
@@ -211,6 +214,9 @@ function renderDashboard() {
         respondToPermission(approvalRequestId, decision)
       }
       onClearNotifications={clearNotifications}
+      onClearApprovalHistory={() => {
+        void clearProcessedApprovalHistory(rpcClientRef.current, dispatch);
+      }}
     />
   );
 }

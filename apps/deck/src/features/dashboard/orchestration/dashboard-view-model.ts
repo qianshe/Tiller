@@ -1,5 +1,6 @@
 import type {
   AgentPlan,
+  CanonicalApproval,
   HelmSummary,
   PermissionDecision,
   PermissionRequestOption,
@@ -26,6 +27,7 @@ type DashboardInput = {
   sessionPlans?: Record<string, AgentPlan | undefined>;
   toolCalls: Record<string, unknown[]>;
   approvalItemsById: Record<string, any>;
+  approvalHistory?: CanonicalApproval[];
   notifications?: DashboardNotification[];
   resolveDisplaySessionTitle: (session: SessionSummary) => string;
 };
@@ -103,6 +105,46 @@ export function resolveDashboardApprovalDecisions(): PermissionDecision[] {
   return [...DASHBOARD_APPROVAL_DECISIONS];
 }
 
+function buildDashboardApprovalRow(
+  item: any,
+  sessionsById: Map<string, SessionSummary>,
+  resolveDisplaySessionTitle: (session: SessionSummary) => string,
+) {
+  const request = item.request ?? {};
+  const sessionId = item.sessionId ?? request.sessionId;
+  const session = sessionId ? sessionsById.get(sessionId) : undefined;
+  const command = dashboardText(request.command)
+    ?? dashboardText(request.toolName)
+    ?? dashboardText(request.kind)
+    ?? dashboardText(request.type)
+    ?? "权限请求";
+  const commandDisplay = resolvePermissionCommandDisplay(command);
+  return {
+    id: String(item.id ?? request.id ?? item.requestId ?? item.createdAt),
+    sessionId: dashboardText(sessionId) ?? undefined,
+    kind: commandDisplay.title,
+    target: dashboardText(request.reason)
+      ?? commandDisplay.detail
+      ?? dashboardText(request.description)
+      ?? dashboardText(request.path)
+      ?? dashboardText(request.url)
+      ?? "权限请求",
+    allowDecision: resolveDashboardApprovalDecision(request.options),
+    decisions: resolveDashboardApprovalDecisions(),
+    agentName: session?.agentName ?? request.agentName ?? request.agentId,
+    projectName: session?.projectName,
+    worktreeName: session?.worktreeName,
+    sessionName: session
+      ? resolveDisplaySessionTitle(session)
+      : dashboardText(sessionId) ?? "未知会话",
+    resolving: Boolean(item.resolving) || item.status === "resolving",
+    status: item.status ?? (item.resolving ? "resolving" : "pending"),
+    decision: item.decision,
+    createdAt: item.createdAt ?? item.updatedAt,
+    updatedAt: item.updatedAt ?? item.createdAt,
+  };
+}
+
 export function buildDashboardViewModel(input: DashboardInput) {
   const activeHelmLabel = input.activeHelm
     ? `${input.activeHelm.name ?? "Local Helm"} · ${input.activeHelm.host ?? input.defaultDaemonHost}:${input.activeHelm.port ?? input.defaultDaemonPort}`
@@ -119,34 +161,22 @@ export function buildDashboardViewModel(input: DashboardInput) {
   }));
 
   const sessionsById = new Map(input.sessions.map((session) => [session.id, session]));
-  const approvals = Object.values(input.approvalItemsById ?? {}).map((item) => {
-    const request = item.request ?? {};
-    const sessionId = item.sessionId ?? request.sessionId;
-    const session = sessionId ? sessionsById.get(sessionId) : undefined;
-    const command = dashboardText(request.command)
-      ?? dashboardText(request.toolName)
-      ?? dashboardText(request.kind)
-      ?? dashboardText(request.type)
-      ?? "权限请求";
-    const commandDisplay = resolvePermissionCommandDisplay(command);
+  const approvals = Object.values(input.approvalItemsById ?? {}).map((item) =>
+    buildDashboardApprovalRow(item, sessionsById, input.resolveDisplaySessionTitle)
+  );
+  const approvalHistory = (input.approvalHistory ?? []).map((item) => {
+    const activeItem = input.approvalItemsById[item.id];
+    const projectedItem = activeItem?.sessionId === item.sessionId
+      && (item.status === "pending" || item.status === "resolving")
+      ? { ...item, status: activeItem.resolving ? "resolving" : "pending" }
+      : item;
     return {
-      id: String(item.id ?? request.id ?? item.requestId ?? item.createdAt),
-      kind: commandDisplay.title,
-      target: dashboardText(request.reason)
-        ?? commandDisplay.detail
-        ?? dashboardText(request.description)
-        ?? dashboardText(request.path)
-        ?? dashboardText(request.url)
-        ?? "权限请求",
-      allowDecision: resolveDashboardApprovalDecision(request.options),
-      decisions: resolveDashboardApprovalDecisions(),
-      agentName: session?.agentName ?? request.agentName ?? request.agentId,
-      projectName: session?.projectName,
-      worktreeName: session?.worktreeName,
-      sessionName: session
-        ? input.resolveDisplaySessionTitle(session)
-        : dashboardText(sessionId) ?? "未知会话",
-      resolving: Boolean(item.resolving),
+      ...buildDashboardApprovalRow(
+        projectedItem,
+        sessionsById,
+        input.resolveDisplaySessionTitle,
+      ),
+      id: JSON.stringify([item.sessionId, item.runtimeInstanceId, item.id]),
     };
   });
 
@@ -185,6 +215,7 @@ export function buildDashboardViewModel(input: DashboardInput) {
     sessions,
     helms,
     approvals,
+    approvalHistory,
     notifications: (input.notifications ?? []).map((notification) => {
       const session = notification.sessionId ? sessionsById.get(notification.sessionId) : undefined;
       return {

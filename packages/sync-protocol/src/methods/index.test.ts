@@ -58,6 +58,8 @@ const expectedRequests = [
   "permission/list_pending",
   "permission/respond",
   "approval/list_pending",
+  "approval/list",
+  "approval/clear_history",
   "approval/respond",
   "device/list",
   "device/revoke",
