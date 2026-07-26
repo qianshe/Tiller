@@ -614,6 +614,38 @@ test("an ambiguous launch result waits for a transcript identity instead of crea
   disposeToolRecognitionSession("claude", sessionId);
 });
 
+test("a streaming spawn whose input grows keeps a single entity identity", () => {
+  const sessionId = "recognition-streaming-spawn-input";
+  const [initial] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({
+        id: "call-task",
+        status: "running",
+        input: '{"description":"Reuse review","subagent_type":"Explore"}',
+      }),
+    }),
+    subagentEvidence({ action: "spawn" }),
+  ).toolCalls;
+  assert.equal(initial?.id, "call-task");
+
+  const [streamed] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "claude",
+      sessionId,
+      toolCall: toolCall({
+        id: "call-task",
+        status: "running",
+        input: '{"description":"Reuse review","subagent_type":"Explore","prompt":"Review the diff"}',
+      }),
+    }),
+    subagentEvidence({ action: "spawn" }),
+  ).toolCalls;
+  assert.equal(streamed?.id, "call-task");
+  disposeToolRecognitionSession("claude", sessionId);
+});
+
 test("a Claude background spawn closes on its transcript task notification", () => {
   const sessionId = "recognition-claude-background-completion";
   const spawn = createToolObservation({

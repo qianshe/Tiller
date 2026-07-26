@@ -165,10 +165,38 @@ function resolveCompatibleSpawnAlias(
   if (entity.commandId && commandId && !sameAlias(entity.commandId, commandId)) {
     return undefined;
   }
-  if (!commandId && entity.input && toolCall.input && entity.input !== toolCall.input) {
+  if (
+    !commandId && entity.input && toolCall.input &&
+    !isStreamingInputGrowth(entity.input, toolCall.input)
+  ) {
     return undefined;
   }
   return entity;
+}
+
+function isStreamingInputGrowth(previous: string, next: string): boolean {
+  if (next === previous || next.startsWith(previous)) {
+    return true;
+  }
+  const previousRecord = parseJsonRecord(previous);
+  const nextRecord = parseJsonRecord(next);
+  if (!previousRecord || !nextRecord) {
+    return false;
+  }
+  return Object.entries(previousRecord).every(([key, value]) =>
+    key in nextRecord && JSON.stringify(nextRecord[key]) === JSON.stringify(value)
+  );
+}
+
+function parseJsonRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 function resolveNewEntityId(
