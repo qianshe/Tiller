@@ -3103,6 +3103,8 @@ test("plain messages renders a subagent timeline without root-output concatenati
     /class="pb-0\.5 pt-0\.5"><details class="plain-tool-call/,
   );
   assert.match(html, /plain-subagent-content max-h-\[min\(22rem,55vh\)\] min-w-0 overflow-y-auto overscroll-contain pr-1 pt-1/);
+  assert.doesNotMatch(html, /plain-subagent-content[^>]*overflow-x-hidden/);
+  assert.match(html, /class="grid min-w-0 grid-cols-\[minmax\(0,1fr\)\]" data-subagent-conversation/);
   assert.match(html, /plain-subagent-content[^>]*data-mission-swipe-lock="true"/);
 });
 

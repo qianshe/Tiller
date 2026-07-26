@@ -456,7 +456,7 @@ function PlainSubagentConversation({
   });
   const renderItems = resolvePlainMessageRenderItems(items);
   return (
-    <div className="grid" data-subagent-conversation>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)]" data-subagent-conversation>
       {renderItems.map((item, index) => {
         const previousKind = renderItems[index - 1]?.kind;
         const startsSection = index > 0 &&
