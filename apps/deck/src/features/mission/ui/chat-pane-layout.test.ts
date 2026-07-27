@@ -722,18 +722,18 @@ test("mission diff and inspector commit controls support full-row review", () =>
   assert.match(inspectorSource, /selectedDiffCount/);
   assert.match(inspectorSource, /取消全选/);
   assert.match(inspectorSource, /全选/);
-  assert.match(inspectorSource, /mission-inspector-commit-editor relative min-w-0 w-full/);
-  assert.match(inspectorSource, /mission-inspector-commit-submit absolute bottom-2 right-2/);
-  assert.match(shellStylesSource, /\.mission-responsive-mode \[data-mission-mobile-pane\] \.mission-inspector-commit-editor \.mission-inspector-commit-submit\s*\{[^}]*position:\s*absolute;/s);
-  assert.match(inspectorSource, /px-2 py-2 pb-10/);
+  assert.match(inspectorSource, /mission-inspector-commit-editor wb-pane-sunken grid min-w-0 w-full/);
+  assert.match(inspectorSource, /mission-inspector-commit-submit flex h-\[var\(--control-h-sm\)\]/);
+  assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \[data-mission-mobile-pane\] \.mission-inspector-commit-editor \.mission-inspector-commit-submit/);
+  assert.match(inspectorSource, /border-0 bg-transparent px-1 py-0/);
   assert.doesNotMatch(inspectorSource, /pr-\[7\.5rem\]/);
   assert.doesNotMatch(inspectorSource, /grid grid-cols-\[minmax\(0,1fr\)_auto\] items-end gap-2 md:block/);
   assert.match(inspectorSource, /mission-worktree-picker relative flex min-w-0 items-center gap-1/);
   assert.match(inspectorSource, /aria-label=\{generating \? "正在生成提交描述" : "生成提交描述"\}/);
   assert.match(inspectorSource, /aria-label="刷新 Git"/);
   assert.doesNotMatch(inspectorSource, /grid grid-cols-4 gap-1/);
-  assert.match(inspectorSource, /min-h-\[96px\]/);
-  assert.match(inspectorSource, /h-6 min-w-\[88px\]/);
+  assert.match(inspectorSource, /min-h-\[48px\]/);
+  assert.match(inspectorSource, /h-\[var\(--control-h-sm\)\] min-w-\[88px\]/);
   assert.match(inspectorSource, /<GitCommitHorizontal size=\{11\}/);
   assert.match(worktreeSource, /const toggleSelectAllCommitDiffs = \(\) =>/);
   assert.match(worktreeSource, /onToggleSelectAllDiffs=\{toggleSelectAllCommitDiffs\}/);
@@ -777,7 +777,7 @@ test("mission display keeps v6 diff viewer chrome as the primary display surface
   assert.doesNotMatch(diffTreeSource, /mission-diff-patch[^\n]+rounded-b-md border-t border-border-ghost/);
   assert.doesNotMatch(displayPanelSource, /mission-logbook-page/);
   assert.match(inspectorSource, /刷新 Git/);
-  assert.match(inspectorSource, />\s*历史\s*<\/DropdownMenuItem>/);
+  assert.match(inspectorSource, />\s*查看历史\s*<\/DropdownMenuItem>/);
 });
 
 test("mission graph panel shows a loading state while fetching commits", () => {
@@ -805,6 +805,13 @@ test("mission display pane mirrors the v6 viewer chrome", () => {
   assert.doesNotMatch(displayPanelSource, /MissionPanelHeader title="任务展示" bordered \/>/);
 });
 
+test("mobile display diff content keeps the desktop edge-to-edge viewer", () => {
+  assert.match(
+    shellStylesSource,
+    /\.mission-responsive-mode \.mission-pane-display \.mission-panel-content\s*\{[\s\S]*padding:\s*0;/,
+  );
+});
+
 test("mission inspector mirrors the v6 worktree chrome", () => {
   assert.match(inspectorSource, /wb-pane-head/);
   assert.match(inspectorSource, /工作区/);
@@ -818,9 +825,9 @@ test("mission inspector mirrors the v6 worktree chrome", () => {
   assert.match(inspectorSource, /onClose: \(\) => setPickerOpen\(false\)/);
   assert.match(inspectorSource, /document\.addEventListener\("pointerdown", handlePointerDown\)/);
   assert.match(inspectorSource, /!pickerRef\.current\?\.contains\(target\)/);
-  assert.match(inspectorSource, /rows=\{4\}/);
-  assert.match(inspectorSource, /min-h-\[96px\]/);
-  assert.match(inspectorSource, /mission-inspector-commit grid gap-2/);
+  assert.match(inspectorSource, /rows=\{2\}/);
+  assert.match(inspectorSource, /min-h-\[48px\]/);
+  assert.match(inspectorSource, /mission-inspector-commit grid gap-0\.5/);
   assert.doesNotMatch(inspectorSource, /DropdownMenuItem onSelect=\{onCollapse\}/);
   assert.doesNotMatch(inspectorSource, /aria-label="调试会话更新"/);
   assert.match(inspectorSource, /min-w-0 w-full flex-col/);
@@ -1229,8 +1236,10 @@ test("mission inspector keeps Git actions inside a compact upward menu", () => {
   assert.match(inspectorSource, /rounded-lg border border-border-ghost\/80 bg-surface-elevated/);
   assert.match(inspectorSource, /shadow-\[0_14px_36px_rgb\(0_0_0\/0\.34\)\] ring-1 ring-white\/5/);
   assert.match(inspectorSource, /rounded-md px-2 py-1 text-xs/);
-  assert.match(inspectorSource, />\s*历史\s*<\/DropdownMenuItem>/);
-  assert.doesNotMatch(inspectorSource, /查看提交历史/);
+  assert.match(
+    inspectorSource,
+    />\s*查看历史\s*<\/DropdownMenuItem>[\s\S]*>\s*查看错误\s*<\/DropdownMenuItem>[\s\S]*<DropdownMenuSeparator \/>[\s\S]*Fetch[\s\S]*Pull[\s\S]*Push[\s\S]*<DropdownMenuSeparator \/>[\s\S]*>\s*丢弃选中改动\s*<\/DropdownMenuItem>/,
+  );
   assert.match(inspectorSource, /onSelect=\{\(\) => void handleFetch\(\)\}/);
   assert.match(inspectorSource, />\s*查看错误\s*<\/DropdownMenuItem>/);
   assert.match(inspectorSource, /const pullDisabled = !onPull \|\| gitOperationBusy;/);
@@ -1241,6 +1250,18 @@ test("mission inspector keeps Git actions inside a compact upward menu", () => {
   assert.doesNotMatch(inspectorSource, /gitSummaryParts|gitSummary|Git 未刷新|无 Git 状态|aria-live="polite"/);
   assert.match(worktreeSource, /onFetch=\{handleFetch\}/);
   assert.match(worktreeSource, /onOpenGitError=\{handleOpenGitError\}/);
+});
+
+test("mission inspector commit editor follows the compact composer layout", () => {
+  assert.match(inspectorSource, /mission-inspector-commit[^\n]+gap-0\.5[^\n]+px-2 py-1/);
+  assert.match(inspectorSource, /wb-focus-ring flex h-5/);
+  assert.match(inspectorSource, /title="选择 Worktree"/);
+  assert.equal((inspectorSource.match(/grid h-5 w-5 shrink-0 place-items-center rounded-none/g) ?? []).length, 3);
+  assert.match(inspectorSource, /mission-inspector-commit-editor[^\n]+wb-pane-sunken[^\n]+px-2 py-1\.5/);
+  assert.match(inspectorSource, /rows=\{2\}/);
+  assert.match(inspectorSource, /min-h-\[48px\][^\n]+border-0 bg-transparent px-1 py-0/);
+  assert.match(inspectorSource, /mission-inspector-commit-sidecar[^\n]+min-h-7[^\n]+justify-end/);
+  assert.doesNotMatch(inspectorSource, /min-h-\[96px\]|pb-10/);
 });
 
 test("mission diff patches load on demand instead of riding the status payload", () => {

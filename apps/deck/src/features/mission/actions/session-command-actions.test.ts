@@ -18,6 +18,7 @@ function createActions(overrides: Record<string, unknown> = {}) {
   const options = {
     prompt: "",
     promptImages: [],
+    draftContexts: [],
     socketRef: { current: null },
     rpcClientRef: { current: { socket: { readyState: (globalThis as any).WebSocket.OPEN } } },
     setImagePasteNotice: () => undefined,
@@ -39,6 +40,7 @@ function createActions(overrides: Record<string, unknown> = {}) {
     navigateToView: () => undefined,
     setPrompt: () => undefined,
     setPromptImages: () => undefined,
+    clearDraftContexts: () => undefined,
     createClientUserMessageId: () => "client-message-1",
     appendUserMessage: () => undefined,
     permissionRequests: {},

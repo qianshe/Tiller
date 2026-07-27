@@ -33,5 +33,8 @@ test("prompt context menu keeps the shared upward floating menu compact", () => 
   assert.match(html, /aria-expanded="false"/u);
   assert.doesNotMatch(html, /详细引用内容不在菜单条目中展示/u);
   assert.match(promptContextMenuSource, /side="top"/u);
+  assert.match(promptContextMenuSource, /collisionBoundary=\{collisionBoundary \?\? undefined\}/u);
+  assert.match(promptContextMenuSource, /collisionPadding=\{8\}/u);
+  assert.match(promptContextMenuSource, /max-w-\[var\(--radix-dropdown-menu-content-available-width\)\]/u);
   assert.doesNotMatch(promptContextMenuSource, /item\.excerpt/u);
 });

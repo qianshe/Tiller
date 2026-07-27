@@ -107,6 +107,35 @@ test("renderDiffPatch exposes a hover comment button in the left gutter", () => 
   assert.match(html, /aria-label="添加第 1 行评论"/u);
 });
 
+test("renderDiffPatch renders a line-number tap trigger without a duplicate icon in coarse pointer mode", () => {
+  const html = renderToStaticMarkup(
+    renderDiffPatch({
+      patch: [
+        "@@ -1,2 +1,3 @@",
+        " const keep = true;",
+        "-const oldValue = 1;",
+        "+const newValue = 2;",
+      ].join("\n"),
+      selectedLineKeys: new Set<string>(),
+      onSelectRange: () => undefined,
+      pointerMode: "coarse",
+    }),
+  );
+
+  assert.match(html, /data-diff-coarse-trigger="true"/u);
+  const lineKeys = Array.from(html.matchAll(/data-diff-line-key="([^"]+)"/g)).map(
+    (match) => match[1],
+  );
+  assert.equal(lineKeys.length, new Set(lineKeys).size);
+  assert.match(html, /aria-label="轻点第 1 行添加评论"/u);
+  assert.match(html, /aria-pressed="false"/u);
+  assert.match(html, /tabular-nums/);
+  assert.match(html, /focus-visible:ring-2/);
+  assert.doesNotMatch(html, /diff-coarse-comment-icon/u);
+  assert.doesNotMatch(html, /group-hover:opacity-100/u);
+  assert.doesNotMatch(html, /mission-diff-comment-trigger/u);
+});
+
 test("diff stats color additions and deletions by semantic value", () => {
   const html = renderToStaticMarkup(renderDiffStats(diff("a.ts", 3, 0)));
 

@@ -449,10 +449,6 @@ body[data-density="cozy"] {
     z-index: 7;
   }
 
-  .mission-responsive-mode [data-mission-mobile-pane] .mission-inspector-commit-editor .mission-inspector-commit-submit {
-    position: absolute;
-  }
-
   .mission-responsive-mode [data-mission-mobile-pane] [data-session-scroll-bottom] {
     position: absolute;
     right: 0.75rem;
@@ -514,6 +510,11 @@ body[data-density="cozy"] {
 
   .mission-responsive-mode .mission-panel-content {
     padding: 8px;
+  }
+
+  /* Diff viewer keeps the desktop edge-to-edge chrome on mobile. */
+  .mission-responsive-mode .mission-pane-display .mission-panel-content {
+    padding: 0;
   }
 
   .mission-responsive-mode .mission-panel-head,

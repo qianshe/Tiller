@@ -1,12 +1,14 @@
 import type { FileDiffSummary, MissionPromptContextItem } from "@tiller/shared";
-import { useEffect, useState, type CSSProperties, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import {
   formatDiffStatus,
   renderDiffPatch,
   renderDiffStats,
+  type DiffPointerMode,
 } from "./diff-tree";
+import { useIsCoarsePointer } from "../hooks/use-pointer-input";
 import {
   buildDiffLineRangeLabel,
   buildDiffSelectionSnapshot,
@@ -118,9 +120,10 @@ export function MissionDisplayPanel({
   const selectedDisplayDiff = diffs.find((file) => file.path === selectedDiffFilePath);
   const [selectedLineKeys, setSelectedLineKeys] = useState<Set<string>>(new Set());
   const [selectionAnchorKey, setSelectionAnchorKey] = useState<string | null>(null);
-  const [selectionAnchorElement, setSelectionAnchorElement] = useState<HTMLButtonElement | null>(null);
+  const [selectionAnchorElement, setSelectionAnchorElement] = useState<HTMLElement | null>(null);
   const [diffCommentMode, setDiffCommentMode] = useState<"actions" | "composer">("actions");
   const [draftComment, setDraftComment] = useState("");
+  const displayPaneRef = useRef<HTMLElement>(null);
   useEffect(() => {
     setSelectedLineKeys(new Set());
     setSelectionAnchorKey(null);
@@ -128,20 +131,25 @@ export function MissionDisplayPanel({
     setDiffCommentMode("actions");
     setDraftComment("");
   }, [selectedDisplayDiff?.path, selectedDisplayDiff?.patch]);
-  const handleSelectDiffLine = (line: ParsedDiffLine, event: MouseEvent<HTMLButtonElement>) => {
+  const isCoarsePointer = useIsCoarsePointer();
+  const handleSelectDiffLine = (
+    line: ParsedDiffLine,
+    anchor: HTMLElement,
+    extendRange: boolean,
+  ) => {
     const visibleLines = parseDiffPatchLines(selectedDisplayDiff?.patch ?? "");
     const lineKey = diffLineKey(line);
-    if (event.shiftKey && selectionAnchorKey) {
+    if (extendRange && selectionAnchorKey) {
       const range = selectContiguousDiffLines(visibleLines, selectionAnchorKey, lineKey);
       setSelectedLineKeys(new Set(range.map((entry) => diffLineKey(entry))));
-      setSelectionAnchorElement(range.length ? event.currentTarget : null);
+      setSelectionAnchorElement(range.length ? anchor : null);
       setDiffCommentMode("actions");
       setDraftComment("");
       return;
     }
     setSelectionAnchorKey(lineKey);
     setSelectedLineKeys(new Set(line.kind === "hunk" ? [] : [lineKey]));
-    setSelectionAnchorElement(line.kind === "hunk" ? null : event.currentTarget);
+    setSelectionAnchorElement(line.kind === "hunk" ? null : anchor);
     setDiffCommentMode("actions");
     setDraftComment("");
   };
@@ -184,6 +192,7 @@ export function MissionDisplayPanel({
 
   return (
     <aside
+      ref={displayPaneRef}
       className="mission-display-panel mission-pane mission-pane-display col-start-5 col-end-6 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-surface-sunken shadow-none"
       style={style}
       aria-label="任务展示容器"
@@ -312,6 +321,7 @@ export function MissionDisplayPanel({
             historicalDiffIncomplete,
             selectedLineKeys,
             onSelectDiffLine: handleSelectDiffLine,
+            pointerMode: isCoarsePointer ? "coarse" : "fine",
             onAddDraftContext,
           })
         )}
@@ -320,6 +330,7 @@ export function MissionDisplayPanel({
       {selectedDisplayDiff && selectionAnchorElement && selectedLineKeys.size > 0 && onAddDraftContext ? (
         <SelectionCommentPopover
           anchor={selectionAnchorElement}
+          containment={displayPaneRef.current ?? undefined}
           comment={draftComment}
           context={(
             <>
@@ -394,7 +405,8 @@ type RenderDiffDetailPageInput = {
   noDiffSummary: string;
   historicalDiffIncomplete?: boolean;
   selectedLineKeys: ReadonlySet<string>;
-  onSelectDiffLine: (line: ParsedDiffLine, event: MouseEvent<HTMLButtonElement>) => void;
+  onSelectDiffLine: (line: ParsedDiffLine, anchor: HTMLElement, extendRange: boolean) => void;
+  pointerMode: DiffPointerMode;
   onAddDraftContext?: (item: MissionPromptContextItem) => void;
 };
 
@@ -405,6 +417,7 @@ function renderDiffDetailPage({
   historicalDiffIncomplete,
   selectedLineKeys,
   onSelectDiffLine,
+  pointerMode,
   onAddDraftContext,
 }: RenderDiffDetailPageInput) {
   const selectedFile = selectedDiffFilePath
@@ -426,6 +439,7 @@ function renderDiffDetailPage({
               patch: selectedFile.patch,
               selectedLineKeys: onAddDraftContext ? selectedLineKeys : undefined,
               onSelectRange: onAddDraftContext ? onSelectDiffLine : undefined,
+              pointerMode,
             })}
             {selectedFile.patchTruncated && selectedFile.patchRef ? (
               <div className="border-t border-border-ghost px-3 py-2 text-xs text-muted-foreground">

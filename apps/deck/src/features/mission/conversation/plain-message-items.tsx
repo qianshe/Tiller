@@ -3,7 +3,6 @@ import {
   useEffect,
   useRef,
   useState,
-  type MouseEvent,
   type ReactNode,
   type UIEvent,
 } from "react";
@@ -324,41 +323,57 @@ export const PlainMessageItem = memo(function PlainMessageItem({
     excerpt: string;
   } | null>(null);
 
-  function captureQuoteSelection(event: MouseEvent<HTMLElement>) {
+  const articleRef = useRef<HTMLElement>(null);
+  // 监听 document selectionchange 而非 onMouseUp:移动端触摸选择不会可靠触发 mouseup,
+  // selectionchange 在鼠标拖选与触摸拖选下都会触发,配合防抖等选区稳定后再弹气泡。
+  useEffect(() => {
     if (!onAddDraftContext || message.role === "system") {
       return;
     }
-    // 流式消息(DOM 仍在更新)禁用 quote 选区,避免 anchorRange 失效导致 popover 飘移。
-    // 既看闭包 isStreaming,也看 DOM 实时 data-streaming,双保险防闭包过期。
-    const streamingNode = event.currentTarget.closest('[data-streaming="true"]');
-    if (isStreaming || streamingNode) {
-      return;
-    }
-    const selection = typeof window !== "undefined" ? window.getSelection() : null;
-    const anchorNode = selection?.anchorNode;
-    const focusNode = selection?.focusNode;
-    if (
-      !selection ||
-      selection.rangeCount === 0 ||
-      !anchorNode ||
-      !focusNode ||
-      !event.currentTarget.contains(anchorNode) ||
-      !event.currentTarget.contains(focusNode)
-    ) {
-      setQuoteSelection(null);
-      return;
-    }
-    const normalized = normalizeQuotedSelection(selection.toString());
-    if (!normalized) {
-      setQuoteSelection(null);
-      return;
-    }
-    setQuoteDraft(null);
-    setQuoteSelection({
-      anchorRange: selection.getRangeAt(0).cloneRange(),
-      excerpt: normalized.excerpt,
-    });
-  }
+    let timer: number | null = null;
+    const handleSelectionChange = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+      timer = window.setTimeout(() => {
+        const article = articleRef.current;
+        // 流式消息(DOM 仍在更新)禁用 quote 选区,避免 anchorRange 失效导致 popover 飘移。
+        if (!article || article.closest('[data-streaming="true"]')) {
+          return;
+        }
+        const selection = typeof window !== "undefined" ? window.getSelection() : null;
+        const anchor = selection?.anchorNode;
+        const focus = selection?.focusNode;
+        if (
+          !selection ||
+          selection.rangeCount === 0 ||
+          !anchor ||
+          !focus ||
+          !article.contains(anchor) ||
+          !article.contains(focus)
+        ) {
+          return;
+        }
+        const normalized = normalizeQuotedSelection(selection.toString());
+        if (!normalized) {
+          setQuoteSelection(null);
+          return;
+        }
+        setQuoteDraft(null);
+        setQuoteSelection({
+          anchorRange: selection.getRangeAt(0).cloneRange(),
+          excerpt: normalized.excerpt,
+        });
+      }, 200);
+    };
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, [onAddDraftContext, message.role]);
 
   function startQuoteDraft() {
     if (!quoteSelection) return;
@@ -382,6 +397,10 @@ export const PlainMessageItem = memo(function PlainMessageItem({
     await copyMessageText(assistantActions.copyText);
   }
 
+  const quoteContainment = articleRef.current?.closest<HTMLElement>(
+    '[data-mission-mobile-pane="chat"]',
+  ) ?? undefined;
+
   return (
     <article
       className={cn(
@@ -395,6 +414,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             : "ml-auto grid w-full justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
+      ref={articleRef}
     >
       {isAssistant ? (
         <span
@@ -454,7 +474,6 @@ export const PlainMessageItem = memo(function PlainMessageItem({
                 `${messageBodyClassName} ${USER_MESSAGE_RAIL_CLASS} min-w-0 break-words text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
                 "rounded-[14px] border border-primary/30 bg-primary-soft/35 px-3 py-2 shadow-[0_10px_28px_rgb(0_0_0/0.16)]",
               )}
-              onMouseUp={captureQuoteSelection}
             >
               {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
             </div>
@@ -464,7 +483,6 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             className={cn(
               `${messageBodyClassName} min-w-0 max-w-full overflow-hidden text-[12.5px] leading-[1.5] [overflow-wrap:anywhere]`,
             )}
-            onMouseUp={captureQuoteSelection}
           >
             {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
           </div>
@@ -472,6 +490,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         {quoteSelection ? (
           <SelectionCommentPopover
             anchor={quoteSelection.anchorRange}
+            containment={quoteContainment}
             mode="actions"
             onCancel={clearQuoteInteraction}
             onOpenComposer={startQuoteDraft}
@@ -480,6 +499,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
         {quoteDraft && onAddDraftContext ? (
           <SelectionCommentPopover
             anchor={quoteDraft.anchorRange}
+            containment={quoteContainment}
             comment={quoteDraft.comment}
             context={(
               <span className="line-clamp-2 min-w-0">“{quoteDraft.excerpt}”</span>
@@ -1299,7 +1319,11 @@ function summarizeToolGroupTitle(labels: string[]) {
 
 function SentPromptContexts({ contexts }: { contexts: MissionPromptContextItem[] }) {
   return (
-    <div className="mission-message-attachments ml-auto flex w-fit max-w-full flex-wrap justify-end gap-2 justify-self-end" aria-label="已发送评论">
+    <div
+      className="mission-message-attachments ml-auto flex w-full max-w-[min(56rem,76%)] flex-wrap justify-end gap-2 justify-self-end"
+      data-prompt-context-boundary="message"
+      aria-label="已发送评论"
+    >
       <PromptContextMenu
         contexts={contexts}
         align="end"

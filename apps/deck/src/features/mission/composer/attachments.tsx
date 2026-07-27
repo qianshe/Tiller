@@ -50,6 +50,7 @@ export function ComposerAttachments({
       {draftContexts.length ? (
         <div
           className="mission-composer-attachments mission-attachment-strip"
+          data-prompt-context-boundary="composer"
           aria-label="待发送评论上下文"
         >
           <PromptContextMenu

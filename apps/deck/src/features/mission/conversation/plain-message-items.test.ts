@@ -123,6 +123,8 @@ test("plain message parser keeps sent context trigger above the message bubble",
   assert.match(html, /帮我展开/);
   assert.doesNotMatch(html, /\[TILLER_CONTEXT/u);
   assert.match(plainMessageItemsSource, /<PromptContextMenu[\s\S]*align="end"/u);
+  assert.match(plainMessageItemsSource, /data-prompt-context-boundary="message"/u);
+  assert.match(plainMessageItemsSource, /max-w-\[min\(56rem,76%\)\]/u);
   assert.doesNotMatch(plainMessageItemsSource, /item\.excerpt/u);
 });
 

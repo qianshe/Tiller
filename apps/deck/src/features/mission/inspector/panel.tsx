@@ -252,7 +252,7 @@ export function MissionInspector({
           >
             <section className="grid gap-2 px-1 py-2">{diffPanel}</section>
           </div>
-          <div className="mission-inspector-commit grid gap-2 border-t border-border-ghost bg-surface px-2 py-2">
+          <div className="mission-inspector-commit grid gap-0.5 border-t border-border-ghost bg-surface px-2 py-1">
             <div
               ref={pickerRef}
               className="mission-worktree-picker relative flex min-w-0 items-center gap-1 text-2xs text-muted-foreground"
@@ -260,7 +260,7 @@ export function MissionInspector({
               <button
                 type="button"
                 onClick={() => setPickerOpen((current) => !current)}
-                className="wb-focus-ring flex min-w-0 flex-1 items-center gap-1.5 rounded-none bg-transparent px-1.5 py-1 text-left hover:bg-surface-emphasis/60"
+                className="wb-focus-ring flex h-5 min-w-0 flex-1 items-center gap-1.5 rounded-none bg-transparent px-1.5 text-left hover:bg-surface-emphasis/60"
                 title="选择 Worktree"
                 aria-expanded={pickerOpen}
               >
@@ -297,7 +297,7 @@ export function MissionInspector({
               </button>
               <button
                 type="button"
-                className="grid h-6 w-6 shrink-0 place-items-center rounded-none bg-transparent text-muted-foreground hover:bg-surface-emphasis/60 disabled:opacity-50"
+                className="grid h-5 w-5 shrink-0 place-items-center rounded-none bg-transparent text-muted-foreground hover:bg-surface-emphasis/60 disabled:opacity-50"
                 onClick={handleGenerateMessage}
                 disabled={diffCount === 0 || generating}
                 title={generating ? "正在生成提交描述" : "生成提交描述"}
@@ -307,7 +307,7 @@ export function MissionInspector({
               </button>
               <button
                 type="button"
-                className="grid h-6 w-6 shrink-0 place-items-center rounded-none bg-transparent text-muted-foreground hover:bg-surface-emphasis/60 disabled:opacity-50"
+                className="grid h-5 w-5 shrink-0 place-items-center rounded-none bg-transparent text-muted-foreground hover:bg-surface-emphasis/60 disabled:opacity-50"
                 onClick={onRefreshGitStatus}
                 disabled={!onRefreshGitStatus || status?.loading}
                 title="刷新 Git"
@@ -319,7 +319,7 @@ export function MissionInspector({
                 <DropdownMenuTrigger asChild>
                   <button
                     type="button"
-                    className="grid h-6 w-6 shrink-0 place-items-center rounded-none bg-transparent text-muted-foreground hover:bg-surface-emphasis/60"
+                    className="grid h-5 w-5 shrink-0 place-items-center rounded-none bg-transparent text-muted-foreground hover:bg-surface-emphasis/60"
                     title="更多 Git 操作"
                     aria-label="更多 Git 操作"
                   >
@@ -337,7 +337,14 @@ export function MissionInspector({
                     onSelect={onOpenGraph}
                     disabled={!onOpenGraph}
                   >
-                    历史
+                    查看历史
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="rounded-md px-2 py-1 text-xs focus:bg-surface-emphasis focus:text-foreground"
+                    onSelect={onOpenGitError}
+                    disabled={!onOpenGitError}
+                  >
+                    查看错误
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
@@ -362,20 +369,12 @@ export function MissionInspector({
                     {pushing ? "Push 中..." : "Push"}
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        className="rounded-md px-2 py-1 text-xs text-destructive focus:bg-destructive/10 focus:text-destructive"
-                        onSelect={() => setDiscardConfirmOpen(true)}
-                        disabled={!onDiscard || gitOperationBusy || selectedDiffCount === 0}
-                      >
-                        丢弃选中改动
-                      </DropdownMenuItem>
-                      <DropdownMenuSeparator />
                   <DropdownMenuItem
-                    className="rounded-md px-2 py-1 text-xs focus:bg-surface-emphasis focus:text-foreground"
-                    onSelect={onOpenGitError}
-                    disabled={!onOpenGitError}
+                    className="rounded-md px-2 py-1 text-xs text-destructive focus:bg-destructive/10 focus:text-destructive"
+                    onSelect={() => setDiscardConfirmOpen(true)}
+                    disabled={!onDiscard || gitOperationBusy || selectedDiffCount === 0}
                   >
-                    查看错误
+                    丢弃选中改动
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -393,25 +392,27 @@ export function MissionInspector({
                 </div>
               ) : null}
             </div>
-            <div className="mission-inspector-commit-editor relative min-w-0 w-full">
+            <div className="mission-inspector-commit-editor wb-pane-sunken grid min-w-0 w-full gap-0.5 px-2 py-1.5">
               <textarea
-                rows={4}
+                rows={2}
                 value={commitMessage}
                 onChange={(event) => setCommitMessage(event.currentTarget.value)}
-                className="min-h-[96px] w-full resize-none overflow-y-auto rounded-none border border-border-ghost bg-surface-sunken/35 px-2 py-2 pb-10 text-section leading-5 shadow-none placeholder:text-muted-foreground focus:bg-surface-sunken/50 focus:outline-none"
+                className="min-h-[48px] w-full resize-none overflow-y-auto rounded-none border-0 bg-transparent px-1 py-0 text-section leading-5 shadow-none placeholder:text-muted-foreground focus:outline-none"
                 placeholder="提交信息(必填) · 描述本次变更"
                 aria-label="提交信息"
                 disabled={committing}
               />
-              <button
-                type="button"
-                className="mission-inspector-commit-submit absolute bottom-2 right-2 flex h-6 min-w-[88px] items-center justify-center gap-1 rounded-full border border-border-ghost bg-surface-elevated/95 px-2.5 text-2xs font-medium text-foreground shadow-lg shadow-black/20 backdrop-blur disabled:opacity-50"
-                disabled={commitDisabled}
-                onClick={handleCommit}
-              >
-                <GitCommitHorizontal size={11} aria-hidden="true" />
-                {committing ? "提交中..." : `Commit${selectedDiffCount > 0 ? ` (${selectedDiffCount})` : ""}`}
-              </button>
+              <div className="mission-inspector-commit-sidecar flex min-h-7 items-center justify-end">
+                <button
+                  type="button"
+                  className="mission-inspector-commit-submit flex h-[var(--control-h-sm)] min-w-[88px] items-center justify-center gap-1 rounded-full border border-border-ghost bg-surface-elevated/95 px-2.5 text-2xs font-medium text-foreground shadow-sm disabled:opacity-50"
+                  disabled={commitDisabled}
+                  onClick={handleCommit}
+                >
+                  <GitCommitHorizontal size={11} aria-hidden="true" />
+                  {committing ? "提交中..." : `Commit${selectedDiffCount > 0 ? ` (${selectedDiffCount})` : ""}`}
+                </button>
+              </div>
             </div>
           </div>
         </aside>

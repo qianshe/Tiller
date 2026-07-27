@@ -16,6 +16,7 @@ type AnchorRect = Pick<DOMRect, "bottom" | "left" | "right" | "top">;
 
 type FloatingSelectionPositionInput = {
   anchorRect: AnchorRect;
+  containmentRect?: AnchorRect;
   popoverHeight: number;
   popoverWidth: number;
   viewportHeight: number;
@@ -30,26 +31,47 @@ export type FloatingSelectionPosition = {
 
 export function resolveFloatingSelectionPosition({
   anchorRect,
+  containmentRect,
   popoverHeight,
   popoverWidth,
   viewportHeight,
   viewportWidth,
 }: FloatingSelectionPositionInput): FloatingSelectionPosition {
   const anchorCenter = (anchorRect.left + anchorRect.right) / 2;
-  const maxLeft = Math.max(POPOVER_MARGIN, viewportWidth - popoverWidth - POPOVER_MARGIN);
+  const boundaryLeft = Math.max(
+    POPOVER_MARGIN,
+    containmentRect ? containmentRect.left + POPOVER_MARGIN : POPOVER_MARGIN,
+  );
+  const boundaryRight = Math.min(
+    viewportWidth - POPOVER_MARGIN,
+    containmentRect
+      ? containmentRect.right - POPOVER_MARGIN
+      : viewportWidth - POPOVER_MARGIN,
+  );
+  const maxLeft = Math.max(boundaryLeft, boundaryRight - popoverWidth);
   const left = Math.min(
-    Math.max(anchorCenter - popoverWidth / 2, POPOVER_MARGIN),
+    Math.max(anchorCenter - popoverWidth / 2, boundaryLeft),
     maxLeft,
   );
-  const aboveTop = anchorRect.top - popoverHeight - POPOVER_GAP;
   const belowTop = anchorRect.bottom + POPOVER_GAP;
-  const canFitAbove = aboveTop >= POPOVER_MARGIN;
+  const aboveTop = anchorRect.top - popoverHeight - POPOVER_GAP;
+  const canFitBelow = belowTop + popoverHeight + POPOVER_MARGIN <= viewportHeight;
   const maxTop = Math.max(POPOVER_MARGIN, viewportHeight - popoverHeight - POPOVER_MARGIN);
+
+  // 优先放选区下方:移动端系统原生选区工具条(拷贝/查询/分享)常出现在选区上方,
+  // 我们让出上方空间,避免气泡与之重叠。仅当下方放不下时才回退上方。
+  const placement: "above" | "below" = canFitBelow ? "below" : "above";
+  const primaryTop = canFitBelow ? belowTop : aboveTop;
+  const canFitAbove = aboveTop >= POPOVER_MARGIN;
+  const fallbackTop = canFitAbove ? aboveTop : belowTop;
 
   return {
     left,
-    placement: canFitAbove ? "above" : "below",
-    top: Math.min(Math.max(canFitAbove ? aboveTop : belowTop, POPOVER_MARGIN), maxTop),
+    placement,
+    top: Math.min(
+      Math.max(canFitBelow ? primaryTop : fallbackTop, POPOVER_MARGIN),
+      maxTop,
+    ),
   };
 }
 
@@ -60,6 +82,7 @@ export type SelectionCommentAnchor = {
 type SelectionCommentPopoverProps = {
   anchor: SelectionCommentAnchor;
   comment?: string;
+  containment?: SelectionCommentAnchor;
   context?: ReactNode;
   mode: "actions" | "composer";
   onCancel: () => void;
@@ -71,6 +94,7 @@ type SelectionCommentPopoverProps = {
 export function SelectionCommentPopover({
   anchor,
   comment = "",
+  containment,
   context,
   mode,
   onCancel,
@@ -94,8 +118,10 @@ export function SelectionCommentPopover({
           return;
         }
         const anchorRect = anchor.getBoundingClientRect();
+        const containmentRect = containment?.getBoundingClientRect();
         setPosition(resolveFloatingSelectionPosition({
           anchorRect,
+          containmentRect,
           popoverHeight: popover.offsetHeight,
           popoverWidth: popover.offsetWidth,
           viewportHeight: window.innerHeight,
@@ -114,7 +140,7 @@ export function SelectionCommentPopover({
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };
-  }, [anchor, mode]);
+  }, [anchor, containment, mode]);
 
   useEffect(() => {
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -180,7 +206,7 @@ export function SelectionCommentPopover({
           </Button>
         </div>
       ) : (
-        <div className="grid w-[min(22rem,calc(100vw-1.5rem))] gap-2 p-1.5">
+        <div className="grid w-[min(22rem,calc(100vw-1.5rem))] max-w-full gap-2 p-1.5 max-[767px]:w-[min(18rem,calc(100vw-3rem))] max-[767px]:gap-1.5 max-[767px]:p-1">
           {context ? (
             <div className="flex min-w-0 items-center gap-1.5 px-0.5 text-2xs leading-4 text-muted-foreground">
               {context}
