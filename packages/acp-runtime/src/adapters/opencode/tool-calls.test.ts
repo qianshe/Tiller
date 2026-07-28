@@ -275,3 +275,48 @@ test("normalizeOpenCodeToolCall summarizes skill outputs without retaining full 
   assert.equal(normalized.title, "Skill: debugging-strategies");
   assert.equal("output" in normalized, false);
 });
+
+test("normalizeOpenCodeToolCall unwraps nested ACP content when subagent metadata is streamed", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({
+      title: "Task",
+      status: "completed",
+    }),
+    {
+      toolCall: {
+        id: "call-opencode-content-subagent",
+        kind: "tool",
+        title: "Task",
+      },
+      status: "completed",
+      rawInput: {
+        description: "Inspect the OpenCode adapter",
+        prompt: "Return a short report",
+        category: "explore",
+        run_in_background: false,
+      },
+      rawOutput: [
+        {
+          type: "content",
+          content: {
+            type: "text",
+            text: [
+              "Task Result",
+              "<task_metadata>",
+              "session_id: ses_opencode_content",
+              "task_id: ses_opencode_content",
+              "subagent: explore",
+              "</task_metadata>",
+              "to continue: task(task_id=\"ses_opencode_content\")",
+            ].join("\n"),
+          },
+        },
+      ],
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Inspect the OpenCode adapter");
+  assert.equal(normalized.commandId, "subagent:ses_opencode_content");
+  assert.match(normalized.input ?? "", /Return a short report/);
+});

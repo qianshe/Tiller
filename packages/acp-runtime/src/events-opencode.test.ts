@@ -31,6 +31,83 @@ test("mapSessionUpdateNotification preserves OpenCode pending tool starts", () =
   assert.equal(mapped.events[0].toolCall.status, "pending");
 });
 
+test("OpenCode flat tool updates keep subagent identity across sparse completion frames", () => {
+  const sessionId = "session-opencode-flat-subagent";
+  const toolCallId = "call-opencode-flat-subagent";
+  const input = {
+    description: "Reply with a short OpenCode result",
+    prompt: "Return OPEN_CODE_OK",
+    category: "explore",
+    run_in_background: false,
+  };
+  const running = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId,
+          title: "task",
+          kind: "tool",
+          status: "running",
+          rawInput: input,
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+  const completed = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId,
+          status: "completed",
+          rawOutput: [
+            {
+              type: "content",
+              content: {
+                type: "text",
+                text: [
+                  "Task Result",
+                  "<task_metadata>",
+                  "session_id: ses_opencode_flat",
+                  "task_id: ses_opencode_flat",
+                  "subagent: explore",
+                  "</task_metadata>",
+                  "to continue: task(task_id=\"ses_opencode_flat\")",
+                ].join("\n"),
+              },
+            },
+          ],
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+  const runningCall = running?.events.find((event) => event.type === "tool-call");
+  const completedCall = completed?.events.find((event) => event.type === "tool-call");
+
+  assert.equal(runningCall?.type, "tool-call");
+  assert.equal(completedCall?.type, "tool-call");
+  if (runningCall?.type !== "tool-call" || completedCall?.type !== "tool-call") {
+    throw new Error("Expected OpenCode tool-call events");
+  }
+  assert.equal(runningCall.toolCall.id, toolCallId);
+  assert.equal(runningCall.toolCall.kind, "subagent");
+  assert.equal(runningCall.toolCall.title, "Reply with a short OpenCode result");
+  assert.equal(completedCall.toolCall.id, toolCallId);
+  assert.equal(completedCall.toolCall.kind, "subagent");
+  assert.equal(completedCall.toolCall.status, "completed");
+  assert.equal(completedCall.toolCall.title, "Reply with a short OpenCode result");
+  assert.equal(completedCall.toolCall.commandId, "subagent:ses_opencode_flat");
+});
+
 test("mapSessionUpdateNotification applies OpenCode provider live tool classification", () => {
   const mapped = mapSessionUpdateNotification(
     {
@@ -297,6 +374,357 @@ test("mapSessionUpdateNotification keeps completed OpenCode background launch ac
   assert.equal(mapped.event.toolCall.kind, "subagent");
   assert.equal(mapped.event.toolCall.status, "running");
   assert.equal(mapped.event.toolCall.commandId, "subagent:task-background-1");
+});
+
+test("mapSessionUpdateNotification completes OpenCode launches that include a task result", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-background-result",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-background-result",
+            kind: "tool",
+            title: "Reply with exactly: SUBAGENT_OK_FROM_QUICK",
+            status: "completed",
+            input: JSON.stringify({
+              category: "quick",
+              prompt: "Reply with exactly: SUBAGENT_OK_FROM_QUICK",
+              run_in_background: true,
+            }),
+            rawOutput: [
+              {
+                type: "content",
+                content: {
+                  type: "text",
+                  text: "Background task launched.\nStatus: pending",
+                },
+              },
+              {
+                type: "content",
+                content: {
+                  type: "text",
+                  text: "Task Result\n\nSUBAGENT_OK_FROM_QUICK",
+                },
+                metadata: {
+                  taskId: "ses_background_result",
+                  sessionId: "ses_background_result",
+                  backgroundTaskId: "bg_background_result",
+                },
+              },
+            ],
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.status, "completed");
+  assert.equal(mapped.event.toolCall.commandId, "subagent:ses_background_result");
+});
+
+test("mapSessionUpdateNotification does not classify OpenCode background_output text as a subagent", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-background-output",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-background-output",
+            kind: "tool",
+            title: "background_output",
+            status: "completed",
+            input: JSON.stringify({ task_id: "task-background-1" }),
+            output: JSON.stringify({
+              output: "Background task is still running (status: pending)",
+              metadata: {
+                taskId: "task-background-1",
+                sessionId: "task-background-1",
+              },
+            }),
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.notEqual(mapped.event.toolCall.kind, "subagent");
+});
+
+test("mapSessionUpdateNotification repairs a preclassified OpenCode background_output", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-background-output-preclassified",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-background-output-preclassified",
+            kind: "subagent",
+            title: "background_output",
+            status: "running",
+            input: JSON.stringify({ task_id: "task-background-2" }),
+            output: JSON.stringify({
+              output: "Background task is still running (status: pending)",
+              metadata: { taskId: "task-background-2" },
+            }),
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "tool");
+  assert.equal(mapped.event.toolCall.status, "completed");
+});
+
+test("mapSessionUpdateNotification treats OpenCode background_output as a completed notification", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-background-output-running",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-background-output-running",
+            kind: "tool",
+            title: "background_output",
+            status: "running",
+            input: JSON.stringify({ task_id: "task-background-running" }),
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "tool");
+  assert.equal(mapped.event.toolCall.status, "completed");
+});
+
+test("OpenCode background_output keeps the notification completed while closing the linked subagent", () => {
+  const sessionId = "session-opencode-background-output-linked-result";
+  const launch = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-linked-subagent",
+            kind: "tool",
+            title: "task",
+            status: "running",
+            rawInput: {
+              description: "Return the linked result",
+              prompt: "Return LINKED_RESULT",
+              category: "quick",
+              run_in_background: true,
+              taskId: "ses-opencode-linked-result",
+              backgroundTaskId: "bg-opencode-linked-result",
+            },
+            rawOutput: {
+              output: "Background task launched. Status: pending",
+              metadata: {
+                taskId: "ses-opencode-linked-result",
+                sessionId: "ses-opencode-linked-result",
+                backgroundTaskId: "bg-opencode-linked-result",
+              },
+            },
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+  assert.equal(launch?.events[0]?.type, "tool-call");
+  if (launch?.events[0]?.type !== "tool-call") {
+    throw new Error("Expected the OpenCode launch tool call");
+  }
+  assert.equal(launch.events[0].toolCall.kind, "subagent");
+  assert.equal(launch.events[0].toolCall.status, "running");
+
+  const result = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-linked-background-output",
+            kind: "tool",
+            title: "background_output",
+            status: "running",
+            rawInput: { task_id: "bg-opencode-linked-result" },
+            rawOutput: {
+              output: "Task Result\\n\\nLINKED_RESULT",
+              metadata: {
+                taskId: "ses-opencode-linked-result",
+                sessionId: "ses-opencode-linked-result",
+                backgroundTaskId: "bg-opencode-linked-result",
+              },
+            },
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  const toolEvents = result?.events.filter((event) => event.type === "tool-call") ?? [];
+  const notification = toolEvents.find((event) =>
+    event.type === "tool-call" && event.toolCall.id === "call-opencode-linked-background-output",
+  );
+  const linkedSubagent = toolEvents.find((event) =>
+    event.type === "tool-call" && event.toolCall.id === "call-opencode-linked-subagent",
+  );
+  assert.equal(notification?.type, "tool-call");
+  if (notification?.type !== "tool-call") {
+    throw new Error("Expected the background_output notification");
+  }
+  assert.equal(notification.toolCall.kind, "tool");
+  assert.equal(notification.toolCall.status, "completed");
+  assert.equal(linkedSubagent?.type, "tool-call");
+  if (linkedSubagent?.type !== "tool-call") {
+    throw new Error("Expected the linked subagent result");
+  }
+  assert.equal(linkedSubagent.toolCall.kind, "subagent");
+  assert.equal(linkedSubagent.toolCall.status, "completed");
+  assert.match(linkedSubagent.toolCall.output ?? "", /LINKED_RESULT/);
+});
+
+test("OpenCode pending background_output does not close the linked subagent early", () => {
+  const sessionId = "session-opencode-background-output-pending";
+  const launchId = "call-opencode-pending-launch";
+  const taskId = "bg-opencode-pending";
+  const launch = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: launchId,
+            kind: "tool",
+            title: "task",
+            status: "running",
+            rawInput: {
+              description: "Return the delayed result",
+              prompt: "Return DELAYED_RESULT",
+              category: "quick",
+              run_in_background: true,
+            },
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+  assert.equal(launch?.events[0]?.type, "tool-call");
+
+  const pending = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-pending-background-output",
+            kind: "tool",
+            title: "background_output",
+            status: "running",
+            rawInput: { task_id: taskId },
+            rawOutput: {
+              output: "Background task is still running. Status: pending",
+              metadata: { backgroundTaskId: taskId },
+            },
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+  const pendingCalls = pending?.events.filter((event) => event.type === "tool-call") ?? [];
+  assert.equal(pendingCalls.length, 1);
+  assert.equal(pendingCalls[0]?.type === "tool-call" ? pendingCalls[0].toolCall.kind : undefined, "tool");
+  assert.equal(pendingCalls[0]?.type === "tool-call" ? pendingCalls[0].toolCall.status : undefined, "completed");
+
+  const result = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCall: {
+            id: "call-opencode-terminal-background-output",
+            kind: "tool",
+            title: "background_output",
+            status: "running",
+            rawInput: { task_id: taskId },
+            rawOutput: {
+              output: "Task Result\\n\\nDELAYED_RESULT",
+              metadata: {
+                taskId,
+                sessionId: "ses-opencode-pending",
+                backgroundTaskId: taskId,
+              },
+            },
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+  const linkedSubagent = result?.events.find((event) =>
+    event.type === "tool-call" && event.toolCall.id === launchId,
+  );
+  assert.equal(linkedSubagent?.type, "tool-call");
+  if (linkedSubagent?.type !== "tool-call") {
+    throw new Error("Expected the delayed subagent result");
+  }
+  assert.equal(linkedSubagent.toolCall.kind, "subagent");
+  assert.equal(linkedSubagent.toolCall.status, "completed");
+  assert.match(linkedSubagent.toolCall.output ?? "", /DELAYED_RESULT/);
 });
 
 test("OpenCode background session and task ids remain aliases of one subagent", () => {
