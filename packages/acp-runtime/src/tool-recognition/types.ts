@@ -30,6 +30,11 @@ export type ToolEvidence = {
     entityIds: string[];
     background: boolean;
     terminal: boolean;
+    /** Keep the provider notification visible as its own tool while also
+     * applying this evidence to an already tracked subagent entity. */
+    lifecycleOnly?: boolean;
+    /** Do not create an orphan subagent when the launch was not observed. */
+    existingOnly?: boolean;
   };
 };
 

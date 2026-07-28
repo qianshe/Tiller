@@ -950,6 +950,114 @@ test("mapSessionUpdateNotification classifies all wrapped Codex multi-agent acti
   }
 });
 
+test("mapSessionUpdateNotification classifies Codex subAgentActivity updates without reviving completed interactions", () => {
+  const provider = {
+    id: "codex",
+    name: "Codex",
+    command: "codex-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const sessionId = "session-codex-subagent-activity";
+  const mapActivity = (
+    id: string,
+    activityKind: "started" | "interacted" | "interrupted",
+    status: "in_progress" | "completed",
+  ) => mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: activityKind === "started" ? "tool_call" : "tool_call_update",
+          toolCallId: id,
+          title: `${activityKind} subagent weather_research`,
+          status,
+          rawInput: {
+            agentThreadId: "thread-weather",
+            agentPath: "/root/weather_research",
+            activityKind,
+          },
+        },
+      },
+    },
+    { provider, providerId: provider.id },
+  );
+
+  const started = mapActivity("activity-start", "started", "in_progress");
+  assert.equal(started?.event.type, "tool-call");
+  if (started?.event.type !== "tool-call") {
+    throw new Error("Expected subAgentActivity start tool-call event");
+  }
+  assert.equal(started.event.toolCall.kind, "subagent");
+  assert.equal(started.event.toolCall.status, "running");
+  assert.equal(started.event.toolCall.commandId, "subagent:thread-weather");
+  assert.equal(started.event.toolCall.subagentOperation?.action, "spawn");
+
+  const interacted = mapActivity("activity-interacted", "interacted", "completed");
+  assert.equal(interacted?.event.type, "tool-call");
+  if (interacted?.event.type !== "tool-call") {
+    throw new Error("Expected subAgentActivity interaction tool-call event");
+  }
+  assert.equal(interacted.event.toolCall.kind, "subagent");
+  assert.equal(interacted.event.toolCall.status, "completed");
+  assert.equal(interacted.event.toolCall.commandId, "subagent:thread-weather");
+
+  const interrupted = mapActivity("activity-interrupted", "interrupted", "completed");
+  assert.equal(interrupted?.event.type, "tool-call");
+  if (interrupted?.event.type !== "tool-call") {
+    throw new Error("Expected subAgentActivity interruption tool-call event");
+  }
+  assert.equal(interrupted.event.toolCall.kind, "subagent");
+  assert.equal(interrupted.event.toolCall.status, "completed");
+  assert.equal(interrupted.event.toolCall.subagentOperation?.action, "close");
+});
+
+test("mapSessionUpdateNotification restores Codex subAgentActivity from metadata-only replay", () => {
+  const provider = {
+    id: "codex",
+    name: "Codex",
+    command: "codex-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-subagent-metadata",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "activity-interacted",
+          title: "Interact with subagent weather_research",
+          status: "completed",
+          _meta: {
+            codex: {
+              subagent: {
+                threadId: "thread-weather",
+                path: "/root/weather_research",
+                activity: "interacted",
+              },
+            },
+          },
+        },
+      },
+    },
+    { provider, providerId: provider.id },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected metadata-only subAgentActivity tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.status, "completed");
+  assert.equal(mapped.event.toolCall.commandId, "subagent:thread-weather");
+  assert.equal(mapped.event.toolCall.title, "Subagent: weather_research");
+});
+
 test("mapSessionUpdateNotification classifies wrapped Codex MCP calls from namespace and name", () => {
   const mapped = mapSessionUpdateNotification(
     {

@@ -7,13 +7,23 @@ import { extractCodexSkillNameFromText, formatCodexSkillTitle } from "./skill-to
 
 const CODEX_SUBAGENT_TOOL_TITLE = /^spawn_agents_/u;
 const CODEX_MULTI_AGENT_TOOL_TITLE = /^(?:spawn_agent|send_message|send_input|followup_task|wait_agent|interrupt_agent|list_agents|close_agent|resume_agent)$/u;
+const CODEX_SPARSE_LIFECYCLE_TOOL_TITLE = /^(?:spawn_agent|wait_agent|close_agent)$/u;
 const CODEX_MULTI_AGENT_NAMESPACE = "multi_agent_v1";
 const CODEX_WEB_NAMESPACE = "web";
+
+export type CodexSubagentActivityKind = "started" | "interacted" | "interrupted";
+
+export type CodexSubagentActivity = {
+  kind: CodexSubagentActivityKind;
+  threadId?: string;
+  path?: string;
+};
 
 type CodexToolCallNormalizationContext = {
   toolCall: AgentToolCall;
   input: Record<string, unknown> | null;
   descriptor: CodexToolDescriptor | null;
+  activity: CodexSubagentActivity | null;
   update: any;
 };
 
@@ -24,24 +34,36 @@ type CodexToolCallRule = {
 
 const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
   {
-    match: ({ toolCall, input, descriptor }) =>
-      looksLikeCodexSubagentToolCall(toolCall, input, descriptor),
-    normalize: ({ toolCall, input, descriptor }) => {
-      const toolName = descriptor?.name ?? extractCodexMultiAgentToolName(input);
-      const identity = resolveCodexSubagentIdentity(input);
-      const operation = resolveCodexSubagentOperation(toolName, input, toolCall.id);
+    match: ({ toolCall, input, descriptor, activity }) =>
+      looksLikeCodexSubagentToolCall(toolCall, input, descriptor, activity),
+    normalize: ({ toolCall, input, descriptor, activity }) => {
+      const toolName = descriptor?.name ??
+        extractCodexMultiAgentToolName(input) ??
+        resolveSparseCodexLifecycleToolName(toolCall.title);
+      const identity = resolveCodexSubagentIdentity(input, activity);
+      const operation = activity
+        ? resolveCodexSubagentActivityOperation(activity, toolCall.id)
+        : resolveCodexSubagentOperation(toolName, input, toolCall.id);
+      const commandId = activity
+        ? resolveCodexSubagentActivityCommandId(activity, toolCall.id)
+        : toolCall.id;
       return {
         ...toolCall,
         kind: "subagent" as const,
         ...(operation
           ? {
-              commandId: toolCall.id,
+              commandId,
               subagentOperation: operation,
               ...(identity
                 ? { title: `Subagent: ${identity}` }
                 : isOpaqueCodexToolTitle(toolCall.title) && toolName
                   ? { title: toolName }
                   : {}),
+            }
+          : activity && commandId
+          ? {
+              commandId,
+              ...(identity ? { title: `Subagent: ${identity}` } : {}),
             }
           : identity && isCodexSubagentLifecycleTool(toolName)
           ? {
@@ -122,10 +144,12 @@ export function normalizeCodexToolCall(
 ): AgentToolCall {
   const input = resolveNormalizedCodexToolInput(toolCall, update);
   const descriptor = resolveCodexToolDescriptor(input);
+  const activity = resolveCodexSubagentActivity(input, update);
   const context: CodexToolCallNormalizationContext = {
     toolCall,
     input,
     descriptor,
+    activity,
     update,
   };
   for (const rule of CODEX_TOOL_CALL_RULES) {
@@ -263,7 +287,11 @@ function looksLikeCodexSubagentToolCall(
   toolCall: AgentToolCall,
   input: Record<string, unknown> | null,
   descriptor: CodexToolDescriptor | null,
+  activity: CodexSubagentActivity | null = null,
 ) {
+  if (activity) {
+    return true;
+  }
   const toolName = descriptor?.name ?? extractCodexMultiAgentToolName(input);
   if (toolName && (isCodexMultiAgentToolName(toolName) || isCodexMultiAgentNamespace(input))) {
     return true;
@@ -279,7 +307,7 @@ export function looksLikeCodexSubagentPayload(
   const normalizedTitle = title.trim();
   const normalizedInput = mergeCodexToolArguments(input);
   if (!normalizedInput) {
-    return false;
+    return Boolean(resolveSparseCodexLifecycleToolName(normalizedTitle));
   }
   const toolName = extractCodexMultiAgentToolName(normalizedInput);
   if (toolName && (isCodexMultiAgentToolName(toolName) || isCodexMultiAgentNamespace(normalizedInput))) {
@@ -428,6 +456,11 @@ function isCodexMultiAgentToolName(value: string) {
   return CODEX_MULTI_AGENT_TOOL_TITLE.test(value) || CODEX_SUBAGENT_TOOL_TITLE.test(value);
 }
 
+function resolveSparseCodexLifecycleToolName(title: string) {
+  const normalized = title.trim().replace(/^tool:\s*/iu, "");
+  return CODEX_SPARSE_LIFECYCLE_TOOL_TITLE.test(normalized) ? normalized : undefined;
+}
+
 function isCodexSubagentLifecycleTool(toolName: string | undefined) {
   return toolName === "spawn_agent" ||
     toolName === "wait_agent" ||
@@ -435,8 +468,16 @@ function isCodexSubagentLifecycleTool(toolName: string | undefined) {
     toolName === "interrupt_agent";
 }
 
-function resolveCodexSubagentIdentity(input: Record<string, unknown> | null) {
+function resolveCodexSubagentIdentity(
+  input: Record<string, unknown> | null,
+  activity?: CodexSubagentActivity | null,
+) {
   const normalized = mergeCodexToolArguments(input);
+  const activityPath = activity?.path ?? stringValue(normalized?.agentPath);
+  const activityLabel = lastCodexSubagentPathSegment(activityPath);
+  if (activityLabel) {
+    return activityLabel;
+  }
   if (!normalized) {
     return undefined;
   }
@@ -452,6 +493,93 @@ function resolveCodexSubagentIdentity(input: Record<string, unknown> | null) {
   }
   return Array.isArray(normalized.targets)
     ? firstString(...normalized.targets)
+    : firstString(normalized.agentThreadId, normalized.threadId);
+}
+
+function resolveCodexSubagentActivityOperation(
+  activity: CodexSubagentActivity,
+  toolCallId: string,
+): AgentToolCall["subagentOperation"] | undefined {
+  if (activity.kind === "interacted") {
+    return undefined;
+  }
+  const id = activity.threadId ?? activity.path ?? toolCallId;
+  const label = lastCodexSubagentPathSegment(activity.path);
+  return {
+    action: activity.kind === "started" ? "spawn" : "close",
+    targets: [{ id, ...(label ? { label } : {}) }],
+  };
+}
+
+function resolveCodexSubagentActivityCommandId(
+  activity: CodexSubagentActivity,
+  toolCallId: string,
+) {
+  return activity.threadId
+    ? `subagent:${activity.threadId}`
+    : activity.path
+      ? `subagent:${activity.path}`
+      : toolCallId;
+}
+
+function lastCodexSubagentPathSegment(path: string | undefined) {
+  const segments = path?.split(/[\\/]/u).filter(Boolean);
+  return segments?.at(-1);
+}
+
+export function resolveCodexSubagentActivity(
+  input: unknown,
+  update: unknown,
+): CodexSubagentActivity | null {
+  const updateRecord = recordValue(update);
+  const toolCallRecord = recordValue(updateRecord?.toolCall);
+  const snakeToolCallRecord = recordValue(updateRecord?.tool_call);
+  // Live and replayed ACP updates can retain different halves of this metadata.
+  const candidates = [
+    parseJsonRecordValue(input),
+    parseJsonRecordValue(updateRecord?.rawInput ?? updateRecord?.raw_input),
+    parseJsonRecordValue(toolCallRecord?.rawInput ?? toolCallRecord?.raw_input),
+    parseJsonRecordValue(snakeToolCallRecord?.rawInput ?? snakeToolCallRecord?.raw_input),
+    resolveCodexSubagentMeta(updateRecord),
+    resolveCodexSubagentMeta(toolCallRecord),
+    resolveCodexSubagentMeta(snakeToolCallRecord),
+  ];
+  for (const candidate of candidates) {
+    const activityKind = resolveCodexSubagentActivityKind(candidate);
+    if (!activityKind) {
+      continue;
+    }
+    const threadId = firstString(
+      candidate?.agentThreadId,
+      candidate?.agent_thread_id,
+      candidate?.threadId,
+    );
+    const path = firstString(candidate?.agentPath, candidate?.agent_path, candidate?.path);
+    if (threadId || path) {
+      return {
+        kind: activityKind,
+        ...(threadId ? { threadId } : {}),
+        ...(path ? { path } : {}),
+      };
+    }
+  }
+  return null;
+}
+
+function resolveCodexSubagentMeta(source: unknown): Record<string, unknown> | null {
+  const record = recordValue(source);
+  const meta = recordValue(record?._meta ?? record?.meta);
+  const codex = recordValue(meta?.codex);
+  return recordValue(codex?.subagent);
+}
+
+function resolveCodexSubagentActivityKind(input: unknown): CodexSubagentActivityKind | undefined {
+  const record = recordValue(input);
+  const value = stringValue(
+    record?.activityKind ?? record?.activity_kind ?? record?.activity ?? record?.kind,
+  );
+  return value === "started" || value === "interacted" || value === "interrupted"
+    ? value
     : undefined;
 }
 

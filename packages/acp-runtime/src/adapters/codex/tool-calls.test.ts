@@ -339,3 +339,145 @@ test("normalizeCodexToolCall keeps close_agent completion distinct from cancella
     targets: [{ id: "Cicero", label: "Cicero" }],
   });
 });
+
+test("normalizeCodexToolCall uses sparse lifecycle titles to preserve completed operations", () => {
+  for (const [title, action] of [
+    ["spawn_agent", "spawn"],
+    ["wait_agent", "wait"],
+    ["close_agent", "close"],
+  ] as const) {
+    const normalized = normalizeCodexToolCall(
+      baseToolCall({
+        id: `call_sparse_${title}`,
+        title,
+        status: "completed",
+      }),
+      {},
+    );
+
+    assert.equal(normalized.kind, "subagent");
+    assert.equal(normalized.status, "completed");
+    assert.deepEqual(normalized.subagentOperation?.action, action);
+  }
+});
+
+test("normalizeCodexToolCall recognizes ACP subAgentActivity lifecycle updates", () => {
+  const rawInput = {
+    agentThreadId: "thread-weather",
+    agentPath: "/root/weather_research",
+    activityKind: "started",
+  };
+  const running = normalizeCodexToolCall(
+    baseToolCall({
+      id: "activity-start",
+      title: "Start subagent weather_research",
+      status: "running",
+    }),
+    {
+      sessionUpdate: "tool_call",
+      toolCallId: "activity-start",
+      rawInput,
+      _meta: {
+        codex: {
+          subagent: {
+            threadId: "thread-weather",
+            path: "/root/weather_research",
+            activity: "started",
+          },
+        },
+      },
+    },
+  );
+  const completed = normalizeCodexToolCall(
+    baseToolCall({
+      id: "activity-start",
+      title: "Start subagent weather_research",
+      status: "completed",
+    }),
+    {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "activity-start",
+      rawInput,
+    },
+  );
+
+  for (const normalized of [running, completed]) {
+    assert.equal(normalized.kind, "subagent");
+    assert.equal(normalized.title, "Subagent: weather_research");
+    assert.equal(normalized.commandId, "subagent:thread-weather");
+    assert.deepEqual(normalized.subagentOperation, {
+      action: "spawn",
+      targets: [{ id: "thread-weather", label: "weather_research" }],
+    });
+  }
+  assert.equal(running.status, "running");
+  assert.equal(completed.status, "completed");
+});
+
+test("normalizeCodexToolCall keeps ACP subAgentActivity interactions terminal", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      id: "activity-interacted",
+      title: "Interact with subagent weather_research",
+      status: "completed",
+    }),
+    {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "activity-interacted",
+      rawInput: {
+        agentThreadId: "thread-weather",
+        agentPath: "/root/weather_research",
+        activityKind: "interacted",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Subagent: weather_research");
+  assert.equal(normalized.commandId, "subagent:thread-weather");
+  assert.equal(normalized.status, "completed");
+  assert.equal(normalized.subagentOperation, undefined);
+});
+
+test("normalizeCodexToolCall maps ACP subAgentActivity interruptions to close", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      id: "activity-interrupted",
+      title: "Interrupt subagent weather_research",
+      status: "completed",
+    }),
+    {
+      sessionUpdate: "tool_call",
+      toolCallId: "activity-interrupted",
+      rawInput: {
+        agentThreadId: "thread-weather",
+        agentPath: "/root/weather_research",
+        activityKind: "interrupted",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.status, "completed");
+  assert.deepEqual(normalized.subagentOperation, {
+    action: "close",
+    targets: [{ id: "thread-weather", label: "weather_research" }],
+  });
+});
+
+test("normalizeCodexToolCall does not infer subagents from activity words in ordinary input", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      title: "Run report",
+      status: "completed",
+    }),
+    {
+      rawInput: {
+        message: "The activityKind interacted with the report generator.",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "tool");
+  assert.equal(normalized.title, "Run report");
+});

@@ -293,6 +293,42 @@ test("mapSessionUpdateNotification maps Codex context compacted chunks into comp
   assert.equal(mapped.event.messageId, "msg_codex_compaction_chunk");
 });
 
+test("mapSessionUpdateNotification maps Codex context compacting chunks into started compaction events", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_compaction_start",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "msg_codex_compaction_start",
+          timestamp: "2026-07-27T09:00:00.000Z",
+          content: { type: "text", text: "Context compacting" },
+        },
+      },
+    },
+    {
+      provider: {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      providerId: "codex",
+    },
+  );
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "compaction");
+  if (mapped?.event.type !== "compaction") {
+    throw new Error("Expected compaction event");
+  }
+  assert.equal(mapped.event.phase, "started");
+  assert.equal(mapped.event.messageId, "msg_codex_compaction_start");
+});
+
 test("mapSessionUpdateNotification maps Codex context compacted tool markers into compaction events", () => {
   const mapped = mapSessionUpdateNotification(
     {
@@ -370,6 +406,98 @@ test("mapSessionUpdateNotification keeps a real Codex tool named Context compact
     mapped?.event.type === "tool-call" ? mapped.event.toolCall.kind : undefined,
     "mcp",
   );
+});
+
+test("mapSessionUpdateNotification keeps an MCP tool named Context compacted as a tool from raw input", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_context_compacted_raw_mcp",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_context_compacted_raw_mcp",
+          kind: "tool",
+          title: "Context compacted",
+          status: "completed",
+          rawInput: {
+            server: "example",
+            tool: "context_compacted",
+            arguments: {},
+          },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  assert.equal(
+    mapped?.event.type === "tool-call" ? mapped.event.toolCall.kind : undefined,
+    "mcp",
+  );
+});
+
+test("mapSessionUpdateNotification keeps an MCP tool named Context compacted from regular input", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_context_compacted_input_mcp",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_context_compacted_input_mcp",
+          kind: "tool",
+          title: "Context compacted",
+          status: "completed",
+          input: {
+            server: "example",
+            name: "context_compacted",
+            arguments: {},
+          },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  assert.equal(
+    mapped?.event.type === "tool-call" ? mapped.event.toolCall.kind : undefined,
+    "mcp",
+  );
+});
+
+test("mapSessionUpdateNotification keeps sparse Codex spawn completion completed", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_sparse_spawn",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "call_codex_sparse_spawn",
+          title: "spawn_agent",
+          status: "completed",
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.status, "completed");
+  assert.deepEqual(mapped.event.toolCall.subagentOperation, {
+    action: "spawn",
+    targets: [{ id: "call_codex_sparse_spawn" }],
+  });
 });
 
 for (const provider of [
@@ -1228,6 +1356,51 @@ test("mapSessionUpdateNotification keeps top-level rawInput when nested toolCall
     tool: "find_referencing_symbols",
     arguments: { relative_path: "packages/shared/src/session-timeline.ts" },
   }));
+});
+
+test("mapSessionUpdateNotification correlates nested Codex completions by the outer toolCallId", () => {
+  const sessionId = "sess_nested_codex_completion";
+  const createPayload = (update: Record<string, unknown>) => ({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId, update },
+  });
+  const started = mapSessionUpdateNotification(
+    createPayload({
+      sessionUpdate: "tool_call",
+      toolCallId: "call_codex_codebase_search",
+      title: "Tool: mcp_router/codebase_search",
+      status: "in_progress",
+      rawInput: {
+        server: "mcp_router",
+        tool: "codebase_search",
+        arguments: { repo_path: "D:\\repo", search_string: "tool lifecycle" },
+      },
+    }),
+    { providerId: "codex" },
+  );
+  const completed = mapSessionUpdateNotification(
+    createPayload({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call_codex_codebase_search",
+      status: "completed",
+      toolCall: {
+        status: "in_progress",
+        output: "result\n".repeat(2_048),
+      },
+    }),
+    { providerId: "codex" },
+  );
+
+  assert.equal(started?.event.type, "tool-call");
+  assert.equal(completed?.event.type, "tool-call");
+  if (started?.event.type !== "tool-call" || completed?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call events");
+  }
+  assert.equal(started.event.toolCall.id, "call_codex_codebase_search");
+  assert.equal(completed.event.toolCall.id, started.event.toolCall.id);
+  assert.equal(completed.event.toolCall.status, "completed");
+  assert.equal(completed.event.toolCall.output?.length, 7 * 2_048);
 });
 
 test("mapSessionUpdateNotification classifies MCP tools from rawInput server and tool", () => {

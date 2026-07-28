@@ -466,17 +466,27 @@ export class AcpConnection {
     }
     const modelAppliedAsConfig = directConfigApplied ? false : await applyOption("model", nextConfig.model);
     if (!modelAppliedAsConfig && nextConfig.model && session.modelState?.options.some((model) => model.id === nextConfig.model)) {
-      await withConnectionRequest(
-        "session/set_model",
-        this.state.agent.unstable_setSessionModel({ sessionId: session.runtimeSessionId, modelId: nextConfig.model }),
-        this.state.child,
-        this.state.getStderrBuffer,
-        this.state.logFile,
-        this.state.provider,
-      );
-      session.modelState = { ...session.modelState, currentModelId: nextConfig.model };
-      session.onEvent({ type: "model-options", state: session.modelState });
-      runtimeApplied = true;
+      const legacyModelSetter = (
+        this.state.agent as unknown as {
+          unstable_setSessionModel?: (params: { sessionId: string; modelId: string }) => Promise<unknown>;
+        }
+      ).unstable_setSessionModel;
+      if (legacyModelSetter) {
+        await withConnectionRequest(
+          "session/set_model",
+          legacyModelSetter.call(this.state.agent, {
+            sessionId: session.runtimeSessionId,
+            modelId: nextConfig.model,
+          }),
+          this.state.child,
+          this.state.getStderrBuffer,
+          this.state.logFile,
+          this.state.provider,
+        );
+        session.modelState = { ...session.modelState, currentModelId: nextConfig.model };
+        session.onEvent({ type: "model-options", state: session.modelState });
+        runtimeApplied = true;
+      }
     }
     await applyOption("thought_level", directConfigApplied ? undefined : nextConfig.reasoningEffort);
 

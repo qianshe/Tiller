@@ -21,7 +21,16 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
   const rawToolInput = resolveRawToolInput(source, update);
   const rawToolOutput = resolveRawToolOutput(source, update);
   const parsedToolInput = parseToolInput(rawToolInput);
-  const id = stringFrom(source.id ?? source.toolCallId ?? source.tool_call_id ?? source.callId ?? update.id) ?? `${sessionId}-tool-${Date.now()}`;
+  const id = stringFrom(
+    update.toolCallId ??
+      update.tool_call_id ??
+      update.callId ??
+      source.id ??
+      source.toolCallId ??
+      source.tool_call_id ??
+      source.callId ??
+      update.id,
+  ) ?? `${sessionId}-tool-${Date.now()}`;
   const commandId = stringFrom(source.commandId ?? source.command_id ?? source.terminalId ?? update.commandId);
   const toolName = extractToolName(source, update, parsedToolInput);
   const rawTitle = stringFrom(source.title ?? source.label ?? source.displayName ?? source.display_name ?? source.name ?? source.toolName ?? source.tool_name ?? source.tool ?? source.command ?? update.title ?? update.name);
@@ -36,7 +45,7 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
     id,
     kind,
     title,
-    status: inferToolCallStatus(type, source.status ?? source.state ?? update.status ?? update.state),
+    status: inferToolCallStatus(type, update.status ?? source.status ?? update.state ?? source.state),
     ...(mcp ? { mcp } : {}),
     ...(commandId ? { commandId } : {}),
     ...(input ? { input } : {}),

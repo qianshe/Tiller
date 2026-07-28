@@ -23,58 +23,63 @@ export function createToolLifecycleCorrelator() {
       evidence: ToolEvidence[],
     ): AgentToolCall[] {
       const semantic = strongestSubagentEvidence(evidence);
+      const lifecycleOnly = semantic?.subagent?.lifecycleOnly === true;
+      const lifecycleToolCall = lifecycleOnly && toolCall.kind !== "subagent"
+        ? { ...toolCall, kind: "subagent" as const }
+        : toolCall;
       if (toolCall.subagentOperation) {
         return [toolCall];
       }
-      if (toolCall.kind !== "subagent" || !semantic?.subagent || !observation.sessionId) {
+      if (lifecycleToolCall.kind !== "subagent" || !semantic?.subagent || !observation.sessionId) {
         return [toolCall];
       }
       const sessionKey = `${observation.providerId ?? "generic"}\u001f${observation.sessionId}`;
       const session = sessions.get(sessionKey) ?? { byAlias: new Map(), running: new Set() };
       sessions.set(sessionKey, session);
-      const { action, batch, entityIds, background, terminal } = semantic.subagent;
+      const { action, batch, entityIds, background, terminal, existingOnly } = semantic.subagent;
+      const finish = (calls: AgentToolCall[]) => lifecycleOnly ? [toolCall, ...calls] : calls;
       if (action === "spawn") {
-        const ids = entityIds.length ? entityIds : [toolCall.id];
+        const ids = entityIds.length ? entityIds : [lifecycleToolCall.id];
         if (!batch || ids.length === 1) {
-          const entityId = ids[0] ?? toolCall.id;
-          const commandId = toolCall.commandId ??
+          const entityId = ids[0] ?? lifecycleToolCall.id;
+          const commandId = lifecycleToolCall.commandId ??
             (entityIds.length ? `subagent:${entityId}` : undefined);
-          const existing = resolveByAliases(session, [toolCall.commandId, ...entityIds])
-            ?? resolveCompatibleSpawnAlias(session, toolCall, commandId)
-            ?? resolveOnlyUnidentifiedSpawn(session, entityIds, toolCall);
-          if (!existing && hasAmbiguousUnidentifiedSpawns(session, entityIds, toolCall)) {
-            return [];
+          const existing = resolveByAliases(session, [lifecycleToolCall.commandId, ...entityIds])
+            ?? resolveCompatibleSpawnAlias(session, lifecycleToolCall, commandId)
+            ?? resolveOnlyUnidentifiedSpawn(session, entityIds, lifecycleToolCall);
+          if (!existing && hasAmbiguousUnidentifiedSpawns(session, entityIds, lifecycleToolCall)) {
+            return lifecycleOnly ? [toolCall] : [];
           }
           const entity = existing ?? {
-            id: resolveNewEntityId(session, toolCall, entityId),
-            title: toolCall.title,
-            input: toolCall.input,
+            id: resolveNewEntityId(session, lifecycleToolCall, entityId),
+            title: lifecycleToolCall.title,
+            input: lifecycleToolCall.input,
             aliases: new Set<string>(),
           };
           entity.commandId = entity.commandId ?? commandId;
-          addAliases(session, entity, [entity.id, toolCall.id, ...ids, entity.commandId]);
+          addAliases(session, entity, [entity.id, lifecycleToolCall.id, ...ids, entity.commandId]);
           session.running.add(entity);
-          return [{
-            ...toolCall,
+          return finish([{
+            ...lifecycleToolCall,
             id: entity.id,
             title: entity.title,
             ...(entity.commandId ? { commandId: entity.commandId } : {}),
-            status: background || entityIds.length || toolCall.status === "completed" ? "running" : toolCall.status,
-          }];
+            status: background || entityIds.length || lifecycleToolCall.status === "completed" ? "running" : lifecycleToolCall.status,
+          }]);
         }
-        return ids.map((entityId, index) => {
+        return finish(ids.map((entityId, index) => {
           const existing = session.byAlias.get(entityId);
-          const id = existing?.id ?? `${toolCall.id}::${entityId}`;
-          const commandId = entityId === toolCall.id && !toolCall.commandId
+          const id = existing?.id ?? `${lifecycleToolCall.id}::${entityId}`;
+          const commandId = entityId === lifecycleToolCall.id && !lifecycleToolCall.commandId
             ? undefined
             : `subagent:${entityId}`;
           const entity = existing ?? {
             id,
-            title: toolCall.title,
-            input: toolCall.input,
+            title: lifecycleToolCall.title,
+            input: lifecycleToolCall.input,
             aliases: new Set<string>(),
           };
-          entity.commandId = entity.commandId ?? commandId ?? toolCall.commandId;
+          entity.commandId = entity.commandId ?? commandId ?? lifecycleToolCall.commandId;
           addAliases(
             session,
             entity,
@@ -82,47 +87,50 @@ export function createToolLifecycleCorrelator() {
           );
           session.running.add(entity);
           return {
-            ...toolCall,
+            ...lifecycleToolCall,
             id: entity.id,
             title: entity.title,
             ...(entity.commandId ? { commandId: entity.commandId } : {}),
-            status: background || entityIds.length || toolCall.status === "completed" ? "running" : toolCall.status,
-            ...(index > 0 ? { timestamp: toolCall.timestamp } : {}),
+            status: background || entityIds.length || lifecycleToolCall.status === "completed" ? "running" : lifecycleToolCall.status,
+            ...(index > 0 ? { timestamp: lifecycleToolCall.timestamp } : {}),
           };
-        });
+        }));
       }
 
-      const entity = resolveEntity(session, entityIds, toolCall);
+      const entity = resolveEntity(session, entityIds, lifecycleToolCall);
       if (!entity) {
-        const resolvedCommandId = toolCall.commandId ??
+        if (existingOnly) {
+          return [toolCall];
+        }
+        const resolvedCommandId = lifecycleToolCall.commandId ??
           (entityIds[0] ? `subagent:${entityIds[0]}` : undefined);
-        return [{
-          ...toolCall,
-          id: session.byAlias.has(toolCall.id)
-            ? resolveNewEntityId(session, toolCall, resolvedCommandId ?? toolCall.id)
-            : toolCall.id,
+        return finish([{
+          ...lifecycleToolCall,
+          id: session.byAlias.has(lifecycleToolCall.id)
+            ? resolveNewEntityId(session, lifecycleToolCall, resolvedCommandId ?? lifecycleToolCall.id)
+            : lifecycleToolCall.id,
           ...(resolvedCommandId ? { commandId: resolvedCommandId } : {}),
-          status: terminalStatus(action, terminal, toolCall.status),
-        }];
+          status: terminalStatus(action, terminal, lifecycleToolCall.status),
+        }]);
       }
-      const resolvedCommandId = entity.commandId ?? toolCall.commandId ??
+      const resolvedCommandId = entity.commandId ?? lifecycleToolCall.commandId ??
         (entityIds[0] ? `subagent:${entityIds[0]}` : undefined);
       entity.commandId = resolvedCommandId;
-      addAliases(session, entity, [...entityIds, toolCall.id, resolvedCommandId]);
-      const status = terminalStatus(action, terminal, toolCall.status);
+      addAliases(session, entity, [...entityIds, lifecycleToolCall.id, resolvedCommandId]);
+      const status = terminalStatus(action, terminal, lifecycleToolCall.status);
       if (["completed", "failed", "cancelled"].includes(status)) {
         session.running.delete(entity);
       } else {
         session.running.add(entity);
       }
-      return [{
-        ...toolCall,
+      return finish([{
+        ...lifecycleToolCall,
         id: entity.id,
         title: entity.title,
-        ...(entity.input && !toolCall.input ? { input: entity.input } : {}),
+        ...(entity.input && !lifecycleToolCall.input ? { input: entity.input } : {}),
         ...(resolvedCommandId ? { commandId: resolvedCommandId } : {}),
         status,
-      }];
+      }]);
     },
     dispose(providerId: string | undefined, sessionId: string): void {
       sessions.delete(`${providerId ?? "generic"}\u001f${sessionId}`);

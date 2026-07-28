@@ -8,6 +8,7 @@ export function evidenceFromProjectedToolCall(args: {
   source?: ToolEvidence["source"];
   strength?: ToolEvidence["strength"];
   subagentAction?: SubagentAction;
+  subagentTerminal?: boolean;
 }): ToolEvidence[] {
   if (!args.projected) {
     return [{ source: args.source ?? "provider-structured", strength: args.strength ?? 400, suppress: true }];
@@ -34,7 +35,8 @@ export function evidenceFromProjectedToolCall(args: {
       batch: identity.batch,
       entityIds: identity.entityIds,
       background: isBackgroundObservation(args.observation),
-      terminal: isTerminalObservation(args.subagentAction, args.observation, projected),
+      terminal: args.subagentTerminal ??
+        isTerminalObservation(args.subagentAction, args.observation, projected),
     };
   }
   return [evidence];
