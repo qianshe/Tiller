@@ -4,8 +4,6 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
   Icon,
 } from "../../../shared/ui";
@@ -58,23 +56,17 @@ export function PromptContextMenu({
         side="top"
         align={align}
         sideOffset={6}
+        avoidCollisions={false}
         collisionBoundary={collisionBoundary ?? undefined}
         collisionPadding={8}
         className="max-h-[min(22rem,55vh)] w-[min(22rem,calc(100vw-2rem))] max-w-[var(--radix-dropdown-menu-content-available-width)] overflow-y-auto"
       >
-        <DropdownMenuLabel className="flex items-center justify-between px-2 py-1 text-xs">
-          <span>评论</span>
-          <span className="font-mono text-2xs font-normal text-muted-foreground">
-            {contexts.length}
-          </span>
-        </DropdownMenuLabel>
-        <DropdownMenuSeparator />
         {contexts.map((item) => {
           const title = resolveTitle(item);
           return (
             <DropdownMenuItem
               key={item.id}
-              className="group flex-col items-start gap-0.5 py-1.5 text-xs"
+              className="group flex-col items-start gap-0 py-1 text-xs"
               onSelect={(event) => event.preventDefault()}
               aria-label={`评论 ${item.label}`}
             >
@@ -103,7 +95,7 @@ export function PromptContextMenu({
                 ) : null}
               </div>
               {item.comment ? (
-                <span className="ml-[18px] min-w-0 break-words text-2xs leading-4 text-muted-foreground">
+                <span className="ml-[18px] min-w-0 break-words text-2xs leading-3 text-muted-foreground">
                   {item.comment}
                 </span>
               ) : null}

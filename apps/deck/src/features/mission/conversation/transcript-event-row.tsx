@@ -9,7 +9,7 @@ import { cn } from "../../../shared/utils/cn";
 import { writeClipboardText } from "./plain-message-items";
 
 const TRANSCRIPT_ROW_CLASS =
-  "plain-transcript-row mr-auto grid w-full max-w-full grid-cols-[0.375rem_minmax(0,1fr)] items-start gap-x-1 text-muted-foreground";
+  "plain-transcript-row mr-auto grid w-[calc(100%-0.625rem)] max-w-[calc(100%-0.625rem)] grid-cols-[0.375rem_minmax(0,1fr)] items-start gap-x-1 text-muted-foreground";
 const TRANSCRIPT_SURFACE_CLASS =
   "min-w-0 w-full rounded-[8px] border border-border-ghost bg-surface-sunken/55 px-2 py-1 shadow-[inset_0_1px_0_rgb(255_255_255/0.04)]";
 

@@ -20,11 +20,33 @@ export function ComposerAttachments({
   reviewContext,
 }: ComposerAttachmentsProps) {
   const draftContexts = reviewContext?.draftContexts ?? [];
+  if (!promptImages.length && !draftContexts.length) {
+    return null;
+  }
+
   return (
-    <>
+    <div
+      className="mission-composer-attachments mission-attachment-strip flex min-w-0 max-w-full items-center gap-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none]"
+      data-prompt-context-boundary="composer"
+      aria-label="待发送附件"
+    >
+      {draftContexts.length ? (
+        <span
+          className="inline-flex shrink-0"
+          role="group"
+          aria-label="待发送评论上下文"
+        >
+          <PromptContextMenu
+            contexts={draftContexts}
+            onRemoveContext={reviewContext?.removeDraftContext}
+            resolveTitle={resolveReviewContextTitle}
+          />
+        </span>
+      ) : null}
       {promptImages.length ? (
-        <div
-          className="mission-composer-attachments mission-attachment-strip"
+        <span
+          className="inline-flex shrink-0 items-center gap-1"
+          role="group"
           aria-label="待发送图片"
         >
           {promptImages.map((image, index) => (
@@ -45,21 +67,8 @@ export function ComposerAttachments({
               </button>
             </span>
           ))}
-        </div>
+        </span>
       ) : null}
-      {draftContexts.length ? (
-        <div
-          className="mission-composer-attachments mission-attachment-strip"
-          data-prompt-context-boundary="composer"
-          aria-label="待发送评论上下文"
-        >
-          <PromptContextMenu
-            contexts={draftContexts}
-            onRemoveContext={reviewContext?.removeDraftContext}
-            resolveTitle={resolveReviewContextTitle}
-          />
-        </div>
-      ) : null}
-    </>
+    </div>
   );
 }

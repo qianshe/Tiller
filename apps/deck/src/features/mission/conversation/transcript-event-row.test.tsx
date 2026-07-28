@@ -32,6 +32,7 @@ test("transcript compaction rows render as collapsed muted system summaries", ()
   assert.match(html, /bg-surface-sunken\/55/);
   assert.match(html, /border-border-ghost/);
   assert.match(html, /min-w-0 w-full rounded-\[8px\]/);
+  assert.match(html, /w-\[calc\(100%-0\.625rem\)\] max-w-\[calc\(100%-0\.625rem\)\]/);
   assert.match(html, /grid-cols-\[0\.375rem_minmax\(0,1fr\)\]/);
   assert.doesNotMatch(html, /grid-cols-\[0\.375rem_minmax\(0,1fr\)_0\.375rem\]/);
   assert.match(html, /justify-center/);
