@@ -359,6 +359,10 @@ test("production ACP runtime uses the SDK connection path with fake SDK agents",
     const promptPromise = runtime.prompt("hello");
     const permissionEvent = await waitFor(() => events.find((event) => event.type === "permission-request"));
     assert.equal(permissionEvent.request.command, "Run echo :: echo sdk");
+    assert.equal(
+      events.some((event) => event.type === "status" && event.status === "waiting_for_permission"),
+      false,
+    );
     runtime.respondPermission(permissionEvent.request.id, "allow");
     await promptPromise;
 

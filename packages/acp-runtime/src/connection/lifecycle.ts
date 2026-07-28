@@ -772,7 +772,9 @@ export class AcpConnection {
   private async handleRequestPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
     const session = this.findSessionByRuntimeId(params.sessionId);
     const mapped = mapSdkPermissionRequest(params, this.nextPermissionRequestId("sdk-permission"), session?.worktree.path ?? this.state.launchCwd);
-    session?.onEvent({ type: "status", status: "waiting_for_permission", message: "ACP agent requested permission" });
+    // ACP permission is an agent->client request. The Helm approval boundary
+    // decides whether it is manual or automatic, so publishing a waiting
+    // status here would leave auto-approved requests stuck in that status.
     session?.onEvent({ type: "permission-request", request: mapped.request });
     return await new Promise<acp.RequestPermissionResponse>((resolve) => {
       this.pendingPermissionReplies.set(mapped.id, {
@@ -827,7 +829,6 @@ export class AcpConnection {
   private async requestClientPermission(sessionId: string, command: string, reason: string): Promise<boolean> {
     const session = this.findSessionByRuntimeId(sessionId);
     const id = this.nextPermissionRequestId("sdk-client-permission");
-    session?.onEvent({ type: "status", status: "waiting_for_permission", message: reason });
     session?.onEvent({
       type: "permission-request",
       request: { id, command, reason, cwd: session?.worktree.path ?? this.state.launchCwd },
