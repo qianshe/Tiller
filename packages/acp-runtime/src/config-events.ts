@@ -1,25 +1,6 @@
 import type { AcpModelOption, AcpModelState, SessionReasoningEffort } from "@tiller/shared";
 import type { AcpSessionConfigOption, AcpSessionConfigState } from "./runtime-types";
 
-type AcpProtocolModelInfo = {
-  modelId?: string;
-  model_id?: string;
-  id?: string;
-  name?: string;
-  description?: string | null;
-};
-
-type AcpProtocolSessionModelState = {
-  currentModelId?: string;
-  current_model_id?: string;
-  availableModels?: AcpProtocolModelInfo[];
-  available_models?: AcpProtocolModelInfo[];
-};
-
-type AcpSessionResponseWithModels = {
-  models?: AcpProtocolSessionModelState | null;
-};
-
 export function extractSessionConfigOptions(payload: any): AcpSessionConfigOption[] {
   const rawOptions = Array.isArray(payload?.configOptions)
     ? payload.configOptions
@@ -59,36 +40,37 @@ function flattenSessionConfigOptions(
   });
 }
 
-export function extractAcpModelState(payload: AcpSessionResponseWithModels | any): AcpModelState | undefined {
-  const rawModels = payload?.models as AcpProtocolSessionModelState | undefined | null;
-  const rawAvailableModels = rawModels?.availableModels ?? rawModels?.available_models;
-  if (!rawModels || !Array.isArray(rawAvailableModels)) {
+export function extractAcpModelState(configOptions: AcpSessionConfigOption[]): AcpModelState | undefined {
+  const modelOption = configOptions.find((option) => option.category?.toLowerCase() === "model");
+  if (!modelOption) {
     return undefined;
   }
 
-  const options = rawAvailableModels
-    .map(normalizeAcpModelInfo)
+  const options = (modelOption.options ?? [])
+    .map((option) => normalizeAcpModelOption(option))
     .filter((model): model is AcpModelOption => Boolean(model));
   if (!options.length) {
     return undefined;
   }
 
+  const currentModelId = modelOption.currentValue ?? modelOption.selectedValue ?? modelOption.value;
+
   return {
-    currentModelId: typeof rawModels.currentModelId === "string" ? rawModels.currentModelId : typeof rawModels.current_model_id === "string" ? rawModels.current_model_id : undefined,
+    currentModelId: typeof currentModelId === "string" ? currentModelId : undefined,
     options,
   };
 }
 
-function normalizeAcpModelInfo(model: AcpProtocolModelInfo): AcpModelOption | null {
-  const modelId = model?.modelId ?? model?.model_id ?? model?.id;
+function normalizeAcpModelOption(option: NonNullable<AcpSessionConfigOption["options"]>[number]): AcpModelOption | null {
+  const modelId = option?.value;
   if (typeof modelId !== "string" || !modelId.trim()) {
     return null;
   }
 
+  const label = option.label ?? option.name;
   return {
     id: modelId,
-    name: typeof model.name === "string" && model.name.trim() ? model.name : modelId,
-    description: typeof model.description === "string" && model.description.trim() ? model.description : undefined,
+    name: typeof label === "string" && label.trim() ? label : modelId,
   };
 }
 

@@ -464,30 +464,7 @@ export class AcpConnection {
     if (!modeAppliedAsSdk) {
       await applyOption("mode", directConfigApplied ? undefined : nextConfig.agentMode);
     }
-    const modelAppliedAsConfig = directConfigApplied ? false : await applyOption("model", nextConfig.model);
-    if (!modelAppliedAsConfig && nextConfig.model && session.modelState?.options.some((model) => model.id === nextConfig.model)) {
-      const legacyModelSetter = (
-        this.state.agent as unknown as {
-          unstable_setSessionModel?: (params: { sessionId: string; modelId: string }) => Promise<unknown>;
-        }
-      ).unstable_setSessionModel;
-      if (legacyModelSetter) {
-        await withConnectionRequest(
-          "session/set_model",
-          legacyModelSetter.call(this.state.agent, {
-            sessionId: session.runtimeSessionId,
-            modelId: nextConfig.model,
-          }),
-          this.state.child,
-          this.state.getStderrBuffer,
-          this.state.logFile,
-          this.state.provider,
-        );
-        session.modelState = { ...session.modelState, currentModelId: nextConfig.model };
-        session.onEvent({ type: "model-options", state: session.modelState });
-        runtimeApplied = true;
-      }
-    }
+    await applyOption("model", directConfigApplied ? undefined : nextConfig.model);
     await applyOption("thought_level", directConfigApplied ? undefined : nextConfig.reasoningEffort);
 
     return {
@@ -703,10 +680,11 @@ export class AcpConnection {
           void this.dispose().catch(() => undefined);
         },
       );
+      const loadConfigOptions = extractSessionConfigOptions(result);
       return {
         runtimeSessionId: resolveRuntimeSessionId(result, request.runtimeSessionId),
-        configOptions: extractSessionConfigOptions(result),
-        modelState: extractAcpModelState(result),
+        configOptions: loadConfigOptions,
+        modelState: extractAcpModelState(loadConfigOptions),
       };
     }
 
@@ -726,10 +704,11 @@ export class AcpConnection {
           void this.dispose().catch(() => undefined);
         },
       );
+      const resumeConfigOptions = extractSessionConfigOptions(result);
       return {
         runtimeSessionId: resolveRuntimeSessionId(result, request.runtimeSessionId),
-        configOptions: extractSessionConfigOptions(result),
-        modelState: extractAcpModelState(result),
+        configOptions: resumeConfigOptions,
+        modelState: extractAcpModelState(resumeConfigOptions),
       };
     }
 
@@ -744,10 +723,11 @@ export class AcpConnection {
       this.state.logFile,
       this.state.provider,
     );
+    const newSessionConfigOptions = extractSessionConfigOptions(result);
     return {
       runtimeSessionId: resolveRuntimeSessionId(result, request.tillerSessionId),
-      configOptions: extractSessionConfigOptions(result),
-      modelState: extractAcpModelState(result),
+      configOptions: newSessionConfigOptions,
+      modelState: extractAcpModelState(newSessionConfigOptions),
     };
   }
 
