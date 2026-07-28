@@ -16,6 +16,7 @@ import type {
 import type { HelmHandlerContext } from "../handlers/context";
 import {
   cleanupRuntimeEventState,
+  flushRuntimeSessionState,
   handleRuntimeEvent,
   flushRuntimeUserEchoLogSummaryForTest,
   nextLiveEventSequenceForTest,
@@ -180,15 +181,22 @@ test("runtime accepts late tool-call events when the session is errored but stil
     context,
   );
 
-  const liveToolCallUpdate = capture.detailBroadcasts.find(
-    (item: any) => item.method === "session/update" && item.params?.update?.kind === "tool_call",
-  ) as { params?: { update?: { toolCall?: { status?: string } } } } | undefined;
+  const timelineBatchUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.method === "session/update" && item.params?.update?.kind === "timeline_batch",
+  ) as { params?: { update?: { batch?: { entries?: SessionTimelineEntry[] } } } } | undefined;
+  const timelineToolCall = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
+    (entry) => entry.kind === "tool_call" && entry.toolCall.id === "late-tool-1",
+  );
 
   assert.equal(findStructuredLog(capture, "runtime.event.ignored_late"), undefined);
-  assert.ok(liveToolCallUpdate);
-  assert.equal(liveToolCallUpdate?.params?.update?.toolCall?.status, "running");
+  assert.ok(timelineToolCall);
+  assert.equal(
+    timelineToolCall?.kind === "tool_call" ? timelineToolCall.toolCall.status : undefined,
+    "running",
+  );
   assert.equal(capture.sessionUpdates?.length ?? 0, 0);
-  assert.equal(capture.timelineEntries?.length ?? 0, 0);
+  assert.equal(capture.timelineEntries?.length ?? 0, 1);
 });
 
 test("runtime keeps ignoring late tool-call events after cancellation", () => {
@@ -375,7 +383,7 @@ test("runtime finalized assistant messages publish canonical timeline batches wh
   );
 
   assert.ok(timelineBatchUpdate?.params?.update?.batch);
-  assert.equal(agentMessageUpdate, undefined);
+  assert.ok(agentMessageUpdate);
   assert.equal(timelineBatchUpdate?.params?.update?.batch?.entries[0]?.kind, "assistant_message");
   assert.equal(capture.persisted.length, 0);
   assert.deepEqual(
@@ -402,7 +410,55 @@ test("runtime event cleanup releases per-session sequence state", () => {
   assert.equal(nextLiveEventSequenceForTest("session-cleanup-state", context), 1);
 });
 
-test("runtime assistant streaming deltas stay in live updates and do not append canonical history", () => {
+test("runtime cleanup flushes the final assistant reply into canonical history", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext(
+    [],
+    capture,
+    "session-cleanup-assistant",
+    {},
+    {
+      useCanonicalPipeline: true,
+      runtimeEventThrottleConfig: { assistantWindowMs: 64 },
+    },
+  );
+
+  handleRuntimeEvent(
+    "session-cleanup-assistant",
+    {
+      type: "message",
+      message: {
+        id: "assistant-cleanup-1",
+        role: "assistant",
+        text: "final answer before cleanup",
+        timestamp: "2026-07-26T00:00:00.000Z",
+        streaming: true,
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  flushRuntimeSessionState("session-cleanup-assistant", context);
+
+  const message = capture.timelineEntries?.find((entry) => entry.kind === "assistant_message");
+  assert.equal(message?.kind, "assistant_message");
+  assert.equal(
+    message?.kind === "assistant_message" ? message.chunks[0]?.text : undefined,
+    "final answer before cleanup",
+  );
+  assert.deepEqual(
+    capture.sessionUpdates?.map((update) => update.updateType),
+    ["message"],
+  );
+});
+
+test("runtime assistant streaming deltas enter canonical history without a duplicate journal row", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -445,9 +501,13 @@ test("runtime assistant streaming deltas stay in live updates and do not append 
       item.method === "session/update" && item.params?.update?.kind === "agent_message",
   ) as { params?: { update?: { streaming?: boolean } } } | undefined;
 
-  assert.equal(timelineBatchUpdate, undefined);
+  assert.ok(timelineBatchUpdate);
   assert.ok(agentMessageUpdate);
   assert.equal(agentMessageUpdate?.params?.update?.streaming, true);
+  assert.equal(
+    capture.timelineEntries?.find((entry) => entry.kind === "assistant_message")?.kind,
+    "assistant_message",
+  );
   assert.equal(capture.sessionUpdates?.length ?? 0, 0);
 });
 
@@ -1159,8 +1219,75 @@ test("runtime compaction summary enrichment updates the existing compaction row 
   );
 });
 
+test("runtime merges a Claude completion marker with its later transcript summary", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const sessionId = "session-claude-auto-compaction";
+  const context = createTestContext(
+    logs,
+    capture,
+    sessionId,
+    {
+      agentId: "claudecode",
+      agentName: "Claude Code",
+    },
+    {
+      useCanonicalPipeline: true,
+    },
+  );
+
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      timestamp: "2026-07-19T15:24:06.137Z",
+      messageId: "completion-marker",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      timestamp: "2026-07-19T15:23:58.000Z",
+      messageId: "summary-auto",
+      summaryText: "Automatically compacted context.",
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const compactionEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "context_compaction") ?? [];
+  assert.equal(compactionEntries.length, 1);
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction"
+      ? compactionEntries[0].summaryText
+      : undefined,
+    "Automatically compacted context.",
+  );
+  assert.equal(
+    compactionEntries[0]?.kind === "context_compaction"
+      ? compactionEntries[0].detailsVisibility
+      : undefined,
+    "expandable",
+  );
+});
+
 test("subagent events bypass all canonical timeline preprocessing", () => {
-  const context = createTestContext([], { broadcasts: [], detailBroadcasts: [], persisted: [] }, "session-subagent-bypass");
+  const context = createTestContext(
+    [],
+    { broadcasts: [], detailBroadcasts: [], persisted: [] },
+    "session-subagent-bypass",
+  );
   const captured: unknown[] = [];
   delete (context as any).sessionTimelineWorkers;
   delete (context as any).sessionTimelineDispatcher;
@@ -1170,25 +1297,33 @@ test("subagent events bypass all canonical timeline preprocessing", () => {
     handleEvent: (...args: unknown[]) => captured.push(args),
   };
 
-  handleRuntimeEvent("session-subagent-bypass", {
-    type: "tool-call",
-    origin: { scope: "subagent", parentToolCallId: "root-subagent" },
-    toolCall: {
-      id: "child-read",
-      kind: "read",
-      title: "Read",
-      status: "running",
-      timestamp: "2026-07-22T00:00:00.000Z",
-      updatedAt: "2026-07-22T00:00:00.000Z",
+  handleRuntimeEvent(
+    "session-subagent-bypass",
+    {
+      type: "tool-call",
+      origin: { scope: "subagent", parentToolCallId: "root-subagent" },
+      toolCall: {
+        id: "child-read",
+        kind: "read",
+        title: "Read",
+        status: "running",
+        timestamp: "2026-07-22T00:00:00.000Z",
+        updatedAt: "2026-07-22T00:00:00.000Z",
+      },
     },
-  }, context);
+    context,
+  );
 
   assert.equal(captured.length, 1);
   assert.equal((captured[0] as unknown[])[1], "root-subagent");
 });
 
 test("terminal runtime status flushes pending subagent detail before session completion", () => {
-  const context = createTestContext([], { broadcasts: [], detailBroadcasts: [], persisted: [] }, "session-subagent-flush");
+  const context = createTestContext(
+    [],
+    { broadcasts: [], detailBroadcasts: [], persisted: [] },
+    "session-subagent-flush",
+  );
   const flushed: string[] = [];
   (context as any).sessionSubagentDetailService = {
     handleEvent: () => undefined,

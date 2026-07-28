@@ -35,6 +35,12 @@ import {
 
 const TOOL_CALL_PLACEHOLDER_GRACE_MS = 750;
 
+type RuntimeToolCallSnapshotOptions = {
+  persistHistorical?: boolean;
+  persistCanonicalOnly?: boolean;
+  persistedToolCallIds?: Set<string>;
+};
+
 function estimateToolCallGrowth(
   previous: AgentToolCall | undefined,
   next: AgentToolCall,
@@ -66,6 +72,7 @@ function emitRuntimeToolCallSnapshot(
   toolCall: AgentToolCall,
   context: HelmHandlerContext,
   updateSequence?: number,
+  options: RuntimeToolCallSnapshotOptions = {},
 ) {
   assertCanonicalTimelinePipeline(context);
   const stableToolCall = stabilizeRuntimeToolCallClassification(sessionId, toolCall, context);
@@ -74,32 +81,41 @@ function emitRuntimeToolCallSnapshot(
     sequence: stableToolCall.sequence ?? nextLiveEventSequence(sessionId, context),
   }, context);
   trackActiveRuntimeToolCall(sessionId, orderedToolCall, context);
-  if (!shouldPersistHistoricalToolCall(orderedToolCall)) {
+  const persistHistorical = options.persistHistorical || shouldPersistHistoricalToolCall(orderedToolCall);
+  const persistCanonicalOnly = options.persistCanonicalOnly ||
+    (isActiveToolCallStatus(orderedToolCall.status) && orderedToolCall.kind !== "subagent");
+  if (!persistHistorical && !persistCanonicalOnly) {
     createSessionEventPublisher(context).sessionUpdate(sessionId, {
       kind: "tool_call",
       toolCall: orderedToolCall,
     });
     return orderedToolCall;
   }
-  const prepared = prepareRuntimeSessionUpdate(
-    sessionId,
-    { type: "tool-call", toolCall: orderedToolCall },
-    context,
-    updateSequence ?? orderedToolCall.sequence,
-  );
+  const prepared = persistHistorical
+    ? prepareRuntimeSessionUpdate(
+      sessionId,
+      { type: "tool-call", toolCall: orderedToolCall },
+      context,
+      updateSequence ?? orderedToolCall.sequence,
+    )
+    : undefined;
   routeCanonicalTimelineEvent(
     sessionId,
     { type: "tool-call", toolCall: orderedToolCall },
     context,
-    prepared.resolvedSequence,
-    prepared.update,
+    prepared?.resolvedSequence ?? orderedToolCall.sequence,
+    prepared?.update,
   );
+  if (persistHistorical) {
+    markHistoricalRuntimeToolCall(sessionId, orderedToolCall.id, context);
+  }
   return orderedToolCall;
 }
 
 export function flushPendingRunningToolCall(
   sessionId: string,
   context: HelmHandlerContext,
+  options: RuntimeToolCallSnapshotOptions = {},
 ) {
   const pending = runtimeEventState(context).get<PendingRunningToolCall>(
     sessionId,
@@ -113,7 +129,10 @@ export function flushPendingRunningToolCall(
   if (!pending.hasUnflushedChanges) {
     return false;
   }
-  emitRuntimeToolCallSnapshot(sessionId, pending.toolCall, context);
+  emitRuntimeToolCallSnapshot(sessionId, pending.toolCall, context, undefined, options);
+  if (options.persistHistorical) {
+    options.persistedToolCallIds?.add(pending.toolCall.id);
+  }
   pending.bufferedChars = 0;
   pending.hasUnflushedChanges = false;
   return true;
@@ -458,6 +477,174 @@ function mergeActiveRuntimeToolCallSnapshot(
   return current ? mergeBufferedToolCallSnapshot(current, toolCall) : toolCall;
 }
 
+function isOpenCodeSession(sessionId: string, context: HelmHandlerContext) {
+  const record = context.sessions.get(sessionId);
+  const providerId = record?.agent?.id ??
+    record?.summary?.agentId ??
+    context.sessionStore.get(sessionId)?.agentId;
+  return providerId?.trim().toLowerCase() === "opencode";
+}
+
+function isOpenCodeBackgroundOutputToolCall(toolCall: AgentToolCall) {
+  return /^(?:tool:\s*)?background[_ -]?output$/iu.test(toolCall.title.trim());
+}
+
+function collectRuntimeToolCallRecords(value: unknown, depth = 0): Array<Record<string, unknown>> {
+  if (depth > 6 || value === undefined || value === null) {
+    return [];
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
+      return [];
+    }
+    try {
+      return collectRuntimeToolCallRecords(JSON.parse(trimmed) as unknown, depth + 1);
+    } catch {
+      return [];
+    }
+  }
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => collectRuntimeToolCallRecords(item, depth + 1));
+  }
+  if (typeof value !== "object") {
+    return [];
+  }
+  const record = value as Record<string, unknown>;
+  const records = [record];
+  for (const key of ["metadata", "output", "result", "content", "data", "value", "text"]) {
+    if (record[key] !== undefined) {
+      records.push(...collectRuntimeToolCallRecords(record[key], depth + 1));
+    }
+  }
+  return records;
+}
+
+function resolveOpenCodeBackgroundTaskId(
+  toolCall: AgentToolCall,
+  kind: "background-output" | "subagent",
+) {
+  const records = [
+    ...collectRuntimeToolCallRecords(toolCall.input),
+    ...collectRuntimeToolCallRecords(toolCall.output),
+  ];
+  const keys = kind === "background-output"
+    ? ["task_id", "taskId"]
+    : ["backgroundTaskId", "background_task_id"];
+  for (const record of records) {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim()) {
+        return value.trim();
+      }
+    }
+  }
+  return undefined;
+}
+
+function rememberOpenCodeSubagentCompletion(
+  sessionId: string,
+  toolCall: AgentToolCall,
+  context: HelmHandlerContext,
+) {
+  if (
+    !isOpenCodeSession(sessionId, context) ||
+    toolCall.kind !== "subagent" ||
+    !isTerminalToolCallStatus(toolCall.status)
+  ) {
+    return undefined;
+  }
+  const taskId = resolveOpenCodeBackgroundTaskId(toolCall, "subagent");
+  if (!taskId) {
+    return undefined;
+  }
+  const state = runtimeEventState(context);
+  const completed = state.get<Map<string, AgentToolCall["status"]>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.completedBackgroundTasks,
+  ) ?? new Map<string, AgentToolCall["status"]>();
+  completed.set(taskId, toolCall.status);
+  while (completed.size > MAX_TRACKED_TOOL_CALL_CLASSIFICATIONS) {
+    const oldest = completed.keys().next().value;
+    if (typeof oldest !== "string") {
+      break;
+    }
+    completed.delete(oldest);
+  }
+  state.set(sessionId, RUNTIME_EVENT_STATE_KEY.completedBackgroundTasks, completed);
+  return { taskId, status: toolCall.status };
+}
+
+function clearPendingRunningToolCallForId(
+  sessionId: string,
+  toolCallId: string,
+  context: HelmHandlerContext,
+) {
+  const state = runtimeEventState(context);
+  const pending = state.get<PendingRunningToolCall>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall,
+  );
+  if (pending?.toolCall.id !== toolCallId) {
+    return;
+  }
+  clearRuntimeEventTimer(context, pending.timer);
+  state.delete(sessionId, RUNTIME_EVENT_STATE_KEY.pendingRunningToolCall);
+}
+
+function completeOpenCodeBackgroundOutputForTask(
+  sessionId: string,
+  taskId: string,
+  status: Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled">,
+  context: HelmHandlerContext,
+) {
+  const state = runtimeEventState(context);
+  const active = state.get<Map<string, AgentToolCall>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.activeToolCalls,
+  );
+  const backgroundOutput = [...(active?.values() ?? [])].find((toolCall) =>
+    isOpenCodeBackgroundOutputToolCall(toolCall) &&
+    resolveOpenCodeBackgroundTaskId(toolCall, "background-output") === taskId &&
+    isActiveToolCallStatus(toolCall.status),
+  );
+  if (!backgroundOutput) {
+    return false;
+  }
+  clearPendingRunningToolCallForId(sessionId, backgroundOutput.id, context);
+  emitRuntimeToolCallSnapshot(sessionId, {
+    ...backgroundOutput,
+    status,
+    updatedAt: new Date().toISOString(),
+  }, context, nextLiveEventSequence(sessionId, context));
+  return true;
+}
+
+function completeKnownOpenCodeBackgroundOutput(
+  sessionId: string,
+  toolCall: AgentToolCall,
+  context: HelmHandlerContext,
+) {
+  if (
+    !isOpenCodeSession(sessionId, context) ||
+    !isOpenCodeBackgroundOutputToolCall(toolCall) ||
+    !isActiveToolCallStatus(toolCall.status)
+  ) {
+    return false;
+  }
+  const taskId = resolveOpenCodeBackgroundTaskId(toolCall, "background-output");
+  if (!taskId) {
+    return false;
+  }
+  const status = runtimeEventState(context).get<Map<string, AgentToolCall["status"]>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.completedBackgroundTasks,
+  )?.get(taskId);
+  return status && isTerminalToolCallStatus(status)
+    ? completeOpenCodeBackgroundOutputForTask(sessionId, taskId, status, context)
+    : false;
+}
+
 export function finalizeActiveRuntimeToolCalls(
   sessionId: string,
   status: Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled">,
@@ -487,6 +674,44 @@ export function finalizeActiveRuntimeToolCalls(
   if (active.size === 0) {
     state.delete(sessionId, RUNTIME_EVENT_STATE_KEY.activeToolCalls);
   }
+}
+
+export function persistActiveRuntimeToolCalls(
+  sessionId: string,
+  context: HelmHandlerContext,
+  options: { skipToolCallIds?: ReadonlySet<string> } = {},
+) {
+  const state = runtimeEventState(context);
+  const active = state.get<Map<string, AgentToolCall>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.activeToolCalls,
+  );
+  if (!active?.size) {
+    return false;
+  }
+
+  let persisted = false;
+  const historical = state.get<Set<string>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.historicalToolCalls,
+  );
+  for (const toolCall of active.values()) {
+    if (
+      historical?.has(toolCall.id) ||
+      options.skipToolCallIds?.has(toolCall.id)
+    ) {
+      continue;
+    }
+    emitRuntimeToolCallSnapshot(
+      sessionId,
+      toolCall,
+      context,
+      toolCall.sequence,
+      { persistHistorical: true },
+    );
+    persisted = true;
+  }
+  return persisted;
 }
 
 export function finalizeRuntimeThinking(
@@ -542,6 +767,31 @@ function shouldPersistHistoricalToolCall(toolCall: AgentToolCall) {
     toolCall.status === "completed" ||
     toolCall.status === "failed" ||
     toolCall.status === "cancelled";
+}
+
+function isActiveToolCallStatus(status: AgentToolCall["status"]) {
+  return status === "pending" || status === "running";
+}
+
+function markHistoricalRuntimeToolCall(
+  sessionId: string,
+  toolCallId: string,
+  context: HelmHandlerContext,
+) {
+  const state = runtimeEventState(context);
+  const historical = state.get<Set<string>>(
+    sessionId,
+    RUNTIME_EVENT_STATE_KEY.historicalToolCalls,
+  ) ?? new Set<string>();
+  historical.add(toolCallId);
+  while (historical.size > MAX_TRACKED_TOOL_CALL_CLASSIFICATIONS) {
+    const oldest = historical.values().next().value;
+    if (typeof oldest !== "string") {
+      break;
+    }
+    historical.delete(oldest);
+  }
+  state.set(sessionId, RUNTIME_EVENT_STATE_KEY.historicalToolCalls, historical);
 }
 
 export function handleRuntimeToolCallEvent(
@@ -633,6 +883,7 @@ export function handleRuntimeToolCallEvent(
     resolvedPlaceholder.status === "running"
   ) {
     bufferRunningToolCall(sessionId, resolvedPlaceholder, context);
+    completeKnownOpenCodeBackgroundOutput(sessionId, resolvedPlaceholder, context);
     return;
   }
   const pendingRunningToolCall = consumePendingRunningToolCall(sessionId, context);
@@ -651,4 +902,18 @@ export function handleRuntimeToolCallEvent(
     context,
     notificationSequence,
   );
+  completeKnownOpenCodeBackgroundOutput(sessionId, resolvedToolCall, context);
+  const completedBackgroundTask = rememberOpenCodeSubagentCompletion(
+    sessionId,
+    resolvedToolCall,
+    context,
+  );
+  if (completedBackgroundTask) {
+    completeOpenCodeBackgroundOutputForTask(
+      sessionId,
+      completedBackgroundTask.taskId,
+      completedBackgroundTask.status,
+      context,
+    );
+  }
 }

@@ -28,6 +28,7 @@ import { createProviderLifecycle, type HelmRuntimeHandle } from "../provider-lif
 import {
   cleanupRuntimeEventState,
   ensureLiveEventSequenceForSession,
+  flushRuntimeSessionState,
   handleRuntimeEvent as dispatchRuntimeEvent,
 } from "../events";
 import { markSessionResumeUnavailable, } from "../resume-info";
@@ -203,11 +204,17 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     dispatcher: sessionTimelineDispatcher,
   });
   const sessionTimelineIdleEvictionTimer = setInterval(() => {
-    sessionTimelineWorkers.evictIdle();
+    const context = options.createHandlerContext();
+    sessionTimelineWorkers.evictIdle({
+      beforeRemove: (sessionId) => {
+        flushRuntimeSessionState(sessionId, context);
+      },
+    });
   }, 60_000);
   sessionTimelineIdleEvictionTimer.unref?.();
   function resetSessionTimelineRuntimeState(sessionId: string) {
     const context = options.createHandlerContext();
+    flushRuntimeSessionState(sessionId, context);
     context.promptQueue.remove(sessionId);
     context.liveMessageBuffer.remove(sessionId);
     context.runtimeMetrics?.removeSession(sessionId);
@@ -375,6 +382,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         ...context.liveMessageBuffer.sessionIds(),
       ]);
       for (const sessionId of transientSessionIds) {
+        flushRuntimeSessionState(sessionId, context);
         options.sessionUpdateStore.compactTail(sessionId);
         context.promptQueue.remove(sessionId);
         context.liveMessageBuffer.remove(sessionId);

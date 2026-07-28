@@ -21,6 +21,8 @@ type TimedClaudeCompactionSummary = AcpCompactionSummary & {
   timestamp?: number;
 };
 
+const MAX_COMPACTION_SUMMARY_MATCH_GAP_MS = 5 * 60 * 1000;
+
 const readCachedClaudeTranscriptCompactions = createCachedTranscriptParser<
   ClaudeTranscriptCompactionSummaryOptions,
   TimedClaudeCompactionSummary[]
@@ -54,6 +56,7 @@ export function readClaudeTranscriptCompactionFromDisk(
   return selectClaudeCompaction(
     readCachedClaudeTranscriptCompactions(options) ?? [],
     options.completedAt,
+    MAX_COMPACTION_SUMMARY_MATCH_GAP_MS,
   );
 }
 
@@ -116,6 +119,7 @@ function extractClaudeCompactionsFromTranscriptText(
 function selectClaudeCompaction(
   summaries: TimedClaudeCompactionSummary[],
   completedAt: string | undefined,
+  maxGapMs?: number,
 ): AcpCompactionSummary | undefined {
   const parsedCompletedAt = completedAt
     ? Date.parse(completedAt)
@@ -126,6 +130,14 @@ function selectClaudeCompaction(
   let latestSummary: AcpCompactionSummary | undefined;
   for (const { timestamp, ...summary } of summaries) {
     if (timestamp !== undefined && timestamp > boundedCompletedAt) {
+      continue;
+    }
+    if (
+      maxGapMs !== undefined &&
+      (!Number.isFinite(parsedCompletedAt) ||
+        timestamp === undefined ||
+        boundedCompletedAt - timestamp > maxGapMs)
+    ) {
       continue;
     }
     latestSummary = summary;

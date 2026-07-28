@@ -63,6 +63,16 @@ function flushPendingAssistantDelta(
     message: orderedDelta,
     streaming: true,
   });
+  const bufferedMessage = context.liveMessageBuffer.peek(sessionId);
+  if (bufferedMessage && !isPotentialCompactionSummary(sessionId, bufferedMessage, context)) {
+    assertCanonicalTimelinePipeline(context);
+    routeCanonicalTimelineEvent(
+      sessionId,
+      { type: "message", message: orderedDelta },
+      context,
+      orderedDelta.sequence,
+    );
+  }
   return true;
 }
 
@@ -211,6 +221,22 @@ function resolveFinalizedMessageProviderId(
   );
 }
 
+function isPotentialCompactionSummary(
+  sessionId: string,
+  message: Extract<SessionRuntimeEvent, { type: "message" }>["message"],
+  context: Pick<HelmHandlerContext, "sessions" | "sessionStore">,
+) {
+  const providerId = resolveFinalizedMessageProviderId(sessionId, context)?.toLowerCase();
+  if (providerId === "opencode" && /^\s*##\s+(?:objective|goal)\b/iu.test(message.text)) {
+    return true;
+  }
+  const expandedEvents = expandAdapterRuntimeEvent(providerId, {
+    type: "message",
+    message: { ...message, streaming: false },
+  });
+  return expandedEvents?.some((event) => event.type === "compaction") ?? false;
+}
+
 function isFinalizedAssistantMessageOrCompaction(
   event: SessionRuntimeEvent,
 ): event is Extract<SessionRuntimeEvent, { type: "message" | "compaction" }> {
@@ -223,6 +249,15 @@ function routeFinalizedAssistantMessage(
   context: HelmHandlerContext,
 ) {
   assertCanonicalTimelinePipeline(context);
+  // The canonical timeline is authoritative, but the live activity store
+  // still contains the last streaming overlay until it receives an explicit
+  // terminal message update. Publish that transition at the same write seam
+  // so the assistant marker turns green without waiting for a timeline reload.
+  createSessionEventPublisher(context).sessionUpdate(sessionId, {
+    kind: "agent_message",
+    message: { ...message, streaming: false },
+    streaming: false,
+  });
   const prepared = prepareRuntimeSessionUpdate(
     sessionId,
     { type: "message", message },

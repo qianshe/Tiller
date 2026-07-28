@@ -178,7 +178,11 @@ function findDelayedSummaryMergeIndex(
   entries: SessionTimelineEntry[],
   incoming: SessionTimelineContextCompactionEntry,
 ) {
-  if (incoming.phase !== "completed" || !incoming.summaryMessageId?.trim()) {
+  if (incoming.phase !== "completed") {
+    return -1;
+  }
+  const incomingHasSummary = Boolean(incoming.summaryText?.trim());
+  if (!incomingHasSummary && !incoming.summaryMessageId?.trim()) {
     return -1;
   }
   for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -189,11 +193,12 @@ function findDelayedSummaryMergeIndex(
     if (current?.kind !== "context_compaction") {
       continue;
     }
+    const currentHasSummary = Boolean(current.summaryText?.trim());
     if (
       current.phase === "completed" &&
-      !current.summaryMessageId?.trim() &&
+      currentHasSummary !== incomingHasSummary &&
       current.source === incoming.source &&
-      isCompactionLifecycleMergeCandidate(current, incoming)
+      isCompactionLifecycleMergeCandidate(current, incoming, true)
     ) {
       return index;
     }
@@ -205,6 +210,7 @@ function findDelayedSummaryMergeIndex(
 function isCompactionLifecycleMergeCandidate(
   current: SessionTimelineContextCompactionEntry,
   incoming: SessionTimelineContextCompactionEntry,
+  allowReverseTime = false,
 ) {
   const currentTime = Date.parse(current.timestamp);
   const incomingTime = Date.parse(incoming.timestamp);
@@ -212,7 +218,8 @@ function isCompactionLifecycleMergeCandidate(
     return false;
   }
   const deltaMs = incomingTime - currentTime;
-  return deltaMs >= 0 && deltaMs <= MAX_COMPACTION_LIFECYCLE_GAP_MS;
+  const gapMs = allowReverseTime ? Math.abs(deltaMs) : deltaMs;
+  return gapMs >= 0 && gapMs <= MAX_COMPACTION_LIFECYCLE_GAP_MS;
 }
 
 function mergeCompactionEntry(
@@ -221,6 +228,9 @@ function mergeCompactionEntry(
 ): SessionTimelineContextCompactionEntry {
   const preserveCurrentProviderDetails =
     current.source === "provider" && incoming.source === "heuristic";
+  const currentHasSummary = Boolean(current.summaryText?.trim());
+  const incomingHasSummary = Boolean(incoming.summaryText?.trim());
+  const preserveCurrentSummaryIdentity = preserveCurrentProviderDetails && currentHasSummary;
   return {
     ...current,
     ...incoming,
@@ -232,14 +242,20 @@ function mergeCompactionEntry(
       current.source === "provider" || incoming.source === "provider"
         ? "provider"
         : (incoming.source ?? current.source),
-    summaryMessageId: preserveCurrentProviderDetails
+    summaryMessageId: preserveCurrentSummaryIdentity
       ? (current.summaryMessageId ?? incoming.summaryMessageId)
-      : (incoming.summaryMessageId ?? current.summaryMessageId),
+      : incomingHasSummary
+        ? (incoming.summaryMessageId ?? current.summaryMessageId)
+        : (current.summaryMessageId ?? incoming.summaryMessageId),
     summaryText: preserveCurrentProviderDetails
       ? (current.summaryText ?? incoming.summaryText)
-      : (incoming.summaryText ?? current.summaryText),
+      : incomingHasSummary
+        ? (incoming.summaryText ?? current.summaryText)
+        : (current.summaryText ?? incoming.summaryText),
     detailsVisibility: preserveCurrentProviderDetails
       ? (current.detailsVisibility ?? incoming.detailsVisibility)
-      : (incoming.detailsVisibility ?? current.detailsVisibility),
+      : incomingHasSummary
+        ? (incoming.detailsVisibility ?? current.detailsVisibility)
+        : (current.detailsVisibility ?? incoming.detailsVisibility),
   };
 }

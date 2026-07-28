@@ -22,6 +22,7 @@ import {
   finalizeRuntimeThinking,
   handleRuntimeToolCallEvent,
 } from "./tool-call";
+import { shouldFlushActiveAssistantSegment } from "../../segment-state";
 
 export function dispatchNormalizedRuntimeEvent(
   sessionId: string,
@@ -38,7 +39,19 @@ export function dispatchNormalizedRuntimeEvent(
         handleRuntimeUserMessage(sessionId, event, context);
         return;
       }
-      if (handleRuntimeAssistantMessage(sessionId, event, context)) {
+      // A provider-finalized assistant message can carry a different source
+      // id from the preceding assistant segment. Finalize Thinking before
+      // message handling can rotate that segment and clear its runtime state.
+      if (
+        event.message.streaming !== true &&
+        shouldFlushActiveAssistantSegment(sessionId, event.message.id)
+      ) {
+        finalizeRuntimeThinking(sessionId, "completed", context);
+      }
+      if (
+        handleRuntimeAssistantMessage(sessionId, event, context) ||
+        event.message.streaming !== true
+      ) {
         finalizeRuntimeThinking(sessionId, "completed", context);
       }
       return;

@@ -129,6 +129,14 @@ test("runtime session.message finalizes canonical content without stdout text", 
     capture.observedTimelineMessages?.map((message) => message.text),
     ["你好\n主人"],
   );
+  assert.equal(
+    capture.detailBroadcasts.some((item: any) =>
+      item.params?.update?.kind === "agent_message" &&
+      item.params?.update?.streaming === false &&
+      item.params?.update?.message?.text === "你好\n主人",
+    ),
+    true,
+  );
   assert.equal(capture.broadcasts.length, 0);
   assert.ok(capture.detailBroadcasts.some((item: any) =>
     item.params?.update?.kind === "timeline_batch"

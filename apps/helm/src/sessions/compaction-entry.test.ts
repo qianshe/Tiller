@@ -127,10 +127,7 @@ test("upsertSessionCompactionEntry keeps separate compaction starts", () => {
     }),
   ];
 
-  for (const timestamp of [
-    "2026-07-19T15:08:10.882Z",
-    "2026-07-19T15:15:19.539Z",
-  ]) {
+  for (const timestamp of ["2026-07-19T15:08:10.882Z", "2026-07-19T15:15:19.539Z"]) {
     upsertSessionCompactionEntry(
       entries,
       buildSessionCompactionEntryFromProvider({
@@ -145,11 +142,7 @@ test("upsertSessionCompactionEntry keeps separate compaction starts", () => {
   assert.equal(entries.length, 3);
   assert.deepEqual(
     entries.map((entry) => entry.timestamp),
-    [
-      "2026-07-19T14:54:42.656Z",
-      "2026-07-19T15:08:10.882Z",
-      "2026-07-19T15:15:19.539Z",
-    ],
+    ["2026-07-19T14:54:42.656Z", "2026-07-19T15:08:10.882Z", "2026-07-19T15:15:19.539Z"],
   );
 });
 
@@ -189,5 +182,73 @@ test("upsertSessionCompactionEntry keeps a later summary after a completed bound
       entry.kind === "context_compaction" ? entry.summaryMessageId : undefined,
     ),
     [undefined, "summary-auto", "summary-manual"],
+  );
+});
+
+test("upsertSessionCompactionEntry merges a transcript summary with a live completion marker", () => {
+  const entries = [
+    buildSessionCompactionEntryFromProvider({
+      sessionId: "session-claude-compaction",
+      timestamp: "2026-07-19T15:24:06.137Z",
+      providerId: "claudecode",
+      phase: "completed",
+      summaryMessageId: "completion-marker",
+    }),
+  ];
+
+  upsertSessionCompactionEntry(
+    entries,
+    buildSessionCompactionEntryFromProvider({
+      sessionId: "session-claude-compaction",
+      timestamp: "2026-07-19T15:23:58.000Z",
+      providerId: "claudecode",
+      phase: "completed",
+      summaryMessageId: "summary-auto",
+      summaryText: "Automatically compacted context",
+    }),
+  );
+
+  assert.equal(entries.length, 1);
+  assert.equal(
+    entries[0]?.kind === "context_compaction" ? entries[0].summaryMessageId : undefined,
+    "summary-auto",
+  );
+  assert.equal(
+    entries[0]?.kind === "context_compaction" ? entries[0].summaryText : undefined,
+    "Automatically compacted context",
+  );
+});
+
+test("upsertSessionCompactionEntry keeps the summary identity when the marker arrives second", () => {
+  const entries = [
+    buildSessionCompactionEntryFromProvider({
+      sessionId: "session-claude-compaction",
+      timestamp: "2026-07-19T15:23:58.000Z",
+      providerId: "claudecode",
+      phase: "completed",
+      summaryMessageId: "summary-auto",
+      summaryText: "Automatically compacted context",
+    }),
+  ];
+
+  upsertSessionCompactionEntry(
+    entries,
+    buildSessionCompactionEntryFromProvider({
+      sessionId: "session-claude-compaction",
+      timestamp: "2026-07-19T15:24:06.137Z",
+      providerId: "claudecode",
+      phase: "completed",
+      summaryMessageId: "completion-marker",
+    }),
+  );
+
+  assert.equal(entries.length, 1);
+  assert.equal(
+    entries[0]?.kind === "context_compaction" ? entries[0].summaryMessageId : undefined,
+    "summary-auto",
+  );
+  assert.equal(
+    entries[0]?.kind === "context_compaction" ? entries[0].summaryText : undefined,
+    "Automatically compacted context",
   );
 });

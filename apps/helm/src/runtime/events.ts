@@ -1,7 +1,4 @@
-import {
-  expandAdapterRuntimeEvent,
-  type SessionRuntimeEvent,
-} from "@tiller/acp-runtime";
+import { expandAdapterRuntimeEvent, type SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { HelmHandlerContext } from "../handlers/context";
 import {
   assertCanonicalTimelinePipeline,
@@ -18,18 +15,17 @@ import {
   inferPendingCompactionCompletion,
 } from "./session/event/compaction";
 import { dispatchNormalizedRuntimeEvent } from "./session/event/dispatch";
+import { flushLiveAssistantMessage } from "./session/event/message-stream";
 import {
   flushPendingRunningToolCall,
+  persistActiveRuntimeToolCalls,
 } from "./session/event/tool-call";
 import {
   flushIgnoredUserEchoSummary,
   isRuntimeUserMessageEvent,
   shouldIgnoreLateRuntimeEvent,
 } from "./session/event/user-echo";
-import {
-  logRuntimeDebug,
-  runtimeLogFields,
-} from "./session/event/support";
+import { logRuntimeDebug, runtimeLogFields } from "./session/event/support";
 
 export {
   allocateLiveEventSequence,
@@ -44,7 +40,27 @@ export {
   seedLiveEventSequenceForSession,
 } from "./session/event/canonical";
 export { flushLiveAssistantMessage } from "./session/event/message-stream";
+export { flushPendingCommandOutput } from "./session/event/command-output";
+export {
+  flushPendingRunningToolCall,
+  persistActiveRuntimeToolCalls,
+} from "./session/event/tool-call";
 export { flushRuntimeUserEchoLogSummaryForTest } from "./session/event/user-echo";
+
+export function flushRuntimeSessionState(sessionId: string, context: HelmHandlerContext) {
+  assertCanonicalTimelinePipeline(context);
+  flushLiveAssistantMessage(sessionId, context);
+  flushPendingCommandOutput(sessionId, context);
+  const persistedToolCallIds = new Set<string>();
+  flushPendingRunningToolCall(sessionId, context, {
+    persistHistorical: true,
+    persistedToolCallIds,
+  });
+  persistActiveRuntimeToolCalls(sessionId, context, {
+    skipToolCallIds: persistedToolCallIds,
+  });
+  context.sessionTimelineFlushScheduler.flushNow(sessionId);
+}
 
 function resolveRuntimeProviderId(
   sessionId: string,
@@ -113,8 +129,7 @@ export function handleRuntimeEvent(
     flushPendingRunningToolCall(sessionId, context);
   }
   const expandedEvents = expandProviderRuntimeEvents(sessionId, event, context);
-  const skipPendingCompactionInference =
-    expandedEvents.length !== 1 || expandedEvents[0] !== event;
+  const skipPendingCompactionInference = expandedEvents.length !== 1 || expandedEvents[0] !== event;
   if (hasPendingTimelineCompaction(sessionId, context) && !skipPendingCompactionInference) {
     inferPendingCompactionCompletion(sessionId, event, context);
   }
