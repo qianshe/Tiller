@@ -5,7 +5,54 @@ import {
   sanitizeProtocolLogPayload,
   summarizeSessionUpdateNotification,
 } from "./runtime";
-import { hasSessionConfigOptionIdValue, mapSessionUpdateNotification } from "./events";
+import {
+  attachTrackedRuntimeEventOrigin,
+  createRuntimeEventOriginTracker,
+  hasSessionConfigOptionIdValue,
+  mapSessionUpdateNotification,
+} from "./events";
+
+test("runtime origin tracking does not attach a subagent root to itself", () => {
+  const tracker = createRuntimeEventOriginTracker();
+  const root = attachTrackedRuntimeEventOrigin(
+    "session-origin-root",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "root-call",
+        commandId: "subagent:child-thread",
+        kind: "subagent",
+        title: "Subagent",
+        status: "running",
+        timestamp: "2026-07-29T00:00:00.000Z",
+        updatedAt: "2026-07-29T00:00:00.000Z",
+      },
+    },
+    tracker,
+  );
+  assert.equal(root.type === "tool-call" ? root.origin : undefined, undefined);
+
+  const child = attachTrackedRuntimeEventOrigin(
+    "session-origin-root",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "child-read",
+        commandId: "subagent:child-thread",
+        kind: "read",
+        title: "Read",
+        status: "completed",
+        timestamp: "2026-07-29T00:00:01.000Z",
+        updatedAt: "2026-07-29T00:00:01.000Z",
+      },
+    },
+    tracker,
+  );
+  assert.deepEqual(child.type === "tool-call" ? child.origin : undefined, {
+    scope: "subagent",
+    parentToolCallId: "root-call",
+  });
+});
 
 test("summarizeSessionUpdateNotification reports update shape without text content", () => {
   const summary = summarizeSessionUpdateNotification(
@@ -494,6 +541,7 @@ test("mapSessionUpdateNotification keeps sparse Codex spawn completion completed
   }
   assert.equal(mapped.event.toolCall.kind, "subagent");
   assert.equal(mapped.event.toolCall.status, "completed");
+  assert.equal(mapped.event.toolCall.title, "Subagent");
   assert.deepEqual(mapped.event.toolCall.subagentOperation, {
     action: "spawn",
     targets: [{ id: "call_codex_sparse_spawn" }],
@@ -681,7 +729,7 @@ test("mapSessionUpdateNotification generates stable ids for replayed chunks with
 });
 
 
-test("mapSessionUpdateNotification maps realtime thinking content to think tool calls", () => {
+test("mapSessionUpdateNotification maps realtime thinking content to assistant message", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
     method: "session/update",
@@ -695,18 +743,17 @@ test("mapSessionUpdateNotification maps realtime thinking content to think tool 
     },
   });
 
-  assert.equal(mapped?.event.type, "tool-call");
-  if (mapped?.event.type !== "tool-call") {
-    throw new Error("Expected tool-call event");
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
   }
-  assert.equal(mapped.event.toolCall.id, "msg-thinking:thinking");
-  assert.equal(mapped.event.toolCall.kind, "think");
-  assert.equal(mapped.event.toolCall.title, "Thinking");
-  assert.equal(mapped.event.toolCall.output, "需要先定位实时链路");
-  assert.equal(mapped.event.toolCall.status, "running");
+  assert.equal(mapped.event.message.id, "msg-thinking");
+  assert.equal(mapped.event.message.contentKind, "thought");
+  assert.equal(mapped.event.message.text, "需要先定位实时链路");
+  assert.equal(mapped.event.message.streaming, true);
 });
 
-test("mapSessionUpdateNotification maps standard ACP thought chunks to think tool calls", () => {
+test("mapSessionUpdateNotification maps standard ACP thought chunks to assistant message", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
     method: "session/update",
@@ -719,14 +766,13 @@ test("mapSessionUpdateNotification maps standard ACP thought chunks to think too
     },
   });
 
-  assert.equal(mapped?.event.type, "tool-call");
-  if (mapped?.event.type !== "tool-call") {
-    throw new Error("Expected tool-call event");
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
   }
-  assert.equal(mapped.event.toolCall.kind, "think");
-  assert.equal(mapped.event.toolCall.title, "Thinking");
-  assert.equal(mapped.event.toolCall.output, "先分析 ACP thought chunk");
-  assert.equal(mapped.event.toolCall.status, "running");
+  assert.equal(mapped.event.message.contentKind, "thought");
+  assert.equal(mapped.event.message.text, "先分析 ACP thought chunk");
+  assert.equal(mapped.event.message.streaming, true);
 });
 
 test("mapSessionUpdateNotification keeps generated thought chunk ids stable across deltas", () => {
@@ -753,13 +799,12 @@ test("mapSessionUpdateNotification keeps generated thought chunk ids stable acro
     },
   });
 
-  assert.equal(first?.event.type, "tool-call");
-  assert.equal(second?.event.type, "tool-call");
-  if (first?.event.type !== "tool-call" || second?.event.type !== "tool-call") {
-    throw new Error("Expected tool-call events");
+  assert.equal(first?.event.type, "message");
+  assert.equal(second?.event.type, "message");
+  if (first?.event.type !== "message" || second?.event.type !== "message") {
+    throw new Error("Expected message events");
   }
-  assert.equal(first.event.toolCall.id, second.event.toolCall.id);
-  assert.equal(first.event.toolCall.commandId, second.event.toolCall.commandId);
+  assert.equal(first.event.message.id, second.event.message.id);
 });
 
 test("mapSessionUpdateNotification maps config_option_update into config option state", () => {
@@ -1075,7 +1120,7 @@ test("mapSessionUpdateNotificationBatch splits inferred command output once in c
   assert.equal(mapped.events[1]?.type, "command-output");
 });
 
-test("mapSessionUpdateNotificationBatch preserves thought chunks as thinking tool calls", () => {
+test("mapSessionUpdateNotificationBatch preserves thought chunks as assistant message", () => {
   const mapped = mapSessionUpdateNotificationBatch({
     jsonrpc: "2.0",
     method: "session/update",
@@ -1091,13 +1136,13 @@ test("mapSessionUpdateNotificationBatch preserves thought chunks as thinking too
 
   assert.ok(mapped);
   assert.equal(mapped.events.length, 1);
-  assert.equal(mapped.events[0]?.type, "tool-call");
-  if (mapped.events[0]?.type !== "tool-call") {
-    throw new Error("Expected thinking tool call");
+  assert.equal(mapped.events[0]?.type, "message");
+  if (mapped.events[0]?.type !== "message") {
+    throw new Error("Expected thinking message");
   }
-  assert.equal(mapped.events[0].toolCall.kind, "think");
-  assert.equal(mapped.events[0].toolCall.id, "thought-1:thinking");
-  assert.equal(mapped.events[0].toolCall.output, "checking the repository");
+  assert.equal(mapped.events[0].message.contentKind, "thought");
+  assert.equal(mapped.events[0].message.id, "thought-1");
+  assert.equal(mapped.events[0].message.text, "checking the repository");
 });
 
 test("mapSessionUpdateNotificationBatch covers ACP session state variants without loss", () => {
