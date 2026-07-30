@@ -1,4 +1,4 @@
-import type { AgentToolCall } from "@tiller/shared";
+import { isToolCallUpdateType } from "./session-update";
 
 function timestamp() {
   return new Date().toISOString();
@@ -49,12 +49,13 @@ function extractTextContent(content: any): string | null {
   return extractTextContent(content.content) ?? null;
 }
 
-function extractThinkingContent(content: any): string | null {
+// 内部递归版本（参数与导出函数不同，不构成遮蔽）
+function extractThinkingBlock(content: any): string | null {
   if (!content) {
     return null;
   }
   if (Array.isArray(content)) {
-    return content.map((item) => extractThinkingContent(item)).filter(Boolean).join("") || null;
+    return content.map((item) => extractThinkingBlock(item)).filter(Boolean).join("") || null;
   }
   if (content.type === "thinking" && typeof content.thinking === "string") {
     return content.thinking;
@@ -62,10 +63,13 @@ function extractThinkingContent(content: any): string | null {
   if (content.type === "reasoning" && typeof content.text === "string") {
     return content.text;
   }
-  if (typeof content.thinking === "string") {
-    return content.thinking;
-  }
-  return extractThinkingContent(content.content);
+  return null;
+}
+
+function isThoughtUpdateType(updateType: string | undefined) {
+  return updateType === "agent_thought_chunk" ||
+    updateType === "agent_thought" ||
+    updateType === "agent_thought_complete";
 }
 
 function resolveThinkingMessageId(sessionId: string, update: any) {
@@ -77,7 +81,7 @@ function resolveThinkingMessageId(sessionId: string, update: any) {
 
 function normalizeThinkingText(value: string) {
   const normalized = value
-    .replace(/[\u200B-\u200D\u2060\uFEFF]/gu, "")
+    .replace(/[​-‍⁠﻿]/gu, "")
     .trim();
   const marker = normalized.toLowerCase();
   return marker !== "" && marker !== "{}" && marker !== "[]" && marker !== "null"
@@ -85,36 +89,47 @@ function normalizeThinkingText(value: string) {
     : null;
 }
 
-export function extractThinkingToolCall(
+export type ThinkingContent = {
+  id: string;
+  text: string;
+  status: "running" | "completed";
+  timestamp: string;
+  updatedAt: string;
+  streaming: boolean;
+};
+
+export function extractThinkingContent(
   sessionId: string,
   updateType: string | undefined,
   update: any,
-): AgentToolCall | null {
-  const acpThoughtText = updateType === "agent_thought_chunk"
+): ThinkingContent | null {
+  // 保留 isToolCallUpdateType 守卫，确保 tool_call_update 类型直接跳过
+  if (isToolCallUpdateType(updateType) || /command_output|terminal/iu.test(updateType ?? "")) {
+    return null;
+  }
+  const acpThoughtText = isThoughtUpdateType(updateType)
     ? extractTextContent(update.content) ??
       extractTextContent(update.delta) ??
       extractTextContent(update.message)
     : undefined;
-  const thinking =
-    acpThoughtText ??
-    extractThinkingContent(update.content) ??
-    extractThinkingContent(update.delta) ??
-    extractThinkingContent(update.message) ??
-    stringFrom(update.thinking ?? update.reasoning);
+  const thinking = isThoughtUpdateType(updateType)
+    ? acpThoughtText
+    : extractThinkingBlock(update.content) ??
+      extractThinkingBlock(update.delta) ??
+      extractThinkingBlock(update.message);
   const normalizedThinking = thinking ? normalizeThinkingText(thinking) : null;
   if (!normalizedThinking) {
     return null;
   }
   const now = timestamp();
   const messageId = resolveThinkingMessageId(sessionId, update);
+  const isCompleted = /complete|done|finished|end/iu.test(updateType ?? "");
   return {
-    id: `${messageId}:thinking`,
-    commandId: `${messageId}:thinking`,
-    kind: "think",
-    title: "Thinking",
-    status: /complete|done|finished|end/iu.test(updateType ?? "") ? "completed" : "running",
-    output: normalizedThinking,
+    id: messageId,
+    text: normalizedThinking,
+    status: isCompleted ? "completed" : "running",
     timestamp: stringFrom(update.timestamp) ?? now,
     updatedAt: stringFrom(update.updatedAt ?? update.updated_at ?? update.timestamp) ?? now,
+    streaming: !isCompleted,
   };
 }

@@ -1,52 +1,72 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { extractThinkingToolCall } from "./thinking-events";
+import { extractThinkingContent } from "./thinking-events";
 
-test("extractThinkingToolCall maps ACP thought chunks into stable think tool calls", () => {
-  const first = extractThinkingToolCall("sess_thinking", "agent_thought_chunk", {
+test("extractThinkingContent maps ACP thought chunks", () => {
+  const first = extractThinkingContent("sess_thinking", "agent_thought_chunk", {
     content: { type: "text", text: "第一段思考" },
   });
-  const second = extractThinkingToolCall("sess_thinking", "agent_thought_chunk", {
+  const second = extractThinkingContent("sess_thinking", "agent_thought_chunk", {
     content: { type: "text", text: "第二段思考" },
   });
 
   assert.ok(first);
   assert.ok(second);
-  assert.equal(first.id, "sess_thinking-thinking:thinking");
+  // id 不含 :thinking 后缀，由 upsertAssistantThinking 补后缀
+  assert.equal(first.id, "sess_thinking-thinking");
   assert.equal(second.id, first.id);
-  assert.equal(first.commandId, first.id);
-  assert.equal(first.kind, "think");
-  assert.equal(first.title, "Thinking");
-  assert.equal(first.output, "第一段思考");
+  assert.equal(first.text, "第一段思考");
   assert.equal(first.status, "running");
+  assert.equal(first.streaming, true);
 });
 
-test("extractThinkingToolCall maps completed reasoning content", () => {
-  const toolCall = extractThinkingToolCall("sess_reasoning", "agent_thought_complete", {
+test("extractThinkingContent maps completed reasoning content", () => {
+  const content = extractThinkingContent("sess_reasoning", "agent_thought_complete", {
     messageId: "msg_reasoning",
     content: [{ type: "reasoning", text: "结论已经形成" }],
     timestamp: "2026-05-29T00:00:00.000Z",
   });
 
-  assert.ok(toolCall);
-  assert.equal(toolCall.id, "msg_reasoning:thinking");
-  assert.equal(toolCall.output, "结论已经形成");
-  assert.equal(toolCall.status, "completed");
-  assert.equal(toolCall.timestamp, "2026-05-29T00:00:00.000Z");
+  assert.ok(content);
+  assert.equal(content.id, "msg_reasoning");
+  assert.equal(content.text, "结论已经形成");
+  assert.equal(content.status, "completed");
+  assert.equal(content.streaming, false);
+  assert.equal(content.timestamp, "2026-05-29T00:00:00.000Z");
 });
 
-test("extractThinkingToolCall ignores structurally empty reasoning payloads", () => {
+test("extractThinkingContent ignores structurally empty payloads", () => {
   for (const text of ["", "   ", "{}", "[]", "null"]) {
-    const toolCall = extractThinkingToolCall("sess_empty_reasoning", "agent_thought_chunk", {
+    const content = extractThinkingContent("sess_empty", "agent_thought_chunk", {
       content: { type: "text", text },
     });
-
-    assert.equal(toolCall, null, `expected ${JSON.stringify(text)} to be ignored`);
+    assert.equal(content, null, `expected ${JSON.stringify(text)} to be ignored`);
   }
-
   assert.equal(
-    extractThinkingToolCall("sess_empty_reasoning", "agent_thought_chunk", {
-      content: { type: "text", text: "\u200B\u2060\uFEFF" },
+    extractThinkingContent("sess_empty", "agent_thought_chunk", {
+      content: { type: "text", text: "​⁠﻿" },
+    }),
+    null,
+  );
+});
+
+test("extractThinkingContent requires typed thinking block outside ACP thought updates", () => {
+  assert.equal(
+    extractThinkingContent("sess_untyped", "agent_message_chunk", {
+      content: { type: "text", text: "Read result", thinking: "metadata" },
+    }),
+    null,
+  );
+  assert.equal(
+    extractThinkingContent("sess_nested", "agent_message_chunk", {
+      content: { type: "content", content: { thinking: "nested metadata" } },
+    }),
+    null,
+  );
+  // 保留 tool_call_update 守卫测试（验证 isToolCallUpdateType 守卫有效）
+  assert.equal(
+    extractThinkingContent("sess_tool_result_thinking", "tool_call_update", {
+      content: { type: "thinking", thinking: "tool result metadata" },
     }),
     null,
   );
