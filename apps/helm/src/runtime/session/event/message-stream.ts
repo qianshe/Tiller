@@ -29,10 +29,7 @@ import {
   shouldIgnoreRuntimeUserMessage,
 } from "./user-echo";
 
-function clearAssistantDeltaTimer(
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
+function clearAssistantDeltaTimer(sessionId: string, context: HelmHandlerContext) {
   const state = runtimeEventState(context);
   clearRuntimeEventTimer(
     context,
@@ -41,10 +38,7 @@ function clearAssistantDeltaTimer(
   state.delete(sessionId, RUNTIME_EVENT_STATE_KEY.assistantDeltaTimer);
 }
 
-function flushPendingAssistantDelta(
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
+function flushPendingAssistantDelta(sessionId: string, context: HelmHandlerContext) {
   clearAssistantDeltaTimer(sessionId, context);
   const deltaMessage = context.liveMessageBuffer.flushPending(sessionId);
   if (!deltaMessage) {
@@ -76,10 +70,7 @@ function flushPendingAssistantDelta(
   return true;
 }
 
-export function scheduleAssistantDeltaFlush(
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
+export function scheduleAssistantDeltaFlush(sessionId: string, context: HelmHandlerContext) {
   const pendingChars = context.liveMessageBuffer.pendingLength(sessionId);
   if (pendingChars <= 0) {
     clearAssistantDeltaTimer(sessionId, context);
@@ -158,7 +149,12 @@ export function handleRuntimeAssistantMessage(
     phase: "helm.runtime.first_message",
     meta: { chars: message.text.length },
   });
-  if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
+  const bufferedMessage = context.liveMessageBuffer.peek(sessionId);
+  if (
+    bufferedMessage &&
+    (bufferedMessage.id !== message.id ||
+      (bufferedMessage.contentKind ?? "content") !== (message.contentKind ?? "content"))
+  ) {
     flushLiveAssistantMessage(sessionId, context);
   }
   context.liveMessageBuffer.append(sessionId, message);
@@ -170,10 +166,7 @@ export function handleRuntimeAssistantMessage(
   return false;
 }
 
-export function flushLiveAssistantMessage(
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
+export function flushLiveAssistantMessage(sessionId: string, context: HelmHandlerContext) {
   assertCanonicalTimelinePipeline(context);
   clearAssistantDeltaTimer(sessionId, context);
   const message = context.liveMessageBuffer.finalize(sessionId);
@@ -195,12 +188,7 @@ export function flushLiveAssistantMessage(
   if (expandedEvents?.length && expandedEvents.every(isFinalizedAssistantMessageOrCompaction)) {
     for (const event of expandedEvents) {
       if (event.type === "compaction") {
-        routeFinalizedAssistantCompaction(
-          sessionId,
-          event,
-          context,
-          finalizedMessage.sequence,
-        );
+        routeFinalizedAssistantCompaction(sessionId, event, context, finalizedMessage.sequence);
         continue;
       }
       routeFinalizedAssistantMessage(sessionId, event.message, context);
@@ -291,12 +279,7 @@ function routeFinalizedAssistantCompaction(
   assertCanonicalTimelinePipeline(context);
   startNextAssistantResponseSegment(sessionId);
   const hydratedEvent = hydrateRuntimeCompactionEventSummary(sessionId, event, context);
-  const prepared = prepareRuntimeSessionUpdate(
-    sessionId,
-    hydratedEvent,
-    context,
-    sequence,
-  );
+  const prepared = prepareRuntimeSessionUpdate(sessionId, hydratedEvent, context, sequence);
   routeCanonicalTimelineEvent(
     sessionId,
     hydratedEvent,

@@ -3,10 +3,7 @@ import type { HelmHandlerContext } from "../../../handlers/context";
 import { assertCanonicalTimelinePipeline } from "./canonical";
 import { handleRuntimeCommandOutputEvent } from "./command-output";
 import { handleRuntimeCompactionEvent } from "./compaction";
-import {
-  handleRuntimeAssistantMessage,
-  handleRuntimeUserMessage,
-} from "./message-stream";
+import { handleRuntimeAssistantMessage, handleRuntimeUserMessage } from "./message-stream";
 import {
   handleRuntimeAvailableCommandsEvent,
   handleRuntimeCanonicalStateEvent,
@@ -18,11 +15,7 @@ import {
   handleRuntimePlanEvent,
   handleRuntimeStatusEvent,
 } from "./state-handlers";
-import {
-  finalizeRuntimeThinking,
-  handleRuntimeToolCallEvent,
-} from "./tool-call";
-import { shouldFlushActiveAssistantSegment } from "../../segment-state";
+import { handleRuntimeToolCallEvent } from "./tool-call";
 
 export function dispatchNormalizedRuntimeEvent(
   sessionId: string,
@@ -39,21 +32,7 @@ export function dispatchNormalizedRuntimeEvent(
         handleRuntimeUserMessage(sessionId, event, context);
         return;
       }
-      // A provider-finalized assistant message can carry a different source
-      // id from the preceding assistant segment. Finalize Thinking before
-      // message handling can rotate that segment and clear its runtime state.
-      if (
-        event.message.streaming !== true &&
-        shouldFlushActiveAssistantSegment(sessionId, event.message.id)
-      ) {
-        finalizeRuntimeThinking(sessionId, "completed", context);
-      }
-      if (
-        handleRuntimeAssistantMessage(sessionId, event, context) ||
-        event.message.streaming !== true
-      ) {
-        finalizeRuntimeThinking(sessionId, "completed", context);
-      }
+      handleRuntimeAssistantMessage(sessionId, event, context);
       return;
     case "compaction":
       handleRuntimeCompactionEvent(sessionId, event, context);
