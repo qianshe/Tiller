@@ -124,9 +124,6 @@ function shouldFlushImmediately(event: SessionRuntimeEvent) {
       }
       return event.message.streaming !== true;
     case "tool-call":
-      if (event.toolCall.kind === "think") {
-        return event.toolCall.status !== "running";
-      }
       return true;
     case "command-output":
       return false;
@@ -142,10 +139,7 @@ function resolveBufferedCharCount(event: SessionRuntimeEvent) {
     case "message":
       return event.message.text.length;
     case "tool-call":
-      if (event.toolCall.kind !== "think") {
-        return 0;
-      }
-      return (event.toolCall.output ?? event.toolCall.input ?? "").length;
+      return 0;
     case "command-output":
       return event.chunk.text.length;
     default:
