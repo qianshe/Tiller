@@ -111,15 +111,16 @@ export function PlainMessages({
     setDismissedSystemMessageIds(new Set());
   }, [sessionId]);
 
+  const incomingTimelineItems = Array.isArray(timelineItems) ? timelineItems : [];
   if (timelineCacheRef.current.sessionId !== sessionId) {
     timelineCacheRef.current = { items: [], sessionId };
   }
-  if (timelineItems.length > 0) {
-    timelineCacheRef.current = { items: timelineItems, sessionId };
+  if (incomingTimelineItems.length > 0) {
+    timelineCacheRef.current = { items: incomingTimelineItems, sessionId };
   }
   const effectiveTimelineItems =
-    timelineItems.length > 0 || !historyState?.loading
-      ? timelineItems
+    incomingTimelineItems.length > 0 || !historyState?.loading
+      ? incomingTimelineItems
       : timelineCacheRef.current.items;
 
   const displayMessages = useMemo(
@@ -445,12 +446,12 @@ function PlainSubagentConversation({
 }: {
   detail?: SessionSubagentDetail & { loading?: boolean; failed?: boolean };
 }) {
-  if (!detail?.entries.length) return null;
+  const entries = normalizeTimelineItems(detail?.entries);
+  if (!entries.length) return null;
   const items = resolvePlainConversationDisplayItems({
     displayMessages: [],
-    timelineItems: sortSessionTimelineEntries(detail.entries),
+    timelineItems: sortSessionTimelineEntries(entries),
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
     groupTools: false,
   });
@@ -553,6 +554,97 @@ export type PlainMessageRenderItem =
     };
 
 export type PlainConversationRenderKind = PlainMessageRenderItem["kind"];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isRenderableAgentMessage(value: unknown): value is AgentMessage {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    (value.role === "assistant" || value.role === "system" || value.role === "user") &&
+    typeof value.text === "string" &&
+    typeof value.timestamp === "string"
+  );
+}
+
+function isRenderableToolLike(value: unknown): value is AgentToolCall {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    typeof value.kind === "string" &&
+    typeof value.title === "string" &&
+    typeof value.status === "string" &&
+    typeof value.timestamp === "string"
+  );
+}
+
+function isRenderableTimelineChunk(value: unknown) {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.text !== "string" || typeof value.timestamp !== "string") {
+    return false;
+  }
+  if (value.kind === "content") {
+    return true;
+  }
+  return value.kind === "thinking" &&
+    typeof value.title === "string" &&
+    typeof value.status === "string" &&
+    typeof value.updatedAt === "string";
+}
+
+function isRenderableTimelineEntry(value: unknown): value is SessionTimelineEntry {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.kind !== "string" || typeof value.timestamp !== "string") {
+    return false;
+  }
+  switch (value.kind) {
+    case "user_message":
+    case "system_message":
+      return isRenderableAgentMessage(value.message);
+    case "assistant_message":
+      return Array.isArray(value.chunks) && value.chunks.every(isRenderableTimelineChunk);
+    case "tool_call":
+      return isRenderableToolLike(value.toolCall);
+    case "command_output": {
+      const output = value.output;
+      return isRecord(output) &&
+        typeof value.commandId === "string" &&
+        typeof output.id === "string" &&
+        typeof output.commandId === "string" &&
+        typeof output.text === "string" &&
+        typeof output.stream === "string" &&
+        typeof output.timestamp === "string";
+    }
+    case "context_compaction":
+      return typeof value.phase === "string" && typeof value.source === "string";
+    case "history_gap":
+      return typeof value.message === "string";
+    default:
+      return false;
+  }
+}
+
+function normalizeAgentMessages(items: AgentMessage[] | null | undefined) {
+  return Array.isArray(items)
+    ? items.filter(isRenderableAgentMessage)
+    : [];
+}
+
+function normalizeAgentToolCalls(toolCalls: AgentToolCall[] | null | undefined) {
+  return Array.isArray(toolCalls)
+    ? toolCalls.filter(isRenderableToolLike)
+    : [];
+}
+
+function normalizeTimelineItems(items: SessionTimelineEntry[] | null | undefined) {
+  return Array.isArray(items)
+    ? items.filter(isRenderableTimelineEntry)
+    : [];
+}
 
 function resolvePlainConversationMessageRole(
   item: PlainMessageRenderItem | undefined,
@@ -760,7 +852,7 @@ export function resolveFinalAssistantActionTarget(
 }
 
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
-  const sortedMessages = sortAgentMessagesByTimeline(items);
+  const sortedMessages = sortAgentMessagesByTimeline(normalizeAgentMessages(items));
   return coalesceDisplayMessages(
     sortedMessages.filter(
       (message) => !isAcpPromptWrapperEcho(message, sortedMessages),
@@ -770,10 +862,10 @@ function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[]
 }
 
 export function resolvePlainDisplayMessages(
-  items: AgentMessage[],
+  items: AgentMessage[] | null | undefined,
   boundaryTimestamps: string[] = [],
 ) {
-  return sortDisplayMessages(items, boundaryTimestamps);
+  return sortDisplayMessages(normalizeAgentMessages(items), boundaryTimestamps);
 }
 
 export function shouldAutoLoadOlderHistory(
@@ -909,7 +1001,7 @@ export function resolvePlainConversationDisplayItems({
   displayMessages,
   timelineItems,
   showThinking,
-  thinkingToolCalls,
+  thinkingToolCalls: _thinkingToolCalls,
   toolCalls,
   groupTools = true,
 }: {
@@ -917,27 +1009,31 @@ export function resolvePlainConversationDisplayItems({
   displayMessages: AgentMessage[];
   timelineItems: SessionTimelineEntry[];
   showThinking: boolean;
-  thinkingToolCalls: AgentToolCall[];
+  /** @deprecated - thinking is now injected via displayMessages with contentKind: "thought" */
+  thinkingToolCalls?: AgentToolCall[];
   toolCalls: AgentToolCall[];
   groupTools?: boolean;
 }) {
-  if (!timelineItems.length) {
+  const safeDisplayMessages = normalizeAgentMessages(displayMessages);
+  const safeTimelineItems = normalizeTimelineItems(timelineItems);
+  const safeToolCalls = normalizeAgentToolCalls(toolCalls);
+
+  if (!safeTimelineItems.length) {
     return buildPlainConversationItems(
-      displayMessages,
-      showThinking ? thinkingToolCalls : [],
-      toolCalls,
+      safeDisplayMessages,
+      safeToolCalls,
       showThinking,
       groupTools,
     );
   }
 
   const canonicalItems = buildPlainConversationItemsFromTimeline(
-    timelineItems,
+    safeTimelineItems,
     showThinking,
     groupTools,
   );
   const canonicalToolCallIds = new Set(
-    timelineItems.flatMap((entry) => {
+    safeTimelineItems.flatMap((entry) => {
       if (entry.kind === "tool_call") {
         return [entry.toolCall.id];
       }
@@ -948,7 +1044,7 @@ export function resolvePlainConversationDisplayItems({
     }),
   );
   const liveToolCalls = groupToolCalls(
-    toolCalls.filter((toolCall) =>
+    safeToolCalls.filter((toolCall) =>
       toolCall.kind !== "think" && !canonicalToolCallIds.has(toolCall.id)
     ),
   );
@@ -964,8 +1060,8 @@ export function resolvePlainConversationDisplayItems({
       )
     : canonicalItems;
   const optimisticMessages = resolveOptimisticTimelineSupplementMessages(
-    displayMessages,
-    timelineItems,
+    safeDisplayMessages,
+    safeTimelineItems,
   );
   if (!optimisticMessages.length) {
     return canonicalAndLiveItems;
@@ -973,7 +1069,6 @@ export function resolvePlainConversationDisplayItems({
 
   const optimisticItems = buildPlainConversationItems(
     optimisticMessages,
-    [],
     [],
     showThinking,
     groupTools,
@@ -1110,9 +1205,15 @@ export function resolveRemoteHistoryRevealBaseline({
 }
 
 function normalizePlainMessageRenderSource(
-  item: PlainMessageRenderSource,
+  item: PlainMessageRenderSource | null | undefined,
 ): PlainConversationItem | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
   if ("role" in item) {
+    if (!isRenderableAgentMessage(item)) {
+      return null;
+    }
     const text = normalizePlainMessageText(item.text);
     if (!text) {
       return null;
@@ -1124,7 +1225,13 @@ function normalizePlainMessageRenderSource(
       message: text === item.text ? item : { ...item, text },
     };
   }
+  if (!("kind" in item) || typeof item.kind !== "string") {
+    return null;
+  }
   if (item.kind === "message") {
+    if (!isRenderableAgentMessage(item.message)) {
+      return null;
+    }
     const text = normalizePlainMessageText(item.message.text);
     if (!text) {
       return null;
@@ -1134,7 +1241,16 @@ function normalizePlainMessageRenderSource(
       message: text === item.message.text ? item.message : { ...item.message, text },
     };
   }
-  return item;
+  if (item.kind === "thinking" || item.kind === "tool" || item.kind === "subagent") {
+    return isRenderableToolLike(item.toolCall) ? item : null;
+  }
+  if (item.kind === "tool-group") {
+    return Array.isArray(item.group) && item.group.every(isRenderableToolLike) ? item : null;
+  }
+  if (item.kind === "transcript-event") {
+    return isRenderableTimelineEntry(item.entry) ? item : null;
+  }
+  return null;
 }
 
 function normalizePlainMessageText(text: string): string {
@@ -1144,13 +1260,13 @@ function normalizePlainMessageText(text: string): string {
 
 function buildPlainConversationItems(
   messages: AgentMessage[],
-  thinkingToolCalls: AgentToolCall[],
   toolCalls: AgentToolCall[],
   showThinking: boolean,
   groupTools = true,
 ): PlainConversationItem[] {
-  const visibleToolCalls = toolCalls.filter((toolCall) => toolCall.kind !== "think");
-  const messageItems = messages.flatMap<PlainConversationItem>((message, index) => {
+  const safeMessages = normalizeAgentMessages(messages);
+  const visibleToolCalls = normalizeAgentToolCalls(toolCalls).filter((toolCall) => toolCall.kind !== "think");
+  const messageItems = safeMessages.flatMap<PlainConversationItem>((message, index) => {
     if (message.role === "assistant" && message.contentKind === "thought") {
       return showThinking
         ? [{
@@ -1176,20 +1292,13 @@ function buildPlainConversationItems(
       ? [{ kind: "message" as const, sourceIndex: index, timestamp: message.timestamp, sequence: message.sequence, message: text === message.text ? message : { ...message, text } }]
       : [];
   });
-  const thinkingItems = thinkingToolCalls.map((toolCall, index) => ({
-    kind: "thinking" as const,
-    sourceIndex: messages.length + index,
-    timestamp: toolCall.timestamp,
-    sequence: toolCall.sequence,
-    toolCall,
-  }));
   const normalizedToolCalls = groupToolCalls(visibleToolCalls);
   const toolItems = normalizedToolCalls.map((toolCall, index) => toPlainToolConversationItem(
     toolCall,
-    messages.length + thinkingItems.length + index,
+    messages.length + index,
     !groupTools,
   ));
-  const sorted = [...messageItems, ...thinkingItems, ...toolItems].sort(comparePlainConversationItems);
+  const sorted = [...messageItems, ...toolItems].sort(comparePlainConversationItems);
   return maybeMergeAdjacentToolItems(mergeAdjacentThinkingItems(sorted), groupTools);
 }
 
@@ -1198,6 +1307,7 @@ function buildPlainConversationItemsFromTimeline(
   showThinking: boolean,
   groupTools = true,
 ): PlainConversationItem[] {
+  timelineItems = normalizeTimelineItems(timelineItems);
   const items: PlainConversationItem[] = [];
   const hasCompactionTranscriptEvent = timelineItems.some(
     (entry) => entry.kind === "context_compaction",
