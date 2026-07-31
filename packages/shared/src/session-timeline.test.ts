@@ -61,11 +61,11 @@ test("appendMessageToSessionTimeline keeps the final full assistant message inst
   );
 });
 
-test("appendToolCallToSessionTimeline deduplicates overlapping thinking snapshots", () => {
+test("appendToolCallToSessionTimeline never promotes tool calls to assistant Thinking", () => {
   const entries = appendToolCallToSessionTimeline([], {
     id: "thinking-1",
     commandId: "thinking-1",
-    kind: "think",
+    kind: "tool",
     title: "Thinking",
     status: "running",
     output: "Line 1\nLine 2\nLine 3",
@@ -77,7 +77,7 @@ test("appendToolCallToSessionTimeline deduplicates overlapping thinking snapshot
   appendToolCallToSessionTimeline(entries, {
     id: "thinking-1",
     commandId: "thinking-1",
-    kind: "think",
+    kind: "tool",
     title: "Thinking",
     status: "completed",
     output: "Line 2\nLine 3\nLine 4",
@@ -86,13 +86,9 @@ test("appendToolCallToSessionTimeline deduplicates overlapping thinking snapshot
     sequence: 2,
   });
 
-  assert.equal(entries[0]?.kind, "assistant_message");
-  assert.equal(
-    entries[0]?.kind === "assistant_message"
-      ? entries[0].chunks[0]?.text
-      : undefined,
-    "Line 1\nLine 2\nLine 3\nLine 4",
-  );
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(entries[0]?.kind === "tool_call" ? entries[0].toolCall.kind : undefined, "tool");
+  assert.equal(entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined, "completed");
 });
 
 function at(seconds: number) {
@@ -293,6 +289,36 @@ test("appendMessageToSessionTimeline preserves assistant thought messages as thi
       updatedAt: at(1),
       sequence: 1,
     },
+  );
+});
+
+test("appendMessageToSessionTimeline replaces ACP v2 thought snapshots", () => {
+  const entries = appendMessageToSessionTimeline([], {
+    id: "thought-upsert-1",
+    role: "assistant",
+    contentKind: "thought",
+    text: "第一份较长的完整思考",
+    timestamp: at(1),
+    sequence: 1,
+    streaming: true,
+    streamMode: "snapshot",
+  });
+
+  appendMessageToSessionTimeline(entries, {
+    id: "thought-upsert-1",
+    role: "assistant",
+    contentKind: "thought",
+    text: "替换稿",
+    timestamp: at(2),
+    sequence: 2,
+    streaming: true,
+    streamMode: "snapshot",
+  });
+
+  assert.equal(entries[0]?.kind, "assistant_message");
+  assert.equal(
+    entries[0]?.kind === "assistant_message" ? entries[0].chunks[0]?.text : undefined,
+    "替换稿",
   );
 });
 

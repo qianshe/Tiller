@@ -773,6 +773,32 @@ test("mapSessionUpdateNotification maps standard ACP thought chunks to assistant
   assert.equal(mapped.event.message.contentKind, "thought");
   assert.equal(mapped.event.message.text, "先分析 ACP thought chunk");
   assert.equal(mapped.event.message.streaming, true);
+  assert.equal(mapped.event.message.streamMode, "delta");
+});
+
+test("mapSessionUpdateNotification maps ACP v2 thought upserts as snapshots", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_acp_thought_upsert",
+      update: {
+        sessionUpdate: "agent_thought",
+        messageId: "msg-thought-upsert",
+        content: [{ type: "text", text: "替换后的完整思考" }],
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
+  }
+  assert.equal(mapped.event.message.id, "msg-thought-upsert");
+  assert.equal(mapped.event.message.contentKind, "thought");
+  assert.equal(mapped.event.message.text, "替换后的完整思考");
+  assert.equal(mapped.event.message.streaming, true);
+  assert.equal(mapped.event.message.streamMode, "snapshot");
 });
 
 test("mapSessionUpdateNotification keeps generated thought chunk ids stable across deltas", () => {
@@ -1791,7 +1817,7 @@ test("mapSessionUpdateNotification classifies ACP tool kinds without provider sp
     { acpKind: "move", expected: "write" },
     { acpKind: "execute", expected: "shell" },
     { acpKind: "search", expected: "search" },
-    { acpKind: "think", expected: "think" },
+    { acpKind: "think", expected: "tool" },
     { acpKind: "fetch", expected: "fetch" },
   ] as const;
 

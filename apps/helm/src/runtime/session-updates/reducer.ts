@@ -434,46 +434,7 @@ function mergeMessageText(current: AgentMessage, incoming: AgentMessage) {
 }
 
 function mergeToolCallOutput(current: AgentToolCall, incoming: AgentToolCall) {
-  if (current.kind !== "think" && incoming.kind !== "think") {
-    return mergeText(current.output, incoming.output);
-  }
-  return mergeThinkingSnapshotText(current.output, incoming.output);
-}
-
-function mergeThinkingSnapshotText(
-  current: string | undefined,
-  incoming: string | undefined,
-) {
-  if (!incoming) {
-    return current ?? "";
-  }
-  if (!current || incoming.startsWith(current)) {
-    return incoming;
-  }
-  if (current.startsWith(incoming) || current.endsWith(incoming)) {
-    return current;
-  }
-  const overlapped = mergeTextByLineOverlap(current, incoming);
-  if (overlapped) {
-    return overlapped;
-  }
-  return incoming.length >= current.length ? incoming : current;
-}
-
-function mergeTextByLineOverlap(currentText: string, incomingText: string) {
-  const currentLines = currentText.split(/\r?\n/u);
-  const incomingLines = incomingText.split(/\r?\n/u);
-  const overlapLineCount = Math.min(currentLines.length, incomingLines.length);
-  for (let size = overlapLineCount; size >= 1; size -= 1) {
-    const currentSlice = currentLines.slice(-size).join("\n");
-    const incomingSlice = incomingLines.slice(0, size).join("\n");
-    if (currentSlice !== incomingSlice) {
-      continue;
-    }
-    const suffix = incomingLines.slice(size).join("\n");
-    return suffix ? `${currentText}\n${suffix}` : currentText;
-  }
-  return null;
+  return mergeText(current.output, incoming.output);
 }
 
 function resolveToolCallTitle(

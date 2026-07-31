@@ -121,12 +121,9 @@ export function buildActivityTimeline(
   commandChunks: CommandChunk[],
   sessionMessages: AgentMessage[],
 ): ActivityTimelineItem[] {
-  const visibleToolCalls = sessionToolCalls.filter(
-    (toolCall) => toolCall.kind !== "think",
-  );
   const toolItems = groupToolCalls(
-    visibleToolCalls.length
-      ? visibleToolCalls
+    sessionToolCalls.length
+      ? sessionToolCalls
       : commandChunks.map(commandChunkToToolCall),
   );
   const promptItems = sessionMessages

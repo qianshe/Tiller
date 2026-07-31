@@ -12,6 +12,7 @@ import type {
   AgentPromptImageContent,
   AgentToolCall,
   MissionPromptContextItem,
+  SessionTimelineThinkingChunk,
   SessionSubagentDetail,
 } from "@tiller/shared";
 import {
@@ -662,14 +663,27 @@ function PlainThinkingIcon() {
 }
 
 export function PlainThinkingItem({
-  item,
+  items,
   hasNewerContent = false,
 }: {
-  item: AgentToolCall;
+  items: SessionTimelineThinkingChunk[];
   hasNewerContent?: boolean;
 }) {
-  const isRunning = item.status === "pending" || item.status === "running";
-  const text = item.output?.trim() || item.input?.trim() || "暂无 Thinking 内容";
+  const thinkingItems = items.length > 0 ? items : [{
+    id: "empty-thinking",
+    kind: "thinking" as const,
+    text: "",
+    title: "Thinking",
+    status: "completed" as const,
+    timestamp: "",
+    updatedAt: "",
+  }];
+  const text = thinkingItems
+    .map((item) => item.text.trim() || "暂无 Thinking 内容")
+    .join("\n\n");
+  const latestThinkingItem = thinkingItems.at(-1);
+  const isRunning = latestThinkingItem?.status === "pending" ||
+    latestThinkingItem?.status === "running";
   const preview = resolveThinkingSummaryPreview(text);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowStreamRef = useRef(true);
@@ -750,8 +764,18 @@ export function PlainThinkingItem({
         </summary>
         {open ? (
           <div ref={contentRef} className={contentClassName} onScroll={handleThinkingScroll}>
-            <div className="plain-thinking-text whitespace-pre-wrap [overflow-wrap:anywhere]">
-              {text}
+            <div className={cn(
+              "plain-thinking-parts min-w-0",
+              thinkingItems.length > 1 && "divide-y divide-border-ghost/70",
+            )}>
+              {thinkingItems.map((item, index) => (
+                <div
+                  key={`${item.id}-${index}`}
+                  className="plain-thinking-text whitespace-pre-wrap py-1 [overflow-wrap:anywhere]"
+                >
+                  {item.text.trim() || "暂无 Thinking 内容"}
+                </div>
+              ))}
             </div>
           </div>
         ) : null}

@@ -86,7 +86,6 @@ export function isLegacyToolKindMoreSpecific(
   const rank: Record<AgentToolCallKind, number> = {
     unknown: 0,
     tool: 1,
-    think: 2,
     todo: 2,
     fetch: 2,
     search: 3,
@@ -150,6 +149,7 @@ function resolveQualifiedMcpToolCallTitle(mcp: NonNullable<AgentToolCall["mcp"]>
 function normalizeLegacyPersistedAgentToolCallKind(value: unknown): AgentToolCallKind {
   if (value === "terminal") return "shell";
   if (value === "edit") return "write";
+  if (value === "think") return "tool";
   return typeof value === "string"
     ? ([
       "mcp",
@@ -160,12 +160,11 @@ function normalizeLegacyPersistedAgentToolCallKind(value: unknown): AgentToolCal
       "search",
       "shell",
       "fetch",
-      "think",
       "todo",
       "subagent",
       "tool",
       "unknown",
-    ] as const).includes(value as AgentToolCallKind)
+    ] as readonly AgentToolCallKind[]).includes(value as AgentToolCallKind)
       ? (value as AgentToolCallKind)
       : "unknown"
     : "unknown";

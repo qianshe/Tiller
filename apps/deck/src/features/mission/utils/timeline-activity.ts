@@ -29,26 +29,6 @@ export function deriveHistoricalActivityFromTimeline(
     }
     if (entry.kind === "command_output") {
       outputs.push(entry.output);
-      continue;
-    }
-    if (entry.kind !== "assistant_message") {
-      continue;
-    }
-    for (const chunk of entry.chunks) {
-      if (chunk.kind !== "thinking") {
-        continue;
-      }
-      toolCalls.push({
-        id: chunk.id,
-        commandId: chunk.id,
-        kind: "think",
-        title: chunk.title,
-        status: chunk.status,
-        output: chunk.text,
-        timestamp: chunk.timestamp,
-        updatedAt: chunk.updatedAt,
-        sequence: chunk.sequence,
-      });
     }
   }
 

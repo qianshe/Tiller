@@ -218,7 +218,7 @@ function projectSessionUpdate(
             text: thinkingContent.text,
             timestamp: thinkingContent.timestamp,
             streaming: thinkingContent.streaming,
-            streamMode: thinkingContent.status === "completed" ? "snapshot" as const : "delta" as const,
+            streamMode: thinkingContent.streamMode,
           },
         }, ...events]
       : events;

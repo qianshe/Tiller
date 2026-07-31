@@ -1188,7 +1188,6 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
         <MissionMessageTimeline
           items={sessionMessages}
           timelineItems={timelineItems}
-          thinkingToolCalls={sessionTimeline.thinkingToolCalls}
           toolCalls={sessionTimeline.timelineToolCalls}
           showThinking={showThinking}
           boundaryTimestamps={sessionTimeline.boundaryTimestamps}

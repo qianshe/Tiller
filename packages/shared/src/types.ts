@@ -421,7 +421,6 @@ export type AgentToolCallKind =
   | "search"
   | "shell"
   | "fetch"
-  | "think"
   | "todo"
   | "subagent"
   | "tool"

@@ -10,23 +10,23 @@ const message = (id: string, text: string): AgentMessage => ({
   timestamp: "2026-05-18T00:00:00.000Z",
 });
 
-const thinking = (output: string, updatedAt: string): AgentToolCall => ({
-  id: "think-1",
-  commandId: "think-1",
-  kind: "think",
-  title: "Thinking",
+const toolCall = (output: string, updatedAt: string): AgentToolCall => ({
+  id: "tool-1",
+  commandId: "tool-1",
+  kind: "tool",
+  title: "Tool",
   status: "running",
   output,
   timestamp: "2026-05-18T00:00:01.000Z",
   updatedAt,
 });
 
-test("createActiveConversationUpdateKey changes when thinking output streams", () => {
+test("createActiveConversationUpdateKey changes when tool output streams", () => {
   const first = createActiveConversationUpdateKey("s1", [message("m1", "hello")], [
-    thinking("step one", "2026-05-18T00:00:02.000Z"),
+    toolCall("step one", "2026-05-18T00:00:02.000Z"),
   ]);
   const next = createActiveConversationUpdateKey("s1", [message("m1", "hello")], [
-    thinking("step one\nstep two", "2026-05-18T00:00:03.000Z"),
+    toolCall("step one\nstep two", "2026-05-18T00:00:03.000Z"),
   ]);
 
   assert.notEqual(next, first);

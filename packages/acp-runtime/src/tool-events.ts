@@ -233,7 +233,6 @@ function inferToolCallKind(
   if (/search|grep/u.test(raw)) return "search";
   if (/execute|terminal|command|shell|bash|exec/u.test(raw)) return "shell";
   if (/fetch/u.test(raw)) return "fetch";
-  if (/think/u.test(raw)) return "think";
   if (/\btodo/u.test(raw)) return "todo";
   if (structuredKind) return structuredKind;
   if (looksLikePathTitle(source.title)) return "read";
@@ -260,7 +259,8 @@ function resolveExplicitToolCallKind(source: any): AgentToolCall["kind"] | undef
     terminal: "shell",
     command: "shell",
     fetch: "fetch",
-    think: "think",
+    // ACP ToolKind is display metadata; assistant reasoning arrives via agent_thought updates.
+    think: "tool",
     todo: "todo",
     subagent: "subagent",
     tool: "tool",
@@ -364,7 +364,7 @@ function hasMeaningfulToolPayload(value: unknown) {
 
 const KIND_TITLES: Record<string, string> = {
   read: "Read", diagnostics: "Diagnostics", write: "Write", shell: "Shell", search: "Search",
-  fetch: "Fetch", skill: "Skill", think: "Thinking", todo: "Todo",
+  fetch: "Fetch", skill: "Skill", todo: "Todo",
 };
 
 function kindAsTitle(kind: AgentToolCall["kind"] | undefined): string | undefined {

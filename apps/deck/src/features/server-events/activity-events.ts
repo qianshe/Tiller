@@ -4,7 +4,7 @@ import type {
   AgentToolCall,
   SessionSummary,
 } from "@tiller/shared";
-import { dropActiveThinkingToolCalls, mergeAgentMessages } from "../logbook";
+import { mergeAgentMessages } from "../logbook";
 import { toast } from "../toast";
 import { useDeckStore, type DeckNotificationInput } from "../../store";
 import { stripRedundantAttachmentData } from "./helpers";
@@ -49,11 +49,7 @@ export function applyActivityUpdate(
       const message = stripRedundantAttachmentData(
         withStreamingState(update.message, update.streaming),
       );
-      const sessionToolCalls = clearActiveThinkingToolCalls(
-        sessionId,
-        toolCallsRef,
-        store,
-      );
+      const sessionToolCalls = toolCallsRef.current[sessionId] ?? [];
       const toolBoundaryTimes = sessionToolCalls
         .map((call) => Date.parse(call.timestamp))
         .filter(Number.isFinite);
@@ -109,30 +105,6 @@ export function applyActivityUpdate(
 
 function scheduleVisibleSubagentSettlement(callback: () => void): void {
   globalThis.setTimeout(callback, SUBAGENT_RUNNING_MIN_VISIBLE_MS);
-}
-
-type DeckStore = ReturnType<typeof useDeckStore.getState>;
-
-function clearActiveThinkingToolCalls(
-  sessionId: string,
-  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>,
-  store: DeckStore,
-) {
-  const currentSessionToolCalls = toolCallsRef.current[sessionId] ?? [];
-  const nextSessionToolCalls = dropActiveThinkingToolCalls(currentSessionToolCalls);
-  if (nextSessionToolCalls.length === currentSessionToolCalls.length) {
-    return currentSessionToolCalls;
-  }
-
-  store.setToolCalls((current) => {
-    const next = {
-      ...current,
-      [sessionId]: nextSessionToolCalls,
-    };
-    toolCallsRef.current = next;
-    return next;
-  });
-  return nextSessionToolCalls;
 }
 
 function withStreamingState(

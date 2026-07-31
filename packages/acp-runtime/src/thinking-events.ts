@@ -93,6 +93,7 @@ export type ThinkingContent = {
   id: string;
   text: string;
   status: "running" | "completed";
+  streamMode: "delta" | "snapshot";
   timestamp: string;
   updatedAt: string;
   streaming: boolean;
@@ -128,6 +129,7 @@ export function extractThinkingContent(
     id: messageId,
     text: normalizedThinking,
     status: isCompleted ? "completed" : "running",
+    streamMode: updateType === "agent_thought" || isCompleted ? "snapshot" : "delta",
     timestamp: stringFrom(update.timestamp) ?? now,
     updatedAt: stringFrom(update.updatedAt ?? update.updated_at ?? update.timestamp) ?? now,
     streaming: !isCompleted,

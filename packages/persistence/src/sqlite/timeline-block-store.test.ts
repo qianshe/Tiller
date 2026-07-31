@@ -377,26 +377,30 @@ test("timeline block store list preserves compaction-only transcript order", () 
   });
 });
 
-test("timeline block store upsertToolCall merges thinking into an assistant entry", () => {
+test("timeline block store keeps legacy Thinking tools separate from assistant messages", () => {
   withStore(({ store }) => {
     store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", sequence: 2 }));
-    store.upsertToolCall("session-1", toolCall({
+    const legacyToolCall = {
+      ...toolCall({
       id: "assistant-1:thinking",
       commandId: "assistant-1:thinking",
-      kind: "think",
+      kind: "tool",
       output: "reasoning",
       status: "completed",
       title: "Thinking",
       sequence: 1,
-    }));
+      }),
+      kind: "think",
+    } as unknown as AgentToolCall;
+    store.upsertToolCall("session-1", legacyToolCall);
 
     const entries = store.list("session-1");
-    assert.equal(entries.length, 1);
-    assert.deepEqual(
-      entries[0]?.kind === "assistant_message"
-        ? entries[0].chunks.map((chunk) => chunk.kind)
-        : [],
-      ["thinking", "content"],
+    assert.equal(entries.length, 2);
+    assert.equal(entries.some((entry) => entry.kind === "assistant_message"), true);
+    const toolEntry = entries.find((entry) => entry.kind === "tool_call");
+    assert.equal(
+      toolEntry?.kind === "tool_call" ? toolEntry.toolCall.kind : undefined,
+      "tool",
     );
   });
 });

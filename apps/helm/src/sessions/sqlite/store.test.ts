@@ -454,7 +454,7 @@ test("sqlite artifact store repairs shell placeholders with structured search de
   }
 });
 
-test("sqlite artifact store replaces cumulative thinking output instead of appending duplicates", () => {
+test("sqlite artifact store replaces cumulative tool output instead of appending duplicates", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-thinking-output-"));
   try {
     const dbPath = join(tempRoot, "sessions.sqlite");
@@ -464,7 +464,7 @@ test("sqlite artifact store replaces cumulative thinking output instead of appen
         "session-1",
         createToolCall("session-1-msg-s0:thinking", "2026-05-23T10:00:00.000Z", {
           commandId: "session-1-msg-s0:thinking",
-          kind: "think",
+          kind: "tool",
           title: "Thinking",
           output: "分析 A",
           status: "running",
@@ -475,7 +475,7 @@ test("sqlite artifact store replaces cumulative thinking output instead of appen
         "session-1",
         createToolCall("session-1-msg-s0:thinking", "2026-05-23T10:00:00.000Z", {
           commandId: "session-1-msg-s0:thinking",
-          kind: "think",
+          kind: "tool",
           title: "Thinking",
           output: "分析 A\n分析 B",
           status: "running",
@@ -486,7 +486,7 @@ test("sqlite artifact store replaces cumulative thinking output instead of appen
         "session-1",
         createToolCall("session-1-msg-s0:thinking", "2026-05-23T10:00:00.000Z", {
           commandId: "session-1-msg-s0:thinking",
-          kind: "think",
+          kind: "tool",
           title: "Thinking",
           output: "分析 A",
           status: "running",
@@ -503,7 +503,7 @@ test("sqlite artifact store replaces cumulative thinking output instead of appen
   }
 });
 
-test("sqlite artifact store merges overlapping thinking snapshots without duplicating lines", () => {
+test("sqlite artifact store merges overlapping tool snapshots without duplicating lines", () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-sqlite-artifact-thinking-overlap-"));
   try {
     const dbPath = join(tempRoot, "sessions.sqlite");
@@ -513,7 +513,7 @@ test("sqlite artifact store merges overlapping thinking snapshots without duplic
         "session-1",
         createToolCall("session-1-msg-s1:thinking", "2026-05-23T10:00:00.000Z", {
           commandId: "session-1-msg-s1:thinking",
-          kind: "think",
+          kind: "tool",
           title: "Thinking",
           output: "Line 1\nLine 2\nLine 3",
           status: "running",
@@ -524,7 +524,7 @@ test("sqlite artifact store merges overlapping thinking snapshots without duplic
         "session-1",
         createToolCall("session-1-msg-s1:thinking", "2026-05-23T10:00:00.000Z", {
           commandId: "session-1-msg-s1:thinking",
-          kind: "think",
+          kind: "tool",
           title: "Thinking",
           output: "Line 2\nLine 3\nLine 4",
           status: "completed",

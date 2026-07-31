@@ -23,6 +23,7 @@ export type SessionTimelineThinkingChunk = {
   text: string;
   title: string;
   status: AgentToolCall["status"];
+  streamMode?: AgentMessage["streamMode"];
   timestamp: string;
   updatedAt: string;
   sequence?: number;
@@ -109,9 +110,6 @@ export function appendToolCallToSessionTimeline(
   entries: SessionTimelineEntry[],
   toolCall: AgentToolCall,
 ): SessionTimelineEntry[] {
-  if (toolCall.kind === "think") {
-    return upsertThinkingChunk(entries, toolCall);
-  }
   return upsertToolCallEntry(entries, toolCall);
 }
 
@@ -209,34 +207,6 @@ function resolveContentChunkText(
     return incomingText;
   }
   return incomingText.slice(previousText.length);
-}
-
-function upsertThinkingChunk(
-  entries: SessionTimelineEntry[],
-  toolCall: AgentToolCall,
-): SessionTimelineEntry[] {
-  const assistantEntryId = resolveAssistantEntryIdFromThinking(toolCall);
-  const chunkId = resolveAssistantChunkId({
-    entries,
-    assistantEntryId,
-    baseChunkId: toolCall.id,
-    kind: "thinking",
-    sequence: toolCall.sequence,
-  });
-  const chunk: SessionTimelineThinkingChunk = {
-    id: chunkId,
-    kind: "thinking",
-    text: toolCall.output ?? toolCall.input ?? "",
-    title: toolCall.title,
-    status: toolCall.status,
-    timestamp: toolCall.timestamp,
-    updatedAt: toolCall.updatedAt,
-    sequence: toolCall.sequence,
-  };
-  const entry = findOrCreateAssistantEntry(entries, assistantEntryId, chunk.timestamp, chunk.sequence);
-  entry.chunks = upsertAssistantChunk(entry.chunks, chunk);
-  applyAssistantEntryBounds(entry);
-  return entries;
 }
 
 function resolveAssistantChunkId(input: {
@@ -504,6 +474,7 @@ function upsertAssistantThinking(
     text: message.text,
     title: "Thinking",
     status: message.streaming === false ? "completed" : "running",
+    ...(message.streamMode ? { streamMode: message.streamMode } : {}),
     timestamp: message.timestamp,
     updatedAt: message.timestamp,
     sequence: message.sequence,
@@ -606,7 +577,7 @@ function mergeThinkingChunk(
   return {
     ...incoming,
     id: current.id,
-    text: mergeThinkingSnapshotText(current.text, incoming.text) ?? "",
+    text: mergeStreamingText(current.text, incoming.text, incoming.streamMode ?? "auto") ?? "",
     title: /^thinking$/iu.test(current.title.trim()) ? incoming.title : current.title,
     timestamp: current.timestamp,
     sequence: current.sequence ?? incoming.sequence,
@@ -723,15 +694,6 @@ function applyAssistantEntryBounds(entry: SessionTimelineAssistantEntry) {
   entry.streaming = entry.chunks.some((chunk) => chunk.kind === "content" && chunk.streaming);
 }
 
-function resolveAssistantEntryIdFromThinking(toolCall: AgentToolCall) {
-  const sourceId = toolCall.commandId ?? toolCall.id;
-  return stripThinkingSuffix(sourceId) ?? stripThinkingSuffix(toolCall.id) ?? sourceId;
-}
-
-function stripThinkingSuffix(value: string) {
-  return value.endsWith(":thinking") ? value.slice(0, -":thinking".length) : null;
-}
-
 function sortItemsByCompleteSequence<T>(
   items: T[],
   getSequence: (item: T) => number | undefined,
@@ -801,15 +763,5 @@ function resolveMergedToolCallOutput(
   current: AgentToolCall,
   incoming: AgentToolCall,
 ) {
-  if (current.kind !== "think" && incoming.kind !== "think") {
-    return mergeOptionalText(current.output, incoming.output);
-  }
-  return mergeThinkingSnapshotText(current.output, incoming.output);
-}
-
-function mergeThinkingSnapshotText(
-  current: string | undefined,
-  incoming: string | undefined,
-) {
-  return mergeStreamingText(current, incoming);
+  return mergeOptionalText(current.output, incoming.output);
 }

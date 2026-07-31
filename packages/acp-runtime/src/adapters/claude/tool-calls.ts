@@ -29,9 +29,8 @@ type ClaudeToolCallRule = (
 ) => AgentToolCall | null;
 
 const CLAUDE_TOOL_CALL_RULES: ClaudeToolCallRule[] = [
-  normalizeClaudeUnavailableThinkingToolCall,
-  normalizeClaudeCompletedSubagentToolCall,
   normalizeClaudeTaskOutputToolCall,
+  normalizeClaudeCompletedSubagentToolCall,
   normalizeClaudePayloadSubagentToolCall,
   normalizeClaudeTitleSubagentToolCall,
   normalizeClaudeSubagentMessageToolCall,
@@ -39,19 +38,6 @@ const CLAUDE_TOOL_CALL_RULES: ClaudeToolCallRule[] = [
   normalizeClaudeMcpToolCall,
   normalizeClaudeShellSearchToolCall,
 ];
-
-function normalizeClaudeUnavailableThinkingToolCall({
-  toolCall,
-  source,
-}: ClaudeToolCallNormalizationContext) {
-  if (toolCall.kind !== "think" || toolCall.status !== "failed") {
-    return null;
-  }
-  const output = extractClaudeToolOutputText(toolCall, source);
-  return /no such tool available:\s*think\b/iu.test(output ?? "")
-    ? { ...toolCall, kind: "tool" as const }
-    : null;
-}
 
 type ClaudeToolCallProjection = {
   id: string;

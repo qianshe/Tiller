@@ -111,7 +111,7 @@ function readTaskToolResult(
   const output = stringifyToolResultContent(part.content) || stringifyToolResultContent(record.toolUseResult);
   return {
     id: toolUse.id,
-    kind: "think",
+    kind: "todo",
     title: toolUse.name,
     status: part.is_error === true ? "failed" : "completed",
     input: JSON.stringify(toolUse.input ?? {}),

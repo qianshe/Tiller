@@ -21,7 +21,7 @@ test("Claude prompt plan observer publishes a changed transcript plan once", () 
         revision,
         toolCalls: revision === "in-progress" ? [] : [{
           id: "task-update-1",
-          kind: "think",
+          kind: "todo",
           title: "TaskUpdate",
           status: "completed",
           input: JSON.stringify({ taskId: "1", status: "completed" }),

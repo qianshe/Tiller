@@ -32,18 +32,17 @@ test("session body snapshot changes when initial history loading completes", () 
   );
 });
 
-test("splitMissionToolCalls separates thinking calls from timeline calls", () => {
+test("splitMissionToolCalls keeps tools titled Thinking in the tool timeline", () => {
   const split = splitMissionToolCalls([
-    { id: "think", commandId: "think", kind: "think", title: "Thinking", status: "running", timestamp: "2026-05-29T00:00:00.000Z" },
+    { id: "think", commandId: "think", kind: "tool", title: "Thinking", status: "running", timestamp: "2026-05-29T00:00:00.000Z" },
     { id: "cmd", commandId: "cmd", kind: "shell", title: "Shell", status: "completed", timestamp: "2026-05-29T00:00:01.000Z" },
   ] as any);
 
-  assert.deepEqual(split.thinkingToolCalls.map((item) => item.id), ["think"]);
-  assert.deepEqual(split.timelineToolCalls.map((item) => item.id), ["cmd"]);
+  assert.deepEqual(split.timelineToolCalls.map((item) => item.id), ["think", "cmd"]);
   assert.deepEqual(split.boundaryTimestamps, ["2026-05-29T00:00:00.000Z", "2026-05-29T00:00:01.000Z"]);
 });
 
-test("splitMissionToolCalls falls back to canonical timeline entries when compatibility tool calls are absent", () => {
+test("splitMissionToolCalls leaves canonical assistant thinking in the assistant timeline", () => {
   const split = splitMissionToolCalls([], [
     {
       id: "assistant-1",
@@ -79,9 +78,8 @@ test("splitMissionToolCalls falls back to canonical timeline entries when compat
     },
   ] as SessionTimelineEntry[]);
 
-  assert.deepEqual(split.thinkingToolCalls.map((item) => item.id), ["assistant-1:thinking"]);
   assert.deepEqual(split.timelineToolCalls.map((item) => item.id), ["cmd-1"]);
-  assert.deepEqual(split.boundaryTimestamps, ["2026-06-30T00:00:00.000Z", "2026-06-30T00:00:01.000Z"]);
+  assert.deepEqual(split.boundaryTimestamps, ["2026-06-30T00:00:01.000Z"]);
 });
 
 test("splitMissionToolCalls keeps canonical Todo completion over a stale live overlay", () => {

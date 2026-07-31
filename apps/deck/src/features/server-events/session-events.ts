@@ -17,7 +17,6 @@ import {
   type SessionSubagentDetail,
 } from "@tiller/shared";
 import { toast } from "../toast";
-import { dropActiveThinkingToolCalls } from "../logbook";
 import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
 import {
   useDeckStore,
@@ -388,7 +387,6 @@ export function applySessionResult(
           payload.outputs,
         ),
       }));
-      pruneActiveThinkingToolCalls(payload.sessionId, toolCallsRef, store);
       mergeSessionToolCalls(payload.sessionId, payload.toolCalls ?? []);
       store.setDiffs((current) => ({
         ...current,
@@ -846,27 +844,6 @@ function mergeTimelineEntries(
     ...incoming,
     ...current.filter((entry) => !seenIds.has(entry.id)),
   ];
-}
-
-function pruneActiveThinkingToolCalls(
-  sessionId: string,
-  toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>>,
-  store: DeckStore,
-) {
-  const currentSessionToolCalls = toolCallsRef.current[sessionId] ?? [];
-  const nextSessionToolCalls = dropActiveThinkingToolCalls(currentSessionToolCalls);
-  if (nextSessionToolCalls.length === currentSessionToolCalls.length) {
-    return;
-  }
-
-  store.setToolCalls((current) => {
-    const next = {
-      ...current,
-      [sessionId]: nextSessionToolCalls,
-    };
-    toolCallsRef.current = next;
-    return next;
-  });
 }
 
 function pruneTimelineIndexCaches(sessions: SessionSummary[]) {

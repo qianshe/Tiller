@@ -28,16 +28,15 @@ test("subagent detail service builds a logical timeline with prompt, thinking, t
     updatedAt: "2026-07-22T00:00:00.000Z",
   });
   service.handleEvent("session-1", "root-1", {
-    type: "tool-call",
+    type: "message",
     origin: { scope: "subagent", parentToolCallId: "root-1" },
-    toolCall: {
-      id: "reply-1:thinking",
-      kind: "think",
-      title: "Thinking",
-      status: "running",
-      output: "I should inspect the files",
+    message: {
+      id: "reply-1",
+      role: "assistant",
+      contentKind: "thought",
+      text: "I should inspect the files",
       timestamp: "2026-07-22T00:00:01.000Z",
-      updatedAt: "2026-07-22T00:00:01.000Z",
+      streaming: false,
     },
   });
   service.handleEvent("session-1", "root-1", {

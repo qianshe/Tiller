@@ -176,6 +176,10 @@ export function flushLiveAssistantMessage(sessionId: string, context: HelmHandle
   const finalizedMessage = {
     ...message,
     streaming: false,
+    // The live buffer stores the accumulated full text. Its terminal
+    // publication is therefore a snapshot, even when the provider sent
+    // earlier chunks as deltas.
+    streamMode: "snapshot" as const,
   };
   const originalEvent = {
     type: "message" as const,

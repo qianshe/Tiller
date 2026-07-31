@@ -4,9 +4,11 @@ import type {
   AgentToolCall,
   MissionPromptContextItem,
   SessionTimelineEntry,
+  SessionTimelineThinkingChunk,
   SessionSubagentDetail,
 } from "@tiller/shared";
 import {
+  mergeStreamingText,
   normalizeComparableReplayText,
   isTranscriptEventEntry,
   looksLikeCompactionLifecycleMessage,
@@ -41,7 +43,6 @@ type PlainMessagesProps = {
   sessionId: string | null;
   items: AgentMessage[];
   timelineItems?: SessionTimelineEntry[];
-  thinkingToolCalls?: AgentToolCall[];
   toolCalls?: AgentToolCall[];
   showThinking?: boolean;
   canHandoffAssistantMessage?: boolean;
@@ -66,7 +67,6 @@ export function PlainMessages({
   sessionId,
   items,
   timelineItems = [],
-  thinkingToolCalls = [],
   toolCalls = [],
   showThinking = true,
   canHandoffAssistantMessage = false,
@@ -137,7 +137,6 @@ export function PlainMessages({
       displayMessages,
       timelineItems: effectiveTimelineItems,
       showThinking,
-      thinkingToolCalls,
       toolCalls,
     }),
     [
@@ -146,7 +145,6 @@ export function PlainMessages({
       historyState?.hasMore,
       sessionId,
       showThinking,
-      thinkingToolCalls,
       toolCalls,
     ],
   );
@@ -371,7 +369,7 @@ export function PlainMessages({
           return (
             <div key={renderItem.renderKey} className={spacingClassName}>
               <PlainThinkingItem
-                item={renderItem.toolCall}
+                items={renderItem.thinkingParts ?? [renderItem.thinking]}
                 hasNewerContent={index < renderMessages.length - 1}
               />
             </div>
@@ -480,7 +478,7 @@ function PlainSubagentConversation({
           return (
             <div key={item.renderKey} className={className}>
               <PlainThinkingItem
-                item={item.toolCall}
+                items={item.thinkingParts ?? [item.thinking]}
                 hasNewerContent={index < renderItems.length - 1}
               />
             </div>
@@ -512,7 +510,14 @@ export type RemoteHistoryRevealBaseline = {
 
 type PlainConversationItem =
   | { kind: "message"; sourceIndex?: number; timestamp: string; sequence?: number; message: AgentMessage }
-  | { kind: "thinking"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: AgentToolCall }
+  | {
+      kind: "thinking";
+      sourceIndex?: number;
+      timestamp: string;
+      sequence?: number;
+      thinking: SessionTimelineThinkingChunk;
+      thinkingParts?: SessionTimelineThinkingChunk[];
+    }
   | { kind: "subagent"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: ConversationToolCallItem }
   | { kind: "tool"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: ConversationToolCallItem }
   | { kind: "tool-group"; sourceIndex?: number; timestamp: string; sequence?: number; group: ConversationToolCallItem[] }
@@ -530,7 +535,8 @@ export type PlainMessageRenderItem =
   | {
       kind: "thinking";
       renderKey: string;
-      toolCall: AgentToolCall;
+      thinking: SessionTimelineThinkingChunk;
+      thinkingParts?: SessionTimelineThinkingChunk[];
     }
   | {
       kind: "tool";
@@ -692,13 +698,14 @@ export function resolvePlainMessageRenderItems(
       };
     }
     if (item.kind === "thinking") {
-      const baseKey = `thinking-${item.toolCall.id}`;
+      const baseKey = `thinking-${item.thinking.id}`;
       const seenCount = seenKeys.get(baseKey) ?? 0;
       seenKeys.set(baseKey, seenCount + 1);
       return {
         kind: "thinking",
         renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
-        toolCall: item.toolCall,
+        thinking: item.thinking,
+        thinkingParts: item.thinkingParts,
       };
     }
     if (item.kind === "tool") {
@@ -762,12 +769,16 @@ function resolvePlainMessageRenderSignaturePart(item: PlainMessageRenderItem) {
     ].join(":");
   }
   if (item.kind === "thinking") {
-    return resolveToolRenderSignaturePart(
+    const thinkingParts = item.thinkingParts ?? [item.thinking];
+    return [
       item.renderKey,
-      item.toolCall,
-      item.toolCall.output ?? "",
-      item.toolCall.input ?? "",
-    );
+      ...thinkingParts.map((thinking) => resolveToolRenderSignaturePart(
+        thinking.id,
+        thinking,
+        thinking.text,
+        "",
+      )),
+    ].join(":");
   }
   if (item.kind === "subagent") {
     return resolveToolRenderSignaturePart(
@@ -801,7 +812,7 @@ function resolvePlainMessageRenderSignaturePart(item: PlainMessageRenderItem) {
 
 function resolveToolRenderSignaturePart(
   renderKey: string,
-  toolCall: AgentToolCall | ConversationToolCallItem,
+  toolCall: AgentToolCall | ConversationToolCallItem | SessionTimelineThinkingChunk,
   outputText: string,
   inputText: string,
 ) {
@@ -1001,7 +1012,6 @@ export function resolvePlainConversationDisplayItems({
   displayMessages,
   timelineItems,
   showThinking,
-  thinkingToolCalls: _thinkingToolCalls,
   toolCalls,
   groupTools = true,
 }: {
@@ -1009,8 +1019,6 @@ export function resolvePlainConversationDisplayItems({
   displayMessages: AgentMessage[];
   timelineItems: SessionTimelineEntry[];
   showThinking: boolean;
-  /** @deprecated - thinking is now injected via displayMessages with contentKind: "thought" */
-  thinkingToolCalls?: AgentToolCall[];
   toolCalls: AgentToolCall[];
   groupTools?: boolean;
 }) {
@@ -1037,15 +1045,12 @@ export function resolvePlainConversationDisplayItems({
       if (entry.kind === "tool_call") {
         return [entry.toolCall.id];
       }
-      if (entry.kind === "assistant_message") {
-        return entry.chunks.flatMap((chunk) => chunk.kind === "thinking" ? [chunk.id] : []);
-      }
       return [];
     }),
   );
   const liveToolCalls = groupToolCalls(
     safeToolCalls.filter((toolCall) =>
-      toolCall.kind !== "think" && !canonicalToolCallIds.has(toolCall.id)
+      !canonicalToolCallIds.has(toolCall.id)
     ),
   );
   const liveToolItems = liveToolCalls.map((toolCall, index) =>
@@ -1241,7 +1246,10 @@ function normalizePlainMessageRenderSource(
       message: text === item.message.text ? item.message : { ...item.message, text },
     };
   }
-  if (item.kind === "thinking" || item.kind === "tool" || item.kind === "subagent") {
+  if (item.kind === "thinking") {
+    return isRenderableTimelineChunk(item.thinking) && item.thinking.kind === "thinking" ? item : null;
+  }
+  if (item.kind === "tool" || item.kind === "subagent") {
     return isRenderableToolLike(item.toolCall) ? item : null;
   }
   if (item.kind === "tool-group") {
@@ -1265,7 +1273,7 @@ function buildPlainConversationItems(
   groupTools = true,
 ): PlainConversationItem[] {
   const safeMessages = normalizeAgentMessages(messages);
-  const visibleToolCalls = normalizeAgentToolCalls(toolCalls).filter((toolCall) => toolCall.kind !== "think");
+  const visibleToolCalls = normalizeAgentToolCalls(toolCalls);
   const messageItems = safeMessages.flatMap<PlainConversationItem>((message, index) => {
     if (message.role === "assistant" && message.contentKind === "thought") {
       return showThinking
@@ -1274,12 +1282,13 @@ function buildPlainConversationItems(
             sourceIndex: index,
             timestamp: message.timestamp,
             sequence: message.sequence,
-            toolCall: {
+            thinking: {
               id: `${message.id}:thinking`,
-              kind: "think",
+              kind: "thinking",
               title: "Thinking",
               status: message.streaming === false ? "completed" : "running",
-              output: message.text,
+              streamMode: message.streamMode,
+              text: message.text,
               timestamp: message.timestamp,
               updatedAt: message.timestamp,
               sequence: message.sequence,
@@ -1361,16 +1370,7 @@ function buildPlainConversationItemsFromTimeline(
               sourceIndex,
               timestamp: chunk.timestamp,
               sequence: chunk.sequence,
-              toolCall: {
-                id: chunk.id,
-                kind: "think",
-                title: chunk.title,
-                status: chunk.status,
-                output: chunk.text,
-                timestamp: chunk.timestamp,
-                updatedAt: chunk.updatedAt,
-                sequence: chunk.sequence,
-              },
+              thinking: chunk,
             });
             sourceIndex += 1;
           }
@@ -1519,49 +1519,63 @@ function mergeAdjacentThinkingItems(
 ): PlainConversationItem[] {
   return items.reduce<PlainConversationItem[]>((merged, item) => {
     const last = merged.at(-1);
-    if (
-      last?.kind !== "thinking" ||
-      item.kind !== "thinking" ||
-      !shouldMergeAdjacentThinkingItems(last.toolCall, item.toolCall)
-    ) {
+    if (last?.kind !== "thinking" || item.kind !== "thinking") {
       merged.push(item);
       return merged;
     }
+
+    const currentParts = last.thinkingParts ?? [last.thinking];
+    const incomingParts = item.thinkingParts ?? [item.thinking];
+    const currentPart = currentParts.at(-1);
+    const incomingPart = incomingParts[0];
+    if (!currentPart || !incomingPart) {
+      merged.push(item);
+      return merged;
+    }
+
+    const nextParts = shouldMergeAdjacentThinkingItems(currentPart, incomingPart)
+      ? [
+          ...currentParts.slice(0, -1),
+          mergeThinkingChunks(currentPart, incomingPart),
+          ...incomingParts.slice(1),
+        ]
+      : [...currentParts, ...incomingParts];
 
     merged[merged.length - 1] = {
       kind: "thinking",
       sourceIndex: last.sourceIndex,
       timestamp: last.timestamp,
       sequence: last.sequence ?? item.sequence,
-      toolCall: mergeThinkingToolCalls(last.toolCall, item.toolCall),
+      thinking: nextParts[0] ?? last.thinking,
+      thinkingParts: nextParts.length > 1 ? nextParts : undefined,
     };
     return merged;
   }, []);
 }
 
 function shouldMergeAdjacentThinkingItems(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
+  current: SessionTimelineThinkingChunk,
+  incoming: SessionTimelineThinkingChunk,
 ) {
   if (current.id === incoming.id) {
     return true;
   }
-  if (!isGenericThinkingToolCall(current) || !isGenericThinkingToolCall(incoming)) {
+  if (!isGenericThinkingChunk(current) || !isGenericThinkingChunk(incoming)) {
     return false;
   }
   return areGenericThinkingSnapshotsCompatible(current, incoming);
 }
 
-function isGenericThinkingToolCall(toolCall: AgentToolCall) {
-  return /^thinking$/iu.test(toolCall.title.trim());
+function isGenericThinkingChunk(chunk: SessionTimelineThinkingChunk) {
+  return /^thinking$/iu.test(chunk.title.trim());
 }
 
 function areGenericThinkingSnapshotsCompatible(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
+  current: SessionTimelineThinkingChunk,
+  incoming: SessionTimelineThinkingChunk,
 ) {
-  const currentText = resolveThinkingToolCallText(current);
-  const incomingText = resolveThinkingToolCallText(incoming);
+  const currentText = current.text.trim();
+  const incomingText = incoming.text.trim();
   if (!currentText || !incomingText) {
     return true;
   }
@@ -1570,10 +1584,6 @@ function areGenericThinkingSnapshotsCompatible(
     currentText.endsWith(incomingText) ||
     incomingText.startsWith(currentText) ||
     incomingText.endsWith(currentText);
-}
-
-function resolveThinkingToolCallText(toolCall: AgentToolCall) {
-  return (toolCall.output ?? toolCall.input ?? "").trim();
 }
 
 function mergeAdjacentMessageItems(
@@ -1606,18 +1616,17 @@ function mergeAdjacentMessageItems(
   }, []);
 }
 
-function mergeThinkingToolCalls(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-): AgentToolCall {
+function mergeThinkingChunks(
+  current: SessionTimelineThinkingChunk,
+  incoming: SessionTimelineThinkingChunk,
+): SessionTimelineThinkingChunk {
   return {
     ...current,
     ...incoming,
     id: current.id,
     title: resolveMergedThinkingTitle(current.title, incoming.title),
     status: resolveMergedThinkingStatus(current.status, incoming.status),
-    output: mergeThinkingText(current.output, incoming.output),
-    input: mergeThinkingText(current.input, incoming.input),
+    text: mergeThinkingText(current.text, incoming.text, incoming.streamMode),
     timestamp: current.timestamp,
     updatedAt: incoming.updatedAt,
   };
@@ -1631,26 +1640,18 @@ function resolveMergedThinkingTitle(
 }
 
 function resolveMergedThinkingStatus(
-  _current: AgentToolCall["status"],
-  incoming: AgentToolCall["status"],
+  _current: SessionTimelineThinkingChunk["status"],
+  incoming: SessionTimelineThinkingChunk["status"],
 ) {
   return incoming;
 }
 
 function mergeThinkingText(
-  current: string | undefined,
-  incoming: string | undefined,
+  current: string,
+  incoming: string,
+  streamMode: SessionTimelineThinkingChunk["streamMode"] | "auto" = "auto",
 ) {
-  if (!current) {
-    return incoming;
-  }
-  if (!incoming || current.endsWith(incoming)) {
-    return current;
-  }
-  if (incoming.startsWith(current)) {
-    return incoming;
-  }
-  return `${current}\n\n${incoming}`;
+  return mergeStreamingText(current, incoming, streamMode ?? "auto") ?? "";
 }
 
 function isAcpPromptWrapperEcho(message: AgentMessage, messages: AgentMessage[]) {

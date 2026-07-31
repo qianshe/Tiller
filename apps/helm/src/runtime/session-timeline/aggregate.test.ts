@@ -182,16 +182,14 @@ test("aggregate nests thinking into assistant entry", () => {
   let aggregate = createEmptySessionTimelineAggregate("session-4");
 
   aggregate = applySessionRuntimeEvent(aggregate, {
-    type: "tool-call",
-    toolCall: {
-      id: "assistant-1:thinking",
-      commandId: "assistant-1:thinking",
-      kind: "think",
-      title: "Thinking",
-      status: "completed",
-      output: "Let me think...",
+    type: "message",
+    message: {
+      id: "assistant-1",
+      role: "assistant",
+      contentKind: "thought",
+      text: "Let me think...",
       timestamp: "2026-06-29T10:00:01.000Z",
-      updatedAt: "2026-06-29T10:00:01.000Z",
+      streaming: false,
     },
   });
 
@@ -209,44 +207,41 @@ test("aggregate concatenates thinking delta chunks instead of overwriting them",
   let aggregate = createEmptySessionTimelineAggregate("session-4b");
 
   aggregate = applySessionRuntimeEvent(aggregate, {
-    type: "tool-call",
-    toolCall: {
-      id: "assistant-think-1:thinking",
-      commandId: "assistant-think-1:thinking",
-      kind: "think",
-      title: "Thinking",
-      status: "running",
-      output: "Let me",
+    type: "message",
+    message: {
+      id: "assistant-think-1",
+      role: "assistant",
+      contentKind: "thought",
+      text: "Let me",
       timestamp: "2026-07-03T22:41:01.000Z",
-      updatedAt: "2026-07-03T22:41:01.000Z",
+      streaming: true,
+      streamMode: "delta",
     },
   });
 
   aggregate = applySessionRuntimeEvent(aggregate, {
-    type: "tool-call",
-    toolCall: {
-      id: "assistant-think-1:thinking",
-      commandId: "assistant-think-1:thinking",
-      kind: "think",
-      title: "Thinking",
-      status: "running",
-      output: " think",
+    type: "message",
+    message: {
+      id: "assistant-think-1",
+      role: "assistant",
+      contentKind: "thought",
+      text: " think",
       timestamp: "2026-07-03T22:41:02.000Z",
-      updatedAt: "2026-07-03T22:41:02.000Z",
+      streaming: true,
+      streamMode: "delta",
     },
   });
 
   aggregate = applySessionRuntimeEvent(aggregate, {
-    type: "tool-call",
-    toolCall: {
-      id: "assistant-think-1:thinking",
-      commandId: "assistant-think-1:thinking",
-      kind: "think",
-      title: "Thinking",
-      status: "completed",
-      output: "。",
+    type: "message",
+    message: {
+      id: "assistant-think-1",
+      role: "assistant",
+      contentKind: "thought",
+      text: "。",
       timestamp: "2026-07-03T22:41:03.000Z",
-      updatedAt: "2026-07-03T22:41:03.000Z",
+      streaming: false,
+      streamMode: "delta",
     },
   });
 
@@ -264,31 +259,29 @@ test("buildSessionTimelineBatch emits thinking streaming updates even when the a
   const before = applySessionRuntimeEvent(
     createEmptySessionTimelineAggregate("session-4c"),
     {
-      type: "tool-call",
-      toolCall: {
-        id: "assistant-think-stream:thinking",
-        commandId: "assistant-think-stream:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Let me",
+      type: "message",
+      message: {
+        id: "assistant-think-stream",
+        role: "assistant",
+        contentKind: "thought",
+        text: "Let me",
         timestamp: "2026-07-04T10:01:01.000Z",
-        updatedAt: "2026-07-04T10:01:01.000Z",
+        streaming: true,
+        streamMode: "delta",
       },
     },
   );
 
   const after = applySessionRuntimeEvent(before, {
-    type: "tool-call",
-    toolCall: {
-      id: "assistant-think-stream:thinking",
-      commandId: "assistant-think-stream:thinking",
-      kind: "think",
-      title: "Thinking",
-      status: "running",
-      output: " think",
+    type: "message",
+    message: {
+      id: "assistant-think-stream",
+      role: "assistant",
+      contentKind: "thought",
+      text: " think",
       timestamp: "2026-07-04T10:01:02.000Z",
-      updatedAt: "2026-07-04T10:01:02.000Z",
+      streaming: true,
+      streamMode: "delta",
     },
   });
 

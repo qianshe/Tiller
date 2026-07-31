@@ -31,6 +31,58 @@ import {
   type TestContextCapture,
 } from "./session/event/test-support.js";
 
+function assistantThoughtEvent(
+  id: string,
+  text: string,
+  timestamp: string,
+  options: { streaming?: boolean; streamMode?: AgentMessage["streamMode"] } = {},
+): Extract<SessionRuntimeEvent, { type: "message" }> {
+  return {
+    type: "message",
+    message: {
+      id,
+      role: "assistant",
+      contentKind: "thought",
+      text,
+      timestamp,
+      streaming: options.streaming ?? true,
+      streamMode: options.streamMode ?? "delta",
+    },
+  };
+}
+
+test("runtime keeps a tool titled Thinking in the tool timeline", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext([], capture, "session-legacy-think-tool");
+
+  handleRuntimeEvent(
+    "session-legacy-think-tool",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-think-1",
+        kind: "tool",
+        title: "Thinking",
+        status: "completed",
+        output: "Inspect the repository",
+        timestamp: "2026-07-30T00:00:00.000Z",
+        updatedAt: "2026-07-30T00:00:01.000Z",
+      },
+    },
+    context,
+  );
+
+  assert.equal(capture.timelineEntries?.length, 1);
+  const entry = capture.timelineEntries?.[0];
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "tool");
+});
+
 test("runtime terminal tool calls publish canonical timeline batches without compatibility tool_call updates", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
@@ -392,21 +444,14 @@ test("runtime closes the real OpenCode background_output and Thinking sequence",
   const taskId = "bg_348250a7";
   const subagentSessionId = "ses_0593ecee3ffeelSz5IDVb2Bh49";
   const subagentId = "call_71f5f74135514d80beeeb548";
-  const thinkingId = `${sessionId}-msg-000001-000001-pmsgfa6c17c390015:thinking`;
+  const thinkingId = `${sessionId}-msg-000001-000001-pmsgfa6c17c390015`;
 
   for (const output of ["The", " user wants to", " test again."]) {
-    handleRuntimeEvent(sessionId, {
-      type: "tool-call",
-      toolCall: {
-        id: thinkingId,
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output,
-        timestamp: "2026-07-28T03:25:10.000Z",
-        updatedAt: "2026-07-28T03:25:10.000Z",
-      },
-    } satisfies SessionRuntimeEvent, context);
+    handleRuntimeEvent(
+      sessionId,
+      assistantThoughtEvent(thinkingId, output, "2026-07-28T03:25:10.000Z"),
+      context,
+    );
   }
   handleRuntimeEvent(sessionId, {
     type: "tool-call",
@@ -511,18 +556,15 @@ test("runtime closes the real OpenCode background_output and Thinking sequence",
       updatedAt: "2026-07-28T03:25:22.000Z",
     },
   } satisfies SessionRuntimeEvent, context);
-  handleRuntimeEvent(sessionId, {
-    type: "tool-call",
-    toolCall: {
-      id: `${sessionId}-msg-000001-000001-pmsgfa6c17c390015:thinking`,
-      kind: "think",
-      title: "Thinking",
-      status: "running",
-      output: "The subagent test passed again.",
-      timestamp: "2026-07-28T03:25:22.000Z",
-      updatedAt: "2026-07-28T03:25:22.000Z",
-    },
-  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(
+    sessionId,
+    assistantThoughtEvent(
+      `${sessionId}-msg-000001-000001-pmsgfa6c17c390015`,
+      "The subagent test passed again.",
+      "2026-07-28T03:25:22.000Z",
+    ),
+    context,
+  );
   handleRuntimeEvent(sessionId, {
     type: "message",
     message: {
@@ -1438,7 +1480,7 @@ test("runtime tool-call events persist and broadcast without stage log", () => {
   assert.equal(toolCallEntry?.toolCall?.output, "main");
 });
 
-test("runtime ACP thought chunks with generated ids stay in one thinking stream", () => {
+test("runtime assistant thought chunks with generated ids stay in one thinking stream", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedToolCalls: AgentToolCall[] = [];
@@ -1449,49 +1491,43 @@ test("runtime ACP thought chunks with generated ids stay in one thinking stream"
 
   handleRuntimeEvent(
     "session-thought-stream",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thought-stream-msg-alpha:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "先看 ACP ",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thought-stream-msg-alpha",
+      "先看 ACP ",
+      "2026-04-30T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
     "session-thought-stream",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thought-stream-msg-beta:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "再对照 Zed",
-        timestamp: "2026-04-30T00:00:02.000Z",
-        updatedAt: "2026-04-30T00:00:02.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thought-stream-msg-beta",
+      "再对照 Zed",
+      "2026-04-30T00:00:02.000Z",
+    ),
     context,
   );
 
-  const thoughtUpdates = capture.sessionUpdates?.map((update) =>
-    JSON.parse(update.payloadJson).toolCall as AgentToolCall,
-  ) ?? [];
-  assert.equal(thoughtUpdates.length, 2);
-  assert.equal(thoughtUpdates[0]?.id, thoughtUpdates[1]?.id);
-  assert.match(thoughtUpdates[0]?.id ?? "", /^session-thought-stream-msg-\d{6}-\d{6}-.+:thinking$/u);
-  assert.deepEqual(capture.sessionUpdates?.map((update) => update.sequence), [1, 2]);
+  const assistantEntry = capture.timelineEntries?.find(
+    (entry) => entry.kind === "assistant_message",
+  );
+  assert.equal(assistantEntry?.kind, "assistant_message");
+  assert.match(assistantEntry?.id ?? "", /^session-thought-stream-msg-\d{6}-\d{6}-.+$/u);
+  assert.equal(
+    assistantEntry?.kind === "assistant_message"
+      ? assistantEntry.chunks.find((chunk) => chunk.kind === "thinking")?.text
+      : undefined,
+    "先看 ACP 再对照 Zed",
+  );
+  assert.equal(
+    capture.timelineEntries?.some((entry) => entry.kind === "tool_call"),
+    false,
+  );
   assert.equal(appendedToolCalls.length, 0);
   assert.equal(capture.persisted.length, 0);
 });
 
-test("runtime thinking broadcasts deltas instead of persisted cumulative output", () => {
+test("runtime assistant thinking broadcasts message deltas", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const storedById = new Map<string, AgentToolCall>();
@@ -1511,40 +1547,31 @@ test("runtime thinking broadcasts deltas instead of persisted cumulative output"
 
   handleRuntimeEvent(
     "session-thinking-delta",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thinking-delta-msg-a:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "A",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thinking-delta-msg-a",
+      "A",
+      "2026-04-30T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
     "session-thinking-delta",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thinking-delta-msg-b:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "B",
-        timestamp: "2026-04-30T00:00:02.000Z",
-        updatedAt: "2026-04-30T00:00:02.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thinking-delta-msg-b",
+      "B",
+      "2026-04-30T00:00:02.000Z",
+    ),
     context,
   );
 
-  const thoughtOutputs = capture.sessionUpdates?.map((update) =>
-    (JSON.parse(update.payloadJson).toolCall as AgentToolCall).output,
-  );
+  const thoughtOutputs = capture.detailBroadcasts
+    .filter((item: any) =>
+      item.method === "session/update" &&
+      item.params?.update?.kind === "agent_message" &&
+      item.params.update.message?.contentKind === "thought" &&
+      item.params.update.streaming === true
+    )
+    .map((item: any) => item.params.update.message.text);
   assert.deepEqual(thoughtOutputs, ["A", "B"]);
   assert.deepEqual([...storedById.values()], []);
 });
@@ -1570,18 +1597,11 @@ test("runtime status completion finalizes active thinking stream", () => {
 
   handleRuntimeEvent(
     "session-thinking-complete",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thinking-complete-msg-a:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "A",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thinking-complete-msg-a",
+      "A",
+      "2026-04-30T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
@@ -1670,7 +1690,7 @@ test("runtime idle status preserves background subagents and unique journal sequ
   assert.equal(new Set(updateSequences).size, updateSequences.length, JSON.stringify(updateSequences));
 });
 
-test("runtime errors finalize active thinking without reusing its journal sequence", () => {
+test("runtime errors flush active assistant thinking without reusing its journal sequence", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -1683,18 +1703,11 @@ test("runtime errors finalize active thinking without reusing its journal sequen
 
   handleRuntimeEvent(
     "session-thinking-error",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "error-thinking:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Inspect the failed request",
-        timestamp: "2026-07-13T00:00:01.000Z",
-        updatedAt: "2026-07-13T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "error-thinking",
+      "Inspect the failed request",
+      "2026-07-13T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
@@ -1711,7 +1724,7 @@ test("runtime errors finalize active thinking without reusing its journal sequen
   const thinkingChunk = thinkingEntry?.kind === "assistant_message"
     ? thinkingEntry.chunks.find((chunk) => chunk.kind === "thinking")
     : undefined;
-  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.status : undefined, "failed");
+  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.status : undefined, "completed");
   assert.equal(thinkingEntry?.sequence, 1);
   const updateSequences = capture.sessionUpdates?.map((update) => update.sequence) ?? [];
   assert.equal(new Set(updateSequences).size, updateSequences.length, JSON.stringify(updateSequences));
@@ -1730,18 +1743,11 @@ test("runtime tool boundaries finalize active thinking before splitting the assi
 
   handleRuntimeEvent(
     "session-thinking-tool-boundary",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "tool-boundary-thinking:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Choose the next command",
-        timestamp: "2026-07-13T00:00:01.000Z",
-        updatedAt: "2026-07-13T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "tool-boundary-thinking",
+      "Choose the next command",
+      "2026-07-13T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
@@ -1770,43 +1776,6 @@ test("runtime tool boundaries finalize active thinking before splitting the assi
   assert.equal(new Set(updateSequences).size, updateSequences.length, JSON.stringify(updateSequences));
 });
 
-test("runtime ignores structurally empty thinking frames", () => {
-  const logs: string[] = [];
-  const capture: TestContextCapture = {
-    broadcasts: [],
-    detailBroadcasts: [],
-    persisted: [],
-    timelineEntries: [],
-  };
-  const context = createTestContext(logs, capture, "session-empty-thinking");
-
-  for (const [index, output] of ["\u200B\u2060\uFEFF", "{}", "[]", "null"].entries()) {
-    handleRuntimeEvent(
-      "session-empty-thinking",
-      {
-        type: "tool-call",
-        toolCall: {
-          id: `empty-thinking-${index}:thinking`,
-          kind: "think",
-          title: "Thinking",
-          status: "running",
-          output,
-          timestamp: "2026-07-13T00:00:01.000Z",
-          updatedAt: "2026-07-13T00:00:01.000Z",
-        },
-      } satisfies SessionRuntimeEvent,
-      context,
-    );
-  }
-  handleRuntimeEvent(
-    "session-empty-thinking",
-    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
-    context,
-  );
-
-  assert.deepEqual(capture.timelineEntries, []);
-});
-
 test("runtime assistant content finalizes active thinking before clearing its segment", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
@@ -1819,18 +1788,11 @@ test("runtime assistant content finalizes active thinking before clearing its se
 
   handleRuntimeEvent(
     "session-thinking-before-content",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "reply-with-thought:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Inspect the canonical timeline",
-        timestamp: "2026-07-13T00:00:01.000Z",
-        updatedAt: "2026-07-13T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "reply-with-thought",
+      "Inspect the canonical timeline",
+      "2026-07-13T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
@@ -1871,18 +1833,15 @@ test("runtime assistant deltas without an explicit streaming flag finalize activ
   };
   const context = createTestContext(logs, capture, "session-thinking-before-implicit-content");
 
-  handleRuntimeEvent("session-thinking-before-implicit-content", {
-    type: "tool-call",
-    toolCall: {
-      id: "implicit-content-thinking:thinking",
-      kind: "think",
-      title: "Thinking",
-      status: "running",
-      output: "Wait for the background result",
-      timestamp: "2026-07-28T00:00:00.000Z",
-      updatedAt: "2026-07-28T00:00:00.000Z",
-    },
-  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(
+    "session-thinking-before-implicit-content",
+    assistantThoughtEvent(
+      "implicit-content-thinking",
+      "Wait for the background result",
+      "2026-07-28T00:00:00.000Z",
+    ),
+    context,
+  );
   handleRuntimeEvent("session-thinking-before-implicit-content", {
     type: "message",
     message: {
@@ -1924,18 +1883,15 @@ test("runtime finalized assistant messages complete thinking before rotating mes
       streaming: false,
     },
   } satisfies SessionRuntimeEvent, context);
-  handleRuntimeEvent("session-thinking-segment-rotation", {
-    type: "tool-call",
-    toolCall: {
-      id: "provider-thinking:thinking",
-      kind: "think",
-      title: "Thinking",
-      status: "running",
-      output: "等待后台任务结果",
-      timestamp: "2026-07-28T00:00:01.000Z",
-      updatedAt: "2026-07-28T00:00:01.000Z",
-    },
-  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(
+    "session-thinking-segment-rotation",
+    assistantThoughtEvent(
+      "provider-thinking",
+      "等待后台任务结果",
+      "2026-07-28T00:00:01.000Z",
+    ),
+    context,
+  );
   handleRuntimeEvent("session-thinking-segment-rotation", {
     type: "message",
     message: {
@@ -1988,18 +1944,7 @@ test("runtime timeline store nests thinking and assistant content under one assi
 
   handleRuntimeEvent(
     "session-timeline-nested",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "reply-1:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Plan",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent("reply-1", "Plan", "2026-04-30T00:00:01.000Z"),
     context,
   );
   handleRuntimeEvent(

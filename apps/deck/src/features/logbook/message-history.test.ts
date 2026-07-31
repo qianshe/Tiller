@@ -787,13 +787,13 @@ test("mergeMessageHistory updates existing messages in place", () => {
   assert.equal(merged[0]?.timestamp, "2026-04-28T10:00:01.000Z");
 });
 
-test("mergeToolCallHistory keeps the latest cumulative thinking output without duplicates", () => {
+test("mergeToolCallHistory applies cumulative snapshots to ordinary tools", () => {
   const merged = mergeToolCallHistory(
     [
       {
         id: "session-1-msg-s0:thinking",
         commandId: "session-1-msg-s0:thinking",
-        kind: "think",
+        kind: "tool",
         title: "Thinking",
         status: "running",
         output: "分析 A\n分析 B",
@@ -805,7 +805,7 @@ test("mergeToolCallHistory keeps the latest cumulative thinking output without d
       {
         id: "session-1-msg-s0:thinking",
         commandId: "session-1-msg-s0:thinking",
-        kind: "think",
+        kind: "tool",
         title: "Thinking",
         status: "running",
         output: "分析 A",

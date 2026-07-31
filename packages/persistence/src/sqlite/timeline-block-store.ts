@@ -641,15 +641,7 @@ function normalizeTimelineEntry(entry: SessionTimelineEntry): SessionTimelineEnt
 }
 
 function resolveToolCallTimelineEntryId(toolCall: AgentToolCall) {
-  if (toolCall.kind === "think") {
-    const sourceId = toolCall.commandId ?? toolCall.id;
-    return stripThinkingSuffix(sourceId) ?? stripThinkingSuffix(toolCall.id) ?? sourceId;
-  }
   return `tool:${toolCall.id}`;
-}
-
-function stripThinkingSuffix(value: string) {
-  return value.endsWith(":thinking") ? value.slice(0, -":thinking".length) : null;
 }
 
 function createBlockId(sessionId: string, firstPosition: number) {

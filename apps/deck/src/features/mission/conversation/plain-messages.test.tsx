@@ -35,7 +35,6 @@ function renderPlainMessages(props: Partial<Parameters<typeof PlainMessages>[0]>
     createElement(PlainMessages, {
       sessionId: "session-1",
       items: [],
-      thinkingToolCalls: [],
       toolCalls: [],
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
@@ -47,7 +46,38 @@ function renderPlainMessages(props: Partial<Parameters<typeof PlainMessages>[0]>
   );
 }
 
-test("plain messages renders thinking tool calls in the conversation timeline", () => {
+function assistantThinkingTimeline(
+  ...thoughts: Array<{
+    id: string;
+    text: string;
+    status: "running" | "completed";
+    streamMode?: "delta" | "snapshot";
+    timestamp: string;
+    updatedAt?: string;
+    sequence?: number;
+  }>
+): SessionTimelineEntry[] {
+  return thoughts.map((thought, index) => ({
+    id: `${thought.id}:assistant:${index}`,
+    kind: "assistant_message",
+    chunks: [{
+      id: thoughts.length === 1 ? thought.id : `${thought.id}:${index}`,
+      kind: "thinking",
+      text: thought.text,
+      title: "Thinking",
+      status: thought.status,
+      streamMode: thought.streamMode,
+      timestamp: thought.timestamp,
+      updatedAt: thought.updatedAt ?? thought.timestamp,
+      sequence: thought.sequence,
+    }],
+    timestamp: thought.timestamp,
+    updatedAt: thought.updatedAt ?? thought.timestamp,
+    sequence: thought.sequence,
+  }));
+}
+
+test("plain messages renders tools titled Thinking as ordinary tools", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -59,10 +89,10 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
           timestamp: "2026-05-17T10:00:00.000Z",
         },
       ],
-      thinkingToolCalls: [
+      toolCalls: [
         {
           id: "think-1",
-          kind: "think",
+          kind: "tool",
           title: "Tab 替换边界探索",
           status: "completed",
           output: "完整 Thinking 内容",
@@ -70,6 +100,7 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
           updatedAt: "2026-05-17T10:00:02.000Z",
         },
       ],
+      showThinking: false,
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
@@ -80,20 +111,10 @@ test("plain messages renders thinking tool calls in the conversation timeline", 
 
   assert.doesNotMatch(html, /plain-message-role/);
   assert.match(html, /先给一个结论。/);
-  assert.match(html, /Thinking/);
-  assert.doesNotMatch(html, /Thinking · Tab 替换边界探索/);
+  assert.match(html, /Tab 替换边界探索/);
   assert.match(html, /完整 Thinking 内容/);
-  assert.match(html, /plain-thinking-row[^"]*w-\[calc\(100%-0\.625rem\)\][^"]*max-w-\[calc\(100%-0\.625rem\)\]/);
-  assert.match(html, /plain-thinking-row[^"]*grid-cols-\[0\.375rem_minmax\(0,1fr\)\][^"]*gap-x-1/);
-  assert.match(html, /plain-thinking[^"]*rounded-\[8px\][^"]*bg-surface-sunken\/55/);
-  assert.match(html, /plain-thinking-content[^"]*text-\[12\.5px\][^"]*leading-\[1\.5\]/);
-  assert.doesNotMatch(html, /plain-thinking-content[^"]*border-l/);
-  assert.match(html, /aria-label="展开 Thinking"/);
-  assert.match(html, /plain-thinking[\s\S]*?bg-violet-500\/10[\s\S]*?text-violet-700/);
-  assert.match(html, /class="inline-flex h-4 shrink-0 items-center whitespace-nowrap font-medium text-violet-700 dark:text-violet-300">Thinking<\/span>/);
-  assert.match(html, /class="inline-flex h-4 min-w-0 flex-1 items-center truncate leading-none text-muted-foreground\/70"/);
-  assert.doesNotMatch(html, /plain-thinking[^"]*rounded-xl/);
-  assert.doesNotMatch(html, /plain-thinking[^"]*bg-surface-elevated/);
+  assert.match(html, /plain-tool-group/);
+  assert.doesNotMatch(html, /plain-thinking/);
 });
 
 test("plain messages renders pending compaction rows from timeline entries", () => {
@@ -178,7 +199,6 @@ test("plain messages can render unified timeline entries with ordered assistant 
   const html = renderPlainMessages({
     timelineItems,
     items: [],
-    thinkingToolCalls: [],
     toolCalls: [],
   } as any);
 
@@ -239,7 +259,6 @@ test("plain conversation omits whitespace-only assistant content between thinkin
       },
     ],
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
   });
 
@@ -260,7 +279,6 @@ test("plain conversation preserves surrounding whitespace on renderable message 
     ],
     timelineItems: [],
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
   });
 
@@ -308,7 +326,6 @@ test("plain conversation groups adjacent tool calls without merging their entiti
       },
     ],
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
   });
 
@@ -342,15 +359,48 @@ test("plain conversation renders live thought messages as collapsible thinking",
     ],
     timelineItems: [],
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
   });
 
   assert.equal(items.length, 1);
   assert.equal(items[0]?.kind, "thinking");
   assert.equal(
-    items[0]?.kind === "thinking" ? items[0].toolCall.output : undefined,
+    items[0]?.kind === "thinking" ? items[0].thinking.text : undefined,
     "internal reasoning",
+  );
+});
+
+test("plain conversation appends live delta thinking chunks instead of replacing them", () => {
+  const items = resolvePlainConversationDisplayItems({
+    displayMessages: [
+      {
+        id: "live-thought",
+        role: "assistant",
+        contentKind: "thought",
+        text: "第一段",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        streaming: true,
+        streamMode: "delta",
+      },
+      {
+        id: "live-thought",
+        role: "assistant",
+        contentKind: "thought",
+        text: "第二段",
+        timestamp: "2026-05-17T10:00:02.000Z",
+        streaming: true,
+        streamMode: "delta",
+      },
+    ],
+    timelineItems: [],
+    showThinking: true,
+    toolCalls: [],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(
+    items[0]?.kind === "thinking" ? items[0].thinking.text : undefined,
+    "第一段第二段",
   );
 });
 
@@ -407,7 +457,6 @@ test("plain messages preserves persisted timeline order during sequence resets",
   const html = renderPlainMessages({
     timelineItems,
     items: [],
-    thinkingToolCalls: [],
     toolCalls: [],
   } as any);
 
@@ -464,7 +513,6 @@ test("plain messages appends live sequenced prompts without reordering persisted
         sequence: 88,
       },
     ],
-    thinkingToolCalls: [],
     toolCalls: [],
   } as any);
 
@@ -542,7 +590,6 @@ test("plain messages inserts unsequenced compact summary messages by timestamp",
         timestamp: "2026-06-18T13:55:25.197Z",
       },
     ],
-    thinkingToolCalls: [],
     toolCalls: [],
   } as any);
 
@@ -1838,7 +1885,6 @@ test("plain messages drop optimistic assistant content once canonical timeline c
       },
     ],
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
   });
 
@@ -1883,13 +1929,12 @@ test("plain messages keep streaming assistant content while canonical timeline o
       },
     ],
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
   });
 
   assert.equal(
     displayItems.some(
-      (item) => item.kind === "thinking" && item.toolCall.output === "先分析问题",
+      (item) => item.kind === "thinking" && item.thinking.text === "先分析问题",
     ),
     true,
   );
@@ -1931,7 +1976,6 @@ test("plain messages drop same-id streaming assistant content once canonical con
       },
     ],
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
   });
 
@@ -2289,21 +2333,18 @@ test("plain messages can hide thinking cards without dropping normal messages", 
   const html = renderPlainMessages({
     items: [
       {
+        id: "think-1",
+        role: "assistant",
+        contentKind: "thought",
+        text: "不应显示的 Thinking 内容",
+        streaming: false,
+        timestamp: "2026-05-17T10:00:01.000Z",
+      },
+      {
         id: "assistant-1",
         role: "assistant",
         text: "最终回答",
         timestamp: "2026-05-17T10:00:02.000Z",
-      },
-    ],
-    thinkingToolCalls: [
-      {
-        id: "think-1",
-        kind: "think",
-        title: "Thinking",
-        status: "completed",
-        output: "不应显示的 Thinking 内容",
-        timestamp: "2026-05-17T10:00:01.000Z",
-        updatedAt: "2026-05-17T10:00:02.000Z",
       },
     ],
     showThinking: false,
@@ -2319,17 +2360,13 @@ test("plain messages avoids duplicated generic thinking titles", () => {
     createElement(PlainMessages, {
       sessionId: "session-1",
       items: [],
-      thinkingToolCalls: [
-        {
-          id: "think-1",
-          kind: "think",
-          title: "Thinking",
-          status: "completed",
-          output: "需要先定位数据链路",
-          timestamp: "2026-05-17T10:00:01.000Z",
-          updatedAt: "2026-05-17T10:00:02.000Z",
-        },
-      ],
+      timelineItems: assistantThinkingTimeline({
+        id: "think-1",
+        text: "需要先定位数据链路",
+        status: "completed",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      }),
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
@@ -2348,17 +2385,13 @@ test("plain messages auto-expands running thinking and collapses completed think
       createElement(PlainMessages, {
         sessionId: "session-1",
         items: [],
-        thinkingToolCalls: [
-          {
-            id: `think-${status}`,
-            kind: "think",
-            title: "Thinking",
-            status,
-            output: `${status} Thinking`,
-            timestamp: "2026-05-17T10:00:01.000Z",
-            updatedAt: "2026-05-17T10:00:02.000Z",
-          },
-        ],
+        timelineItems: assistantThinkingTimeline({
+          id: `think-${status}`,
+          text: `${status} Thinking`,
+          status,
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+        }),
         emptyText: "等待回复",
         expandedMessageIds: new Set<string>(),
         historyState: { hasMore: false, loading: false },
@@ -2385,23 +2418,33 @@ test("plain messages collapses still-running thinking once newer content follows
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
-      items: [
+      items: [],
+      timelineItems: [
         {
           id: "assistant-1",
-          role: "assistant",
-          text: "最终回答",
-          timestamp: "2026-05-17T10:00:05.000Z",
-        },
-      ],
-      thinkingToolCalls: [
-        {
-          id: "think-1",
-          kind: "think",
-          title: "Thinking",
-          status: "running",
-          output: "仍标记为运行中的 Thinking",
+          kind: "assistant_message",
+          chunks: [
+            {
+              id: "think-1",
+              kind: "thinking",
+              text: "仍标记为运行中的 Thinking",
+              title: "Thinking",
+              status: "running",
+              timestamp: "2026-05-17T10:00:01.000Z",
+              updatedAt: "2026-05-17T10:00:02.000Z",
+              sequence: 1,
+            },
+            {
+              id: "assistant-1:content",
+              kind: "content",
+              text: "最终回答",
+              timestamp: "2026-05-17T10:00:05.000Z",
+              sequence: 2,
+            },
+          ],
           timestamp: "2026-05-17T10:00:01.000Z",
-          updatedAt: "2026-05-17T10:00:02.000Z",
+          updatedAt: "2026-05-17T10:00:05.000Z",
+          sequence: 1,
         },
       ],
       emptyText: "等待回复",
@@ -2422,26 +2465,22 @@ test("plain messages collapses merged thinking when the latest chunk completes",
     createElement(PlainMessages, {
       sessionId: "session-1",
       items: [],
-      thinkingToolCalls: [
+      timelineItems: assistantThinkingTimeline(
         {
           id: "think-running",
-          kind: "think",
-          title: "Thinking",
+          text: "running Thinking",
           status: "running",
-          output: "running Thinking",
           timestamp: "2026-05-17T10:00:01.000Z",
           updatedAt: "2026-05-17T10:00:02.000Z",
         },
         {
           id: "think-running",
-          kind: "think",
-          title: "Thinking",
+          text: "completed Thinking",
           status: "completed",
-          output: "completed Thinking",
           timestamp: "2026-05-17T10:00:03.000Z",
           updatedAt: "2026-05-17T10:00:04.000Z",
         },
-      ],
+      ),
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
@@ -2459,26 +2498,22 @@ test("plain messages keeps merged thinking open while the latest chunk is runnin
     createElement(PlainMessages, {
       sessionId: "session-1",
       items: [],
-      thinkingToolCalls: [
+      timelineItems: assistantThinkingTimeline(
         {
           id: "think-completed",
-          kind: "think",
-          title: "Thinking",
+          text: "completed Thinking",
           status: "completed",
-          output: "completed Thinking",
           timestamp: "2026-05-17T10:00:01.000Z",
           updatedAt: "2026-05-17T10:00:02.000Z",
         },
         {
           id: "think-completed",
-          kind: "think",
-          title: "Thinking",
+          text: "running Thinking",
           status: "running",
-          output: "running Thinking",
           timestamp: "2026-05-17T10:00:03.000Z",
           updatedAt: "2026-05-17T10:00:04.000Z",
         },
-      ],
+      ),
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
@@ -2498,7 +2533,6 @@ test("plain messages does not render a manual load-more history button", () => {
       items: [
         { id: "user-1", role: "user", text: "第一条", timestamp: "2026-05-17T10:00:00.000Z" },
       ],
-      thinkingToolCalls: [],
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: true, loading: false },
@@ -2512,7 +2546,7 @@ test("plain messages does not render a manual load-more history button", () => {
   assert.doesNotMatch(html, /load-more-history/);
 });
 
-test("plain messages merges adjacent thinking tool calls in the conversation timeline", () => {
+test("plain messages merges adjacent assistant thinking chunks in the conversation timeline", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -2530,35 +2564,29 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
           timestamp: "2026-05-17T10:00:04.000Z",
         },
       ],
-      thinkingToolCalls: [
+      timelineItems: assistantThinkingTimeline(
         {
           id: "think-1",
-          kind: "think",
-          title: "Thinking",
           status: "completed",
-          output: "第一段 Thinking",
+          text: "第一段 Thinking",
           timestamp: "2026-05-17T10:00:01.000Z",
           updatedAt: "2026-05-17T10:00:01.000Z",
         },
         {
           id: "think-1",
-          kind: "think",
-          title: "Thinking",
           status: "completed",
-          output: "第二段 Thinking",
+          text: "第一段 Thinking\n第二段 Thinking",
           timestamp: "2026-05-17T10:00:02.000Z",
           updatedAt: "2026-05-17T10:00:02.000Z",
         },
         {
           id: "think-1",
-          kind: "think",
-          title: "Thinking",
-          status: "completed",
-          output: "第三段 Thinking",
+          status: "running",
+          text: "第一段 Thinking\n第二段 Thinking\n第三段 Thinking",
           timestamp: "2026-05-17T10:00:03.000Z",
           updatedAt: "2026-05-17T10:00:03.000Z",
         },
-      ],
+      ),
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
@@ -2573,31 +2601,27 @@ test("plain messages merges adjacent thinking tool calls in the conversation tim
   assert.match(html, /第三段 Thinking/);
 });
 
-test("plain messages keeps distinct generic thinking snapshots split when ids differ", () => {
+test("plain messages groups adjacent thinking entries and separates distinct parts", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
       items: [],
-      thinkingToolCalls: [
+      timelineItems: assistantThinkingTimeline(
         {
           id: "message-a:thinking",
-          kind: "think",
-          title: "Thinking",
           status: "completed",
-          output: "第一轮 Thinking",
+          text: "第一轮 Thinking",
           timestamp: "2026-05-17T10:00:01.000Z",
           updatedAt: "2026-05-17T10:00:01.000Z",
         },
         {
           id: "message-b:thinking",
-          kind: "think",
-          title: "Thinking",
-          status: "completed",
-          output: "第二轮 Thinking",
+          status: "running",
+          text: "第二轮 Thinking",
           timestamp: "2026-05-17T10:00:02.000Z",
           updatedAt: "2026-05-17T10:00:02.000Z",
         },
-      ],
+      ),
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
@@ -2606,9 +2630,47 @@ test("plain messages keeps distinct generic thinking snapshots split when ids di
     }),
   );
 
-  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 2);
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 1);
+  assert.match(html, /plain-thinking-parts[^\"]*divide-y divide-border-ghost\/70/);
   assert.match(html, /第一轮 Thinking/);
   assert.match(html, /第二轮 Thinking/);
+});
+
+test("plain messages merges delta thinking chunks without creating a separator", () => {
+  const html = renderPlainMessages({
+    timelineItems: [{
+      id: "assistant-thinking-stream",
+      kind: "assistant_message",
+      chunks: [
+        {
+          id: "thinking-stream",
+          kind: "thinking",
+          text: "第一段",
+          title: "Thinking",
+          status: "running",
+          streamMode: "delta",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:01.000Z",
+        },
+        {
+          id: "thinking-stream",
+          kind: "thinking",
+          text: "第二段",
+          title: "Thinking",
+          status: "running",
+          streamMode: "delta",
+          timestamp: "2026-05-17T10:00:02.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+        },
+      ],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+    }],
+  });
+
+  assert.equal(html.match(/<details class="plain-thinking/g)?.length, 1);
+  assert.match(html, /第一段第二段/);
+  assert.doesNotMatch(html, /plain-thinking-parts[^\"]*divide-y/);
 });
 
 test("plain messages coalesces adjacent generic thinking snapshots when later text extends earlier text", () => {
@@ -2616,26 +2678,22 @@ test("plain messages coalesces adjacent generic thinking snapshots when later te
     createElement(PlainMessages, {
       sessionId: "session-1",
       items: [],
-      thinkingToolCalls: [
+      timelineItems: assistantThinkingTimeline(
         {
           id: "message-a:thinking",
-          kind: "think",
-          title: "Thinking",
           status: "completed",
-          output: "第一轮 Thinking",
+          text: "第一轮 Thinking",
           timestamp: "2026-05-17T10:00:01.000Z",
           updatedAt: "2026-05-17T10:00:01.000Z",
         },
         {
           id: "message-b:thinking",
-          kind: "think",
-          title: "Thinking",
-          status: "completed",
-          output: "第一轮 Thinking\n第二轮 Thinking",
+          status: "running",
+          text: "第一轮 Thinking\n第二轮 Thinking",
           timestamp: "2026-05-17T10:00:02.000Z",
           updatedAt: "2026-05-17T10:00:02.000Z",
         },
-      ],
+      ),
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
@@ -3661,18 +3719,13 @@ test("plain tool rows align titles without letting expanded output resize the ro
 
 test("plain messages removes vertical guide lines from thinking, subagent, and tool group details", () => {
   const html = renderPlainMessages({
-    thinkingToolCalls: [
-      {
-        id: "assistant-1:thinking",
-        commandId: "assistant-1:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Reasoning...",
-        timestamp: "2026-05-17T10:00:00.000Z",
-        updatedAt: "2026-05-17T10:00:00.000Z",
-      },
-    ],
+    timelineItems: assistantThinkingTimeline({
+      id: "assistant-1:thinking",
+      status: "running",
+      text: "Reasoning...",
+      timestamp: "2026-05-17T10:00:00.000Z",
+      updatedAt: "2026-05-17T10:00:00.000Z",
+    }),
     toolCalls: [
       {
         id: "tool-subagent",
@@ -3950,7 +4003,6 @@ test("plain messages hides local command wrappers and model switch stdout", () =
           timestamp: "2026-05-17T10:00:03.000Z",
         },
       ],
-      thinkingToolCalls: [],
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
@@ -4043,7 +4095,6 @@ test("plain user messages render a copy action", () => {
         },
       ] as AgentMessage[],
       timelineItems: [],
-      thinkingToolCalls: [],
       toolCalls: [],
       emptyText: "empty",
       expandedMessageIds: new Set<string>(),
@@ -4131,7 +4182,6 @@ test("plain assistant actions render copy and configured Handoff under final ass
       assistantHandoffBusy: false,
       onHandoffAssistantMessage: () => {},
       timelineItems: [],
-      thinkingToolCalls: [],
       toolCalls: [],
       emptyText: "empty",
       expandedMessageIds: new Set<string>(),
@@ -4161,7 +4211,6 @@ test("plain assistant actions hide Handoff when LLM is not configured", () => {
       canHandoffAssistantMessage: false,
       onHandoffAssistantMessage: () => {},
       timelineItems: [],
-      thinkingToolCalls: [],
       toolCalls: [],
       emptyText: "empty",
       expandedMessageIds: new Set<string>(),
@@ -4200,7 +4249,6 @@ test("plain assistant actions do not backtrack when final rendered item is a too
       canHandoffAssistantMessage: true,
       onHandoffAssistantMessage: () => {},
       timelineItems: [],
-      thinkingToolCalls: [],
       emptyText: "empty",
       expandedMessageIds: new Set<string>(),
       onLoadOlderMessages: () => {},
@@ -4225,7 +4273,6 @@ test("plain user message actions render below the message body", () => {
         },
       ] as AgentMessage[],
       timelineItems: [],
-      thinkingToolCalls: [],
       toolCalls: [],
       emptyText: "empty",
       expandedMessageIds: new Set<string>(),
@@ -4284,12 +4331,12 @@ test("plain message render window keeps the preceding message for leading tool c
     {
       kind: "thinking" as const,
       timestamp: "2026-05-06T01:00:01.000Z",
-      toolCall: {
+      thinking: {
         id: "thinking-1",
-        kind: "think" as const,
+        kind: "thinking" as const,
         title: "Thinking",
         status: "completed" as const,
-        output: "推理内容",
+        text: "推理内容",
         timestamp: "2026-05-06T01:00:01.000Z",
         updatedAt: "2026-05-06T01:00:01.000Z",
       },
@@ -4592,7 +4639,6 @@ test("plain message display stops merging fallback messages once canonical timel
     displayMessages: liveMessages,
     timelineItems,
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
   });
 
@@ -4668,7 +4714,6 @@ test("plain message display keeps optimistic user prompts visible alongside cano
     displayMessages: liveMessages,
     timelineItems,
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
   });
 
@@ -4814,7 +4859,6 @@ test("plain message timeline interleaves assistant chunks with tool entries", ()
       sessionId: "session-1",
       items: [],
       timelineItems,
-      thinkingToolCalls: [],
       toolCalls: [],
       emptyText: "empty",
       expandedMessageIds: new Set<string>(),
@@ -4872,7 +4916,6 @@ test("plain message timeline keeps canonical sequence order when timestamps are 
       sessionId: "session-1",
       items: [],
       timelineItems,
-      thinkingToolCalls: [],
       toolCalls: [],
       emptyText: "empty",
       expandedMessageIds: new Set<string>(),
@@ -5252,24 +5295,20 @@ test("completed assistant Mermaid blocks render the diagram shell after streamin
 
 test("thinking content renders as plain text without Markdown or Mermaid transforms", () => {
   const html = renderPlainMessages({
-    thinkingToolCalls: [
-      {
-        id: "thinking-mermaid",
-        kind: "think",
-        title: "Thinking",
-        status: "completed",
-        output: [
-          "# 不应变成标题",
-          "",
-          "```mermaid",
-          "flowchart TD",
-          "  A --> B",
-          "```",
-        ].join("\n"),
-        timestamp: "2026-07-08T00:00:00.000Z",
-        updatedAt: "2026-07-08T00:00:00.000Z",
-      },
-    ],
+    timelineItems: assistantThinkingTimeline({
+      id: "thinking-mermaid",
+      status: "running",
+      text: [
+        "# 不应变成标题",
+        "",
+        "```mermaid",
+        "flowchart TD",
+        "  A --> B",
+        "```",
+      ].join("\n"),
+      timestamp: "2026-07-08T00:00:00.000Z",
+      updatedAt: "2026-07-08T00:00:00.000Z",
+    }),
   });
 
   assert.match(html, /# 不应变成标题/);
@@ -5337,4 +5376,22 @@ test("plain messages fall back to emptyText once loading finishes with no messag
 
   assert.match(html, /等待回复/);
   assert.doesNotMatch(html, /加载消息中…/);
+});
+
+test("plain messages ignore invalid message rows during the initial render", () => {
+  const html = renderPlainMessages({
+    items: [undefined as unknown as AgentMessage],
+    historyState: { hasMore: false, loading: false },
+  });
+
+  assert.match(html, /等待回复/);
+});
+
+test("plain messages ignore invalid timeline rows during the initial render", () => {
+  const html = renderPlainMessages({
+    timelineItems: [undefined as unknown as SessionTimelineEntry],
+    historyState: { hasMore: false, loading: false },
+  });
+
+  assert.match(html, /等待回复/);
 });

@@ -27,7 +27,7 @@ function update(
 function taskUpdate(status: string, updatedAt: string): AgentToolCall {
   return {
     id: `task-update-${status}`,
-    kind: "think",
+    kind: "todo",
     title: "TaskUpdate",
     status: "completed",
     input: JSON.stringify({ taskId: "1", status }),
@@ -57,7 +57,7 @@ test("Claude plan reconciliation restores the latest task batch when live create
   const reconciled = projector.reconcileTaskUpdates("runtime-plan-2", [
     {
       id: "task-create-1",
-      kind: "think",
+      kind: "todo",
       title: "TaskCreate",
       status: "completed",
       input: JSON.stringify({ taskId: "1", subject: "恢复计划" }),

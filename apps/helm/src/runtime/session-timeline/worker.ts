@@ -86,7 +86,6 @@ export function createSessionTimelineWorker(
     },
   };
 }
-
 function resolveChangedTimelineEntry(
   index: ReturnType<typeof createSessionTimelineMutationIndex>,
   entries: SessionTimelineAggregate["entries"],
@@ -97,9 +96,7 @@ function resolveChangedTimelineEntry(
       return index.entryById.get(event.message.id) ??
         entries.find((entry) => entry.id === event.message.id);
     case "tool-call": {
-      const id = event.toolCall.kind === "think"
-        ? stripThinkingSuffix(event.toolCall.commandId ?? event.toolCall.id)
-        : `tool:${event.toolCall.id}`;
+      const id = `tool:${event.toolCall.id}`;
       const exact = index.entryById.get(id);
       if (exact || !event.toolCall.commandId) {
         return exact;
@@ -127,8 +124,4 @@ function prunePendingEntries(
   for (const id of pendingEntries.keys()) {
     if (!retainedEntries.has(id)) pendingEntries.delete(id);
   }
-}
-
-function stripThinkingSuffix(value: string) {
-  return value.endsWith(":thinking") ? value.slice(0, -":thinking".length) : value;
 }

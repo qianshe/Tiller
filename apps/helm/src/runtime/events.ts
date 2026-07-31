@@ -125,7 +125,7 @@ export function handleRuntimeEvent(
     flushPendingCommandOutput(sessionId, context);
     flushCommandOutputSummaries(sessionId, context);
   }
-  if (event.type !== "tool-call" || event.toolCall.kind === "think") {
+  if (event.type !== "tool-call") {
     flushPendingRunningToolCall(sessionId, context);
   }
   const expandedEvents = expandProviderRuntimeEvents(sessionId, event, context);

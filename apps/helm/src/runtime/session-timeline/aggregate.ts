@@ -129,8 +129,12 @@ export function retainActiveSessionTimelineEntries(
   aggregate: SessionTimelineAggregate,
 ): SessionTimelineAggregate {
   let latestUnresolvedCompactionIndex = -1;
+  let latestAssistantEntryIndex = -1;
   for (let index = aggregate.entries.length - 1; index >= 0; index -= 1) {
     const entry = aggregate.entries[index];
+    if (latestAssistantEntryIndex === -1 && entry?.kind === "assistant_message") {
+      latestAssistantEntryIndex = index;
+    }
     if (entry?.kind === "user_message") {
       break;
     }
@@ -145,7 +149,8 @@ export function retainActiveSessionTimelineEntries(
 
   const entries = aggregate.entries.filter((entry, index) => {
     if (entry.kind === "assistant_message") {
-      return entry.streaming === true || entry.chunks.some((chunk) =>
+      return index === latestAssistantEntryIndex ||
+        entry.streaming === true || entry.chunks.some((chunk) =>
         chunk.kind === "thinking" && chunk.status === "running"
       );
     }
@@ -182,7 +187,6 @@ function applyToolCallEvent(
   const normalized = { ...toolCall, sequence };
   const id = `tool:${toolCall.id}`;
   const canAppendWithoutSearch =
-    toolCall.kind !== "think" &&
     index !== undefined &&
     !index.entryById.has(id) &&
     (!toolCall.commandId || !index.toolEntryByCommandId.has(toolCall.commandId));

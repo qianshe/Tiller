@@ -17,7 +17,7 @@ const detailUpdates = [
     kind: "tool_call",
     toolCall: {
       id: "tool-1",
-      kind: "think",
+      kind: "tool",
       title: "Thinking",
       status: "running",
       timestamp: "2026-05-23T00:00:00.000Z",

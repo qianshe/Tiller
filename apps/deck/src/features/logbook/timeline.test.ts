@@ -98,9 +98,9 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     timestamp,
     sequence: 3,
   } as AgentMessage;
-  const thinking = {
+  const earlyTool = {
     id: "think-seq-1",
-    kind: "think" as const,
+    kind: "tool" as const,
     title: "Thinking",
     status: "completed" as const,
     output: "先思考",
@@ -119,11 +119,11 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     sequence: 2,
   } as AgentToolCall;
 
-  const timeline = buildConversationTimeline([message], [], [toolCall, thinking]);
+  const timeline = buildConversationTimeline([message], [], [toolCall, earlyTool]);
 
   assert.deepEqual(
     timeline.map((item) => item.kind === "message" ? item.message.text : item.toolKind),
-    ["think", "shell", "具体回复"],
+    ["tool", "shell", "具体回复"],
   );
 });
 
@@ -294,20 +294,16 @@ test("mergeToolCallHistory appends output for existing tool calls", () => {
   assert.equal(merged[0]?.status, "completed");
 });
 
-test("mergeToolCallHistory deduplicates overlapping thinking snapshots for the same tool call", () => {
+test("mergeToolCallHistory treats tools titled Thinking like ordinary tools", () => {
   const merged = mergeToolCallHistory(
     [
       {
         id: "think-1",
-        kind: "think",
+        kind: "tool",
         title: "Thinking",
         status: "running",
         commandId: "think-1",
-        output: [
-          "Line 1",
-          "Line 2",
-          "Line 3",
-        ].join("\n"),
+        output: "A",
         timestamp: "2026-04-28T10:00:01.000Z",
         updatedAt: "2026-04-28T10:00:01.000Z",
       },
@@ -315,30 +311,18 @@ test("mergeToolCallHistory deduplicates overlapping thinking snapshots for the s
     [
       {
         id: "think-1",
-        kind: "think",
+        kind: "tool",
         title: "Thinking",
         status: "running",
         commandId: "think-1",
-        output: [
-          "Line 2",
-          "Line 3",
-          "Line 4",
-        ].join("\n"),
+        output: "B",
         timestamp: "2026-04-28T10:00:02.000Z",
         updatedAt: "2026-04-28T10:00:02.000Z",
       },
     ],
   );
 
-  assert.equal(
-    merged[0]?.output,
-    [
-      "Line 1",
-      "Line 2",
-      "Line 3",
-      "Line 4",
-    ].join("\n"),
-  );
+  assert.equal(merged[0]?.output, "AB");
 });
 
 test("mergeToolCallHistory replaces duplicate completed tool snapshots", () => {
