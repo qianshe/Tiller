@@ -55,11 +55,13 @@ const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
       const commandId = activity
         ? resolveCodexSubagentActivityCommandId(activity, toolCall.id)
         : resolveCodexSubagentCommandId(toolName, input, toolCall.id);
+      const subagentRole = resolveCodexSubagentRole(input);
       return {
         ...toolCall,
         kind: "subagent" as const,
         title: resolveCodexSubagentTitle(input, toolCall.title),
         ...(commandId ? { commandId } : {}),
+        ...(subagentRole ? { subagentRole } : {}),
         ...(operation ? { subagentOperation: operation } : {}),
       };
     },
@@ -297,6 +299,11 @@ export function looksLikeCodexSubagentPayload(
   if (!normalizedInput) {
     return Boolean(resolveSparseCodexLifecycleToolName(normalizedTitle));
   }
+  // Ordinary file and command tools can legitimately contain a `path` field;
+  // that field is not sufficient evidence of a subagent operation.
+  if (/^(?:view_image|shell_command|apply_patch|tool_search)$/iu.test(normalizedTitle)) {
+    return false;
+  }
   const toolName = resolveCodexMultiAgentToolName(normalizedTitle, normalizedInput);
   if (toolName && (isCodexMultiAgentToolName(toolName) || isCodexMultiAgentNamespace(normalizedInput))) {
     return true;
@@ -477,6 +484,36 @@ export function resolveCodexSubagentTitle(
     return compactCodexSubagentTitle(fallbackTitle);
   }
   return "Subagent";
+}
+
+/**
+ * Reads the explicit role assigned by Codex to a spawned agent. This stays in
+ * the Codex adapter because `agent_type`/`agent_role` are provider metadata,
+ * not ACP-wide fields.
+ */
+export function resolveCodexSubagentRole(
+  input: Record<string, unknown> | null,
+) {
+  const normalized = mergeCodexToolArguments(input);
+  if (!normalized) {
+    return undefined;
+  }
+  const metadata = recordValue(normalized.metadata ?? normalized._meta ?? normalized.meta);
+  const candidates = [
+    normalized.agent_type,
+    normalized.agentType,
+    normalized.agent_role,
+    normalized.agentRole,
+    normalized.new_agent_role,
+    normalized.newAgentRole,
+    metadata?.agent_type,
+    metadata?.agentType,
+    metadata?.agent_role,
+    metadata?.agentRole,
+    metadata?.new_agent_role,
+    metadata?.newAgentRole,
+  ];
+  return firstString(...candidates);
 }
 
 function compactCodexSubagentTitle(value: string) {

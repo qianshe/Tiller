@@ -517,7 +517,7 @@ test("mapSessionUpdateNotification keeps an MCP tool named Context compacted fro
   );
 });
 
-test("mapSessionUpdateNotification keeps sparse Codex spawn completion completed", () => {
+test("mapSessionUpdateNotification keeps sparse Codex spawn running until wait", () => {
   const mapped = mapSessionUpdateNotification(
     {
       jsonrpc: "2.0",
@@ -540,7 +540,7 @@ test("mapSessionUpdateNotification keeps sparse Codex spawn completion completed
     throw new Error("Expected tool-call event");
   }
   assert.equal(mapped.event.toolCall.kind, "subagent");
-  assert.equal(mapped.event.toolCall.status, "completed");
+  assert.equal(mapped.event.toolCall.status, "running");
   assert.equal(mapped.event.toolCall.title, "Subagent");
   assert.deepEqual(mapped.event.toolCall.subagentOperation, {
     action: "spawn",

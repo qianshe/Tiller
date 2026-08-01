@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentToolCall } from "@tiller/shared";
-import { normalizeCodexToolCall, resolveCodexSubagentTitle } from "./tool-calls.js";
+import {
+  normalizeCodexToolCall,
+  resolveCodexSubagentRole,
+  resolveCodexSubagentTitle,
+} from "./tool-calls.js";
 
 function baseToolCall(overrides: Partial<AgentToolCall> = {}): AgentToolCall {
   return {
@@ -73,6 +77,41 @@ test("normalizeCodexToolCall classifies wrapped multi-agent payloads from update
     action: "spawn",
     targets: [{ id: "call_codextest" }],
   });
+});
+
+test("normalizeCodexToolCall preserves the explicit Codex subagent role", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({ title: "spawn_agent" }),
+    {
+      rawInput: {
+        namespace: "multi_agent_v1",
+        name: "spawn_agent",
+        arguments: {
+          message: "Inspect the adapter",
+          agent_type: "explorer",
+          fork_context: true,
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.subagentRole, "explorer");
+});
+
+test("resolveCodexSubagentRole accepts role aliases and nested metadata", () => {
+  assert.equal(resolveCodexSubagentRole({ agentRole: "worker" }), "worker");
+  assert.equal(
+    resolveCodexSubagentRole({ metadata: { new_agent_role: "default" } }),
+    "default",
+  );
+  assert.equal(
+    normalizeCodexToolCall(
+      baseToolCall({ title: "Run report" }),
+      { rawInput: { agent_type: "explorer", command: "rg report" } },
+    ).subagentRole,
+    undefined,
+  );
 });
 
 test("normalizeCodexToolCall waits for a complete web query before using it as the title", () => {

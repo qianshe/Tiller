@@ -453,6 +453,8 @@ export type AgentToolCall = {
   title: string;
   status: AgentToolCallStatus;
   mcp?: AgentToolCallMcp;
+  /** Codex multi-agent role, when the provider includes it in the payload. */
+  subagentRole?: string;
   subagentOperation?: AgentSubagentOperation;
   commandId?: string;
   input?: string;

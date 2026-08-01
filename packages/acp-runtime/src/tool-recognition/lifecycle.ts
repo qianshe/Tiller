@@ -5,6 +5,8 @@ type SubagentEntity = {
   id: string;
   title: string;
   input?: string;
+  output?: string;
+  subagentRole?: AgentToolCall["subagentRole"];
   commandId?: string;
   operation?: AgentToolCall["subagentOperation"];
   timestamp: string;
@@ -35,7 +37,12 @@ export function createToolLifecycleCorrelator() {
           observation.providerId,
           observation.sessionId,
         );
-        return projectSubagentOperation(session, toolCall, semantic?.subagent);
+        return projectSubagentOperation(
+          session,
+          toolCall,
+          semantic?.subagent,
+          observation.providerId,
+        );
       }
       if (toolCall.subagentOperation) {
         return [toolCall];
@@ -167,9 +174,11 @@ function projectSubagentOperation(
   session: SessionLifecycle,
   toolCall: AgentToolCall,
   semantic: ToolEvidence["subagent"] | undefined,
+  providerId?: string,
 ): AgentToolCall[] {
   const operation = toolCall.subagentOperation!;
   const targetIds = operation.targets.map((target) => target.id).filter(Boolean);
+  const codex = isCodexProvider(providerId);
   if (operation.action === "spawn") {
     const entity = resolveByAliases(session, [toolCall.id, ...targetIds]) ?? {
       id: toolCall.id,
@@ -182,15 +191,27 @@ function projectSubagentOperation(
     };
     entity.title = toolCall.title;
     entity.input = toolCall.input ?? entity.input;
+    entity.output = toolCall.output ?? entity.output;
+    entity.subagentRole = toolCall.subagentRole ?? entity.subagentRole;
     entity.commandId = toolCall.commandId ?? entity.commandId;
     entity.operation = operation;
     addAliases(session, entity, [entity.id, toolCall.id, entity.commandId, ...targetIds]);
-    if (isActiveStatus(toolCall.status)) {
+    // Codex reports the spawn command as completed when the child is created;
+    // the child itself remains active until wait/close reports its state.
+    if (codex || isActiveStatus(toolCall.status)) {
       session.running.add(entity);
     } else {
       session.running.delete(entity);
     }
-    return [toolCall];
+    return [
+      codex && toolCall.status === "completed"
+        ? { ...toolCall, status: "running" }
+        : toolCall,
+    ];
+  }
+
+  if (codex) {
+    return projectCodexSubagentOperation(session, toolCall, semantic, targetIds);
   }
 
   const targetStatus = resolveOperationTargetStatus(semantic);
@@ -216,6 +237,103 @@ function projectSubagentOperation(
     };
   });
   return [...updates, toolCall];
+}
+
+function projectCodexSubagentOperation(
+  session: SessionLifecycle,
+  toolCall: AgentToolCall,
+  semantic: ToolEvidence["subagent"] | undefined,
+  targetIds: string[],
+): AgentToolCall[] {
+  // A wait/close operation with multiple targets carries aggregate output. Keep
+  // it as an operation row unless its payload can be safely split per target.
+  if (targetIds.length !== 1) {
+    return [toolCall];
+  }
+  const targetId = targetIds[0];
+  if (!targetId) {
+    return [toolCall];
+  }
+  const entity = resolveByAliases(session, [targetId]);
+  if (!entity) {
+    return [toolCall];
+  }
+
+  const operation = toolCall.subagentOperation!;
+  const terminalStatus = resolveOperationTargetStatus(semantic);
+  const status = terminalStatus ??
+    (toolCall.status === "failed" || toolCall.status === "cancelled"
+      ? toolCall.status
+      : "running");
+  const output = resolveCodexOperationOutput(toolCall, targetId) ?? entity.output;
+  entity.output = output ?? entity.output;
+  entity.subagentRole = toolCall.subagentRole ?? entity.subagentRole;
+  entity.operation = operation;
+  addAliases(session, entity, [toolCall.id, ...targetIds, toolCall.commandId]);
+  if (isActiveStatus(status)) {
+    session.running.add(entity);
+  } else {
+    session.running.delete(entity);
+  }
+
+  return [{
+    ...toolCall,
+    id: entity.id,
+    kind: "subagent",
+    title: entity.title,
+    status,
+    timestamp: entity.timestamp,
+    ...(entity.commandId ?? toolCall.commandId
+      ? { commandId: entity.commandId ?? toolCall.commandId }
+      : {}),
+    ...(entity.input ?? toolCall.input ? { input: entity.input ?? toolCall.input } : {}),
+    ...(output ? { output } : {}),
+    ...(entity.subagentRole ? { subagentRole: entity.subagentRole } : {}),
+    subagentOperation: operation,
+  }];
+}
+
+function resolveCodexOperationOutput(toolCall: AgentToolCall, targetId: string) {
+  const directOutput = toolCall.output?.trim();
+  if (directOutput && !parseJsonRecord(directOutput)) {
+    return directOutput;
+  }
+  for (const source of [toolCall.output, toolCall.input]) {
+    const record = source ? parseJsonRecord(source) : null;
+    const states = recordValue(record?.agentsStates ?? record?.agents_states);
+    const target = recordValue(states?.[targetId]);
+    const output = firstString(
+      target?.message,
+      target?.output,
+      target?.result,
+      target?.completed,
+      target?.failed,
+      target?.cancelled,
+    );
+    if (output) {
+      return output;
+    }
+  }
+  return directOutput || undefined;
+}
+
+function isCodexProvider(providerId: string | undefined) {
+  return /^codex(?:-|$)/iu.test(providerId?.trim() ?? "");
+}
+
+function recordValue(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function firstString(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
 }
 
 function resolveOperationTargetStatus(

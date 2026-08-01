@@ -23,6 +23,7 @@ export function evidenceFromProjectedToolCall(args: {
     title: projected.title,
     status: projected.status,
     mcp: projected.mcp,
+    subagentRole: projected.subagentRole,
     commandId: projected.commandId,
     input: projected.input,
     output: projected.output,

@@ -47,13 +47,33 @@ function subagentEvidence(args: {
   }];
 }
 
-test("Codex completed operation events remain independent timeline rows", () => {
+test("Codex wait updates reuse the spawned entity identity", () => {
   const sessionId = "recognition-codex-operations";
   const spawn = recognizeToolObservation(
     createToolObservation({
       providerId: "codex",
       sessionId,
       toolCall: toolCall({ id: "spawn-call", status: "completed" }),
+    }),
+    subagentEvidence({
+      action: "spawn",
+      entityIds: ["spawn-call"],
+      terminal: true,
+      operationEvent: {
+        action: "spawn",
+        targets: [{ id: "spawn-call", label: "Cicero" }],
+      },
+    }),
+  ).toolCalls;
+  const spawnUpdate = recognizeToolObservation(
+    createToolObservation({
+      providerId: "codex",
+      sessionId,
+      toolCall: toolCall({
+        id: "spawn-call",
+        status: "completed",
+        input: JSON.stringify({ prompt: "Inspect the adapter" }),
+      }),
     }),
     subagentEvidence({
       action: "spawn",
@@ -81,7 +101,97 @@ test("Codex completed operation events remain independent timeline rows", () => 
       },
     }),
   ).toolCalls;
-  const close = recognizeToolObservation(
+
+  assert.deepEqual(
+    [...spawn, ...spawnUpdate, ...wait].map((call) => [
+      call.id,
+      call.status,
+      call.subagentOperation?.action,
+    ]),
+    [
+      ["spawn-call", "running", "spawn"],
+      ["spawn-call", "running", "spawn"],
+      ["spawn-call", "completed", "wait"],
+    ],
+  );
+  assert.equal(wait[0]?.output, "done");
+  disposeToolRecognitionSession("codex", sessionId);
+});
+
+test("Codex close updates reuse a running spawned entity", () => {
+  const sessionId = "recognition-codex-close";
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "codex",
+      sessionId,
+      toolCall: toolCall({ id: "spawn-call", status: "completed" }),
+    }),
+    subagentEvidence({
+      action: "spawn",
+      entityIds: ["agent-1"],
+      terminal: true,
+      operationEvent: { action: "spawn", targets: [{ id: "agent-1" }] },
+    }),
+  );
+  const [closed] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "codex",
+      sessionId,
+      toolCall: toolCall({
+        id: "close-call",
+        status: "completed",
+        output: JSON.stringify({ previous_status: { running: "still active" } }),
+      }),
+    }),
+    subagentEvidence({
+      action: "cancel",
+      entityIds: ["agent-1"],
+      terminal: true,
+      operationEvent: { action: "close", targets: [{ id: "agent-1" }] },
+    }),
+  ).toolCalls;
+  assert.equal(closed?.id, "spawn-call");
+  assert.equal(closed?.status, "cancelled");
+  assert.equal(closed?.subagentOperation?.action, "close");
+  disposeToolRecognitionSession("codex", sessionId);
+});
+
+test("Codex close reuses a completed entity after wait", () => {
+  const sessionId = "recognition-codex-close-after-wait";
+  const operation = (action: "spawn" | "wait" | "close", id: string) => ({
+    action,
+    targets: [{ id }],
+  });
+  recognizeToolObservation(
+    createToolObservation({
+      providerId: "codex",
+      sessionId,
+      toolCall: toolCall({ id: "spawn-call", status: "completed" }),
+    }),
+    subagentEvidence({
+      action: "spawn",
+      entityIds: ["agent-1"],
+      terminal: true,
+      operationEvent: operation("spawn", "agent-1"),
+    }),
+  );
+  const [wait] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "codex",
+      sessionId,
+      toolCall: toolCall({ id: "wait-call", status: "completed", output: "done" }),
+    }),
+    subagentEvidence({
+      action: "wait",
+      entityIds: ["agent-1"],
+      terminal: true,
+      operationEvent: operation("wait", "agent-1"),
+    }),
+  ).toolCalls;
+  assert.equal(wait?.id, "spawn-call");
+  assert.equal(wait?.status, "completed");
+
+  const [closed] = recognizeToolObservation(
     createToolObservation({
       providerId: "codex",
       sessionId,
@@ -91,25 +201,31 @@ test("Codex completed operation events remain independent timeline rows", () => 
       action: "cancel",
       entityIds: ["agent-1"],
       terminal: true,
-      operationEvent: {
-        action: "close",
-        targets: [{ id: "agent-1", label: "Cicero" }],
-      },
+      operationEvent: operation("close", "agent-1"),
     }),
   ).toolCalls;
+  assert.equal(closed?.id, "spawn-call");
+  assert.equal(closed?.status, "cancelled");
+  disposeToolRecognitionSession("codex", sessionId);
+});
 
-  assert.deepEqual(
-    [...spawn, ...wait, ...close].map((call) => [
-      call.id,
-      call.status,
-      call.subagentOperation?.action,
-    ]),
-    [
-      ["spawn-call", "completed", "spawn"],
-      ["wait-call", "completed", "wait"],
-      ["close-call", "completed", "close"],
-    ],
-  );
+test("Codex wait keeps an unrecognized target as an independent operation", () => {
+  const sessionId = "recognition-codex-unmatched-wait";
+  const [waiting] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "codex",
+      sessionId,
+      toolCall: toolCall({ id: "wait-call", status: "completed", output: "done" }),
+    }),
+    subagentEvidence({
+      action: "wait",
+      entityIds: ["unknown-agent"],
+      terminal: true,
+      operationEvent: { action: "wait", targets: [{ id: "unknown-agent" }] },
+    }),
+  ).toolCalls;
+  assert.equal(waiting?.id, "wait-call");
+  assert.equal(waiting?.subagentOperation?.action, "wait");
   disposeToolRecognitionSession("codex", sessionId);
 });
 

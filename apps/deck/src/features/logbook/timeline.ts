@@ -36,6 +36,7 @@ export type ConversationToolCallItem = {
   title: string;
   status: AgentToolCall["status"];
   toolKind: AgentToolCall["kind"];
+  subagentRole?: AgentToolCall["subagentRole"];
   subagentOperation?: AgentToolCall["subagentOperation"];
   timestamp: string;
   sequence?: number;
@@ -108,6 +109,7 @@ export function groupToolCalls(
         title: resolveDisplayToolTitle(displayCall, key),
         status: call.status,
         toolKind: displayKind,
+        subagentRole: call.subagentRole,
         subagentOperation: call.subagentOperation,
         timestamp: call.timestamp,
         sequence: call.sequence,
@@ -122,6 +124,7 @@ export function groupToolCalls(
     current.input = current.input || call.input || "";
     current.sequence = firstTimelineSequence(current.sequence, call.sequence);
     current.status = call.status;
+    current.subagentRole = call.subagentRole ?? current.subagentRole;
     current.subagentOperation = call.subagentOperation ?? current.subagentOperation;
     if (displayKind === current.toolKind) {
       current.title = resolveMergedToolTitle(

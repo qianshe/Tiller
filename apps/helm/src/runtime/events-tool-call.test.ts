@@ -130,6 +130,103 @@ test("runtime terminal tool calls publish canonical timeline batches without com
   assert.equal(appendedToolCalls.length, 0);
 });
 
+test("runtime keeps a merged Codex subagent lifecycle under the spawn id", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const sessionId = "session-codex-merged-subagent";
+  const context = createTestContext([], capture, sessionId, {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: "spawn-call",
+      kind: "subagent",
+      title: "Inspect the adapter",
+      status: "completed",
+      input: JSON.stringify({ prompt: "Inspect the adapter" }),
+      subagentOperation: { action: "spawn", targets: [{ id: "child-thread" }] },
+      timestamp: "2026-07-01T00:00:01.000Z",
+      updatedAt: "2026-07-01T00:00:02.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: "spawn-call",
+      kind: "subagent",
+      title: "Inspect the adapter",
+      status: "completed",
+      input: JSON.stringify({ prompt: "Inspect the adapter" }),
+      output: "All tests passed.",
+      subagentOperation: { action: "wait", targets: [{ id: "child-thread" }] },
+      timestamp: "2026-07-01T00:00:01.000Z",
+      updatedAt: "2026-07-01T00:00:04.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  const entries = capture.timelineEntries?.filter((entry) => entry.kind === "tool_call") ?? [];
+  assert.equal(entries.length, 1);
+  const entry = entries[0];
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.toolCall.id, "spawn-call");
+  assert.equal(entry?.toolCall.status, "completed");
+  assert.equal(entry?.toolCall.output, "All tests passed.");
+  assert.equal(entry?.toolCall.subagentOperation?.action, "wait");
+});
+
+test("runtime allows a merged Codex wait timeout to remain running", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const sessionId = "session-codex-wait-timeout";
+  const context = createTestContext([], capture, sessionId, {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: "spawn-call",
+      kind: "subagent",
+      title: "Inspect the adapter",
+      status: "completed",
+      subagentOperation: { action: "spawn", targets: [{ id: "child-thread" }] },
+      timestamp: "2026-07-01T00:00:01.000Z",
+      updatedAt: "2026-07-01T00:00:02.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: "spawn-call",
+      kind: "subagent",
+      title: "Inspect the adapter",
+      status: "running",
+      output: "等待超时，子代理仍在运行",
+      subagentOperation: { action: "wait", targets: [{ id: "child-thread" }] },
+      timestamp: "2026-07-01T00:00:01.000Z",
+      updatedAt: "2026-07-01T00:00:04.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  const entry = capture.timelineEntries?.find((candidate) => candidate.kind === "tool_call");
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.toolCall.id, "spawn-call");
+  assert.equal(entry?.toolCall.status, "running");
+});
+
 test("runtime running tool calls enter canonical history without a duplicate journal row", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

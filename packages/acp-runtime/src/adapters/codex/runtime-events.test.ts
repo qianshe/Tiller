@@ -60,7 +60,7 @@ test("mapSessionUpdateNotification classifies Codex multi_agent_v1 spawn_agent c
     throw new Error("Expected tool-call event");
   }
   assert.equal(mapped.event.toolCall.kind, "subagent");
-  assert.equal(mapped.event.toolCall.title, "只修改 docs/tooling/subagent-todoli…");
+  assert.equal(mapped.event.toolCall.title, "只修改 docs/tooling/subagent-todolist-demo.md");
 });
 
 test("mapSessionUpdateNotification classifies wrapped Codex multi-agent calls with opaque titles", () => {
@@ -80,6 +80,7 @@ test("mapSessionUpdateNotification classifies wrapped Codex multi-agent calls wi
             name: "spawn_agent",
             arguments: {
               message: "Inspect the session timeline",
+              agent_type: "explorer",
               fork_context: true,
             },
           },
@@ -95,6 +96,7 @@ test("mapSessionUpdateNotification classifies wrapped Codex multi-agent calls wi
   }
   assert.equal(mapped.event.toolCall.kind, "subagent");
   assert.equal(mapped.event.toolCall.title, "Inspect the session timeline");
+  assert.equal(mapped.event.toolCall.subagentRole, "explorer");
 });
 
 test("mapSessionUpdateNotification classifies all wrapped Codex multi-agent actions", () => {

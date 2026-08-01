@@ -18,6 +18,7 @@ export type ToolEvidence = {
   title?: string;
   status?: AgentToolCall["status"];
   mcp?: AgentToolCallMcp;
+  subagentRole?: AgentToolCall["subagentRole"];
   commandId?: string;
   input?: string;
   output?: string;

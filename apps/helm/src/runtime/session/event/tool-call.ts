@@ -375,10 +375,14 @@ function stabilizeRuntimeToolCallOccurrence(
     ) ?? new Map<string, StableToolCallOccurrence>();
   state.set(sessionId, RUNTIME_EVENT_STATE_KEY.toolCallOccurrences, occurrences);
   const current = occurrences.get(toolCall.id);
+  const isSubagentLifecycleTransition = current?.subagentAction === "spawn" &&
+    toolCall.subagentOperation?.action !== undefined &&
+    toolCall.subagentOperation.action !== "spawn";
   const status =
     current &&
     isTerminalToolCallStatus(current.status) &&
-    !isTerminalToolCallStatus(toolCall.status)
+    !isTerminalToolCallStatus(toolCall.status) &&
+    !isSubagentLifecycleTransition
       ? current.status
       : toolCall.status;
   if (!current) {
@@ -386,6 +390,9 @@ function stabilizeRuntimeToolCallOccurrence(
       sequence: toolCall.sequence,
       timestamp: toolCall.timestamp,
       status,
+      ...(toolCall.subagentOperation?.action
+        ? { subagentAction: toolCall.subagentOperation.action }
+        : {}),
     });
     while (occurrences.size > MAX_TRACKED_TOOL_CALL_CLASSIFICATIONS) {
       const oldestId = occurrences.keys().next().value;
@@ -394,7 +401,13 @@ function stabilizeRuntimeToolCallOccurrence(
     }
     return toolCall;
   }
-  occurrences.set(toolCall.id, { ...current, status });
+  occurrences.set(toolCall.id, {
+    ...current,
+    status,
+    ...(toolCall.subagentOperation?.action
+      ? { subagentAction: toolCall.subagentOperation.action }
+      : {}),
+  });
   return {
     ...toolCall,
     sequence: current.sequence ?? toolCall.sequence,

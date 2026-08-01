@@ -70,7 +70,9 @@ export type StableToolCallClassification = Pick<AgentToolCall, "kind"> & {
 export type StableToolCallOccurrence = Pick<
   AgentToolCall,
   "sequence" | "timestamp" | "status"
->;
+> & {
+  subagentAction?: NonNullable<AgentToolCall["subagentOperation"]>["action"];
+};
 
 export type IgnoredUserEchoSummary = {
   count: number;

@@ -186,7 +186,7 @@ test("Codex completed wait finalizes its running spawn operation", () => {
     timedOutWait?.events.map((event) => event.type === "tool-call"
       ? [event.toolCall.id, event.toolCall.status, event.toolCall.subagentOperation?.action]
       : [event.type]),
-    [["codex-wait-timeout", "completed", "wait"]],
+    [["codex-spawn-lifecycle", "running", "wait"]],
   );
 
   const wait = mapSessionUpdateNotificationBatch(
@@ -216,8 +216,90 @@ test("Codex completed wait finalizes its running spawn operation", () => {
       ? [event.toolCall.id, event.toolCall.status, event.toolCall.subagentOperation?.action]
       : [event.type]),
     [
-      ["codex-spawn-lifecycle", "completed", "spawn"],
-      ["codex-wait-lifecycle", "completed", "wait"],
+      ["codex-spawn-lifecycle", "completed", "wait"],
     ],
+  );
+});
+
+test("Codex spawn binds a later receiver thread id without changing its primary id", () => {
+  const sessionId = "session-codex-delayed-thread-binding";
+  const initial = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "codex-spawn-delayed",
+          title: "spawnAgent",
+          status: "completed",
+          rawInput: { prompt: "Inspect the adapter", receiverThreadIds: [] },
+        },
+      },
+    },
+    { provider: codexProvider, providerId: codexProvider.id },
+  );
+  assert.deepEqual(
+    initial?.events.map((event) => event.type === "tool-call"
+      ? [event.toolCall.id, event.toolCall.status, event.toolCall.subagentOperation?.targets]
+      : [event.type]),
+    [["codex-spawn-delayed", "running", [{ id: "codex-spawn-delayed" }]]],
+  );
+
+  const update = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "codex-spawn-delayed",
+          title: "spawnAgent",
+          status: "completed",
+          rawInput: {
+            prompt: "Inspect the adapter",
+            receiverThreadIds: ["child-thread-delayed"],
+          },
+        },
+      },
+    },
+    { provider: codexProvider, providerId: codexProvider.id },
+  );
+  assert.deepEqual(
+    update?.events.map((event) => event.type === "tool-call"
+      ? [event.toolCall.id, event.toolCall.subagentOperation?.targets]
+      : [event.type]),
+    [["codex-spawn-delayed", [{ id: "child-thread-delayed" }]]],
+  );
+
+  const wait = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId,
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "codex-wait-delayed",
+          title: "wait",
+          status: "completed",
+          rawInput: {
+            ids: ["child-thread-delayed"],
+            agentsStates: {
+              "child-thread-delayed": { status: "completed", message: "done" },
+            },
+          },
+        },
+      },
+    },
+    { provider: codexProvider, providerId: codexProvider.id },
+  );
+  assert.deepEqual(
+    wait?.events.map((event) => event.type === "tool-call"
+      ? [event.toolCall.id, event.toolCall.status, event.toolCall.output]
+      : [event.type]),
+    [["codex-spawn-delayed", "completed", "done"]],
   );
 });

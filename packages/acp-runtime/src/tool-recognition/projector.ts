@@ -14,6 +14,7 @@ export function projectRecognizedToolCall(
     if (item.title) projected.title = item.title;
     if (item.status) projected.status = item.status;
     if (item.mcp) projected.mcp = item.mcp;
+    if (item.subagentRole) projected.subagentRole = item.subagentRole;
     if (item.commandId) projected.commandId = item.commandId;
     if (item.input !== undefined) projected.input = item.input;
     if (item.output !== undefined) projected.output = item.output;
