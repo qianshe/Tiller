@@ -512,12 +512,19 @@ function looksLikeOpenCodeLiveSubagentInput(
     return false;
   }
   const prompt = firstString(input.prompt, input.description, input.message);
-  const category = firstString(input.category, input.requested_subagent_type, input.requestedSubagentType);
+  const subagentType = firstString(
+    input.subagent_type,
+    input.subagentType,
+    input.requested_subagent_type,
+    input.requestedSubagentType,
+  );
+  const category = firstString(input.category);
   const hasLoadSkills = Array.isArray(input.load_skills) || Array.isArray(input.loadSkills);
   const hasBackgroundFlag =
+    typeof input.background === "boolean" ||
     typeof input.run_in_background === "boolean" ||
     typeof input.runInBackground === "boolean";
-  if (prompt && hasBackgroundFlag) {
+  if (prompt && (subagentType || hasLoadSkills || hasBackgroundFlag)) {
     return true;
   }
   if (!/^task$/iu.test(title.trim())) {
@@ -546,8 +553,17 @@ function looksLikeOpenCodeCompletedSubagent(
       typeof metadata.spawnDepth === "number" ||
       typeof metadata.spawn_depth === "number";
     const hasBackgroundFlag =
+      typeof metadata.background === "boolean" ||
       typeof metadata.run_in_background === "boolean" ||
       typeof metadata.runInBackground === "boolean";
+    const parentSessionId = firstString(
+      metadata.parentSessionId,
+      metadata.parent_session_id,
+    );
+    const hasTaskEnvelope = /<task\b[^>]*\bid\s*=\s*["'][^"']+["']/iu.test(outputText ?? "");
+    if ((taskId || sessionId) && (parentSessionId || hasBackgroundFlag || metadata.jobId || hasTaskEnvelope)) {
+      return true;
+    }
     if (prompt && (taskId || sessionId) && hasBackgroundFlag) {
       return true;
     }

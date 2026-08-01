@@ -228,6 +228,15 @@ function collectCodexSubagentTargets(input: Record<string, unknown> | null) {
     ...(Array.isArray(input?.targets)
       ? input.targets.map((target) => firstString(target))
       : []),
+    ...(Array.isArray(input?.receiverThreadIds)
+      ? input.receiverThreadIds.map((target) => firstString(target))
+      : []),
+    ...(Array.isArray(input?.receiver_thread_ids)
+      ? input.receiver_thread_ids.map((target) => firstString(target))
+      : []),
+    ...(Array.isArray(input?.ids)
+      ? input.ids.map((target) => firstString(target))
+      : []),
   ].filter((target): target is string => Boolean(target));
   return [...new Set(targets)];
 }
@@ -277,10 +286,23 @@ function recordFrom(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function firstString(...values: unknown[]) {
+function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) {
       return value.trim();
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      const nested: string | undefined = firstString(
+        record.id,
+        record.agent_id,
+        record.agentId,
+        record.thread_id,
+        record.threadId,
+      );
+      if (nested) {
+        return nested;
+      }
     }
   }
   return undefined;

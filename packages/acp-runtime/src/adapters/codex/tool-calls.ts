@@ -10,6 +10,17 @@ const CODEX_MULTI_AGENT_TOOL_TITLE = /^(?:spawn_agent|send_message|send_input|fo
 const CODEX_SPARSE_LIFECYCLE_TOOL_TITLE = /^(?:spawn_agent|wait_agent|close_agent)$/u;
 const CODEX_MULTI_AGENT_NAMESPACE = "multi_agent_v1";
 const CODEX_WEB_NAMESPACE = "web";
+const CODEX_APP_SERVER_TOOL_NAMES: Record<string, string> = {
+  spawnAgent: "spawn_agent",
+  sendMessage: "send_message",
+  sendInput: "send_input",
+  followupTask: "followup_task",
+  waitAgent: "wait_agent",
+  interruptAgent: "interrupt_agent",
+  listAgents: "list_agents",
+  closeAgent: "close_agent",
+  resumeAgent: "resume_agent",
+};
 
 export type CodexSubagentActivityKind = "started" | "interacted" | "interrupted";
 
@@ -37,42 +48,19 @@ const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
     match: ({ toolCall, input, descriptor, activity }) =>
       looksLikeCodexSubagentToolCall(toolCall, input, descriptor, activity),
     normalize: ({ toolCall, input, descriptor, activity }) => {
-      const toolName = descriptor?.name ??
-        extractCodexMultiAgentToolName(input) ??
-        resolveSparseCodexLifecycleToolName(toolCall.title);
-      const identity = resolveCodexSubagentIdentity(input, activity);
+      const toolName = resolveCodexMultiAgentToolName(toolCall.title, input, descriptor);
       const operation = activity
         ? resolveCodexSubagentActivityOperation(activity, toolCall.id)
         : resolveCodexSubagentOperation(toolName, input, toolCall.id);
       const commandId = activity
         ? resolveCodexSubagentActivityCommandId(activity, toolCall.id)
-        : toolCall.id;
+        : resolveCodexSubagentCommandId(toolName, input, toolCall.id);
       return {
         ...toolCall,
         kind: "subagent" as const,
-        ...(operation
-          ? {
-              commandId,
-              subagentOperation: operation,
-              ...(identity
-                ? { title: `Subagent: ${identity}` }
-                : isOpaqueCodexToolTitle(toolCall.title) && toolName
-                  ? { title: toolName }
-                  : {}),
-            }
-          : activity && commandId
-          ? {
-              commandId,
-              ...(identity ? { title: `Subagent: ${identity}` } : {}),
-            }
-          : identity && isCodexSubagentLifecycleTool(toolName)
-          ? {
-              commandId: `subagent:${identity}`,
-              title: `Subagent: ${identity}`,
-            }
-          : isOpaqueCodexToolTitle(toolCall.title) && toolName
-            ? { title: toolName }
-            : {}),
+        title: "Subagent",
+        ...(commandId ? { commandId } : {}),
+        ...(operation ? { subagentOperation: operation } : {}),
       };
     },
   },
@@ -292,7 +280,7 @@ function looksLikeCodexSubagentToolCall(
   if (activity) {
     return true;
   }
-  const toolName = descriptor?.name ?? extractCodexMultiAgentToolName(input);
+  const toolName = resolveCodexMultiAgentToolName(toolCall.title, input, descriptor);
   if (toolName && (isCodexMultiAgentToolName(toolName) || isCodexMultiAgentNamespace(input))) {
     return true;
   }
@@ -309,7 +297,7 @@ export function looksLikeCodexSubagentPayload(
   if (!normalizedInput) {
     return Boolean(resolveSparseCodexLifecycleToolName(normalizedTitle));
   }
-  const toolName = extractCodexMultiAgentToolName(normalizedInput);
+  const toolName = resolveCodexMultiAgentToolName(normalizedTitle, normalizedInput);
   if (toolName && (isCodexMultiAgentToolName(toolName) || isCodexMultiAgentNamespace(normalizedInput))) {
     return true;
   }
@@ -456,6 +444,24 @@ function isCodexMultiAgentToolName(value: string) {
   return CODEX_MULTI_AGENT_TOOL_TITLE.test(value) || CODEX_SUBAGENT_TOOL_TITLE.test(value);
 }
 
+function resolveCodexMultiAgentToolName(
+  title: string,
+  input: Record<string, unknown> | null,
+  descriptor?: CodexToolDescriptor | null,
+) {
+  const candidate = descriptor?.name ?? extractCodexMultiAgentToolName(input) ?? title;
+  const normalized = candidate.trim().replace(/^tool:\s*/iu, "");
+  const appServerName = CODEX_APP_SERVER_TOOL_NAMES[normalized];
+  if (appServerName) {
+    return appServerName;
+  }
+  if (normalized === "wait" && looksLikeCodexAppServerSubagentPayload(input)) {
+    return "wait_agent";
+  }
+  return resolveSparseCodexLifecycleToolName(normalized) ??
+    (isCodexMultiAgentToolName(normalized) ? normalized : undefined);
+}
+
 function resolveSparseCodexLifecycleToolName(title: string) {
   const normalized = title.trim().replace(/^tool:\s*/iu, "");
   return CODEX_SPARSE_LIFECYCLE_TOOL_TITLE.test(normalized) ? normalized : undefined;
@@ -468,32 +474,26 @@ function isCodexSubagentLifecycleTool(toolName: string | undefined) {
     toolName === "interrupt_agent";
 }
 
-function resolveCodexSubagentIdentity(
-  input: Record<string, unknown> | null,
-  activity?: CodexSubagentActivity | null,
+function resolveCodexSubagentActivityCommandId(
+  activity: CodexSubagentActivity,
+  toolCallId: string,
 ) {
-  const normalized = mergeCodexToolArguments(input);
-  const activityPath = activity?.path ?? stringValue(normalized?.agentPath);
-  const activityLabel = lastCodexSubagentPathSegment(activityPath);
-  if (activityLabel) {
-    return activityLabel;
-  }
-  if (!normalized) {
-    return undefined;
-  }
-  const direct = firstString(
-    normalized.task_name,
-    normalized.taskName,
-    normalized.agent_name,
-    normalized.agentName,
-    normalized.target,
-  );
-  if (direct) {
-    return direct;
-  }
-  return Array.isArray(normalized.targets)
-    ? firstString(...normalized.targets)
-    : firstString(normalized.agentThreadId, normalized.threadId);
+  return activity.threadId
+    ? `subagent:${activity.threadId}`
+    : activity.path
+      ? `subagent:${activity.path}`
+      : toolCallId;
+}
+
+function resolveCodexSubagentCommandId(
+  _toolName: string | undefined,
+  _input: Record<string, unknown> | null,
+  toolCallId: string,
+) {
+  // Operation rows (spawn/wait/close/interrupt) are independent timeline
+  // records. Their target thread IDs belong to subagentOperation.targets and
+  // must not become a shared commandId that the Deck groups into one row.
+  return toolCallId;
 }
 
 function resolveCodexSubagentActivityOperation(
@@ -511,15 +511,117 @@ function resolveCodexSubagentActivityOperation(
   };
 }
 
-function resolveCodexSubagentActivityCommandId(
-  activity: CodexSubagentActivity,
+function resolveCodexSubagentOperation(
+  toolName: string | undefined,
+  input: Record<string, unknown> | null,
   toolCallId: string,
+): AgentToolCall["subagentOperation"] | undefined {
+  if (
+    toolName !== "spawn_agent" &&
+    toolName !== "wait_agent" &&
+    toolName !== "close_agent" &&
+    toolName !== "interrupt_agent"
+  ) {
+    return undefined;
+  }
+  const normalized = mergeCodexToolArguments(input);
+  const action = toolName === "spawn_agent"
+    ? "spawn"
+    : toolName === "wait_agent"
+      ? "wait"
+      : "close";
+  if (action === "spawn") {
+    const targets = resolveCodexSubagentTargets(normalized, toolCallId, true);
+    return { action, targets };
+  }
+  return {
+    action,
+    targets: resolveCodexSubagentTargets(normalized, toolCallId, false),
+  };
+}
+
+function resolveCodexSubagentTargets(
+  input: Record<string, unknown> | null,
+  toolCallId: string,
+  fallbackToToolCallId: boolean,
 ) {
-  return activity.threadId
-    ? `subagent:${activity.threadId}`
-    : activity.path
-      ? `subagent:${activity.path}`
-      : toolCallId;
+  const normalized = mergeCodexToolArguments(input);
+  if (!normalized) {
+    return fallbackToToolCallId ? [{ id: toolCallId }] : [];
+  }
+  const labelsById = new Map<string, string>();
+  const ids: string[] = [];
+  const add = (value: unknown, label?: unknown) => {
+    const id = firstString(
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>).id ??
+          (value as Record<string, unknown>).agent_id ??
+          (value as Record<string, unknown>).agentId ??
+          (value as Record<string, unknown>).thread_id ??
+          (value as Record<string, unknown>).threadId
+        : value,
+    );
+    if (!id || ids.includes(id)) {
+      return;
+    }
+    ids.push(id);
+    const resolvedLabel = firstString(
+      label,
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>).label ??
+          (value as Record<string, unknown>).name ??
+          (value as Record<string, unknown>).nickname
+        : undefined,
+    );
+    if (resolvedLabel) {
+      labelsById.set(id, resolvedLabel);
+    }
+  };
+
+  for (const id of extractCodexReceiverThreadIds(normalized)) {
+    add(id);
+  }
+  add(normalized.target);
+  for (const target of arrayValue(normalized.targets)) {
+    add(target);
+  }
+  for (const id of arrayValue(normalized.agent_ids ?? normalized.agentIds)) {
+    add(id);
+  }
+  add(normalized.agent_id ?? normalized.agentId);
+  const states = recordValue(normalized.agentsStates ?? normalized.agents_states);
+  if (states) {
+    for (const [id, state] of Object.entries(states)) {
+      add(id, recordValue(state)?.name ?? recordValue(state)?.nickname);
+    }
+  }
+
+  if (!ids.length && fallbackToToolCallId) {
+    add(toolCallId, firstString(
+      normalized.task_name,
+      normalized.taskName,
+      normalized.agent_name,
+      normalized.agentName,
+      normalized.nickname,
+    ));
+  }
+  const spawnLabel = firstString(
+    normalized.task_name,
+    normalized.taskName,
+    normalized.agent_name,
+    normalized.agentName,
+    normalized.nickname,
+  );
+  return ids.map((id) => ({
+    id,
+    ...(labelsById.get(id) ?? (ids.length === 1 && spawnLabel ? spawnLabel : undefined)
+      ? { label: labelsById.get(id) ?? spawnLabel }
+      : {}),
+  }));
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
 }
 
 function lastCodexSubagentPathSegment(path: string | undefined) {
@@ -583,45 +685,31 @@ function resolveCodexSubagentActivityKind(input: unknown): CodexSubagentActivity
     : undefined;
 }
 
-function resolveCodexSubagentOperation(
-  toolName: string | undefined,
-  input: Record<string, unknown> | null,
-  toolCallId: string,
-): AgentToolCall["subagentOperation"] | undefined {
-  if (toolName !== "spawn_agent" && toolName !== "wait_agent" && toolName !== "close_agent") {
-    return undefined;
-  }
+function extractCodexReceiverThreadIds(input: Record<string, unknown> | null) {
+  // Codex App Server uses `ids` for wait/close targets while the older
+  // multi-agent payload uses `receiverThreadIds`. Treat both as target
+  // identities so the app-server wait operation stays in the subagent path.
+  const candidates = [input?.receiverThreadIds, input?.receiver_thread_ids, input?.ids];
+  const value = candidates.find((candidate) => Array.isArray(candidate) && candidate.length > 0) ??
+    candidates.find((candidate) => Array.isArray(candidate));
+  return Array.isArray(value)
+    ? value.map((item) => firstString(
+        item,
+        item && typeof item === "object" && !Array.isArray(item)
+          ? (item as Record<string, unknown>).id ??
+            (item as Record<string, unknown>).threadId ??
+            (item as Record<string, unknown>).thread_id
+          : undefined,
+      )).filter((id): id is string => Boolean(id))
+    : [];
+}
+
+function looksLikeCodexAppServerSubagentPayload(input: Record<string, unknown> | null) {
   const normalized = mergeCodexToolArguments(input);
-  const action = toolName === "spawn_agent"
-    ? "spawn"
-    : toolName === "wait_agent"
-      ? "wait"
-      : "close";
-  if (action === "spawn") {
-    const label = firstString(
-      normalized?.task_name,
-      normalized?.taskName,
-      normalized?.agent_name,
-      normalized?.agentName,
-      normalized?.nickname,
-    );
-    const id = firstString(normalized?.agent_id, normalized?.agentId, label) ?? toolCallId;
-    return {
-      action,
-      targets: [{ id, ...(label ? { label } : {}) }],
-    };
+  if (!normalized) {
+    return false;
   }
-  const targets = [
-    firstString(normalized?.target, normalized?.agent_id, normalized?.agentId),
-    ...(Array.isArray(normalized?.targets)
-      ? normalized.targets.map((target) => firstString(target))
-      : []),
-  ].filter((target): target is string => Boolean(target));
-  const uniqueTargets = [...new Set(targets)];
-  return {
-    action,
-    targets: uniqueTargets.map((id) => ({ id, label: id })),
-  };
+  return extractCodexReceiverThreadIds(normalized).length > 0;
 }
 
 function isOpaqueCodexToolTitle(title: string) {

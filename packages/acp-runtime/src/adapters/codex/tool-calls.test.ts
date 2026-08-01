@@ -58,7 +58,7 @@ test("normalizeCodexToolCall classifies wrapped multi-agent payloads from update
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "spawn_agent");
+  assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.commandId, "call_codextest");
   assert.equal(normalized.status, "running");
   assert.deepEqual(normalized.subagentOperation, {
@@ -259,12 +259,12 @@ test("normalizeCodexToolCall classifies completed multi-agent payloads from outp
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent: inspect_tools");
+  assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
     action: "spawn",
-    targets: [{ id: "inspect_tools", label: "inspect_tools" }],
+    targets: [{ id: "call_codex_test", label: "inspect_tools" }],
   });
 });
 
@@ -283,12 +283,12 @@ test("normalizeCodexToolCall keeps a completed spawn as a completed operation", 
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent: Cicero");
+  assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
     action: "spawn",
-    targets: [{ id: "Cicero", label: "Cicero" }],
+    targets: [{ id: "call_codex_test", label: "Cicero" }],
   });
 });
 
@@ -307,12 +307,12 @@ test("normalizeCodexToolCall keeps wait_agent as an independent operation", () =
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent: Cicero");
+  assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
     action: "wait",
-    targets: [{ id: "Cicero", label: "Cicero" }],
+    targets: [{ id: "Cicero" }],
   });
 });
 
@@ -332,20 +332,17 @@ test("normalizeCodexToolCall keeps close_agent completion distinct from cancella
   );
 
   assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
     action: "close",
-    targets: [{ id: "Cicero", label: "Cicero" }],
+    targets: [{ id: "Cicero" }],
   });
 });
 
 test("normalizeCodexToolCall uses sparse lifecycle titles to preserve completed operations", () => {
-  for (const [title, action] of [
-    ["spawn_agent", "spawn"],
-    ["wait_agent", "wait"],
-    ["close_agent", "close"],
-  ] as const) {
+  for (const title of ["spawn_agent", "wait_agent", "close_agent"] as const) {
     const normalized = normalizeCodexToolCall(
       baseToolCall({
         id: `call_sparse_${title}`,
@@ -356,8 +353,14 @@ test("normalizeCodexToolCall uses sparse lifecycle titles to preserve completed 
     );
 
     assert.equal(normalized.kind, "subagent");
+    assert.equal(normalized.title, "Subagent");
     assert.equal(normalized.status, "completed");
-    assert.deepEqual(normalized.subagentOperation?.action, action);
+    assert.deepEqual(normalized.subagentOperation, {
+      action: title === "spawn_agent" ? "spawn" : title === "wait_agent" ? "wait" : "close",
+      targets: title === "spawn_agent"
+        ? [{ id: `call_sparse_${title}` }]
+        : [],
+    });
   }
 });
 
@@ -403,7 +406,7 @@ test("normalizeCodexToolCall recognizes ACP subAgentActivity lifecycle updates",
 
   for (const normalized of [running, completed]) {
     assert.equal(normalized.kind, "subagent");
-    assert.equal(normalized.title, "Subagent: weather_research");
+    assert.equal(normalized.title, "Subagent");
     assert.equal(normalized.commandId, "subagent:thread-weather");
     assert.deepEqual(normalized.subagentOperation, {
       action: "spawn",
@@ -433,7 +436,7 @@ test("normalizeCodexToolCall keeps ACP subAgentActivity interactions terminal", 
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent: weather_research");
+  assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.commandId, "subagent:thread-weather");
   assert.equal(normalized.status, "completed");
   assert.equal(normalized.subagentOperation, undefined);
@@ -458,6 +461,7 @@ test("normalizeCodexToolCall maps ACP subAgentActivity interruptions to close", 
   );
 
   assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
     action: "close",

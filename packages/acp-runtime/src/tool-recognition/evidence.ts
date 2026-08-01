@@ -9,6 +9,7 @@ export function evidenceFromProjectedToolCall(args: {
   strength?: ToolEvidence["strength"];
   subagentAction?: SubagentAction;
   subagentTerminal?: boolean;
+  subagentTerminalStatus?: Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled">;
 }): ToolEvidence[] {
   if (!args.projected) {
     return [{ source: args.source ?? "provider-structured", strength: args.strength ?? 400, suppress: true }];
@@ -37,6 +38,9 @@ export function evidenceFromProjectedToolCall(args: {
       background: isBackgroundObservation(args.observation),
       terminal: args.subagentTerminal ??
         isTerminalObservation(args.subagentAction, args.observation, projected),
+      ...(args.subagentTerminalStatus
+        ? { terminalStatus: args.subagentTerminalStatus }
+        : {}),
     };
   }
   return [evidence];
@@ -57,6 +61,9 @@ function collectSubagentIdentity(
   let batch = false;
   const commandId = projected.commandId;
   if (commandId?.startsWith("subagent:")) ids.add(commandId.slice("subagent:".length));
+  for (const target of projected.subagentOperation?.targets ?? []) {
+    if (target.id.trim()) ids.add(target.id.trim());
+  }
   batch = collectNamedIds(observation.input, ids) || batch;
   batch = collectNamedIds(observation.output, ids) || batch;
   for (const text of [observation.inputText, observation.outputText]) {

@@ -1,8 +1,9 @@
 import type { AcpToolEvidenceContext } from "../types";
 import { evidenceFromProjectedToolCall, type SubagentAction, type ToolEvidence } from "../../tool-recognition";
-import { normalizeClaudeToolCall } from "./tool-calls";
+import { createClaudeToolCallNormalizer } from "./tool-calls";
 
 export function createClaudeToolEvidenceCollector() {
+  const normalizer = createClaudeToolCallNormalizer();
   return {
     collect(context: AcpToolEvidenceContext): ToolEvidence[] {
       const observation = context.observation;
@@ -13,10 +14,19 @@ export function createClaudeToolEvidenceCollector() {
           suppress: true,
         }];
       }
-      const projected = normalizeClaudeToolCall(
+      const projected = normalizer.normalize(
         observation.toolCall,
         observation.update,
+        observation.sessionId,
+        observation.cwd,
       );
+      if (!projected) {
+        return [{
+          source: "provider-structured",
+          strength: 500,
+          suppress: true,
+        }];
+      }
       return evidenceFromProjectedToolCall({
         observation,
         projected,
@@ -25,8 +35,8 @@ export function createClaudeToolEvidenceCollector() {
           : undefined,
       });
     },
-    disposeSession(_sessionId: string): void {
-      // Transcript observation state is owned and disposed by the prompt observer.
+    disposeSession(sessionId: string): void {
+      normalizer.disposeSession(sessionId);
     },
   };
 }
@@ -35,7 +45,7 @@ function isBareClaudeLifecyclePlaceholder(
   observation: AcpToolEvidenceContext["observation"],
 ) {
   const title = observation.toolCall.title.trim();
-  if (!/^(?:Agent|Task|SendMessage|TaskOutput|Tool call\b)/iu.test(title)) {
+  if (!/^(?:Agent|Task|SendMessage|Tool call\b)/iu.test(title)) {
     return false;
   }
   const hasInput = Boolean(
@@ -53,7 +63,8 @@ function resolveClaudeSubagentAction(
   observation: AcpToolEvidenceContext["observation"],
   projected: AcpToolEvidenceContext["observation"]["toolCall"],
 ): SubagentAction {
-  const text = `${observation.descriptor} ${observation.inputText ?? ""}`.toLowerCase();
+  const text = `${observation.descriptor} ${projected.title} ${observation.inputText ?? ""}`
+    .toLowerCase();
   if (/\bsendmessage\b/u.test(text)) return "message";
   if (/\btaskoutput\b/u.test(text)) {
     return isClaudeTerminalResult(observation.outputText, projected.status)

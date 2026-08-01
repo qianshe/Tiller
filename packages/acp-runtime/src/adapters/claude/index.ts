@@ -18,6 +18,7 @@ const CLAUDE_ACP_COMMANDS = [
   "claude-acp",
   "claude-agent-acp",
   "claude-code-acp",
+  "claude-code",
 ];
 
 export function createClaudeAcpAdapter(): AcpAgentAdapter {
@@ -39,6 +40,7 @@ export function createClaudeAcpAdapter(): AcpAgentAdapter {
       provider.id === "claudecode" ||
       provider.id === "claude-acp" ||
       provider.id === "claude-agent-acp" ||
+      provider.id === "claude-code" ||
       CLAUDE_ACP_COMMANDS.some((command) =>
         isCommandNamed(provider.command, command),
       ),

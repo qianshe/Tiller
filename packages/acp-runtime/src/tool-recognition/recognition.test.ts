@@ -47,7 +47,7 @@ function subagentEvidence(args: {
   }];
 }
 
-test("Codex operation events bypass common subagent lifecycle folding", () => {
+test("Codex completed operation events remain independent timeline rows", () => {
   const sessionId = "recognition-codex-operations";
   const spawn = recognizeToolObservation(
     createToolObservation({

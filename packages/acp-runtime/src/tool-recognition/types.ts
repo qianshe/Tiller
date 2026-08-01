@@ -30,6 +30,7 @@ export type ToolEvidence = {
     entityIds: string[];
     background: boolean;
     terminal: boolean;
+    terminalStatus?: Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled">;
     /** Keep the provider notification visible as its own tool while also
      * applying this evidence to an already tracked subagent entity. */
     lifecycleOnly?: boolean;
