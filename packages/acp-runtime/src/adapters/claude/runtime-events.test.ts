@@ -570,6 +570,33 @@ test("mapSessionUpdateNotification classifies Claude Task tool with subagent_typ
   assert.equal(mapped.event.toolCall.title, "Task");
 });
 
+test("mapSessionUpdateNotification classifies a Claude Task before raw input arrives", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-task-title-only",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-task-title-only",
+          toolName: "Task",
+          title: "读取并简单回复",
+          status: "in_progress",
+        },
+      },
+    },
+    { providerId: "claudecode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "读取并简单回复");
+});
+
 test("mapSessionUpdateNotification classifies Claude ACP Task tool with provider config as subagent", () => {
   const provider = {
     id: "claude-acp",

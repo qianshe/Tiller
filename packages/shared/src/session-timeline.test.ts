@@ -643,6 +643,38 @@ test("appendToolCallToSessionTimeline keeps the first kind and terminal status",
   );
 });
 
+test("appendToolCallToSessionTimeline upgrades a generic placeholder to subagent", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "claude-task-call",
+    commandId: "claude-task-call",
+    kind: "tool",
+    title: "Tool call claude-task-call",
+    status: "running",
+    sequence: 1,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "claude-task-call",
+    commandId: "claude-task-call",
+    kind: "subagent",
+    title: "Subagent",
+    status: "completed",
+    output: "child result",
+    sequence: 1,
+  }));
+
+  assert.equal(entries.length, 1);
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.kind : undefined,
+    "subagent",
+  );
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
+    "completed",
+  );
+});
+
 test("appendToolCallToSessionTimeline keeps terminal status for weak running fallback updates", () => {
   const entries: SessionTimelineEntry[] = [];
 

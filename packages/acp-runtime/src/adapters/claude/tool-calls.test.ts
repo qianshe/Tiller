@@ -38,6 +38,19 @@ test("normalizeClaudeToolCall classifies task payloads with subagent_type as sub
   assert.equal(normalized.kind, "subagent");
 });
 
+test("normalizeClaudeToolCall classifies a Claude Task call before input arrives", () => {
+  const normalized = normalizeClaudeToolCall(
+    baseToolCall({ title: "读取并简单回复" }),
+    {
+      toolCall: {
+        toolName: "Task",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+});
+
 test("normalizeClaudeToolCall extracts a foreground subagent final reply", () => {
   const prompt = "Inspect the repository";
   const finalReply = "The repository is implementing nested Subagent conversations.";

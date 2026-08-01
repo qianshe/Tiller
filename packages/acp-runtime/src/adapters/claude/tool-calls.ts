@@ -262,8 +262,16 @@ function normalizeClaudeCompletedSubagentToolCall({
 
 function normalizeClaudeTitleSubagentToolCall({
   toolCall,
+  update,
+  source,
 }: ClaudeToolCallNormalizationContext) {
-  if (!CLAUDE_SUBAGENT_TOOL_NAME.test(toolCall.title ?? "")) {
+  const toolName = resolveClaudeToolName(toolCall, update, source);
+  if (
+    !CLAUDE_SUBAGENT_TOOL_NAME.test(toolCall.title ?? "") &&
+    !CLAUDE_TASK_SUBAGENT_TOOL_NAME.test(toolCall.title ?? "") &&
+    !CLAUDE_SUBAGENT_TOOL_NAME.test(toolName) &&
+    !CLAUDE_TASK_SUBAGENT_TOOL_NAME.test(toolName)
+  ) {
     return null;
   }
   return { ...toolCall, kind: "subagent" as const };
