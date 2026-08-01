@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mapSessionUpdateNotificationBatch } from "./runtime";
-import { mapSessionUpdateNotification } from "./events";
+import { mapSessionUpdateNotificationBatch } from "../../runtime";
+import { createRuntimeEventOriginTracker, mapSessionUpdateNotification } from "../../events";
 
 test("mapSessionUpdateNotification preserves OpenCode pending tool starts", () => {
   const mapped = mapSessionUpdateNotificationBatch(
@@ -264,6 +264,77 @@ test("mapSessionUpdateNotification classifies OpenCode task calls as subagents f
   }
   assert.equal(mapped.event.toolCall.kind, "subagent");
   assert.equal(mapped.event.toolCall.title, "Simple subagent test");
+});
+
+test("mapSessionUpdateNotification recognizes OpenCode explore tasks with subagent_type input", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-explore-subagent-type",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-opencode-explore-subagent-type",
+          title: "Check acp-runtime thinking pipeline state",
+          kind: "think",
+          status: "in_progress",
+          rawInput: {
+            description: "Check acp-runtime thinking pipeline state",
+            prompt: "Inspect the thinking pipeline and report the relevant state.",
+            subagent_type: "explore",
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "Check acp-runtime thinking pipeline state");
+});
+
+test("mapSessionUpdateNotification recognizes current OpenCode task result metadata", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-task-result",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "call-opencode-task-result",
+          status: "completed",
+          rawOutput: {
+            output: [
+              '<task id="ses_opencode_child" state="completed">',
+              "<task_result>",
+              "DONE",
+              "</task_result>",
+              "</task>",
+            ].join("\\n"),
+            metadata: {
+              parentSessionId: "ses_opencode_parent",
+              sessionId: "ses_opencode_child",
+              model: { providerID: "opencode", modelID: "test" },
+            },
+          },
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.commandId, "subagent:ses_opencode_child");
 });
 
 test("mapSessionUpdateNotification classifies OpenCode completed task outputs as subagents", () => {
@@ -1516,4 +1587,109 @@ test("mapSessionUpdateNotificationBatch preserves count-title OpenCode todo tool
     { content: "AST 搜索", priority: "medium", status: "in_progress" },
     { content: "写总结", priority: "medium", status: "pending" },
   ]);
+});
+test("non-Claude adapters ignore Claude subagent origin metadata", () => {
+  const providers = [
+    {
+      id: "codex",
+      name: "Codex",
+      command: "codex-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    {
+      id: "opencode",
+      name: "OpenCode",
+      command: "opencode-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+    {
+      id: "generic",
+      name: "Generic ACP",
+      command: "generic-acp",
+      transport: "stdio" as const,
+      protocol: "acp" as const,
+    },
+  ];
+
+  for (const provider of providers) {
+    const mapped = mapSessionUpdateNotificationBatch(
+      {
+        jsonrpc: "2.0",
+        method: "session/update",
+        params: {
+          sessionId: `session-${provider.id}-claude-origin-metadata`,
+          update: {
+            sessionUpdate: "tool_call",
+            toolCallId: `call-${provider.id}-read`,
+            title: "Read",
+            kind: "read",
+            status: "pending",
+            _meta: {
+              claudeCode: {
+                parentToolUseId: "call-parent-subagent",
+              },
+            },
+          },
+        },
+      },
+      { provider, providerId: provider.id },
+    );
+
+    const event = mapped?.events[0];
+    assert.equal(event?.type, "tool-call");
+    assert.equal(event?.type === "tool-call" ? event.origin : undefined, undefined);
+  }
+});
+
+test("tracker backfills OpenCode child tool-call origin from the root subagent commandId", () => {
+  const provider = {
+    id: "opencode",
+    name: "OpenCode",
+    command: "opencode-acp",
+    transport: "stdio" as const,
+    protocol: "acp" as const,
+  };
+  const tracker = createRuntimeEventOriginTracker();
+  const launch = mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-opencode-subagent-children",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-opencode-root",
+        title: "explore - research",
+        kind: "subagent",
+        status: "completed",
+        commandId: "subagent:ses_child_1",
+      },
+    },
+  }, { provider, providerId: provider.id, originTracker: tracker });
+  assert.equal(launch?.events[0]?.type, "tool-call");
+  assert.equal(
+    launch?.events[0]?.type === "tool-call" ? launch.events[0].origin : undefined,
+    undefined,
+  );
+
+  const child = mapSessionUpdateNotificationBatch({
+    method: "session/update",
+    params: {
+      sessionId: "session-opencode-subagent-children",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call-opencode-child-read",
+        title: "Read",
+        kind: "read",
+        status: "completed",
+        commandId: "subagent:ses_child_1",
+      },
+    },
+  }, { provider, providerId: provider.id, originTracker: tracker });
+  const childEvent = child?.events[0];
+  assert.equal(childEvent?.type, "tool-call");
+  assert.deepEqual(
+    childEvent?.type === "tool-call" ? childEvent.origin : undefined,
+    { scope: "subagent", parentToolCallId: "call-opencode-root" },
+  );
 });
