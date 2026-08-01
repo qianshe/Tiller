@@ -9,6 +9,13 @@ const OPENCODE_COMPACTION_CORE_HEADING_GROUPS = [
   ["## Next Move", "## Next Steps"],
   ["## Relevant Files"],
 ] as const;
+const OPENCODE_LEGACY_COMPACTION_INTRO =
+  /^Done\.\s+Here is the updated summary\.\s*$/iu;
+const OPENCODE_LEGACY_COMPACTION_SECTIONS = [
+  "1. User Requests (As-Is)",
+  "2. Final Goal",
+  "3. Work Completed",
+] as const;
 
 export function expandOpenCodeRuntimeEvent(
   event: SessionRuntimeEvent,
@@ -35,6 +42,9 @@ export function expandOpenCodeRuntimeEvent(
 }
 
 function looksLikeOpenCodeCompactionSummary(text: string): boolean {
+  if (looksLikeLegacyOpenCodeCompactionSummary(text)) {
+    return true;
+  }
   const headings = extractOpenCodeCompactionHeadings(text);
   if (headings.length === 0) {
     return false;
@@ -44,6 +54,23 @@ function looksLikeOpenCodeCompactionSummary(text: string): boolean {
     return false;
   }
   return matchesOpenCodeCompactionCoreHeadings(headings);
+}
+
+function looksLikeLegacyOpenCodeCompactionSummary(text: string): boolean {
+  const lines = text.trim().split(/\r?\n/u).map((line) => line.trim());
+  if (!OPENCODE_LEGACY_COMPACTION_INTRO.test(lines[0] ?? "")) {
+    return false;
+  }
+  let sectionIndex = 0;
+  for (const line of lines.slice(1)) {
+    if (line === OPENCODE_LEGACY_COMPACTION_SECTIONS[sectionIndex]) {
+      sectionIndex += 1;
+      if (sectionIndex === OPENCODE_LEGACY_COMPACTION_SECTIONS.length) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function matchesOpenCodeCompactionCoreHeadings(headings: string[]): boolean {
