@@ -1002,18 +1002,24 @@ export function PlainSubagentItem({
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary
-          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          className="flex min-w-0 w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? `收起 ${label}` : `展开 ${label}`}
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-amber-500/10 text-amber-700 dark:bg-amber-300/10 dark:text-amber-300">
               <Icon name="message" size={12} className="shrink-0" />
             </span>
-            <span className="inline-flex h-4 shrink-0 items-center font-medium leading-none text-amber-700 dark:text-amber-300">
+            <span
+              className="inline-flex h-4 min-w-0 flex-1 items-center truncate font-medium leading-none text-amber-700 dark:text-amber-300"
+              title={label}
+            >
               {label}
             </span>
             {summary ? (
-              <span className="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground/70">
+              <span
+                className="inline-flex h-4 min-w-0 max-w-[45%] shrink items-center truncate leading-none text-muted-foreground/70"
+                title={summary}
+              >
                 {summary}
               </span>
             ) : null}

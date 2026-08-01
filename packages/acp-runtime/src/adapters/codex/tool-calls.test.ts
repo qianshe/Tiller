@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentToolCall } from "@tiller/shared";
-import { normalizeCodexToolCall } from "./tool-calls.js";
+import { normalizeCodexToolCall, resolveCodexSubagentTitle } from "./tool-calls.js";
 
 function baseToolCall(overrides: Partial<AgentToolCall> = {}): AgentToolCall {
   return {
@@ -14,6 +14,14 @@ function baseToolCall(overrides: Partial<AgentToolCall> = {}): AgentToolCall {
     ...overrides,
   };
 }
+
+test("resolveCodexSubagentTitle keeps the first-line prompt summary for responsive rendering", () => {
+  const title = resolveCodexSubagentTitle({
+    prompt: "Inspect the adapter and return CHILD_OK with the complete test output and a concise summary.\nIgnore this second line.",
+  });
+
+  assert.equal(title, "Inspect the adapter and return CHILD_OK with the complete test output and a concise summary.");
+});
 
 test("normalizeCodexToolCall classifies wrapped MCP payloads from update metadata", () => {
   const normalized = normalizeCodexToolCall(
@@ -58,7 +66,7 @@ test("normalizeCodexToolCall classifies wrapped multi-agent payloads from update
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent");
+  assert.equal(normalized.title, "Inspect tool normalization");
   assert.equal(normalized.commandId, "call_codextest");
   assert.equal(normalized.status, "running");
   assert.deepEqual(normalized.subagentOperation, {
@@ -259,7 +267,7 @@ test("normalizeCodexToolCall classifies completed multi-agent payloads from outp
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent");
+  assert.equal(normalized.title, "Inspect tool normalization");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
@@ -283,7 +291,7 @@ test("normalizeCodexToolCall keeps a completed spawn as a completed operation", 
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent");
+  assert.equal(normalized.title, "Reply once");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {

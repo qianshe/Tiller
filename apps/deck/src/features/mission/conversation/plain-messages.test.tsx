@@ -3372,13 +3372,60 @@ test("plain messages surfaces subagent type and task summary when available", ()
   assert.match(html, /Explore/);
   assert.match(html, /trace async refresh flow/);
   assert.match(html, /运行中/);
-  assert.match(html, /<summary class="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost \[\&amp;::-webkit-details-marker\]:hidden"/);
+  assert.match(html, /<summary class="flex min-w-0 w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost \[\&amp;::-webkit-details-marker\]:hidden"/);
   assert.match(html, /class="flex min-w-0 flex-1 items-center gap-2"/);
   assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-amber-500\/10/);
-  assert.match(html, /class="inline-flex h-4 shrink-0 items-center font-medium leading-none text-amber-700/);
-  assert.match(html, /class="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground\/70"/);
+  assert.match(html, /class="inline-flex h-4 min-w-0 flex-1 items-center truncate font-medium leading-none text-amber-700/);
+  assert.match(html, /class="inline-flex h-4 min-w-0 max-w-\[45%\] shrink items-center truncate leading-none text-muted-foreground\/70"/);
   assert.match(html, /class="inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0\.5 text-2xs font-semibold leading-none bg-accent/);
   assert.match(html, /class="inline-flex size-4 shrink-0 items-center justify-center text-muted-foreground\/60 transition-transform duration-150 rotate-180"/);
+});
+
+test("plain messages keeps long subagent titles responsive next to the completion badge", () => {
+  const title = "Inspect the adapter and return the complete test output with a concise summary";
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-subagent-long-title",
+        kind: "subagent",
+        title,
+        status: "completed",
+        input: "{}",
+        output: "done",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, new RegExp(`title="${title}"`));
+  assert.match(html, /class="inline-flex h-4 min-w-0 flex-1 items-center truncate font-medium leading-none text-amber-700/);
+  assert.match(html, /class="inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0\.5 text-2xs font-semibold leading-none bg-success\/10/);
+  assert.match(html, /已完成/);
+});
+
+test("plain messages names contentless Codex lifecycle rows by operation", () => {
+  const html = renderPlainMessages({
+    toolCalls: [
+      {
+        id: "tool-subagent-wait",
+        kind: "subagent",
+        title: "Subagent",
+        status: "completed",
+        input: JSON.stringify({ targets: ["child-thread-1"] }),
+        output: JSON.stringify({ agentsStates: { "child-thread-1": { status: "completed" } } }),
+        subagentOperation: {
+          action: "wait",
+          targets: [{ id: "child-thread-1" }],
+        },
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+      },
+    ],
+  });
+
+  assert.match(html, /Subagent: wait/);
+  assert.match(html, /已返回/);
 });
 
 test("plain messages renders Codex spawn, wait, and close as separate operation rows", () => {
@@ -3388,12 +3435,12 @@ test("plain messages renders Codex spawn, wait, and close as separate operation 
         id: "spawn-call",
         commandId: "spawn-call",
         kind: "subagent",
-        title: "Cicero",
+        title: "Inspect the adapter",
         status: "completed",
         input: JSON.stringify({ task_name: "Cicero", message: "Inspect the adapter" }),
         subagentOperation: {
           action: "spawn",
-          targets: [{ id: "agent-1", label: "Cicero" }],
+          targets: [{ id: "agent-1" }],
         },
         timestamp: "2026-07-17T09:00:01.000Z",
         updatedAt: "2026-07-17T09:00:02.000Z",
@@ -3402,13 +3449,13 @@ test("plain messages renders Codex spawn, wait, and close as separate operation 
         id: "wait-call",
         commandId: "wait-call",
         kind: "subagent",
-        title: "Cicero",
+        title: "Inspect the adapter",
         status: "completed",
         input: JSON.stringify({ targets: ["agent-1"] }),
         output: "All tests passed.",
         subagentOperation: {
           action: "wait",
-          targets: [{ id: "agent-1", label: "Cicero" }],
+          targets: [{ id: "agent-1" }],
         },
         timestamp: "2026-07-17T09:00:03.000Z",
         updatedAt: "2026-07-17T09:00:04.000Z",
@@ -3417,13 +3464,13 @@ test("plain messages renders Codex spawn, wait, and close as separate operation 
         id: "close-call",
         commandId: "close-call",
         kind: "subagent",
-        title: "Cicero",
+        title: "Inspect the adapter",
         status: "completed",
         input: JSON.stringify({ target: "agent-1" }),
         output: JSON.stringify({ previous_status: { completed: "All tests passed." } }),
         subagentOperation: {
           action: "close",
-          targets: [{ id: "agent-1", label: "Cicero" }],
+          targets: [{ id: "agent-1" }],
         },
         timestamp: "2026-07-17T09:00:05.000Z",
         updatedAt: "2026-07-17T09:00:06.000Z",
@@ -3432,9 +3479,8 @@ test("plain messages renders Codex spawn, wait, and close as separate operation 
   });
 
   assert.equal(html.match(/data-subagent-call/g)?.length, 3);
-  assert.match(html, /创建 Subagent · Cicero/);
-  assert.match(html, /等待 Subagent · Cicero/);
-  assert.match(html, /关闭 Subagent · Cicero/);
+  assert.ok((html.match(/Inspect the adapter/g)?.length ?? 0) >= 3);
+  assert.doesNotMatch(html, /创建 Subagent ·|等待 Subagent ·|关闭 Subagent ·/);
   assert.match(html, /Inspect the adapter/);
   assert.match(html, /All tests passed\./);
   assert.match(html, /关闭前已完成/);

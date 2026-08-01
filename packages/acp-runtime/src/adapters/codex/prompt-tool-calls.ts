@@ -2,6 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import type { AgentToolCall } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "../../runtime-types";
 import type { AcpPromptObservationContext } from "../types";
+import { resolveCodexSubagentTitle } from "./tool-calls";
 import {
   fingerprintPromptToolCall,
   safelyReadPromptToolCalls,
@@ -158,7 +159,7 @@ function projectCodexSubagentToolCall(
     return { id, ...(launch ? { label: launch.title } : {}) };
   });
   const title = targets.length === 1
-    ? targets[0]?.label ?? targets[0]?.id ?? "Subagent"
+    ? targets[0]?.label ?? "Subagent"
     : targets.length > 1
       ? `${targets.length} 个 Subagent`
       : "Subagent";
@@ -200,13 +201,14 @@ function rememberCodexSubagentLaunch(
   const input = parseRecord(toolCall.input);
   const output = parseRecord(toolCall.output);
   const existing = state.launchesByCallId.get(toolCall.id);
-  const title = firstString(
-    input?.task_name,
-    input?.taskName,
-    output?.nickname,
-    output?.name,
-    existing?.title,
-  ) ?? "Subagent";
+  const title = resolveCodexSubagentTitle(
+    input,
+    firstString(
+      output?.nickname,
+      output?.name,
+      existing?.title,
+    ),
+  );
   const launch: CodexSubagentLaunch = existing ?? {
     id: toolCall.id,
     title,

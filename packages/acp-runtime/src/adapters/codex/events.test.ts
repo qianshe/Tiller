@@ -13,7 +13,7 @@ const codexProvider = {
   protocol: "acp" as const,
 };
 
-test("Codex App Server spawnAgent notifications are titled Subagent", () => {
+test("Codex App Server spawnAgent notifications use the prompt summary as title", () => {
   const mapped = mapSessionUpdateNotification(
     {
       jsonrpc: "2.0",
@@ -44,7 +44,7 @@ test("Codex App Server spawnAgent notifications are titled Subagent", () => {
     throw new Error("Expected a live Codex subagent tool-call event");
   }
   assert.equal(mapped.event.toolCall.kind, "subagent");
-  assert.equal(mapped.event.toolCall.title, "Subagent");
+  assert.equal(mapped.event.toolCall.title, "在共享工作区执行只读检查");
   assert.equal(mapped.event.toolCall.commandId, "codex-spawn-agent-source");
   assert.deepEqual(mapped.event.toolCall.subagentOperation, {
     action: "spawn",

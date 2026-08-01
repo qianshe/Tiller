@@ -58,7 +58,7 @@ const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
       return {
         ...toolCall,
         kind: "subagent" as const,
-        title: "Subagent",
+        title: resolveCodexSubagentTitle(input, toolCall.title),
         ...(commandId ? { commandId } : {}),
         ...(operation ? { subagentOperation: operation } : {}),
       };
@@ -305,7 +305,16 @@ export function looksLikeCodexSubagentPayload(
     !CODEX_SUBAGENT_TOOL_TITLE.test(normalizedTitle) &&
     !CODEX_MULTI_AGENT_TOOL_TITLE.test(normalizedTitle)
   ) {
-    return false;
+    // Opaque or generic title — keep checking if the input itself carries strong
+    // subagent fingerprints (fork_context / path), because the initial ACP update
+    // may arrive before the provider emits structured namespace/name metadata.
+    const hasOpaqueSubagentSignal =
+      normalizedInput.fork_context === true ||
+      normalizedInput.forkContext === true ||
+      (typeof normalizedInput.path === "string" && normalizedInput.path.trim().length > 0);
+    if (!hasOpaqueSubagentSignal) {
+      return false;
+    }
   }
   if (typeof normalizedInput.path === "string" && normalizedInput.path.trim()) {
     return true;
@@ -442,6 +451,53 @@ function isCodexMultiAgentNamespace(input: Record<string, unknown> | null) {
 
 function isCodexMultiAgentToolName(value: string) {
   return CODEX_MULTI_AGENT_TOOL_TITLE.test(value) || CODEX_SUBAGENT_TOOL_TITLE.test(value);
+}
+
+export function resolveCodexSubagentTitle(
+  input: Record<string, unknown> | null,
+  fallback?: string,
+) {
+  const normalized = mergeCodexToolArguments(input);
+  const content = firstString(
+    normalized?.message,
+    normalized?.prompt,
+    normalized?.description,
+    normalized?.task,
+    normalized?.task_name,
+    normalized?.taskName,
+    normalized?.agent_name,
+    normalized?.agentName,
+    normalized?.nickname,
+  );
+  if (content && isReadableCodexSubagentTitle(content)) {
+    return compactCodexSubagentTitle(content);
+  }
+  const fallbackTitle = firstString(fallback);
+  if (fallbackTitle && isReadableCodexSubagentTitle(fallbackTitle)) {
+    return compactCodexSubagentTitle(fallbackTitle);
+  }
+  return "Subagent";
+}
+
+function compactCodexSubagentTitle(value: string) {
+  const firstLine = value.split(/\r?\n/u).map((line) => line.trim()).find(Boolean) ?? value;
+  return firstLine.replace(/\s+/gu, " ").trim();
+}
+
+function isReadableCodexSubagentTitle(value: string) {
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    isOpaqueCodexToolTitle(normalized) ||
+    isCodexMultiAgentToolName(normalized) ||
+    /^(?:spawnAgent|sendMessage|sendInput|followupTask|wait|interruptAgent|listAgents|closeAgent|resumeAgent)$/u.test(normalized) ||
+    /^(?:start|interact|interrupt)\b.*\bsubagent\b/iu.test(normalized) ||
+    CODEX_SUBAGENT_TOOL_TITLE.test(normalized)
+  ) {
+    return false;
+  }
+  return !/^(?:agent|thread|task|call)[-_:/][\w-]+$/iu.test(normalized) &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(normalized);
 }
 
 function resolveCodexMultiAgentToolName(
