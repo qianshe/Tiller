@@ -360,12 +360,18 @@ export type PermissionRequestOption = {
   label: string;
 };
 
+export type PermissionRequestCategory =
+  | "local_command"
+  | "local_file_write"
+  | "external_action";
+
 export type PermissionRequest = {
   id: string;
   toolCallId?: string;
   command: string;
   reason: string;
   cwd: string;
+  category?: PermissionRequestCategory;
   options?: PermissionRequestOption[];
 };
 

@@ -40,6 +40,50 @@ test("mapSdkPermissionRequest exposes scoped permission options", () => {
   assert.equal(mapped.request.toolCallId, "tool-1");
 });
 
+test("mapSdkPermissionRequest classifies local command approvals", () => {
+  const mapped = mapSdkPermissionRequest(
+    {
+      sessionId: "s1",
+      toolCall: {
+        toolCallId: "tool-shell",
+        kind: "execute",
+        status: "pending",
+        rawInput: { command: "rg --files", cwd: "D:/repo" },
+      },
+      options: [
+        { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+        { optionId: "deny-once", name: "Deny", kind: "reject_once" },
+      ],
+    },
+    "permission-shell",
+    "D:/repo",
+  );
+
+  assert.equal(mapped.request.category, "local_command");
+});
+
+test("mapSdkPermissionRequest keeps MCP approvals external even when their tool kind is execute", () => {
+  const mapped = mapSdkPermissionRequest(
+    {
+      sessionId: "s1",
+      toolCall: {
+        toolCallId: "tool-mcp",
+        kind: "execute",
+        status: "pending",
+      },
+      options: [
+        { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+        { optionId: "deny-once", name: "Deny", kind: "reject_once" },
+      ],
+      _meta: { is_mcp_tool_approval: true },
+    },
+    "permission-mcp",
+    "D:/repo",
+  );
+
+  assert.equal(mapped.request.category, "external_action");
+});
+
 test("mapSdkPermissionRequest falls back to localized labels when SDK label is empty", () => {
   const mapped = mapSdkPermissionRequest(
     {

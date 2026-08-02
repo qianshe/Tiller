@@ -1,5 +1,6 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, relative } from "node:path";
+import type { PermissionRequestCategory } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "../runtime-types";
 import { resolveContainedWorktreePath, sliceTextFileContent } from "../terminal-client";
 
@@ -20,7 +21,12 @@ type WriteConnectionTextFileParams = {
   session: ConnectionFileSession;
   path: string;
   content: string;
-  requestPermission: (sessionId: string, command: string, reason: string) => Promise<boolean>;
+  requestPermission: (
+    sessionId: string,
+    command: string,
+    reason: string,
+    category: PermissionRequestCategory,
+  ) => Promise<boolean>;
 };
 
 export async function readConnectionTextFile({
@@ -48,6 +54,7 @@ export async function writeConnectionTextFile({
     sessionId,
     `Write file: ${relativePath}`,
     "ACP agent requested worktree file write access.",
+    "local_file_write",
   );
   if (!allowed) {
     throw new Error(`Denied ACP file write: ${relativePath}`);

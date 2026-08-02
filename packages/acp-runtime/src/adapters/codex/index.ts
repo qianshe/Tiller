@@ -23,6 +23,9 @@ export function createCodexAcpAdapter(): AcpAgentAdapter {
       return {
         ...launch,
         args: applyCodexSessionLaunchArgs(launch.args, context.sessionConfig),
+        env: context.sessionConfig?.agentMode
+          ? { ...launch.env, INITIAL_AGENT_MODE: context.sessionConfig.agentMode }
+          : launch.env,
       };
     },
     resolveCapabilities: (_provider, _initializeResult, detected) => detected,

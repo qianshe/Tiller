@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import { setImmediate as waitUntilNextEventLoopTurn } from "node:timers/promises";
 import * as acp from "@agentclientprotocol/sdk";
-import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
+import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, PermissionRequestCategory, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
 import {
   beginAdapterPromptObservation,
   disposeAdapterSession,
@@ -129,7 +129,8 @@ export class AcpConnection {
   private constructor(private readonly state: AcpConnectionState) {
     this.terminalClient = new ConnectionTerminalClient({
       resolveSession: (runtimeSessionId) => this.requireSessionByRuntimeId(runtimeSessionId),
-      requestPermission: (sessionId, command, reason) => this.requestClientPermission(sessionId, command, reason),
+      requestPermission: (sessionId, command, reason, category) =>
+        this.requestClientPermission(sessionId, command, reason, category),
     });
     this.state.child.once("exit", (code, signal) => {
       this.status = "closed";
@@ -782,7 +783,8 @@ export class AcpConnection {
       session: this.requireSessionByRuntimeId(params.sessionId),
       path: params.path,
       content: params.content,
-      requestPermission: (sessionId, command, reason) => this.requestClientPermission(sessionId, command, reason),
+      requestPermission: (sessionId, command, reason, category) =>
+        this.requestClientPermission(sessionId, command, reason, category),
     });
   }
 
@@ -806,12 +808,17 @@ export class AcpConnection {
     return await this.terminalClient.release(params);
   }
 
-  private async requestClientPermission(sessionId: string, command: string, reason: string): Promise<boolean> {
+  private async requestClientPermission(
+    sessionId: string,
+    command: string,
+    reason: string,
+    category: PermissionRequestCategory,
+  ): Promise<boolean> {
     const session = this.findSessionByRuntimeId(sessionId);
     const id = this.nextPermissionRequestId("sdk-client-permission");
     session?.onEvent({
       type: "permission-request",
-      request: { id, command, reason, cwd: session?.worktree.path ?? this.state.launchCwd },
+      request: { id, command, reason, category, cwd: session?.worktree.path ?? this.state.launchCwd },
     });
     return await new Promise<boolean>((resolve) => {
       this.pendingPermissionReplies.set(id, { kind: "client", resolve });

@@ -212,7 +212,7 @@ function resolveAutoApprovalDecision(
   context: HelmHandlerContext,
 ): PermissionDecision | null {
   try {
-    return resolveApprovalPolicyDecision(
+    const policyDecision = resolveApprovalPolicyDecision(
       context.readApprovalPolicy(),
       input.request,
       {
@@ -221,6 +221,16 @@ function resolveAutoApprovalDecision(
         worktreePath: input.request.cwd,
       },
     );
+    if (policyDecision === "confirm") {
+      return null;
+    }
+    if (policyDecision) {
+      return policyDecision;
+    }
+    return sessionRecord?.summary.agentMode === "agent-full-access" &&
+      (input.request.category === "local_command" || input.request.category === "local_file_write")
+      ? "allow"
+      : null;
   } catch (error) {
     context.logWarn(
       `[tiller] approval policy read failed; falling back to manual approval: ${error instanceof Error ? error.message : String(error)}`,
