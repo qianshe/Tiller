@@ -248,6 +248,15 @@ This runs:
 npm install -g @qianshe/tiller@latest
 ```
 
+When the Deck is connected to a published Helm on the same machine, Settings →
+About also shows the current and latest versions and provides “Check for
+updates” and “Update and restart”. The update runs only after confirmation,
+temporarily disconnects the current ACP sessions, and reloads the Deck after
+the replacement Helm reports the target version. Remote or development Helms
+remain read-only; use the manual command above when automatic updating is not
+available. If the replacement does not reconnect, inspect the update log and
+run the manual command.
+
 Disable startup update checks:
 
 ```bash

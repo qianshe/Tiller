@@ -21,6 +21,7 @@ import { daemonProfileKey, type DaemonProfile } from "./daemon-profiles";
 import { createHelmWebSocketUrl, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
 import { DeckRpcClient } from "./rpc-client";
 import type { DispatchToHelm } from "./request-dispatch";
+import { readHelmUpdateIntent } from "./update-intent";
 
 type StoreUpdater<T> = T | ((current: T) => T);
 type StoreSetter<T> = (updater: StoreUpdater<T>) => void;
@@ -335,7 +336,11 @@ export function connectToDaemon(
       rpcClientRef.current = null;
     }
     lastFilesScopeKeyRef.current = null;
-    setConnectFeedback(copy.connectFeedbackIdle);
+    setConnectFeedback(
+      readHelmUpdateIntent(helmKey)
+        ? "Helm 正在更新并重启，等待自动重连..."
+        : copy.connectFeedbackIdle,
+    );
     if (context.pairingState !== "paired") {
       setPairingState("idle");
     }
@@ -346,7 +351,11 @@ export function connectToDaemon(
       return;
     }
     setConnection("disconnected");
-    setConnectFeedback(`连接 ${wsUrl} 失败`);
+    setConnectFeedback(
+      readHelmUpdateIntent(helmKey)
+        ? "Helm 正在更新并重启，等待自动重连..."
+        : `连接 ${wsUrl} 失败`,
+    );
     if (!options?.auto) {
       setPairingState("idle");
     }

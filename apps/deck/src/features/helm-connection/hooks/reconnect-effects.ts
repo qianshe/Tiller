@@ -4,6 +4,7 @@ import { requestReconnectAttempt } from "../reconnect-attempt";
 import type { ConnectToDaemonOptions } from "../sockets";
 import {
   shouldAttemptSilentReconnect,
+  shouldRunSilentReconnect,
   shouldEnsureLiveConnection,
   shouldCheckHelmHealth,
   type AppView,
@@ -46,11 +47,9 @@ export function useReconnectEffects({
 }: UseReconnectEffectsOptions) {
   // 静默重连 effect
   useEffect(() => {
-    if (missionVisualMode || (!tokenPresent && !embedded)) {
-      return;
-    }
     if (
-      !shouldAttemptSilentReconnect({
+      !shouldRunSilentReconnect({
+        missionVisualMode,
         connection,
         tokenPresent,
         embedded,

@@ -152,6 +152,10 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     loggingConnectionKnownConnected,
     refreshLoggingSettings,
     saveLoggingLevel,
+    helmUpdateState,
+    helmUpdateClient,
+    refreshHelmUpdate,
+    startHelmUpdate,
   } = source;
 function renderOverview() {
   return (
@@ -320,6 +324,10 @@ function renderSettings() {
       loggingConnectionKnownConnected={loggingConnectionKnownConnected}
       onRefreshLoggingSettings={refreshLoggingSettings}
       onSaveLoggingLevel={saveLoggingLevel}
+      helmUpdate={helmUpdateState}
+      helmUpdateClient={helmUpdateClient}
+      onRefreshHelmUpdate={refreshHelmUpdate}
+      onStartHelmUpdate={startHelmUpdate}
     />
   );
 }

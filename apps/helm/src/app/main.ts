@@ -23,7 +23,7 @@ if (action.kind === "help") {
   try {
     const config = readTillerConfig(getDefaultConfigPath());
     const options = resolveUpdateOptions({ env: process.env, config });
-    const notice = buildUpdateNotice(await loadUpdateVersions(TILLER_VERSION), options);
+    const notice = buildUpdateNotice(await loadUpdateVersions(TILLER_VERSION, { force: true }), options);
     console.log(formatExplicitUpdateOutput(notice));
     if (notice.kind === "latest-update") {
       process.exitCode = await runLatestUpdate();

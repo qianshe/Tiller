@@ -4,10 +4,12 @@ import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import type { GitGraphState, GitStatusState } from "../../store/facade";
+import { useDeckStore } from "../../store";
 import {
   applyGitFileDiffResult,
   applyGitGraphResult,
   applyGitOperationResult,
+  applyInventoryResult,
 } from "./inventory-events";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -30,6 +32,50 @@ test("inventory events clear git status and graph loading state even when RPC re
     inventoryEventsSource,
     /case "project\/git\/commit_detail":[\s\S]*commitDetails:[\s\S]*payload\.commitHash/s,
   );
+});
+
+test("update check preserves the restart target across reconnect inventory sync", () => {
+  const helmKey = "127.0.0.1:47631";
+  useDeckStore.setState({ helmInventories: {} });
+  useDeckStore.getState().applyHelmInventory(helmKey, {
+    update: {
+      status: "restarting",
+      currentVersion: "1.0.0",
+      latestVersion: "1.1.0",
+      targetVersion: "1.1.0",
+      updateAvailable: true,
+      canUpdate: true,
+    },
+  });
+
+  applyInventoryResult("daemon/update/check", {
+    currentVersion: "1.2.0",
+    latestVersion: "1.2.0",
+    updateAvailable: false,
+    canUpdate: true,
+    checkStatus: "checked",
+  }, helmKey, true, {} as any);
+
+  const update = useDeckStore.getState().helmInventories[helmKey]?.update;
+  assert.equal(update?.status, "restarting");
+  assert.equal(update?.targetVersion, "1.1.0");
+  assert.equal(update?.currentVersion, "1.2.0");
+});
+
+test("update check keeps disabled automatic checks distinct from up-to-date", () => {
+  const helmKey = "127.0.0.1:47631";
+  useDeckStore.setState({ helmInventories: {} });
+
+  applyInventoryResult("daemon/update/check", {
+    currentVersion: "1.0.0",
+    updateAvailable: false,
+    canUpdate: true,
+    checkStatus: "disabled",
+  }, helmKey, true, {} as any);
+
+  const update = useDeckStore.getState().helmInventories[helmKey]?.update;
+  assert.equal(update?.status, "up-to-date");
+  assert.equal(update?.checkStatus, "disabled");
 });
 
 test("git file diff results merge patch bodies into the matching status files", () => {

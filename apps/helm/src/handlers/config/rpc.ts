@@ -11,6 +11,7 @@ import {
 } from "./agent-rpc";
 import { listHelms, saveHelm, shutdownDaemon } from "./helm-rpc";
 import { getLoggingSettings, saveLoggingSettings } from "./logging-rpc";
+import { checkDaemonUpdate, startDaemonUpdate } from "./update-rpc";
 import {
   createBranch,
   deleteProject,
@@ -38,6 +39,10 @@ export async function handleConfigRpcRequest(
   switch (method) {
     case "daemon/shutdown":
       return shutdownDaemon(context);
+    case "daemon/update/check":
+      return checkDaemonUpdate(params as { force?: boolean }, context);
+    case "daemon/update/start":
+      return startDaemonUpdate(context);
     case "helm/list":
       return listHelms(context);
     case "helm/save":

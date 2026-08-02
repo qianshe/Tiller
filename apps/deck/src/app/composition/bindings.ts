@@ -79,6 +79,10 @@ export function buildAppRouteContext(input: any) {
     loggingConnectionKnownConnected: input.loggingConnectionKnownConnected,
     refreshLoggingSettings: input.refreshLoggingSettings,
     saveLoggingLevel: input.saveLoggingLevel,
+    helmUpdateState: input.helmUpdateState,
+    helmUpdateClient: input.helmUpdateClient,
+    refreshHelmUpdate: input.refreshHelmUpdate,
+    startHelmUpdate: input.startHelmUpdate,
   };
 }
 

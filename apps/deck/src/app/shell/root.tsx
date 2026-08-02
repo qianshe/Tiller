@@ -11,9 +11,11 @@ import {
   daemonProfileKey,
   dispatchWithTrace,
   resolveDefaultHelmEndpoint,
+  createHelmUpdateActions,
   type DeckRpcClient,
   useAppControllers,
   useHelmConnection,
+  useHelmUpdateLifecycle,
 } from "../../features/helm-connection";
 import {
   DEFAULT_ACTIVITY_PAGE_LIMIT,
@@ -346,6 +348,24 @@ export function App() {
     return resolveLoggingTarget()?.client ?? null;
   }
 
+  const helmUpdateActions = createHelmUpdateActions({
+    runtime: {
+      primaryHelmKeyRef: runtimeState.primaryHelmKeyRef,
+      rpcClientRef: runtimeState.rpcClientRef,
+      helmRpcClientRefs: runtimeState.helmRpcClientRefs,
+    },
+    inventory: {
+      helmInventories: deckData.helmInventories,
+      applyHelmInventory: deckData.applyHelmInventory,
+    },
+    resolveCurrentHelmKey,
+    dispatch,
+    formatError: formatRpcError,
+  });
+  const helmUpdateKey = helmUpdateActions.resolveHelmKey();
+  const helmUpdateTarget = helmUpdateActions.resolveTarget();
+  const helmUpdateState = helmUpdateActions.getState();
+
   function resolveSyncedLoggingSettings() {
     for (const helmId of resolveCandidateHelmIds()) {
       const logging = deckData.helmInventories[helmId]?.logging;
@@ -565,6 +585,12 @@ export function App() {
     deckData.helmConnectionStates,
   ]);
 
+  useHelmUpdateLifecycle({
+    connection: helmConnection.connection,
+    helmKey: helmUpdateKey,
+    update: helmUpdateState,
+  });
+
   // 离开设置页面时清空 promptEnhancer 状态消息
   useEffect(() => {
     if (route.activeView === "settings") {
@@ -622,6 +648,10 @@ export function App() {
           loggingConnectionKnownConnected,
           refreshLoggingSettings,
           saveLoggingLevel,
+          helmUpdateState,
+          helmUpdateClient: helmUpdateTarget?.client ?? null,
+          refreshHelmUpdate: helmUpdateActions.refresh,
+          startHelmUpdate: helmUpdateActions.start,
         })}
       />
       </RouteErrorBoundary>

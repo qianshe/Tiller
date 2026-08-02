@@ -9,7 +9,10 @@ const packageJson = JSON.parse(
 };
 
 export default defineConfig({
-  entry: { index: "src/app/main.ts" },
+  entry: {
+    index: "src/app/main.ts",
+    updater: "src/updates/updater.ts",
+  },
   format: ["esm"],
   platform: "node",
   target: "node22",

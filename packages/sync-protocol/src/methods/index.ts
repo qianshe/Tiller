@@ -59,6 +59,9 @@ import * as deviceRevoke from "./device/revoke";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
 import * as daemonShutdown from "./daemon/shutdown";
+import * as daemonUpdateCheck from "./daemon/update-check";
+import * as daemonUpdateStart from "./daemon/update-start";
+import * as daemonUpdateStatus from "./daemon/update-status";
 import * as sessionRename from "./session/rename";
 import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
@@ -130,6 +133,9 @@ const METHOD_DESCRIPTORS = {
   [devicePair.method]: devicePair.descriptor,
   [deviceAuthenticate.method]: deviceAuthenticate.descriptor,
   [daemonShutdown.method]: daemonShutdown.descriptor,
+  [daemonUpdateCheck.method]: daemonUpdateCheck.descriptor,
+  [daemonUpdateStart.method]: daemonUpdateStart.descriptor,
+  [daemonUpdateStatus.method]: daemonUpdateStatus.descriptor,
   [sessionCancel.method]: sessionCancel.descriptor,
   [sessionUpdate.method]: sessionUpdate.descriptor,
   [errorRaised.method]: errorRaised.descriptor,
@@ -200,6 +206,8 @@ export const CLIENT_REQUEST_METHODS = [
   devicePair.method,
   deviceAuthenticate.method,
   daemonShutdown.method,
+  daemonUpdateCheck.method,
+  daemonUpdateStart.method,
 ] as const;
 
 export const CLIENT_NOTIFICATION_METHODS = [sessionCancel.method] as const;
@@ -210,6 +218,7 @@ export const SERVER_NOTIFICATION_METHODS = [
   notificationRaised.method,
   approvalCreated.method,
   approvalResolved.method,
+  daemonUpdateStatus.method,
 ] as const;
 
 export type ClientRequestMethod = (typeof CLIENT_REQUEST_METHODS)[number];

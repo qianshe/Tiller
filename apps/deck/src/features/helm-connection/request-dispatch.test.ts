@@ -188,6 +188,7 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "project/list", params: {} },
     { method: "agent/list", params: {} },
     { method: "agent/connections", params: {} },
+    { method: "daemon/update/check", params: {} },
     { method: "logging/get", params: {} },
     { method: "session/list", params: { limit: 25 } },
     { method: "approval/list_pending", params: {} },
@@ -195,6 +196,42 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "device/list", params: {} },
   ]);
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);
+});
+
+test("requestInitialSync ignores update checks only when an older Helm lacks the method", async () => {
+  const methods: string[] = [];
+
+  await requestInitialSync({} as any, {
+    dispatch: async (_client, method) => {
+      methods.push(method);
+      if (method === "daemon/update/check") {
+        throw { code: -32601, message: "Unknown method" };
+      }
+    },
+    setSessionHistoryState: () => undefined,
+    sessionPageLimit: 25,
+  });
+
+  assert.equal(methods.includes("logging/get"), true);
+  assert.equal(methods.includes("device/list"), true);
+});
+
+test("requestInitialSync keeps supported update check failures visible without blocking inventory", async () => {
+  const errors: unknown[] = [];
+
+  await requestInitialSync({} as any, {
+    dispatch: async (_client, method) => {
+      if (method === "daemon/update/check") {
+        throw new Error("registry unavailable");
+      }
+    },
+    onUpdateCheckError: (error) => errors.push(error),
+    setSessionHistoryState: () => undefined,
+    sessionPageLimit: 25,
+  });
+
+  assert.equal(errors.length, 1);
+  assert.equal((errors[0] as Error).message, "registry unavailable");
 });
 
 test("requestInitialSync keeps loading inventory when logging settings fail", async () => {
@@ -216,6 +253,7 @@ test("requestInitialSync keeps loading inventory when logging settings fail", as
     "project/list",
     "agent/list",
     "agent/connections",
+    "daemon/update/check",
     "logging/get",
     "session/list",
     "approval/list_pending",

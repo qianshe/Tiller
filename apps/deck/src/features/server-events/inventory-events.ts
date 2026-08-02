@@ -7,7 +7,14 @@ import type {
   WorktreeSummary,
 } from "@tiller/shared";
 import type { AgentModelOptionsEntry } from "../agents/facade";
-import type { DeckRpcClient, DispatchToHelm } from "../helm-connection/facade";
+import {
+  clearHelmUpdateIntent,
+  isHelmVersionAtLeast,
+  type DeckRpcClient,
+  type DispatchToHelm,
+  readHelmUpdateIntent,
+  writeHelmUpdateIntent,
+} from "../helm-connection/facade";
 import { useDeckStore } from "../../store";
 import {
   createGitStatusState,
@@ -560,6 +567,78 @@ export function applyInventoryResult(
     case "logging/save":
       if (payload.logging) {
         store.applyHelmInventory(sourceHelmKey, { logging: payload.logging });
+      }
+      return true;
+    case "daemon/update/check":
+      {
+        const previous = store.helmInventories[sourceHelmKey]?.update;
+        const pendingTarget = readHelmUpdateIntent(sourceHelmKey)?.targetVersion;
+        const targetVersion = previous?.status === "restarting"
+          ? previous.targetVersion ?? pendingTarget
+          : pendingTarget;
+        const targetConfirmed = Boolean(
+          targetVersion &&
+          typeof payload.currentVersion === "string" &&
+          isHelmVersionAtLeast(payload.currentVersion, targetVersion),
+        );
+        const status = targetVersion
+          ? "restarting"
+          : payload.checkStatus === "unsupported"
+            ? "unsupported"
+            : payload.checkStatus === "failed"
+              ? "failed"
+              : payload.updateAvailable
+                ? "available"
+                : "up-to-date";
+        store.applyHelmInventory(sourceHelmKey, {
+          update: {
+            ...previous,
+            status,
+            currentVersion: payload.currentVersion,
+            latestVersion: payload.latestVersion,
+            updateAvailable: Boolean(payload.updateAvailable),
+            canUpdate: Boolean(payload.canUpdate),
+            checkStatus: payload.checkStatus,
+            cannotUpdateReason: payload.cannotUpdateReason,
+            manualCommand: payload.manualCommand,
+            checkedAt: payload.checkedAt,
+            ...(targetVersion ? { targetVersion } : {}),
+            ...(targetConfirmed ? { message: "已连接新 Helm，正在确认版本。" } : {}),
+          },
+        });
+        if (targetVersion && !targetConfirmed) {
+          writeHelmUpdateIntent(sourceHelmKey, targetVersion);
+        } else if (targetConfirmed) {
+          clearHelmUpdateIntent(sourceHelmKey);
+        }
+      }
+      return true;
+    case "daemon/update/start":
+      {
+        const previous = store.helmInventories[sourceHelmKey]?.update;
+        const restarting = payload.status === "restarting";
+        const targetVersion = restarting
+          ? payload.latestVersion ?? readHelmUpdateIntent(sourceHelmKey)?.targetVersion
+          : undefined;
+        store.applyHelmInventory(sourceHelmKey, {
+          update: {
+            ...previous,
+            status: restarting ? "restarting" : "up-to-date",
+            currentVersion: payload.currentVersion,
+            latestVersion: payload.latestVersion,
+            targetVersion,
+            updateAvailable: false,
+            canUpdate: true,
+            checkStatus: "checked",
+            manualCommand: previous?.manualCommand ?? "npm install -g @qianshe/tiller@latest",
+            message: payload.message,
+          },
+        });
+        if (targetVersion) {
+          writeHelmUpdateIntent(sourceHelmKey, targetVersion);
+        } else {
+          clearHelmUpdateIntent(sourceHelmKey);
+        }
       }
       return true;
     case "agent/connect":

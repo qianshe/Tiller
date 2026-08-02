@@ -10,6 +10,8 @@ import { SettingsNavigation } from "./settings-navigation";
 import { SETTINGS_SECTIONS, type SettingsSectionId } from "./settings-sections";
 import { SettingsRow, SettingsSectionFrame, SettingsSwitch } from "./settings-section-frame";
 import type { LoggingLevel, LoggingSettings } from "../types";
+import type { DeckRpcClient } from "../../helm-connection";
+import type { HelmUpdateState } from "../../../store/facade";
 
 const LOGGING_LEVELS: LoggingLevel[] = ["trace", "debug", "info", "warn", "error", "fatal"];
 
@@ -54,6 +56,10 @@ type SettingsPageProps = {
   onRefreshLoggingSettings?: () => void;
   onSaveLoggingLevel?: (level: LoggingLevel) => void;
   isMobile?: boolean;
+  helmUpdate?: HelmUpdateState | null;
+  helmUpdateClient?: DeckRpcClient | null;
+  onRefreshHelmUpdate?: () => void;
+  onStartHelmUpdate?: () => void;
 };
 
 function sectionMeta(id: SettingsSectionId) {
@@ -87,6 +93,10 @@ export function SettingsPage({
   onRefreshLoggingSettings,
   onSaveLoggingLevel,
   isMobile = false,
+  helmUpdate = null,
+  helmUpdateClient = null,
+  onRefreshHelmUpdate,
+  onStartHelmUpdate,
 }: SettingsPageProps) {
   const settingsCopy = resolveSettingsCopy(deckPreferences.language);
   const [activeSection, setActiveSection] = useState<SettingsSectionId>("appearance");
@@ -94,6 +104,7 @@ export function SettingsPage({
   const [loggingDraftLevel, setLoggingDraftLevel] = useState<LoggingLevel | "">("");
   const visibleLoggingStatus =
     (loggingClientAvailable || loggingConnectionKnownConnected) && loggingStatus === "Helm 未连接" ? "" : loggingStatus;
+  const updateBusy = helmUpdate?.status === "checking" || helmUpdate?.status === "installing" || helmUpdate?.status === "restarting";
 
   useEffect(() => {
     setLoggingDraftLevel(loggingSettings?.level ?? "");
@@ -382,7 +393,10 @@ export function SettingsPage({
         {activeSection === "about" ? (
           <SettingsSectionFrame id={about.id} label={about.label} desc={about.desc}>
             <SettingsRow label="版本" desc="release channel · preview">
-              <span className="font-mono text-2xs text-muted-foreground tabular">@qianshe/tiller@preview</span>
+              <div className="text-right font-mono text-2xs text-muted-foreground tabular">
+                <div>当前 {helmUpdate?.currentVersion ?? "未知"}</div>
+                <div>最新 {helmUpdate?.latestVersion ?? "未检查"}</div>
+              </div>
             </SettingsRow>
             <SettingsRow label="许可证" desc="Apache License 2.0">
               <Button variant="outline" size="sm" className="h-6 px-2 text-2xs hover:bg-surface-sunken" onClick={() => window.open("https://www.apache.org/licenses/LICENSE-2.0.html", "_blank")}>
@@ -390,7 +404,46 @@ export function SettingsPage({
               </Button>
             </SettingsRow>
             <SettingsRow label="检查更新" desc="启动时检查 npm latest 通道">
-              <span className="font-mono text-2xs text-muted-foreground tabular">自动</span>
+              <div className="grid justify-items-end gap-1.5">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <Button variant="outline" size="sm" type="button" disabled={updateBusy || !helmUpdateClient} onClick={onRefreshHelmUpdate}>
+                    {helmUpdate?.status === "checking" ? "检查中..." : "检查更新"}
+                  </Button>
+                  {helmUpdate?.updateAvailable && helmUpdate.canUpdate ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      disabled={updateBusy}
+                      onClick={() => {
+                        if (window.confirm("更新会断开当前 ACP 会话，正在运行的任务可能中断；同机其他 Helm 后续启动也可能受全局 npm 包影响。继续吗？")) {
+                          onStartHelmUpdate?.();
+                        }
+                      }}
+                    >
+                      更新并重启
+                    </Button>
+                  ) : null}
+                </div>
+                <span className="max-w-[360px] text-right font-mono text-2xs leading-5 text-muted-foreground whitespace-normal break-words">
+                  {helmUpdate?.status === "available"
+                    ? `有新版本：${helmUpdate.currentVersion} → ${helmUpdate.latestVersion}`
+                    : helmUpdate?.status === "checking"
+                      ? "正在检查最新版本..."
+                      : helmUpdate?.status === "installing"
+                        ? "正在安装更新..."
+                    : helmUpdate?.status === "restarting"
+                      ? "正在重启 Helm，页面会在确认新版本后刷新"
+                      : helmUpdate?.status === "failed"
+                        ? helmUpdate.message ?? "更新失败，请使用手动命令"
+                        : helmUpdate?.checkStatus === "disabled"
+                          ? "自动检查已关闭，可手动检查"
+                          : helmUpdate?.cannotUpdateReason ?? (helmUpdate?.status === "up-to-date" ? "已是最新版本" : "")}
+                </span>
+                {(helmUpdate?.canUpdate === false || helmUpdate?.status === "failed") && helmUpdate.manualCommand ? (
+                  <code className="max-w-[360px] text-right text-2xs text-muted-foreground break-all">{helmUpdate.manualCommand}</code>
+                ) : null}
+              </div>
             </SettingsRow>
           </SettingsSectionFrame>
         ) : null}

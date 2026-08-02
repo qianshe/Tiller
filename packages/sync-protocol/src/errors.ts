@@ -28,6 +28,10 @@ export const ErrorCode = {
   ImageInputUnsupported: -32034,
   PermissionRequestNotFound: -32040,
   PermissionAlreadyResolved: -32041,
+  UpdateCheckFailed: -32050,
+  UpdateNotSupported: -32051,
+  UpdateInProgress: -32052,
+  UpdateStartFailed: -32053,
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
