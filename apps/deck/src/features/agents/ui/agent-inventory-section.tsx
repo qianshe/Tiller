@@ -2,6 +2,11 @@ import type { Dispatch, SetStateAction } from "react";
 import { AgentIcon, Button, Input } from "@/shared/ui";
 import type { AcpAgentProvider } from "@tiller/shared";
 import type { DeckRpcClient, DispatchToHelm } from "../../helm-connection/facade";
+import {
+  AGENT_TEMPLATES,
+  applyAgentTemplate,
+  findMatchingTemplate,
+} from "../utils/agent-templates";
 import { slugify } from "../utils/fleet-helpers";
 import { InventoryTable } from "./inventory-table";
 
@@ -84,6 +89,35 @@ export function AgentInventorySection({
             setFormOpen(false);
           }}
         >
+          {!draft.id ? (
+            <div className="grid gap-2">
+              <span className="text-xs font-semibold text-muted-foreground">
+                常用 ACP 模板
+              </span>
+              <div className="flex flex-wrap gap-2">
+                {AGENT_TEMPLATES.map((template) => (
+                  <Button
+                    key={template.id}
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    title={template.installHint}
+                    onClick={() => setDraft(applyAgentTemplate(template))}
+                  >
+                    {template.name}
+                  </Button>
+                ))}
+              </div>
+              {(() => {
+                const matchedTemplate = findMatchingTemplate(draft);
+                return matchedTemplate ? (
+                  <p className="m-0 text-xs text-muted-foreground">
+                    安装提示：{matchedTemplate.installHint}
+                  </p>
+                ) : null;
+              })()}
+            </div>
+          ) : null}
           <div className="grid grid-cols-[minmax(160px,1fr)_minmax(160px,1fr)_128px_auto] items-center gap-3 max-md:grid-cols-1">
             <Input
               value={draft.name}
