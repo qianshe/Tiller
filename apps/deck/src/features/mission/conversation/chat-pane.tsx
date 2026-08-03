@@ -19,6 +19,7 @@ import type {
   UIEventHandler,
 } from "react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { SquarePen } from "lucide-react";
 import type { UI_COPY, Locale } from "../../../shared/utils/copy";
 import { useDeckStore, type SessionLegacyEvidenceState } from "../../../store";
 import { MissionMessageTimeline } from "./message-timeline";
@@ -798,7 +799,7 @@ export function MissionChatPane({
               aria-label="新建任务"
               title={canCreateTask ? "选择项目创建任务" : "没有可用项目"}
             >
-              <Icon name="plus" size={12} />
+              <SquarePen size={12} strokeWidth={1.75} />
             </button>
             {projectMenuOpen ? projectCreateMenu : null}
           </div>
