@@ -73,6 +73,14 @@ test("RadialMenu has keyboard navigation hooks", () => {
   assert.match(source, /triggerRef\.current\?\.focus\(\)/);
 });
 
+test("RadialMenu expands when the pointer enters the radial hover zone", () => {
+  assert.match(source, /data-radial-hover-zone/);
+  assert.match(source, /onPointerEnter=\{onHoverPointerEnter\}/);
+  assert.match(source, /event\.pointerType === \"mouse\"/);
+  assert.match(source, /width: hoverZoneSize,\n\s+height: hoverZoneSize/);
+  assert.match(source, /borderRadius: \"50%\"/);
+});
+
 test("RadialMenu has no dependency on v6 mock data", () => {
   assert.doesNotMatch(source, /\.\.\/data\/mock/);
   assert.doesNotMatch(source, /docs\/redesign\/v6/);
