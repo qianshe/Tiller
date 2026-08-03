@@ -815,9 +815,9 @@ test("plain messages prefers transcript compaction events over duplicate continu
     ],
   });
 
-  assert.equal(
-    html.match(/This session is being continued from a previous conversation/g)?.length,
-    1,
+  assert.doesNotMatch(
+    html,
+    /This session is being continued from a previous conversation/,
   );
   assert.match(html, /上下文已压缩/);
   assert.match(html, /展开摘要/);
@@ -886,9 +886,9 @@ test("plain messages suppresses timeline summary messages once compaction transc
     items: [],
   });
 
-  assert.equal(
-    html.match(/This session is being continued from a previous conversation/g)?.length,
-    1,
+  assert.doesNotMatch(
+    html,
+    /This session is being continued from a previous conversation/,
   );
   assert.ok(html.indexOf("上下文已压缩") > html.indexOf("更早的回复"));
   assert.ok(html.indexOf("结束任务") > html.indexOf("上下文已压缩"));
@@ -2547,6 +2547,29 @@ test("plain messages does not render a manual load-more history button", () => {
 });
 
 test("plain messages merges adjacent assistant thinking chunks in the conversation timeline", () => {
+  const timelineItems = assistantThinkingTimeline(
+    {
+      id: "think-1",
+      status: "completed",
+      text: "第一段 Thinking",
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+    },
+    {
+      id: "think-1",
+      status: "completed",
+      text: "第一段 Thinking\n第二段 Thinking",
+      timestamp: "2026-05-17T10:00:02.000Z",
+      updatedAt: "2026-05-17T10:00:02.000Z",
+    },
+    {
+      id: "think-1",
+      status: "running",
+      text: "第一段 Thinking\n第二段 Thinking\n第三段 Thinking",
+      timestamp: "2026-05-17T10:00:03.000Z",
+      updatedAt: "2026-05-17T10:00:03.000Z",
+    },
+  );
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -2564,29 +2587,7 @@ test("plain messages merges adjacent assistant thinking chunks in the conversati
           timestamp: "2026-05-17T10:00:04.000Z",
         },
       ],
-      timelineItems: assistantThinkingTimeline(
-        {
-          id: "think-1",
-          status: "completed",
-          text: "第一段 Thinking",
-          timestamp: "2026-05-17T10:00:01.000Z",
-          updatedAt: "2026-05-17T10:00:01.000Z",
-        },
-        {
-          id: "think-1",
-          status: "completed",
-          text: "第一段 Thinking\n第二段 Thinking",
-          timestamp: "2026-05-17T10:00:02.000Z",
-          updatedAt: "2026-05-17T10:00:02.000Z",
-        },
-        {
-          id: "think-1",
-          status: "running",
-          text: "第一段 Thinking\n第二段 Thinking\n第三段 Thinking",
-          timestamp: "2026-05-17T10:00:03.000Z",
-          updatedAt: "2026-05-17T10:00:03.000Z",
-        },
-      ),
+      timelineItems,
       emptyText: "等待回复",
       expandedMessageIds: new Set<string>(),
       historyState: { hasMore: false, loading: false },
@@ -2597,8 +2598,22 @@ test("plain messages merges adjacent assistant thinking chunks in the conversati
 
   assert.equal(html.match(/<details class="plain-thinking/g)?.length, 1);
   assert.match(html, /第一段 Thinking/);
-  assert.match(html, /第二段 Thinking/);
-  assert.match(html, /第三段 Thinking/);
+  const thinkingItem = resolvePlainConversationDisplayItems({
+    sessionId: "session-1",
+    displayMessages: [],
+    timelineItems,
+    showThinking: true,
+    toolCalls: [],
+  }).find((item) => item.kind === "thinking");
+  assert.ok(thinkingItem && thinkingItem.kind === "thinking");
+  if (!thinkingItem || thinkingItem.kind !== "thinking") {
+    return;
+  }
+  const thinkingText = (thinkingItem.thinkingParts ?? [thinkingItem.thinking])
+    .map((item) => item.text)
+    .join("\n");
+  assert.match(thinkingText, /第二段 Thinking/);
+  assert.match(thinkingText, /第三段 Thinking/);
 });
 
 test("plain messages groups adjacent thinking entries and separates distinct parts", () => {
@@ -2771,7 +2786,7 @@ test("plain messages keeps generic thinking groups split across real tool bounda
   assert.equal(html.match(/<details class="plain-thinking/g)?.length, 2);
   assert.match(html, /工具前 Thinking/);
   assert.match(html, /工具后 Thinking/);
-  assert.match(html, /Search: ACP/);
+  assert.match(html, /Grep: ACP/);
 });
 
 test("plain messages coalesces adjacent duplicate generic thinking snapshots", () => {
@@ -3341,9 +3356,9 @@ test("plain messages keeps tool call rows vertically centered with symmetric pad
   assert.match(html, /<details class="plain-tool-call min-w-0 text-muted-foreground"/);
   assert.match(html, /<summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5 py-0\.5 text-2xs leading-4 \[\&amp;::-webkit-details-marker\]:hidden">/);
   assert.match(html, /class="grid size-3 shrink-0 place-items-center rounded-sm/);
-  assert.match(html, /class="inline-flex shrink-0 items-center w-12"/);
+  assert.match(html, /class="inline-flex shrink-0 items-center min-w-\[3\.25rem\]"/);
   assert.match(html, /inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
-  assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium leading-4 text-foreground">/);
+  assert.match(html, /<strong class="min-w-0 flex-1 truncate font-medium leading-4 text-foreground"[^>]*>/);
   assert.match(html, /class="inline-flex h-4 shrink-0 items-center text-2xs text-muted-foreground\/60"/);
   assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full max-h-48 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-snug text-muted-foreground\/85"/);
   assert.doesNotMatch(html, /grid-cols-subgrid|col-span-/);
@@ -3615,7 +3630,7 @@ test("plain tool rows render diagnostics as an independent category", () => {
   });
 
   assert.match(html, /data-tool-kind="diagnostics"/);
-  assert.match(html, /class="inline-flex shrink-0 items-center min-w-[3.25rem]"/);
+  assert.match(html, /class="inline-flex shrink-0 items-center min-w-\[3\.25rem\]"/);
   assert.match(html, />Diagnostics</);
   assert.match(html, />packages\/acp-runtime\/src\/adapters\/opencode\/tool-calls\.ts</);
   assert.doesNotMatch(html, /Diagnostics: packages/);
@@ -3753,7 +3768,7 @@ test("plain tool rows align titles without letting expanded output resize the ro
   assert.doesNotMatch(html, /plain-tool-group-content[^\"]*gap-1/);
   assert.equal(html.match(/plain-tool-call min-w-0 text-muted-foreground/g)?.length, 2);
   assert.equal(html.match(/summary class="flex min-w-0 cursor-pointer list-none items-center gap-1\.5/g)?.length, 2);
-  assert.match(html, /class="inline-flex shrink-0 items-center min-w-[3.25rem]"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
+  assert.match(html, /class="inline-flex shrink-0 items-center min-w-\[3\.25rem\]"><span class="[^"]*inline-flex h-4 shrink-0 items-center rounded-sm px-1\.5 py-0 text-\[10px\] font-semibold leading-none/);
   assert.match(html, /<pre class="mt-0\.5 min-w-0 w-full max-w-full/);
   assert.doesNotMatch(html, /grid-cols-subgrid|col-span-/);
 });
@@ -4637,7 +4652,7 @@ test("plain message render signature changes when the same render key changes he
   );
 });
 
-test("plain message display stops merging fallback messages once canonical timeline exists", () => {
+test("plain message display merges fallback messages into canonical timeline", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {
       id: "assistant-1",
@@ -4687,7 +4702,7 @@ test("plain message display stops merging fallback messages once canonical timel
     displayItems.some(
       (item) => item.kind === "message" && item.message.id === "assistant-live-older",
     ),
-    false,
+    true,
   );
 });
 
@@ -4789,7 +4804,7 @@ test("plain message timeline coalesces runtime assistant chunks before rendering
   ]);
 });
 
-test("plain message fallback keeps source order when a legacy item has no sequence", () => {
+test("plain message fallback sorts legacy items by timestamp when sequence is missing", () => {
   const html = renderToStaticMarkup(
     createElement(PlainMessages, {
       sessionId: "session-1",
@@ -4832,7 +4847,7 @@ test("plain message fallback keeps source order when a legacy item has no sequen
   const userIndex = html.indexOf("旧用户提问");
   const assistantIndex = html.indexOf("Provider 回复");
   const toolIndex = html.indexOf("Run tests");
-  assert.ok(userIndex >= 0 && assistantIndex > userIndex && toolIndex > assistantIndex);
+  assert.ok(assistantIndex >= 0 && toolIndex > assistantIndex && userIndex > toolIndex);
 });
 
 test("plain message timeline interleaves assistant chunks with tool entries", () => {

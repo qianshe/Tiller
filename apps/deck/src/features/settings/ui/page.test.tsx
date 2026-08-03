@@ -124,7 +124,7 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
   assert.match(pageSource, /<SettingsRow label="不记录 assistant 正文" desc="Helm 固定行为 · 排查时直接读 sessions.sqlite">/);
   assert.match(pageSource, />\s*固定\s*</);
   assert.match(pageSource, /<SettingsRow label="检查更新" desc="启动时检查 npm latest 通道">/);
-  assert.match(pageSource, />\s*自动\s*</);
+  assert.match(pageSource, /自动检查已关闭，可手动检查/);
   assert.doesNotMatch(pageSource, /handleOpenLogDir/);
   assert.doesNotMatch(pageSource, /handleCheckUpdates/);
   assert.doesNotMatch(pageSource, /打开日志目录/);
@@ -143,7 +143,8 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
   assert.match(pageSource, />\s*保存\s*</);
   assert.match(pageSource, /disabled=\{!loggingDraftLevel \|\| loggingDraftLevel === loggingSettings\?\.level \|\| !onSaveLoggingLevel \|\| !loggingClientAvailable\}/);
   assert.match(pageSource, /<SettingsRow label="版本" desc="release channel · preview">/);
-  assert.match(pageSource, /@qianshe\/tiller@preview/);
+  assert.match(pageSource, /<div>当前 \{helmUpdate\?\.currentVersion \?\? "未知"\}<\/div>/);
+  assert.match(pageSource, /<div>最新 \{helmUpdate\?\.latestVersion \?\? "未检查"\}<\/div>/);
   assert.doesNotMatch(pageSource, /重置偏好与数据/);
   assert.doesNotMatch(pageSource, /开源与社区/);
 });

@@ -197,7 +197,7 @@ export function MissionChatPane({
   activeSessionMessages,
   sessionMessagesById,
   sessionTimelineById,
-  sessionLegacyEvidenceById,
+  sessionLegacyEvidenceById = {},
   activeSessionPlan,
   sessionPlansById,
   dismissedCompletedSessionPlanKeys = {},

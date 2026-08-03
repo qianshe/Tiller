@@ -41,6 +41,10 @@ export function resolveLaunchSpec(
 }
 
 function resolveWindowsCommand(command: string) {
+  if (existsSync(command)) {
+    return command;
+  }
+
   try {
     const output = execFileSync("where.exe", [command], { encoding: "utf8" });
     const resolved = output.split(/\r?\n/u).find(Boolean)?.trim() ?? command;

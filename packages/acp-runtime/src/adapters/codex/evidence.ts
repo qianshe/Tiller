@@ -17,7 +17,7 @@ export function collectCodexToolEvidence(context: AcpToolEvidenceContext): ToolE
     ? resolveCodexSubagentAction(context.observation.descriptor, context.observation.inputText, activity)
     : undefined;
   const operationTerminalStatus = projected.kind === "subagent"
-    ? resolveCodexOperationTerminalStatus(context, projected)
+    ? resolveCodexOperationTerminalStatus(context, projected, activity)
     : undefined;
   // A terminal ACP snapshot is already the provider's source-of-truth status.
   // Do not send it back through the launch lifecycle, which intentionally keeps
@@ -42,12 +42,20 @@ export function collectCodexToolEvidence(context: AcpToolEvidenceContext): ToolE
 function resolveCodexOperationTerminalStatus(
   context: AcpToolEvidenceContext,
   projected: AgentToolCall,
+  activity: CodexSubagentActivity | null,
 ): Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled"> | undefined {
   const operation = projected.subagentOperation;
   if (!operation || operation.action === "spawn") {
     return undefined;
   }
   if (operation.action === "close") {
+    if (activity?.kind === "interrupted") {
+      return projected.status === "completed" ||
+        projected.status === "failed" ||
+        projected.status === "cancelled"
+        ? projected.status
+        : undefined;
+    }
     return projected.status === "completed" || projected.status === "cancelled"
       ? "cancelled"
       : undefined;
