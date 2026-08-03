@@ -433,7 +433,8 @@ test("SessionCard does not duplicate project name when worktree echoes it (any c
     </SessionCard>,
   );
 
-  assert.doesNotMatch(html, /[Tt]iller\s*\/\s*[Tt]iller/);
+  const projectLabel = html.match(/data-session-project-label="true">([^<]*)<\/span>/)?.[1];
+  assert.equal(projectLabel, "Tiller");
 });
 
 test("SessionCard shows distinct worktree name alongside project", () => {
