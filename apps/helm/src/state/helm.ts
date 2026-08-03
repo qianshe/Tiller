@@ -214,34 +214,7 @@ export function loadAvailableWorktrees(state: HelmState): WorktreeSummary[] {
 }
 
 export function loadAvailableProjects(state: HelmState): ProjectSummary[] {
-  const configured = listConfiguredProjects(state.configPath);
-  if (configured.length) {
-    return configured;
-  }
-
-  const fallbackHelm = state.helms[0] ?? {
-    id: "local-helm",
-    name: "Local Helm",
-    host: state.runtime.host,
-    port: state.runtime.port,
-  };
-  const fallbackWorktrees = state.worktrees.length
-    ? state.worktrees
-    : [
-        {
-          name: basename(state.defaultWorktreeRoot),
-          path: state.defaultWorktreeRoot.replace(/\\/g, "/"),
-        },
-      ];
-  return [
-    {
-      id: "current-project",
-      name: basename(state.defaultWorktreeRoot),
-      helmId: fallbackHelm.id,
-      path: state.defaultWorktreeRoot.replace(/\\/g, "/"),
-      worktrees: fallbackWorktrees,
-    },
-  ];
+  return listConfiguredProjects(state.configPath);
 }
 
 

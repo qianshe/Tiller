@@ -51,27 +51,7 @@ export function createProjectCatalog(options: ProjectCatalogOptions) {
 
   function loadAvailableProjects(): ProjectSummary[] {
     const configuredProjects = listConfiguredProjects(options.configPath);
-    if (configuredProjects.length) {
-      return configuredProjects;
-    }
-
-    const helms = loadAvailableHelms();
-    const worktrees = loadAvailableWorktrees();
-    const fallbackHelm = helms[0] ?? {
-      id: "local-helm",
-      name: "Local Helm",
-      host: options.host,
-      port: options.port,
-    };
-    return [
-      {
-        id: "current-project",
-        name: basename(options.defaultWorktreeRoot),
-        helmId: fallbackHelm.id,
-        path: options.defaultWorktreeRoot,
-        worktrees,
-      },
-    ] satisfies ProjectSummary[];
+    return configuredProjects;
   }
 
   async function loadAvailableProjectsWithSemanticSummaries() {

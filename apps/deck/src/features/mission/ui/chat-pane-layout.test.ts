@@ -449,6 +449,8 @@ test("mission chat pane exposes the v6 session grid and more menu actions", () =
   assert.match(chatPaneSource, /dragOver \? "inset 0 0 0 2px var\(--primary\)" : "none"/);
   assert.match(chatPaneSource, /aria-label="新建任务"/);
   assert.match(chatPaneSource, /aria-label="新建任务"[\s\S]*?<SquarePen size=\{12\} strokeWidth=\{1\.75\} \/>/);
+  assert.match(chatPaneComponentSource, /aria-label="新建任务"[\s\S]*?onClick=\{handleCreateTaskFromEmptyState\}/);
+  assert.match(chatPaneComponentSource, /canCreateTaskDirectly[\s\S]*?在当前项目中新建会话/);
   assert.match(chatPaneComponentSource, /aria-label="新建会话"/);
   assert.match(chatPaneComponentSource, /选择项目创建会话/);
   assert.match(chatPaneComponentSource, /projectOptions\.map\(\(project\) =>/);

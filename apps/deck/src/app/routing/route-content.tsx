@@ -49,6 +49,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
   } as MissionRouteSource;
   const {
     activeView,
+    agentsInitialTab,
     copy,
     connection,
     activeHelm,
@@ -231,6 +232,7 @@ function renderAgents() {
       isMobile={isMobile}
       daemonHost={daemonHost}
       daemonPort={daemonPort}
+      initialTab={agentsInitialTab}
       defaultDaemonHost={DEFAULT_DAEMON_HOST}
       defaultDaemonPort={DEFAULT_DAEMON_PORT}
       isEmbeddedHelmDeck={IS_EMBEDDED_HELM_DECK}

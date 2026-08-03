@@ -84,6 +84,7 @@ type HelmDetailSectionProps = {
     helmName: string,
   ) => ReactNode;
   isMobile?: boolean;
+  initialTab?: "agents" | "projects";
   onBack?: () => void;
 };
 
@@ -129,15 +130,16 @@ export function HelmDetailSection({
   copy,
   renderTrustedDevicesPanel,
   isMobile = false,
+  initialTab = "agents",
   onBack,
 }: HelmDetailSectionProps) {
-  const [activeTab, setActiveTab] = useState<"agents" | "projects" | "devices" | "worktrees" | "logs">("agents");
+  const [activeTab, setActiveTab] = useState<"agents" | "projects" | "devices" | "worktrees" | "logs">(initialTab);
   const [projectPathCandidates, setProjectPathCandidates] = useState<string[]>([]);
   const tabs = [
     { id: "agents", label: `Agents (${selectedHelmAgents.length})` },
     { id: "projects", label: `项目 (${selectedHelmProjects.length})` },
-    { id: "devices", label: `可信设备 (${selectedHelmTrustedDevices.length})` },
     { id: "worktrees", label: `工作区 (${selectedHelmWorktrees.length})` },
+    { id: "devices", label: `可信设备 (${selectedHelmTrustedDevices.length})` },
     { id: "logs", label: "日志" },
   ] as const;
   const summaryFileProject = fleetProjectDraft.id

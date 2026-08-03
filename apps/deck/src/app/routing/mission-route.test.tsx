@@ -64,3 +64,10 @@ test("renderMissionRoute forwards mobile pane state", () => {
   assert.match(source, /selectedMissionMobilePane=\{selectedMissionMobilePane\}/);
   assert.match(source, /setSelectedMissionMobilePane=\{setSelectedMissionMobilePane\}/);
 });
+
+test("renderMissionRoute forwards navigateToView to the mission worktree", () => {
+  const source = readFileSync(routePath, "utf8");
+
+  assert.match(source, /navigateToView,/);
+  assert.match(source, /navigateToView=\{navigateToView\}/);
+});

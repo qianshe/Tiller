@@ -100,3 +100,30 @@ test("MissionChatPane swaps the mobile close button for a create-session action 
   assert.match(html, /title="session 菜单"/u);
   assert.doesNotMatch(html, /title="关闭此 session"/u);
 });
+
+test("MissionChatPane renders the desktop onboarding card on a desktop empty state", () => {
+  const html = renderChatPane({ isMissionMobile: false });
+
+  assert.match(html, /工作台引导/u);
+  assert.match(html, /配置 ACP Agent/u);
+  assert.match(html, /添加项目路径/u);
+});
+
+test("MissionChatPane does not render the onboarding card when sessions exist", () => {
+  const session = buildSession();
+  const html = renderChatPane({
+    isMissionMobile: false,
+    activeSession: session,
+    openSessions: [session],
+    selectedSessionId: session.id,
+  });
+
+  assert.doesNotMatch(html, /工作台引导/u);
+});
+
+test("MissionChatPane keeps the mobile create-session button on a mobile empty state", () => {
+  const html = renderChatPane({});
+
+  assert.match(html, /aria-label="新建会话"/u);
+  assert.doesNotMatch(html, /工作台引导/u);
+});

@@ -193,6 +193,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
     setOpenChatSessionIds,
     focusedChatWindowId,
     setFocusedChatWindowId,
+    navigateToView,
   } = source;
   return (
     <MissionWorktree
@@ -208,6 +209,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       setOpenChatSessionIds={setOpenChatSessionIds}
       focusedChatWindowId={focusedChatWindowId}
       setFocusedChatWindowId={setFocusedChatWindowId}
+      navigateToView={navigateToView}
       selectedProjectId={selectedProjectId}
       selectedCwd={selectedCwd}
       selectedAgentId={selectedAgentId}

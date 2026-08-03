@@ -173,6 +173,7 @@ export function MissionWorktree(props: any) {
     selectDraftWorktree,
     agentLocked,
     filteredAgents,
+    navigateToView,
     selectDraftAgent,
     createDraftSessionForAgent,
     submitPrompt,
@@ -1236,6 +1237,9 @@ export function MissionWorktree(props: any) {
           showThinking={technicalPanels.showMissionThinking}
           canToggleDisplay={canToggleDisplay}
           projectOptions={workbenchProjectOptions}
+          hasAgents={agents.length > 0}
+          hasProjects={workbenchProjectOptions.length > 0}
+          onNavigateAgents={(tab) => navigateToView("agents", { agentsTab: tab })}
           onExpandSidebar={() => setMissionSidebarCollapsed(false)}
           onToggleDisplay={onToggleDisplay}
           onToggleInspector={onToggleInspector}

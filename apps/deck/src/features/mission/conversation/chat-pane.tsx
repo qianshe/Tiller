@@ -26,6 +26,7 @@ import { MissionMessageTimeline } from "./message-timeline";
 import { LegacyEvidencePanel } from "./legacy-evidence-panel";
 import { MissionPermissionDrawer } from "./permission-drawer";
 import { MissionQueuedPrompts } from "./queued-prompts";
+import { MissionOnboardingEmpty } from "./onboarding-empty";
 import type { MissionToolLoadingState } from "./tool-loading";
 import { Icon } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
@@ -150,6 +151,9 @@ type MissionChatPaneProps = {
   showThinking: boolean;
   canToggleDisplay: boolean;
   projectOptions: MissionProjectOption[];
+  hasAgents?: boolean;
+  hasProjects?: boolean;
+  onNavigateAgents?: (tab: "agents" | "projects") => void;
   onExpandSidebar: () => void;
   onToggleDisplay: () => void;
   onToggleInspector: () => void;
@@ -223,6 +227,9 @@ export function MissionChatPane({
   showThinking,
   canToggleDisplay,
   projectOptions,
+  hasAgents = false,
+  hasProjects = false,
+  onNavigateAgents = () => undefined,
   onExpandSidebar,
   onToggleDisplay,
   onToggleInspector,
@@ -781,10 +788,7 @@ export function MissionChatPane({
           <div ref={projectMenuRef} className="relative">
             <button
               type="button"
-              onClick={() => {
-                setProjectMenuOpen((current) => !current);
-                setMenuOpen(false);
-              }}
+              onClick={handleCreateTaskFromEmptyState}
               disabled={!canCreateTask}
               className={cn(
                 "grid h-6 w-6 place-items-center rounded transition-colors",
@@ -794,10 +798,16 @@ export function MissionChatPane({
                     ? "text-muted-foreground hover:bg-surface-sunken hover:text-primary"
                     : "cursor-not-allowed text-muted-foreground/35",
               )}
-              aria-haspopup="menu"
-              aria-expanded={projectMenuOpen}
+              aria-haspopup={canCreateTaskDirectly ? undefined : "menu"}
+              aria-expanded={canCreateTaskDirectly ? undefined : projectMenuOpen}
               aria-label="新建任务"
-              title={canCreateTask ? "选择项目创建任务" : "没有可用项目"}
+              title={
+                !canCreateTask
+                  ? "没有可用项目"
+                  : canCreateTaskDirectly
+                    ? "在当前项目中新建会话"
+                    : "选择项目创建会话"
+              }
             >
               <SquarePen size={12} strokeWidth={1.75} />
             </button>
@@ -996,7 +1006,16 @@ export function MissionChatPane({
               {projectMenuOpen ? projectCreateMenu : null}
             </div>
           </div>
-        ) : null}{" "}
+        ) : (
+          <div className="flex min-h-full items-center justify-center px-6 py-10">
+            <MissionOnboardingEmpty
+              helmConnected={helmConnected}
+              hasAgents={hasAgents}
+              hasProjects={hasProjects}
+              onNavigateAgents={onNavigateAgents}
+            />
+          </div>
+        )}{" "}
       </div>{" "}
       {children}
     </div>
