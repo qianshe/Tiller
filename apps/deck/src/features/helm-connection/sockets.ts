@@ -19,7 +19,7 @@ import type {
 import { useDeckStore } from "../../store";
 import { daemonProfileKey, type DaemonProfile } from "./daemon-profiles";
 import { createHelmWebSocketUrl, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
-import { DeckRpcClient } from "./rpc-client";
+import { DeckRpcClient, describeRpcError } from "./rpc-client";
 import type { DispatchToHelm } from "./request-dispatch";
 import { readHelmUpdateIntent } from "./update-intent";
 
@@ -105,6 +105,10 @@ function createRpcClient(socket: WebSocket, helmKey: string, handlers: RpcHandle
     socket,
     (method, params) => handlers.handleRpcNotification(method, params, helmKey),
     (error) => {
+      console.error("[Tiller][rpc-error]", {
+        helmKey,
+        error: describeRpcError(error),
+      });
       handlers.handleRpcNotification(
         "notification/raised",
         {

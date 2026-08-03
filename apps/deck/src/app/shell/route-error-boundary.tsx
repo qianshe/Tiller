@@ -43,6 +43,11 @@ export class RouteErrorBoundary extends Component<
 
   componentDidCatch(error: Error, info: ErrorInfo) {
     const componentStack = info.componentStack ?? "";
+    console.error("[Tiller][react-error-boundary]", {
+      message: error.message,
+      errorStack: error.stack,
+      componentStack,
+    });
     this.setState({ componentStack });
     this.props.onError(error, componentStack);
   }
