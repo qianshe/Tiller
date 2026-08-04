@@ -99,6 +99,41 @@ test("mapSessionUpdateNotification classifies wrapped Codex multi-agent calls wi
   assert.equal(mapped.event.toolCall.subagentRole, "explorer");
 });
 
+test("mapSessionUpdateNotification classifies exec-wrapped Codex send_input calls as subagents", () => {
+  const wrappedInput = [
+    "const result = await tools.multi_agent_v1__send_input({",
+    '  target: "agent-1",',
+    "  interrupt: true,",
+    '  message: "Return SPEC_OK.",',
+    "});",
+    "text(result);",
+  ].join("\n");
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-codex-wrapped-send-input",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-codex-wrapped-send-input",
+          title: "exec",
+          status: "in_progress",
+          rawInput: wrappedInput,
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.title, "Subagent");
+});
+
 test("mapSessionUpdateNotification classifies all wrapped Codex multi-agent actions", () => {
   const actions = [
     "send_message",

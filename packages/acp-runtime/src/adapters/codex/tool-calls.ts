@@ -55,11 +55,15 @@ const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
       const commandId = activity
         ? resolveCodexSubagentActivityCommandId(activity, toolCall.id)
         : resolveCodexSubagentCommandId(toolName, input, toolCall.id);
-      const subagentRole = resolveCodexSubagentRole(input);
+      const isExecWrappedSubagent = toolCall.title.trim().toLowerCase() === "exec" &&
+        isCodexMultiAgentNamespace(input);
+      const subagentRole = isExecWrappedSubagent ? undefined : resolveCodexSubagentRole(input);
       return {
         ...toolCall,
         kind: "subagent" as const,
-        title: resolveCodexSubagentTitle(input, toolCall.title),
+        title: isExecWrappedSubagent
+          ? "Subagent"
+          : resolveCodexSubagentTitle(input, toolCall.title),
         ...(commandId ? { commandId } : {}),
         ...(subagentRole ? { subagentRole } : {}),
         ...(operation ? { subagentOperation: operation } : {}),
@@ -386,17 +390,17 @@ function resolveNormalizedCodexToolInput(
   update: any,
 ) {
   return mergeCodexInputSources([
-    parseJsonRecord(toolCall.input),
+    parseCodexToolInput(toolCall.input),
     parseJsonRecord(toolCall.output),
-    parseJsonRecordValue(update?.rawInput ?? update?.raw_input),
+    parseCodexToolInput(update?.rawInput ?? update?.raw_input),
     parseJsonRecordValue(update?.input ?? update?.arguments ?? update?.args ?? update?.params),
     parseJsonRecordValue(update?.rawOutput ?? update?.raw_output),
     parseJsonRecordValue(update?.output ?? update?.result ?? update?.content ?? update?.text),
-    parseJsonRecordValue(update?.toolCall?.rawInput ?? update?.toolCall?.raw_input),
+    parseCodexToolInput(update?.toolCall?.rawInput ?? update?.toolCall?.raw_input),
     parseJsonRecordValue(update?.toolCall?.input ?? update?.toolCall?.arguments ?? update?.toolCall?.args ?? update?.toolCall?.params),
     parseJsonRecordValue(update?.toolCall?.rawOutput ?? update?.toolCall?.raw_output),
     parseJsonRecordValue(update?.toolCall?.output ?? update?.toolCall?.result ?? update?.toolCall?.content ?? update?.toolCall?.text),
-    parseJsonRecordValue(update?.tool_call?.rawInput ?? update?.tool_call?.raw_input),
+    parseCodexToolInput(update?.tool_call?.rawInput ?? update?.tool_call?.raw_input),
     parseJsonRecordValue(update?.tool_call?.input ?? update?.tool_call?.arguments ?? update?.tool_call?.args ?? update?.tool_call?.params),
     parseJsonRecordValue(update?.tool_call?.rawOutput ?? update?.tool_call?.raw_output),
     parseJsonRecordValue(update?.tool_call?.output ?? update?.tool_call?.result ?? update?.tool_call?.content ?? update?.tool_call?.text),
@@ -442,6 +446,38 @@ function mergeCodexToolArguments(input: Record<string, unknown> | null) {
   }
   const nested = parseJsonRecordValue(input.arguments ?? input.args ?? input.params ?? input.input);
   return nested ? { ...input, ...nested } : input;
+}
+
+function resolveCodexWrappedToolCall(source: unknown): {
+  namespace: string;
+  name: string;
+} | null {
+  if (typeof source !== "string") {
+    return null;
+  }
+  const match = source.match(/tools\.([A-Za-z0-9_]+)__([A-Za-z0-9_]+)\s*\(/u);
+  if (!match?.[1] || !match[2] || match.index === undefined) {
+    return null;
+  }
+  return {
+    namespace: match[1],
+    name: match[2],
+  };
+}
+
+function parseCodexToolInput(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string") {
+    return recordValue(value);
+  }
+  const parsed = parseJsonRecord(value);
+  if (parsed) {
+    return parsed;
+  }
+  const wrapped = resolveCodexWrappedToolCall(value);
+  if (!wrapped) {
+    return null;
+  }
+  return wrapped;
 }
 
 function extractCodexMultiAgentToolName(input: Record<string, unknown> | null) {

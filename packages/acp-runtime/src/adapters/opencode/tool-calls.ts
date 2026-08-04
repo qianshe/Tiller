@@ -508,6 +508,11 @@ function looksLikeOpenCodeLiveSubagentInput(
   title: string,
   input: Record<string, unknown> | null,
 ) {
+  // OpenCode's native task tool is the subagent entrypoint; its input may
+  // arrive in a later streaming update.
+  if (/^task$/iu.test(title.trim())) {
+    return true;
+  }
   if (!input) {
     return false;
   }
@@ -518,7 +523,6 @@ function looksLikeOpenCodeLiveSubagentInput(
     input.requested_subagent_type,
     input.requestedSubagentType,
   );
-  const category = firstString(input.category);
   const hasLoadSkills = Array.isArray(input.load_skills) || Array.isArray(input.loadSkills);
   const hasBackgroundFlag =
     typeof input.background === "boolean" ||
@@ -527,10 +531,7 @@ function looksLikeOpenCodeLiveSubagentInput(
   if (prompt && (subagentType || hasLoadSkills || hasBackgroundFlag)) {
     return true;
   }
-  if (!/^task$/iu.test(title.trim())) {
-    return false;
-  }
-  return Boolean(prompt && (category || hasLoadSkills || hasBackgroundFlag));
+  return false;
 }
 
 function looksLikeOpenCodeCompletedSubagent(

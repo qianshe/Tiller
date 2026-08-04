@@ -31,6 +31,32 @@ test("mapSessionUpdateNotification preserves OpenCode pending tool starts", () =
   assert.equal(mapped.events[0].toolCall.status, "pending");
 });
 
+test("mapSessionUpdateNotification classifies OpenCode task calls before input arrives", () => {
+  const mapped = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-opencode-task-before-input",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call-opencode-task-before-input",
+          title: "task",
+          kind: "tool",
+          status: "in_progress",
+        },
+      },
+    },
+    { providerId: "opencode" },
+  );
+
+  assert.equal(mapped?.events[0]?.type, "tool-call");
+  if (mapped?.events[0]?.type !== "tool-call") {
+    throw new Error("Expected OpenCode task tool-call event");
+  }
+  assert.equal(mapped.events[0].toolCall.kind, "subagent");
+});
+
 test("OpenCode flat tool updates keep subagent identity across sparse completion frames", () => {
   const sessionId = "session-opencode-flat-subagent";
   const toolCallId = "call-opencode-flat-subagent";
