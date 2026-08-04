@@ -540,6 +540,64 @@ test("mergeAgentMessages merges chunks for the same assistant message id", () =>
   assert.equal(merged[0]?.text, "第一段回复");
 });
 
+test("mergeAgentMessages appends delta chunks without interpreting them as snapshots", () => {
+  const merged = [
+    {
+      id: "assistant-thinking",
+      role: "assistant" as const,
+      contentKind: "thought" as const,
+      text: "a",
+      timestamp: "2026-04-28T10:00:01.000Z",
+      streaming: true,
+      streamMode: "delta" as const,
+    },
+    {
+      id: "assistant-thinking",
+      role: "assistant" as const,
+      contentKind: "thought" as const,
+      text: "abc",
+      timestamp: "2026-04-28T10:00:02.000Z",
+      streaming: true,
+      streamMode: "delta" as const,
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message),
+    [],
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.text, "aabc");
+});
+
+test("mergeAgentMessages appends duplicate delta text instead of dropping it", () => {
+  const merged = [
+    {
+      id: "assistant-thinking",
+      role: "assistant" as const,
+      contentKind: "thought" as const,
+      text: "重复",
+      timestamp: "2026-04-28T10:00:01.000Z",
+      streaming: true,
+      streamMode: "delta" as const,
+    },
+    {
+      id: "assistant-thinking",
+      role: "assistant" as const,
+      contentKind: "thought" as const,
+      text: "重复",
+      timestamp: "2026-04-28T10:00:02.000Z",
+      streaming: true,
+      streamMode: "delta" as const,
+    },
+  ].reduce<AgentMessage[]>(
+    (items, message) => mergeAgentMessages(items, message),
+    [],
+  );
+
+  assert.equal(merged.length, 1);
+  assert.equal(merged[0]?.text, "重复重复");
+});
+
 test("mergeAgentMessages merges runtime generated assistant chunks without shared ids", () => {
   const merged = mergeAgentMessages(
     [

@@ -684,7 +684,9 @@ export function PlainThinkingItem({
   const latestThinkingItem = thinkingItems.at(-1);
   const isRunning = latestThinkingItem?.status === "pending" ||
     latestThinkingItem?.status === "running";
-  const preview = resolveThinkingSummaryPreview(text);
+  // The first line is still incomplete while a thought is streaming. Keep the
+  // summary label stable until the provider publishes a terminal snapshot.
+  const preview = isRunning ? "" : resolveThinkingSummaryPreview(text);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowStreamRef = useRef(true);
   const contentClassName = resolveThinkingContentClassName({

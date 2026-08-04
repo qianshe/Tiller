@@ -57,6 +57,19 @@ test("buildSessionStreamHydrationPlan respects existing resume checks", () => {
   assert.deepEqual(plan.resumeCheckSessionIds, []);
 });
 
+test("buildSessionStreamHydrationPlan skips a pending request before history state is stored", () => {
+  const plan = buildSessionStreamHydrationPlan({
+    sessionIds: [idleSession.id],
+    sessionById: new Map([[idleSession.id, idleSession]]),
+    messageHistoryState: {},
+    sessionTimelineBySession: {},
+    checkedResumeSessionIds: new Set(),
+    pendingTimelineRequestSessionIds: new Set([idleSession.id]),
+  });
+
+  assert.deepEqual(plan.messageSessionIds, []);
+});
+
 test("buildSessionStreamHydrationPlan no longer hydrates artifacts just because task tools are cached", () => {
   const plan = buildSessionStreamHydrationPlan({
     sessionIds: [idleSession.id],

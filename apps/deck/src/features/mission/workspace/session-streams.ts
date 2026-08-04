@@ -32,20 +32,21 @@ export function buildSessionStreamHydrationPlan({
   const uniqueSessionIds = [...new Set(sessionIds)];
 
   return {
-    messageSessionIds: uniqueSessionIds.filter((sessionId) => (
-      !messageHistoryState[sessionId] ||
-      hasIncompleteCachedMessageHistory({
-        cachedMessages: messagesBySession?.[sessionId],
-        // `sessionTimelineBySession[sessionId] = []` means this runtime already asked
-        // Helm for timeline data and got an explicit empty result. Retrying forever on
-        // every render turns that steady state into an idle fetch loop.
-        hasTimelineCache: hasOwnSessionCache(sessionTimelineBySession, sessionId),
-        historyState: messageHistoryState[sessionId],
-        hasPendingTimelineRequest:
-          pendingTimelineRequestSessionIds?.has(sessionId) ?? false,
-        session: sessionById.get(sessionId),
-      })
-    )),
+    messageSessionIds: uniqueSessionIds.filter((sessionId) => {
+      if (pendingTimelineRequestSessionIds?.has(sessionId)) {
+        return false;
+      }
+      return !messageHistoryState[sessionId] ||
+        hasIncompleteCachedMessageHistory({
+          cachedMessages: messagesBySession?.[sessionId],
+          // `sessionTimelineBySession[sessionId] = []` means this runtime already asked
+          // Helm for timeline data and got an explicit empty result. Retrying forever on
+          // every render turns that steady state into an idle fetch loop.
+          hasTimelineCache: hasOwnSessionCache(sessionTimelineBySession, sessionId),
+          historyState: messageHistoryState[sessionId],
+          session: sessionById.get(sessionId),
+        });
+    }),
     resumeCheckSessionIds: uniqueSessionIds.filter((sessionId) => {
       const session = sessionById.get(sessionId);
       return Boolean(
@@ -62,13 +63,11 @@ function hasIncompleteCachedMessageHistory({
   cachedMessages,
   hasTimelineCache,
   historyState,
-  hasPendingTimelineRequest,
   session,
 }: {
   cachedMessages: Pick<AgentMessage, "id" | "role">[] | undefined;
   hasTimelineCache: boolean;
   historyState: HistoryState | undefined;
-  hasPendingTimelineRequest: boolean;
   session: SessionSummary | undefined;
 }) {
   if (!session || !historyState || historyState.hasMore) {
@@ -76,10 +75,6 @@ function hasIncompleteCachedMessageHistory({
   }
   if (hasTimelineCache) {
     return false;
-  }
-  if (historyState.loading) {
-    return !hasPendingTimelineRequest &&
-      Boolean(cachedMessages?.length || session.messageCount > 0);
   }
   return Boolean(cachedMessages?.length || session.messageCount > 0);
 }

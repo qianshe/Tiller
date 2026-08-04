@@ -479,7 +479,9 @@ export function applySessionResult(
       return true;
     }
     case "session/cleanup": {
-      timelineIndexCacheBySession.delete(payload.result.sessionId);
+      const sessionId = payload.result.sessionId as string;
+      timelineIndexCacheBySession.delete(sessionId);
+      clearResumeStartRequest(sessionId, context);
       const cleanupToast = resolveSessionCleanupToast(payload.result);
       if (cleanupToast.tone === "success") {
         toast.success(cleanupToast.message);
@@ -490,46 +492,83 @@ export function applySessionResult(
       }
       setResumeFeedback("");
       store.setSessions((current) =>
-        current.filter((session) => session.id !== payload.result.sessionId),
+        current.filter((session) => session.id !== sessionId),
       );
       store.setStatuses((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
       );
       store.setMessages((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
       );
       store.setSessionTimeline((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
+      );
+      store.setSessionTimelineDeliveryState((current) =>
+        removeSessionRecord(current, sessionId),
       );
       store.setSessionLegacyEvidence((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
       );
-      store.dropSessionApprovals(payload.result.sessionId);
+      store.dropSessionApprovals(sessionId);
+      store.setMessageHistoryState((current) =>
+        removeSessionRecord(current, sessionId),
+      );
+      store.setPromptQueues((current) =>
+        removeSessionRecord(current, sessionId),
+      );
       store.setOutputs((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
       );
       store.setToolCalls((current) => {
-        const next = removeSessionRecord(current, payload.result.sessionId);
+        const next = removeSessionRecord(current, sessionId);
         toolCallsRef.current = next;
         return next;
       });
+      store.setSessionPlans((current) =>
+        removeSessionRecord(current, sessionId),
+      );
+      store.setDismissedCompletedSessionPlanKeys((current) =>
+        removeSessionRecord(current, sessionId),
+      );
       store.setDiffs((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
       );
       store.setHistoricalDiffIncompleteBySession((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
+      );
+      store.setActivityHistoryState((current) =>
+        removeSessionRecord(current, sessionId),
+      );
+      store.setActivityVisibleCounts((current) =>
+        removeSessionRecord(current, sessionId),
+      );
+      store.setSessionSubagentDetails((current) =>
+        Object.fromEntries(
+          Object.entries(current).filter(
+            ([key]) => !key.startsWith(`${sessionId}\0`),
+          ),
+        ),
       );
       store.setSessionLiveStates((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
       );
       store.setSessionLiveStateSequences((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
       );
       store.setSessionConfigOptions((current) =>
-        removeSessionRecord(current, payload.result.sessionId),
+        removeSessionRecord(current, sessionId),
+      );
+      store.setSessionAvailableCommands((current) =>
+        removeSessionRecord(current, sessionId),
+      );
+      store.setSessionTitles((current) =>
+        removeSessionRecord(current, sessionId),
+      );
+      store.setOpenChatSessionIds((current) =>
+        current.filter((id) => id !== sessionId),
       );
       store.setActiveSessionId((current: string | null) =>
-        current === payload.result.sessionId ? null : current,
+        current === sessionId ? null : current,
       );
       return true;
     }

@@ -351,7 +351,12 @@ function coalescibleUpdateKey(sessionId: string, update: any) {
   if (update.kind === "live_state" && Number.isFinite(update.snapshot?.sequence)) {
     return `${sessionId}:live_state`;
   }
-  if (update.kind === "agent_message" && update.streaming === true && update.message?.id) {
+  if (
+    update.kind === "agent_message" &&
+    update.streaming === true &&
+    update.message?.id &&
+    update.message.streamMode !== "delta"
+  ) {
     return `${sessionId}:message:${update.message.id}`;
   }
   if (update.kind === "tool_call" && update.toolCall?.status === "running" && update.toolCall?.id) {

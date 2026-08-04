@@ -2597,7 +2597,8 @@ test("plain messages merges adjacent assistant thinking chunks in the conversati
   );
 
   assert.equal(html.match(/<details class="plain-thinking/g)?.length, 1);
-  assert.match(html, /第一段 Thinking/);
+  assert.match(html, />Thinking<\/span>/);
+  assert.doesNotMatch(html, /第一段 Thinking/);
   const thinkingItem = resolvePlainConversationDisplayItems({
     sessionId: "session-1",
     displayMessages: [],

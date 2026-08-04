@@ -46,6 +46,8 @@ function resetStore() {
     worktrees: [],
     sessions: [],
     statuses: {},
+    sessionTitles: {},
+    openChatSessionIds: [],
     messages: {},
     sessionTimeline: {},
     sessionTimelineDeliveryState: {},
@@ -57,10 +59,13 @@ function resetStore() {
     outputs: {},
     toolCalls: {},
     sessionPlans: {},
+    dismissedCompletedSessionPlanKeys: {},
     diffs: {},
     historicalDiffIncompleteBySession: {},
     sessionSubagentDetails: {},
     activityHistoryState: {},
+    activityVisibleCounts: {},
+    sessionAvailableCommands: {},
     approvalItemsById: {},
     pendingApprovalIds: [],
     pendingApprovalIdsBySession: {},
@@ -69,6 +74,83 @@ function resetStore() {
     pairingFeedback: "",
   } as any);
 }
+
+test("session cleanup releases session-scoped caches without touching another session", () => {
+  resetStore();
+  const pendingRequests = new Set(["s1", "s2"]);
+  let reactivePendingRequests = new Set(["s1", "s2"]);
+  const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = {
+    current: { s1: [], s2: [] },
+  };
+
+  useDeckStore.setState({
+    sessions: [session("s1"), session("s2")],
+    statuses: { s1: "running", s2: "idle" },
+    sessionTitles: { s1: "删除标题", s2: "保留标题" },
+    openChatSessionIds: ["s1", "s2"],
+    messages: { s1: [], s2: [] },
+    sessionTimeline: { s1: [], s2: [] },
+    sessionTimelineDeliveryState: {
+      s1: { latestDeliverySequence: 1, reloadRequired: false },
+      s2: { latestDeliverySequence: 2, reloadRequired: false },
+    },
+    messageHistoryState: {
+      s1: { hasMore: false, loading: false },
+      s2: { hasMore: true, loading: false },
+    },
+    promptQueues: { s1: {} as never, s2: {} as never },
+    sessionPlans: { s1: {} as AgentPlan, s2: {} as AgentPlan },
+    dismissedCompletedSessionPlanKeys: { s1: "done-1", s2: "done-2" },
+    activityHistoryState: {
+      s1: { hasMore: false, loading: false },
+      s2: { hasMore: true, loading: false },
+    },
+    activityVisibleCounts: { s1: 10, s2: 20 },
+    sessionSubagentDetails: {
+      ["s1\0root"]: {} as never,
+      ["s2\0root"]: {} as never,
+    },
+    sessionAvailableCommands: {
+      s1: [{ name: "old" }],
+      s2: [{ name: "keep" }],
+    },
+  } as any);
+
+  const handled = applySessionResult(
+    "session/cleanup",
+    { result: { sessionId: "s1", deleted: true } },
+    "helm-1",
+    true,
+    createSessionEventContext({
+      toolCallsRef,
+      resumeStartRequestsRef: { current: pendingRequests },
+      setResumeStartRequestIds: (update: (current: Set<string>) => Set<string>) => {
+        reactivePendingRequests = update(reactivePendingRequests);
+      },
+    }),
+  );
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.deepEqual(state.sessions.map((item) => item.id), ["s2"]);
+  assert.equal(state.sessionTitles.s1, undefined);
+  assert.deepEqual(state.openChatSessionIds, ["s2"]);
+  assert.equal(state.sessionTimelineDeliveryState.s1, undefined);
+  assert.equal(state.messageHistoryState.s1, undefined);
+  assert.equal(state.promptQueues.s1, undefined);
+  assert.equal(state.sessionPlans.s1, undefined);
+  assert.equal(state.dismissedCompletedSessionPlanKeys.s1, undefined);
+  assert.equal(state.activityHistoryState.s1, undefined);
+  assert.equal(state.activityVisibleCounts.s1, undefined);
+  assert.equal(state.sessionSubagentDetails["s1\0root"], undefined);
+  assert.equal(state.sessionAvailableCommands.s1, undefined);
+  assert.equal(toolCallsRef.current.s1, undefined);
+  assert.equal(pendingRequests.has("s1"), false);
+  assert.equal(reactivePendingRequests.has("s1"), false);
+  assert.ok(state.sessionTitles.s2);
+  assert.ok(state.sessionSubagentDetails["s2\0root"]);
+  assert.ok(state.sessionAvailableCommands.s2);
+});
 
 test("subagent detail deltas update only expanded cached details and ignore stale sequences", () => {
   resetStore();

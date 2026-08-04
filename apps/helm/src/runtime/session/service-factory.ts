@@ -207,20 +207,28 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     const context = options.createHandlerContext();
     sessionTimelineWorkers.evictIdle({
       beforeRemove: (sessionId) => {
-        flushRuntimeSessionState(sessionId, context);
+        clearTransientSessionRuntimeState(sessionId, context);
       },
     });
   }, 60_000);
   sessionTimelineIdleEvictionTimer.unref?.();
-  function resetSessionTimelineRuntimeState(sessionId: string) {
-    const context = options.createHandlerContext();
+
+  function clearTransientSessionRuntimeState(
+    sessionId: string,
+    context: HelmHandlerContext,
+  ) {
     flushRuntimeSessionState(sessionId, context);
-    context.promptQueue.remove(sessionId);
     context.liveMessageBuffer.remove(sessionId);
     context.runtimeMetrics?.removeSession(sessionId);
     cleanupRuntimeEventState(sessionId, context);
-    diffHydration.remove(sessionId);
     sessionTimelineFlushScheduler.remove(sessionId);
+  }
+
+  function resetSessionTimelineRuntimeState(sessionId: string) {
+    const context = options.createHandlerContext();
+    clearTransientSessionRuntimeState(sessionId, context);
+    context.promptQueue.remove(sessionId);
+    diffHydration.remove(sessionId);
     sessionTimelineWorkers.remove(sessionId);
     sessionLiveStateStore.remove(sessionId);
     sessionApprovalStateStore.remove(sessionId);
@@ -382,13 +390,9 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         ...context.liveMessageBuffer.sessionIds(),
       ]);
       for (const sessionId of transientSessionIds) {
-        flushRuntimeSessionState(sessionId, context);
+        clearTransientSessionRuntimeState(sessionId, context);
         options.sessionUpdateStore.compactTail(sessionId);
         context.promptQueue.remove(sessionId);
-        context.liveMessageBuffer.remove(sessionId);
-        context.runtimeMetrics?.removeSession(sessionId);
-        cleanupRuntimeEventState(sessionId, context);
-        sessionTimelineFlushScheduler.remove(sessionId);
         sessionTimelineWorkers.remove(sessionId);
         sessionSubagentDetailService?.flush(sessionId);
       }

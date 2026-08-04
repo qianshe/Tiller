@@ -88,3 +88,16 @@ test("startSessionResume delegates directly to the resume service without transc
   );
   assert.doesNotMatch(source, /async function startSessionResume\([\s\S]*applyTranscriptToolCallRepair\(/u);
 });
+
+test("idle timeline eviction releases transient runtime state after flushing", () => {
+  const source = readFileSync(resolve(currentDir, "service-factory.ts"), "utf8");
+
+  assert.match(
+    source,
+    /beforeRemove:\s*\(sessionId\)\s*=>\s*\{\s*clearTransientSessionRuntimeState\(sessionId, context\);/u,
+  );
+  assert.match(source, /context\.liveMessageBuffer\.remove\(sessionId\)/u);
+  assert.match(source, /context\.runtimeMetrics\?\.removeSession\(sessionId\)/u);
+  assert.match(source, /cleanupRuntimeEventState\(sessionId, context\)/u);
+  assert.match(source, /sessionTimelineFlushScheduler\.remove\(sessionId\)/u);
+});

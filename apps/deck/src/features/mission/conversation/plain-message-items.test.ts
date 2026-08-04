@@ -11,6 +11,7 @@ import {
 } from "@tiller/shared";
 import {
   isThinkingScrollNearBottom,
+  PlainThinkingItem,
   resolveToolCallDisplayTitle,
   resolveThinkingContentClassName,
   writeClipboardText,
@@ -92,6 +93,26 @@ test("resolveThinkingContentClassName keeps short running thinking panels conten
     }),
     /max-h-64/,
   );
+});
+
+test("PlainThinkingItem keeps the summary label stable while thinking streams", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainThinkingItem, {
+      items: [{
+        id: "thinking-1",
+        kind: "thinking",
+        text: "先分析当前文件",
+        title: "Thinking",
+        status: "running",
+        timestamp: "2026-05-12T00:00:00.000Z",
+        updatedAt: "2026-05-12T00:00:00.000Z",
+      }],
+    }),
+  );
+  const summary = html.slice(0, html.indexOf("</summary>"));
+
+  assert.match(summary, />Thinking<\/span>/u);
+  assert.doesNotMatch(summary, /先分析当前文件/u);
 });
 
 test("plain message parser keeps sent context trigger above the message bubble", () => {
