@@ -414,6 +414,29 @@ test("config RPC git file_diff covers untracked files and only the requested pat
   assert.match(diff.files[0]?.patch ?? "", /\+hello/);
 });
 
+test("config RPC git status expands untracked directories and ignores empty directories", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-status-directories-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(repoPath);
+  commitFile(repoPath, "README.md", "one\n", "init");
+  mkdirSync(join(repoPath, "empty-dir"));
+  mkdirSync(join(repoPath, "nested-dir"));
+  writeFileSync(join(repoPath, "nested-dir", "note.txt"), "hello\n", "utf8");
+  saveRepoProject(configPath, "p1", repoPath);
+
+  const status = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+
+  assert.equal(status.ok, true);
+  assert.deepEqual(
+    status.files.map((file: { path: string }) => file.path.replace(/\\/g, "/")),
+    ["nested-dir/note.txt"],
+  );
+});
+
 test("config RPC git commit includes only selected paths and preserves unrelated staged changes", async () => {
   const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-commit-selected-"));
   const repoPath = join(tempRoot, "repo");

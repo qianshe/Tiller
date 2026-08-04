@@ -331,10 +331,15 @@ export async function getProjectGitStatus(
   const tracking = await readGitTrackingState(gitRoot);
 
   // Status porcelain output
-  const statusResult = await runGit(gitRoot, ["status", "--porcelain=v1", "-z"]);
+  const statusResult = await runGit(gitRoot, [
+    "status",
+    "--porcelain=v1",
+    "--untracked-files=all",
+    "-z",
+  ]);
   const statusOutput = statusResult.stdout;
 
-  const files: Array<{
+  const statusFiles: Array<{
     path: string;
     indexStatus: string;
     worktreeStatus: string;
@@ -359,7 +364,7 @@ export async function getProjectGitStatus(
       if ((indexStatus === "R" || indexStatus === "C") && i + 1 < entries.length) {
         const originalPath = pathPart;
         const newPath = entries[i + 1];
-        files.push({
+        statusFiles.push({
           path: newPath!,
           indexStatus,
           worktreeStatus,
@@ -367,31 +372,21 @@ export async function getProjectGitStatus(
         });
         i += 2; // Skip both entries
       } else {
-        files.push({ path: pathPart, indexStatus, worktreeStatus });
+        statusFiles.push({ path: pathPart, indexStatus, worktreeStatus });
         i++;
       }
     }
   }
 
-  const clean = files.length === 0;
-
-  let detailedFiles: typeof files = files;
-  if (!clean) {
+  let detailedFiles: GitStatusSnapshot["files"] = statusFiles;
+  if (statusFiles.length > 0) {
     // Stats only — patch bodies are fetched on demand via project/git/file_diff.
     const gitDiffStats = await readWorktreeGitDiffStats(cwd);
-    const statsByPath = new Map(
-      gitDiffStats.map((file) => [normalizeDiffPath(file.path), file] as const),
-    );
-
-    detailedFiles = files.map((file) => {
-      const detail = statsByPath.get(normalizeDiffPath(file.path));
-      return {
-        ...file,
-        additions: detail?.additions ?? 0,
-        deletions: detail?.deletions ?? 0,
-      };
-    });
+    detailedFiles = gitDiffStats === undefined
+      ? statusFiles.map((file) => ({ ...file, additions: 0, deletions: 0 }))
+      : mergeGitStatusFilesWithDiffStats(statusFiles, gitDiffStats);
   }
+  const clean = detailedFiles.length === 0;
 
   // Determine tracking staleness.
   // - detached / no-upstream => not stale (we cannot know remote state)
@@ -461,6 +456,42 @@ export function emptyGitSnapshot(): GitStatusSnapshot {
     clean: false,
     files: [],
   };
+}
+
+type GitStatusFileEntry = {
+  path: string;
+  indexStatus: string;
+  worktreeStatus: string;
+  originalPath?: string;
+};
+
+type GitDiffStatEntry = {
+  path: string;
+  additions: number;
+  deletions: number;
+};
+
+export function mergeGitStatusFilesWithDiffStats(
+  statusFiles: GitStatusFileEntry[],
+  diffStats: GitDiffStatEntry[],
+): GitStatusSnapshot["files"] {
+  const statsByPath = new Map(
+    diffStats.map((file) => [normalizeDiffPath(file.path), file] as const),
+  );
+
+  return statusFiles.flatMap((file) => {
+    const detail = statsByPath.get(normalizeDiffPath(file.path));
+    // Git status can report a directory placeholder or a stat-only refresh
+    // miss. Neither represents a file-level diff entry.
+    if (!detail) {
+      return [];
+    }
+    return [{
+      ...file,
+      additions: detail.additions,
+      deletions: detail.deletions,
+    }];
+  });
 }
 
 async function listGitRemotes(gitRoot: string): Promise<string[]> {

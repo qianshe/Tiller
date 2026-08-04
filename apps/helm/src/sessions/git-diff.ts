@@ -42,7 +42,7 @@ export type GitDiffStat = {
  * line count for untracked files. No patch bodies are built or transferred —
  * those are fetched on demand via readWorktreeGitFileDiffs.
  */
-export async function readWorktreeGitDiffStats(cwd: string): Promise<GitDiffStat[]> {
+export async function readWorktreeGitDiffStats(cwd: string): Promise<GitDiffStat[] | undefined> {
   try {
     const [trackedResult, untrackedResult] = await Promise.all([
       readGitProcess(cwd, ["diff", "--no-ext-diff", "--find-renames=0", "--numstat", "-z", "HEAD", "--"]),
@@ -57,7 +57,9 @@ export async function readWorktreeGitDiffStats(cwd: string): Promise<GitDiffStat
     );
     return [...trackedStats, ...untrackedStats];
   } catch {
-    return [];
+    // Keep command failure distinct from a valid clean diff. Callers use the
+    // distinction to avoid hiding status entries when statistics are unavailable.
+    return undefined;
   }
 }
 

@@ -144,3 +144,12 @@ test("diff stats color additions and deletions by semantic value", () => {
   assert.match(html, /\+3/);
   assert.match(html, /-0/);
 });
+
+test("diff stats do not render zero-line changes as +0/-0", () => {
+  const html = renderToStaticMarkup(renderDiffStats(diff("empty.txt", 0, 0)));
+
+  assert.match(html, /title="无行级变更"/u);
+  assert.match(html, /—/u);
+  assert.doesNotMatch(html, />\+0</);
+  assert.doesNotMatch(html, />-0</);
+});

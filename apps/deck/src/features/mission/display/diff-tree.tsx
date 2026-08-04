@@ -134,6 +134,16 @@ export function formatDiffStatus(status: FileDiffSummary["status"]) {
 }
 
 export function renderDiffStats(file: FileDiffSummary) {
+  if (file.additions === 0 && file.deletions === 0) {
+    return (
+      <span
+        className="diff-meta diff-meta-split inline-flex shrink-0 items-center font-mono text-xs tabular-nums text-muted-foreground/60"
+        title="无行级变更"
+      >
+        —
+      </span>
+    );
+  }
   return (
     <span className="diff-meta diff-meta-split inline-flex shrink-0 items-center gap-1 font-mono text-xs tabular-nums">
       <span className={`diff-additions ${resolveDiffStatClass(file.additions, "additions")}`}>+{file.additions}</span>
