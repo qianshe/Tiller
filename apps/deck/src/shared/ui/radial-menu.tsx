@@ -18,6 +18,20 @@ type RadialMenuProps = {
 
 type Position = { left: number; top: number } | null;
 
+export function isWithinRadialMenu(target: EventTarget | null): boolean {
+  if (
+    target === null
+    || (typeof target !== "object" && typeof target !== "function")
+  ) {
+    return false;
+  }
+  const closest = (target as { closest?: unknown }).closest;
+  return typeof closest === "function"
+    && Boolean(
+      (closest as (selector: string) => unknown).call(target, "[data-radial]"),
+    );
+}
+
 export function RadialMenu({ activeView, items, onNavigate, enabled = false }: RadialMenuProps) {
   const [position, setPosition] = useState<Position>(null);
   const [open, setOpen] = useState(false);
@@ -30,8 +44,7 @@ export function RadialMenu({ activeView, items, onNavigate, enabled = false }: R
     if (!open) return undefined;
 
     const closeOnOutsidePointer = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target?.closest("[data-radial]")) {
+      if (!isWithinRadialMenu(event.target)) {
         setOpen(false);
       }
     };
@@ -177,8 +190,7 @@ export function RadialMenu({ activeView, items, onNavigate, enabled = false }: R
           aria-hidden="true"
           onPointerEnter={onHoverPointerEnter}
           onPointerLeave={(event) => {
-            const relatedTarget = event.relatedTarget as Element | null;
-            if (!relatedTarget?.closest("[data-radial]")) {
+            if (!isWithinRadialMenu(event.relatedTarget)) {
               setOpen(false);
             }
           }}
