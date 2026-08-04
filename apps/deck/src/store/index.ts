@@ -32,6 +32,7 @@ import {
 } from "./slices/notifications-slice";
 export type {
   DeckNotification,
+  DeckNotificationDetails,
   DeckNotificationInput,
   DeckNotificationKind,
 } from "./slices/notifications-slice";

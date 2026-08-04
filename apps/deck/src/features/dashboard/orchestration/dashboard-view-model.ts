@@ -8,6 +8,7 @@ import type {
   SessionSummary,
 } from "@tiller/shared";
 import { resolvePermissionCommandDisplay } from "../../mission/facade";
+import type { DeckNotificationDetails } from "../../../store";
 
 type DashboardInput = {
   connection: string;
@@ -46,6 +47,7 @@ export type DashboardNotification = {
   code?: string;
   sessionId?: string;
   sessionName?: string;
+  details?: DeckNotificationDetails;
   createdAt: string;
 };
 

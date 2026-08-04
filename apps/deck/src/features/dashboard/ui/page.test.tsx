@@ -241,6 +241,28 @@ test("notification reports preserve the diagnostics needed for feedback", () => 
   ].join("\n"));
 });
 
+test("notification reports include structured system error diagnostics", () => {
+  const report = formatNotificationReport({
+    ...commonProps.notifications[0]!,
+    source: "rpc",
+    sessionId: undefined,
+    details: {
+      phase: "notification-handler",
+      method: "session/update",
+      helmKey: "localhost:47631",
+      updateKind: "timeline_batch",
+      errorName: "Error",
+      errorStack: "Error: Maximum update depth exceeded.",
+    },
+  });
+
+  assert.match(report, /诊断信息:/);
+  assert.match(report, /阶段: notification-handler/);
+  assert.match(report, /RPC 方法: session\/update/);
+  assert.match(report, /Helm: localhost:47631/);
+  assert.match(report, /错误堆栈:\nError: Maximum update depth exceeded\./);
+});
+
 test("copyNotificationReport writes the complete report to the clipboard", async () => {
   const writes: string[] = [];
 

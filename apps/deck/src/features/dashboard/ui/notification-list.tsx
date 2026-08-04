@@ -57,12 +57,59 @@ function formatNotificationAriaLabel(notification: DashboardNotification) {
   return `${KIND_LABELS[notification.kind]}通知: ${notification.message}. 来源 ${resolveSourceLabel(notification.source)}. ${notification.sessionName ? `会话 ${notification.sessionName}.` : "系统通知."}`;
 }
 
+type NotificationDetailKey = keyof NonNullable<DashboardNotification["details"]>;
+
+const NOTIFICATION_DETAIL_FIELDS: Array<[NotificationDetailKey, string]> = [
+  ["phase", "阶段"],
+  ["helmKey", "Helm"],
+  ["method", "RPC 方法"],
+  ["sessionId", "会话 ID"],
+  ["kind", "消息类型"],
+  ["updateKind", "更新类型"],
+  ["updateId", "更新 ID"],
+  ["errorName", "错误类型"],
+  ["errorCode", "RPC 错误码"],
+  ["errorStack", "错误堆栈"],
+  ["componentStack", "组件堆栈"],
+];
+
+function formatNotificationDiagnosticSummary(
+  details: DashboardNotification["details"],
+) {
+  if (!details) {
+    return "";
+  }
+  return [
+    details.method,
+    details.updateKind,
+    details.errorName,
+  ].filter((value): value is string => Boolean(value)).join(" · ");
+}
+
+function formatNotificationDetailLines(
+  details: DashboardNotification["details"],
+) {
+  if (!details) {
+    return [];
+  }
+  return NOTIFICATION_DETAIL_FIELDS.flatMap(([key, label]) => {
+    const value = details[key];
+    if (!value) {
+      return [];
+    }
+    return key === "errorStack" || key === "componentStack"
+      ? [`${label}:\n${value}`]
+      : [`${label}: ${value}`];
+  });
+}
+
 export function formatNotificationReport(notification: DashboardNotification): string {
   const session = notification.sessionId
     ? notification.sessionName && notification.sessionName !== notification.sessionId
       ? `${notification.sessionName} (${notification.sessionId})`
       : notification.sessionId
     : "系统";
+  const detailLines = formatNotificationDetailLines(notification.details);
   return [
     `Tiller ${KIND_LABELS[notification.kind]}通知`,
     `时间: ${notification.createdAt}`,
@@ -70,6 +117,7 @@ export function formatNotificationReport(notification: DashboardNotification): s
     ...(notification.code ? [`错误码: ${notification.code}`] : []),
     `会话: ${session}`,
     `消息: ${notification.message}`,
+    ...(detailLines.length > 0 ? ["诊断信息:", ...detailLines] : []),
   ].join("\n");
 }
 
@@ -136,6 +184,7 @@ function NotificationRow({
   notification: DashboardNotification;
   onOpenSession?: (sessionId: string) => void;
 }) {
+  const diagnosticSummary = formatNotificationDiagnosticSummary(notification.details);
   const content = (
     <>
       <span className="flex min-w-0 items-center gap-2">
@@ -147,8 +196,13 @@ function NotificationRow({
           </span>
         </span>
       </span>
-      <span className="min-w-0 break-words whitespace-pre-wrap text-section text-foreground" title={notification.message}>
-        {notification.message}
+      <span className="grid min-w-0 gap-0.5 text-section text-foreground" title={notification.message}>
+        <span className="break-words whitespace-pre-wrap">{notification.message}</span>
+        {diagnosticSummary ? (
+          <span className="truncate font-mono text-meta tabular text-muted-foreground" title={diagnosticSummary}>
+            诊断 · {diagnosticSummary}
+          </span>
+        ) : null}
       </span>
       <span className="truncate font-mono text-meta tabular text-muted-foreground">
         {resolveSourceLabel(notification.source)}

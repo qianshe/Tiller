@@ -19,7 +19,11 @@ import type {
 import { useDeckStore } from "../../store";
 import { daemonProfileKey, type DaemonProfile } from "./daemon-profiles";
 import { createHelmWebSocketUrl, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
-import { DeckRpcClient, describeRpcError } from "./rpc-client";
+import {
+  DeckRpcClient,
+  describeRpcError,
+  getRpcErrorDiagnostics,
+} from "./rpc-client";
 import type { DispatchToHelm } from "./request-dispatch";
 import { readHelmUpdateIntent } from "./update-intent";
 
@@ -105,16 +109,34 @@ function createRpcClient(socket: WebSocket, helmKey: string, handlers: RpcHandle
     socket,
     (method, params) => handlers.handleRpcNotification(method, params, helmKey),
     (error) => {
+      const description = describeRpcError(error);
+      const rpcDiagnostics = getRpcErrorDiagnostics(error);
+      const details = {
+        ...rpcDiagnostics,
+        phase: rpcDiagnostics?.phase ?? "rpc-client",
+        helmKey,
+        errorName: rpcDiagnostics?.errorName ?? description.name,
+        ...(description.code === undefined
+          ? {}
+          : { errorCode: String(description.code) }),
+        ...(rpcDiagnostics?.errorStack || description.stack
+          ? { errorStack: rpcDiagnostics?.errorStack ?? description.stack }
+          : {}),
+      };
       console.error("[Tiller][rpc-error]", {
         helmKey,
-        error: describeRpcError(error),
+        error: description,
+        details,
       });
       handlers.handleRpcNotification(
         "notification/raised",
         {
           kind: "error",
           source: "rpc",
-          message: error instanceof Error ? error.message : String(error),
+          sessionId: details.sessionId,
+          code: details.errorCode,
+          message: description.message,
+          details,
         },
         helmKey,
       );

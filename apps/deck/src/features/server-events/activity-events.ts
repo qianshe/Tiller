@@ -6,7 +6,11 @@ import type {
 } from "@tiller/shared";
 import { mergeAgentMessages } from "../logbook";
 import { toast } from "../toast";
-import { useDeckStore, type DeckNotificationInput } from "../../store";
+import {
+  useDeckStore,
+  type DeckNotificationDetails,
+  type DeckNotificationInput,
+} from "../../store";
 import { stripRedundantAttachmentData } from "./helpers";
 import type { SessionUpdateParams } from "./session-update-contracts";
 
@@ -25,6 +29,7 @@ type ErrorRaisedParams = {
   message: string;
   code?: string;
   data?: unknown;
+  details?: DeckNotificationDetails;
 };
 
 type NotificationRaisedParams = {
@@ -34,6 +39,7 @@ type NotificationRaisedParams = {
   code?: string;
   message: string;
   occurredAt?: string;
+  details?: DeckNotificationDetails;
 };
 
 export function applyActivityUpdate(
@@ -163,6 +169,7 @@ export function applyNotificationRaised(
     source: params.source,
     code: params.code,
     sessionId: params.sessionId,
+    details: params.details,
     createdAt: params.occurredAt,
   });
   const toastOptions = params.kind === "error"

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { DeckRpcClient } from "./rpc-client.js";
+import { DeckRpcClient, getRpcErrorDiagnostics } from "./rpc-client.js";
 
 type MessageHandler = (event: { data: string }) => void;
 
@@ -46,4 +46,42 @@ test("DeckRpcClient sends JSON-RPC requests and resolves matching results", asyn
 
   socket.receive('{"jsonrpc":"2.0","id":1,"result":{"helms":[]}}');
   assert.deepEqual(await pending, { helms: [] });
+});
+
+test("DeckRpcClient preserves notification context when a handler fails", async () => {
+  const socket = new FakeWebSocket();
+  let receivedError: unknown;
+  const originalConsoleError = console.error;
+  console.error = () => undefined;
+  try {
+    new DeckRpcClient(
+      socket as unknown as WebSocket,
+      () => {
+        throw new Error("Maximum update depth exceeded.");
+      },
+      (error) => {
+        receivedError = error;
+      },
+    );
+
+    socket.receive(JSON.stringify({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-1",
+        update: { kind: "timeline_batch" },
+      },
+    }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  const diagnostics = getRpcErrorDiagnostics(receivedError);
+  assert.equal(diagnostics?.phase, "notification-handler");
+  assert.equal(diagnostics?.method, "session/update");
+  assert.equal(diagnostics?.sessionId, "session-1");
+  assert.equal(diagnostics?.updateKind, "timeline_batch");
+  assert.equal(diagnostics?.errorName, "Error");
+  assert.match(diagnostics?.errorStack ?? "", /Maximum update depth exceeded/);
 });

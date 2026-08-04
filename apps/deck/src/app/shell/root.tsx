@@ -608,6 +608,12 @@ export function App() {
             kind: "error",
             source: "deck-ui",
             message: formatRouteCrashNotification(error.message, componentStack),
+            details: {
+              phase: "render",
+              errorName: error.name,
+              errorStack: error.stack,
+              componentStack,
+            },
           });
         }}
       >

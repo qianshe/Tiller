@@ -6,20 +6,12 @@ import {
   type ServerNotificationMethod,
   type Stream,
 } from "@tiller/sync-protocol";
+import type { DeckNotificationDetails } from "../../store";
 
 type NotificationHandler = (
   method: ServerNotificationMethod,
   params: unknown,
 ) => void;
-
-const DIAGNOSTIC_NOTIFICATION_METHODS = new Set([
-  "session/update",
-  "error/raised",
-  "notification/raised",
-  "daemon/update/status",
-  "approval/created",
-  "approval/resolved",
-]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -67,6 +59,41 @@ export function describeRpcError(error: unknown) {
   return { name: "UnknownError", message: String(error) };
 }
 
+type RpcDiagnosticError = Error & {
+  rpcDiagnostics?: DeckNotificationDetails;
+};
+
+export function getRpcErrorDiagnostics(error: unknown): DeckNotificationDetails | undefined {
+  if (!isRecord(error) || !isRecord(error.rpcDiagnostics)) {
+    return undefined;
+  }
+  return error.rpcDiagnostics as DeckNotificationDetails;
+}
+
+function createRpcDiagnosticError(
+  error: unknown,
+  context: DeckNotificationDetails & { phase: string },
+) {
+  const description = describeRpcError(error);
+  const enriched = new Error(description.message) as RpcDiagnosticError;
+  enriched.name = description.name;
+  if (description.stack) {
+    enriched.stack = description.stack;
+  }
+  Object.defineProperty(enriched, "rpcDiagnostics", {
+    configurable: false,
+    enumerable: false,
+    value: {
+      ...context,
+      errorName: description.name,
+      ...(description.code === undefined ? {} : { errorCode: String(description.code) }),
+      ...(description.stack ? { errorStack: description.stack } : {}),
+    } satisfies DeckNotificationDetails,
+    writable: false,
+  });
+  return enriched;
+}
+
 export class DeckRpcClient {
   readonly socket: WebSocket;
   private readonly connection: JsonRpcConnection;
@@ -85,7 +112,7 @@ export class DeckRpcClient {
           handler(message);
         }
       } catch (error) {
-        onError(error);
+        onError(createRpcDiagnosticError(error, { phase: "message-decode" }));
       }
     };
 
@@ -109,20 +136,18 @@ export class DeckRpcClient {
       onRequest: async () => ({}),
       onNotification: async (method, params) => {
         const methodName = String(method);
-        if (DIAGNOSTIC_NOTIFICATION_METHODS.has(methodName)) {
-          console.info(
-            "[Tiller][rpc-notification]",
-            summarizeRpcNotification(methodName, params),
-          );
-        }
         try {
           onNotification(method as ServerNotificationMethod, params);
         } catch (error) {
+          const diagnostics = createRpcDiagnosticError(error, {
+            ...summarizeRpcNotification(methodName, params),
+            phase: "notification-handler",
+          });
           console.error("[Tiller][rpc-notification-error]", {
             ...summarizeRpcNotification(methodName, params),
             error: describeRpcError(error),
           });
-          throw error;
+          throw diagnostics;
         }
       },
       onError,
