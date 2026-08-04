@@ -6,6 +6,7 @@ import { emitFirstHelmPromptTrace } from "../../prompt-trace";
 import {
   normalizeRuntimeAssistantMessageId,
   shouldFlushActiveAssistantSegment,
+  shouldTreatIncomingAssistantMessageAsSnapshot,
   startNextAssistantResponseSegment,
 } from "../../segment-state";
 import {
@@ -135,12 +136,26 @@ export function handleRuntimeAssistantMessage(
   event: Extract<SessionRuntimeEvent, { type: "message" }>,
   context: HelmHandlerContext,
 ) {
-  if (shouldFlushActiveAssistantSegment(sessionId, event.message.id)) {
+  const incomingIsSnapshot = shouldTreatIncomingAssistantMessageAsSnapshot(
+    sessionId,
+    event.message.id,
+    event.message.text,
+    event.message.streamMode,
+  );
+  if (
+    shouldFlushActiveAssistantSegment(
+      sessionId,
+      event.message.id,
+      event.message.text,
+      event.message.streamMode,
+    )
+  ) {
     flushLiveAssistantMessage(sessionId, context);
     startNextAssistantResponseSegment(sessionId);
   }
   const message = {
     ...event.message,
+    ...(incomingIsSnapshot ? { streamMode: "snapshot" as const } : {}),
     id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
     sequence: event.message.sequence ?? nextLiveEventSequence(sessionId, context),
   };

@@ -1,4 +1,5 @@
 import {
+  isAssistantSnapshotContinuation,
   mergeStreamingText,
   shouldStartNewAssistantOccurrenceAfterBoundary,
   type AgentMessage,
@@ -24,6 +25,8 @@ const pendingAssistantBoundaryBySession = new Set<string>();
 export function shouldFlushActiveAssistantSegment(
   sessionId: string,
   incomingMessageId: string,
+  incomingText: string,
+  incomingStreamMode?: AgentMessage["streamMode"],
 ): boolean {
   const active = activeAssistantRuntimeMessageBySession.get(sessionId);
   if (!active) {
@@ -31,7 +34,27 @@ export function shouldFlushActiveAssistantSegment(
   }
   const activeIsProvider = !isRuntimeGeneratedMessageId(active.sourceId);
   const incomingIsProvider = !isRuntimeGeneratedMessageId(incomingMessageId);
-  return activeIsProvider && incomingIsProvider && active.sourceId !== incomingMessageId;
+  return activeIsProvider && incomingIsProvider && active.sourceId !== incomingMessageId &&
+    !shouldTreatIncomingAssistantMessageAsSnapshot(
+      sessionId,
+      incomingMessageId,
+      incomingText,
+      incomingStreamMode,
+    );
+}
+
+export function shouldTreatIncomingAssistantMessageAsSnapshot(
+  sessionId: string,
+  incomingMessageId: string,
+  incomingText: string,
+  incomingStreamMode?: AgentMessage["streamMode"],
+): boolean {
+  const active = activeAssistantRuntimeMessageBySession.get(sessionId);
+  if (!active || incomingStreamMode === "delta") {
+    return false;
+  }
+  return active.sourceId !== incomingMessageId &&
+    isAssistantSnapshotContinuation(active.text, incomingText);
 }
 
 export function markAssistantStreamBoundary(sessionId: string) {
