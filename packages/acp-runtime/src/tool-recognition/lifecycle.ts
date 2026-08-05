@@ -4,6 +4,8 @@ import type { ToolEvidence, ToolObservation } from "./types";
 type SubagentEntity = {
   id: string;
   title: string;
+  titleRank?: number;
+  openCodeCategory?: string;
   input?: string;
   output?: string;
   subagentRole?: AgentToolCall["subagentRole"];
@@ -63,9 +65,11 @@ export function createToolLifecycleCorrelator() {
           const entityId = ids[0] ?? lifecycleToolCall.id;
           const commandId = lifecycleToolCall.commandId ??
             (entityIds.length ? `subagent:${entityId}` : undefined);
-          const existing = resolveByAliases(session, [lifecycleToolCall.commandId, ...entityIds])
-            ?? resolveCompatibleSpawnAlias(session, lifecycleToolCall, commandId)
-            ?? resolveOnlyUnidentifiedSpawn(session, entityIds, lifecycleToolCall);
+          const existing = isOpenCodeProvider(observation.providerId)
+            ? resolveOpenCodeSpawnEntity(session, lifecycleToolCall, commandId, entityIds)
+            : resolveByAliases(session, [lifecycleToolCall.commandId, ...entityIds])
+              ?? resolveCompatibleSpawnAlias(session, lifecycleToolCall, commandId)
+              ?? resolveOnlyUnidentifiedSpawn(session, entityIds, lifecycleToolCall);
           if (!existing && hasAmbiguousUnidentifiedSpawns(session, entityIds, lifecycleToolCall)) {
             return lifecycleOnly ? [toolCall] : [];
           }
@@ -76,6 +80,9 @@ export function createToolLifecycleCorrelator() {
             timestamp: lifecycleToolCall.timestamp,
             aliases: new Set<string>(),
           };
+          updateSubagentEntityTitle(entity, lifecycleToolCall, observation.providerId);
+          entity.input = lifecycleToolCall.input ?? entity.input;
+          entity.output = lifecycleToolCall.output ?? entity.output;
           entity.commandId = entity.commandId ?? commandId;
           addAliases(session, entity, [entity.id, lifecycleToolCall.id, ...ids, entity.commandId]);
           session.running.add(entity);
@@ -100,6 +107,9 @@ export function createToolLifecycleCorrelator() {
             timestamp: lifecycleToolCall.timestamp,
             aliases: new Set<string>(),
           };
+          updateSubagentEntityTitle(entity, lifecycleToolCall, observation.providerId);
+          entity.input = lifecycleToolCall.input ?? entity.input;
+          entity.output = lifecycleToolCall.output ?? entity.output;
           entity.commandId = entity.commandId ?? commandId ?? lifecycleToolCall.commandId;
           addAliases(
             session,
@@ -118,7 +128,12 @@ export function createToolLifecycleCorrelator() {
         }));
       }
 
-      const entity = resolveEntity(session, entityIds, lifecycleToolCall);
+      const entity = resolveEntity(
+        session,
+        entityIds,
+        lifecycleToolCall,
+        observation.providerId,
+      );
       if (!entity) {
         if (existingOnly) {
           return [toolCall];
@@ -136,6 +151,9 @@ export function createToolLifecycleCorrelator() {
       }
       const resolvedCommandId = entity.commandId ?? lifecycleToolCall.commandId ??
         (entityIds[0] ? `subagent:${entityIds[0]}` : undefined);
+      updateSubagentEntityTitle(entity, lifecycleToolCall, observation.providerId);
+      entity.input = lifecycleToolCall.input ?? entity.input;
+      entity.output = lifecycleToolCall.output ?? entity.output;
       entity.commandId = resolvedCommandId;
       addAliases(session, entity, [...entityIds, lifecycleToolCall.id, resolvedCommandId]);
       const status = terminalStatus(action, terminal, lifecycleToolCall.status);
@@ -149,6 +167,7 @@ export function createToolLifecycleCorrelator() {
         id: entity.id,
         title: entity.title,
         ...(entity.input && !lifecycleToolCall.input ? { input: entity.input } : {}),
+        ...(entity.output && !lifecycleToolCall.output ? { output: entity.output } : {}),
         ...(resolvedCommandId ? { commandId: resolvedCommandId } : {}),
         status,
       }]);
@@ -321,6 +340,10 @@ function isCodexProvider(providerId: string | undefined) {
   return /^codex(?:-|$)/iu.test(providerId?.trim() ?? "");
 }
 
+function isOpenCodeProvider(providerId: string | undefined) {
+  return providerId?.trim().toLowerCase() === "opencode";
+}
+
 function recordValue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown>
@@ -334,6 +357,103 @@ function firstString(...values: unknown[]) {
     }
   }
   return undefined;
+}
+
+function updateSubagentEntityTitle(
+  entity: SubagentEntity,
+  incoming: AgentToolCall,
+  providerId?: string,
+) {
+  if (isOpenCodeProvider(providerId)) {
+    const category = resolveOpenCodeCategory(incoming) ?? entity.openCodeCategory;
+    if (category) {
+      entity.openCodeCategory = category;
+      entity.title = category;
+      entity.titleRank = 500;
+      return;
+    }
+  }
+  const currentTitle = entity.title?.trim() ?? "";
+  const incomingTitle = incoming.title?.trim() ?? "";
+  const currentRank = entity.titleRank ?? resolveSubagentTitleRank({
+    id: entity.id,
+    title: currentTitle,
+    input: entity.input,
+  });
+  const incomingRank = resolveSubagentTitleRank(incoming);
+  if (
+    incomingRank > currentRank ||
+    (isWeakSubagentTitle(currentTitle, entity.id) && !isWeakSubagentTitle(incomingTitle, incoming.id))
+  ) {
+    entity.title = incomingTitle || currentTitle || entity.id;
+    entity.titleRank = incomingRank;
+    return;
+  }
+  entity.title = currentTitle || incomingTitle || entity.id;
+  entity.titleRank = currentRank;
+}
+
+function resolveOpenCodeCategory(toolCall: Pick<AgentToolCall, "input">) {
+  const input = toolCall.input ? parseJsonRecord(toolCall.input) : null;
+  return firstString(input?.category);
+}
+
+function resolveSubagentTitleRank(
+  toolCall: Pick<AgentToolCall, "id" | "title" | "input" | "output">,
+) {
+  if (isWeakSubagentTitle(toolCall.title, toolCall.id)) {
+    return 0;
+  }
+  const input = toolCall.input ? parseJsonRecord(toolCall.input) : null;
+  const output = toolCall.output ? parseJsonRecord(toolCall.output) : null;
+  const records = [input, output].filter(
+    (record): record is Record<string, unknown> => Boolean(record),
+  );
+  if (
+    records.some((record) =>
+      hasSubagentIdentityField(record, ["agent", "agent_name", "agentName"]),
+    )
+  ) {
+    return 400;
+  }
+  if (
+    records.some((record) =>
+      hasSubagentIdentityField(record, [
+        "subagent_type",
+        "subagentType",
+      ]),
+    )
+  ) {
+    return 300;
+  }
+  if (
+    records.some((record) => hasSubagentIdentityField(record, ["category"]))
+  ) {
+    return 200;
+  }
+  if (
+    records.some((record) =>
+      hasSubagentIdentityField(record, ["description", "prompt"]),
+    )
+  ) {
+    return 100;
+  }
+  return 100;
+}
+
+function hasSubagentIdentityField(record: Record<string, unknown>, fields: string[]) {
+  return fields.some(
+    (field) => typeof record[field] === "string" && Boolean(record[field]?.trim()),
+  );
+}
+
+function isWeakSubagentTitle(title: string, id: string) {
+  const normalized = title.trim();
+  return !normalized ||
+    normalized === id ||
+    /^call_[A-Za-z0-9]+$/u.test(normalized) ||
+    /^Tool call\b/iu.test(normalized) ||
+    /^task$/iu.test(normalized);
 }
 
 function resolveOperationTargetStatus(
@@ -396,6 +516,19 @@ function resolveCompatibleSpawnAlias(
   return entity;
 }
 
+function resolveOpenCodeSpawnEntity(
+  session: SessionLifecycle,
+  toolCall: AgentToolCall,
+  commandId: string | undefined,
+  entityIds: string[],
+) {
+  // A task/session id is a reusable logical identity in OpenCode, not the
+  // identity of this launch. Reuse the provider tool id for lifecycle updates;
+  // a different launch must get a new entity even when its task id is reused.
+  return resolveCompatibleSpawnAlias(session, toolCall, commandId) ??
+    resolveOnlyUnidentifiedSpawn(session, entityIds, toolCall);
+}
+
 function isStreamingInputGrowth(previous: string, next: string): boolean {
   if (next === previous || next.startsWith(previous)) {
     return true;
@@ -450,7 +583,34 @@ function resolveEntity(
   session: SessionLifecycle,
   entityIds: string[],
   toolCall: AgentToolCall,
+  providerId?: string,
 ): SubagentEntity | undefined {
+  if (isOpenCodeProvider(providerId)) {
+    const invocationEntity = resolveByAliases(session, [toolCall.id]);
+    const explicitAliases = [toolCall.commandId, ...entityIds].filter(
+      (alias): alias is string => Boolean(alias),
+    );
+    if (
+      invocationEntity &&
+      (
+        explicitAliases.length === 0 ||
+        !invocationEntity.commandId ||
+        explicitAliases.some((alias) => sameAlias(alias, invocationEntity.commandId!))
+      )
+    ) {
+      return invocationEntity;
+    }
+    const explicitEntity = resolveRunningByAliases(session, explicitAliases);
+    if (explicitEntity) {
+      return explicitEntity;
+    }
+    if (session.running.size !== 1) {
+      return undefined;
+    }
+    const onlyRunning = [...session.running][0];
+    return onlyRunning && !onlyRunning.commandId ? onlyRunning : undefined;
+  }
+
   const explicitAliases = [toolCall.commandId, ...entityIds].filter(
     (alias): alias is string => Boolean(alias),
   );
@@ -488,6 +648,14 @@ function resolveByAliases(
     if (entity) return entity;
   }
   return undefined;
+}
+
+function resolveRunningByAliases(
+  session: SessionLifecycle,
+  aliases: Array<string | undefined>,
+): SubagentEntity | undefined {
+  const entity = resolveByAliases(session, aliases);
+  return entity && session.running.has(entity) ? entity : undefined;
 }
 
 function sameAlias(left: string, right: string): boolean {

@@ -105,7 +105,7 @@ export function groupToolCalls(
       groups.set(key, {
         kind: "tool",
         id: call.id,
-        commandId: key,
+        commandId: call.commandId ?? call.id,
         title: resolveDisplayToolTitle(displayCall, key),
         status: call.status,
         toolKind: displayKind,
@@ -121,7 +121,9 @@ export function groupToolCalls(
     }
 
     current.text = `${current.text}${call.output ?? ""}`;
-    current.input = current.input || call.input || "";
+    current.input = current.toolKind === "subagent" || displayKind === "subagent"
+      ? mergeSubagentInputs(current.input, call.input)
+      : current.input || call.input || "";
     current.sequence = firstTimelineSequence(current.sequence, call.sequence);
     current.status = call.status;
     current.subagentRole = call.subagentRole ?? current.subagentRole;
@@ -131,6 +133,9 @@ export function groupToolCalls(
         current.title,
         resolveDisplayToolTitle(displayCall, key),
         call.id,
+        current.toolKind === "subagent" || displayKind === "subagent",
+        current.input,
+        call.input,
       );
     }
     if (call.stream && !current.streams.includes(call.stream)) {
@@ -138,6 +143,50 @@ export function groupToolCalls(
     }
   }
   return Array.from(groups.values());
+}
+
+function mergeSubagentInputs(current: string, incoming: string | undefined) {
+  if (!incoming) {
+    return current;
+  }
+  if (!current) {
+    return incoming;
+  }
+  const currentRecord = parseRecord(current);
+  const incomingRecord = parseRecord(incoming);
+  if (!currentRecord || !incomingRecord) {
+    return current;
+  }
+  return JSON.stringify(mergeRecords(currentRecord, incomingRecord));
+}
+
+function mergeRecords(
+  current: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...current };
+  for (const [key, value] of Object.entries(incoming)) {
+    const currentValue = merged[key];
+    if (isRecord(currentValue) && isRecord(value)) {
+      merged[key] = mergeRecords(currentValue, value);
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function parseRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function commandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
@@ -176,7 +225,14 @@ export function mergeToolCallHistory(
       ...existing,
       ...next,
       kind: resolveMergedAgentToolCallKind(existing, next),
-      title: resolveMergedToolTitle(existing.title, next.title, next.id),
+      title: resolveMergedToolTitle(
+        existing.title,
+        next.title,
+        next.id,
+        existing.kind === "subagent" || next.kind === "subagent",
+        existing.input,
+        next.input,
+      ),
       output: mergeToolCallHistoryOutput(existing, next),
       input: next.input ?? existing.input,
       timestamp: existing.timestamp,

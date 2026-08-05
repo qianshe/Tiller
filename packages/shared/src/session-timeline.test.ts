@@ -848,7 +848,7 @@ test("sortSessionTimelineEntries preserves an independent assistant suffix after
   assert.equal(assistantEntries[1]?.chunks[0]?.text, "完成");
 });
 
-test("appendToolCallToSessionTimeline updates a subagent result onto its launched entry by command id", () => {
+test("appendToolCallToSessionTimeline merges reused subagent command ids", () => {
   const entries: SessionTimelineEntry[] = [];
 
   appendToolCallToSessionTimeline(entries, toolCall({
@@ -883,9 +883,128 @@ test("appendToolCallToSessionTimeline updates a subagent result onto its launche
     entries[0]?.kind === "tool_call" ? entries[0].toolCall.output : undefined,
     "subagent reply",
   );
+  assert.equal(entries[0]?.id, "tool:subagent:task-42");
 });
 
-test("appendToolCallToSessionTimeline collapses lifecycle rows after a subagent identity is enriched", () => {
+test("appendToolCallToSessionTimeline allows a reused subagent to become active again", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-first-call",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "Subagent",
+    status: "completed",
+    sequence: 3,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-second-call",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "Subagent",
+    status: "running",
+    sequence: 7,
+  }));
+
+  assert.equal(entries.length, 1);
+  assert.equal(entries[0]?.id, "tool:subagent:task-42");
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
+    "running",
+  );
+});
+
+test("appendToolCallToSessionTimeline keeps an identified subagent title over a stale task update", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-call",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "Sisyphus-Junior",
+    status: "running",
+    sequence: 3,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-call",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "task",
+    status: "running",
+    sequence: 4,
+  }));
+
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.title : undefined,
+    "Sisyphus-Junior",
+  );
+});
+
+test("appendToolCallToSessionTimeline keeps category over a completion agent title", () => {
+  const entries: SessionTimelineEntry[] = [];
+  const categoryInput = JSON.stringify({ category: "quick", prompt: "Run the check" });
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-call",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "quick",
+    input: categoryInput,
+    status: "running",
+    sequence: 3,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-call",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "Sisyphus-Junior",
+    status: "completed",
+    output: "done",
+    sequence: 7,
+  }));
+
+  assert.equal(entries[0]?.kind, "tool_call");
+  assert.equal(
+    entries[0]?.kind === "tool_call" ? entries[0].toolCall.title : undefined,
+    "quick",
+  );
+});
+
+test("appendToolCallToSessionTimeline preserves prompt metadata across sparse subagent updates", () => {
+  const entries: SessionTimelineEntry[] = [];
+
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-call",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "task",
+    input: JSON.stringify({ prompt: "Run the check", model: { modelID: "model-a" } }),
+    status: "running",
+    sequence: 3,
+  }));
+  appendToolCallToSessionTimeline(entries, toolCall({
+    id: "subagent-call",
+    commandId: "subagent:task-42",
+    kind: "subagent",
+    title: "quick",
+    input: JSON.stringify({ category: "quick", model: { variant: "low" } }),
+    status: "completed",
+    sequence: 7,
+  }));
+
+  assert.equal(entries[0]?.kind, "tool_call");
+  if (entries[0]?.kind !== "tool_call") {
+    return;
+  }
+  assert.deepEqual(JSON.parse(entries[0].toolCall.input ?? "{}"), {
+    prompt: "Run the check",
+    category: "quick",
+    model: { modelID: "model-a", variant: "low" },
+  });
+});
+
+test("appendToolCallToSessionTimeline merges updates by subagent tool-call id", () => {
   const entries: SessionTimelineEntry[] = [];
   const launchInput = JSON.stringify({ prompt: "Run the background check" });
 
@@ -898,11 +1017,12 @@ test("appendToolCallToSessionTimeline collapses lifecycle rows after a subagent 
     sequence: 3,
   }));
   appendToolCallToSessionTimeline(entries, toolCall({
-    id: "subagent-message",
+    id: "subagent-launch",
     commandId: "subagent:task-42",
     kind: "subagent",
     title: "Subagent",
     status: "running",
+    input: launchInput,
     sequence: 5,
   }));
   appendToolCallToSessionTimeline(entries, toolCall({
@@ -915,7 +1035,7 @@ test("appendToolCallToSessionTimeline collapses lifecycle rows after a subagent 
     sequence: 3,
   }));
   appendToolCallToSessionTimeline(entries, toolCall({
-    id: "subagent-output",
+    id: "subagent-launch",
     commandId: "subagent:task-42",
     kind: "subagent",
     title: "Subagent",

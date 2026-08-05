@@ -17,7 +17,13 @@ export function projectRecognizedToolCall(
     if (item.subagentRole) projected.subagentRole = item.subagentRole;
     if (item.commandId) projected.commandId = item.commandId;
     if (item.input !== undefined) projected.input = item.input;
-    if (item.output !== undefined) projected.output = item.output;
+    if (item.output !== undefined) {
+      projected.output = item.output;
+    } else if (item.source === "provider-output" && item.kind === "subagent") {
+      // OpenCode's provider output can be metadata-only after normalization.
+      // Do not leak the original serialized envelope into the projected call.
+      delete projected.output;
+    }
     if (item.stream) projected.stream = item.stream;
     if (item.subagentOperation) projected.subagentOperation = item.subagentOperation;
   }

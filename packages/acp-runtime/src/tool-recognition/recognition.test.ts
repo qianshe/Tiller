@@ -521,6 +521,160 @@ test("temporary subagent identity keeps its historical id when a later update su
   disposeToolRecognitionSession("claude", sessionId);
 });
 
+test("a reused subagent task id does not update the completed prior invocation", () => {
+  const sessionId = "recognition-reused-subagent-task-id";
+  const spawn = (
+    id: string,
+    title: string,
+    status: AgentToolCall["status"],
+    commandId?: string,
+  ) =>
+    recognizeToolObservation(
+      createToolObservation({
+        providerId: "opencode",
+        sessionId,
+        toolCall: toolCall({
+          id,
+          title,
+          status,
+          ...(commandId ? { commandId } : {}),
+        }),
+      }),
+      subagentEvidence({
+        action: "spawn",
+        entityIds: ["reused-task"],
+        terminal: false,
+        title,
+      }),
+    ).toolCalls[0];
+
+  const first = spawn(
+    "first-invocation",
+    "Sisyphus-Junior",
+    "running",
+    "subagent:reused-task",
+  );
+  assert.equal(first?.id, "first-invocation");
+
+  const firstResult = recognizeToolObservation(
+    createToolObservation({
+      providerId: "opencode",
+      sessionId,
+      toolCall: toolCall({
+        id: "first-result",
+        title: "Sisyphus-Junior",
+        status: "completed",
+        commandId: "subagent:reused-task",
+      }),
+    }),
+    subagentEvidence({
+      action: "result",
+      entityIds: ["reused-task"],
+      terminal: true,
+      title: "Sisyphus-Junior",
+    }),
+  ).toolCalls[0];
+  assert.equal(firstResult?.id, "first-invocation");
+  assert.equal(firstResult?.status, "completed");
+
+  const current = spawn("current-invocation", "task", "running");
+  assert.equal(current?.id, "current-invocation");
+  assert.equal(current?.title, "task");
+
+  const currentResult = recognizeToolObservation(
+    createToolObservation({
+      providerId: "opencode",
+      sessionId,
+      toolCall: toolCall({
+        id: "current-result",
+        title: "Sisyphus-Junior",
+        status: "completed",
+        commandId: "subagent:reused-task",
+      }),
+    }),
+    subagentEvidence({
+      action: "result",
+      entityIds: ["reused-task"],
+      terminal: true,
+      title: "Sisyphus-Junior",
+    }),
+  ).toolCalls[0];
+
+  assert.equal(currentResult?.id, "current-invocation");
+  assert.equal(currentResult?.title, "Sisyphus-Junior");
+  assert.equal(currentResult?.status, "completed");
+  disposeToolRecognitionSession("opencode", sessionId);
+});
+
+test("a reused subagent task id keeps a running prior invocation separate", () => {
+  const sessionId = "recognition-reused-running-subagent-task-id";
+  const spawn = (id: string, title: string) =>
+    recognizeToolObservation(
+      createToolObservation({
+        providerId: "opencode",
+        sessionId,
+        toolCall: toolCall({
+          id,
+          title,
+          status: "running",
+          commandId: "subagent:reused-task",
+        }),
+      }),
+      subagentEvidence({
+        action: "spawn",
+        entityIds: ["reused-task"],
+        title,
+      }),
+    ).toolCalls[0];
+
+  const first = spawn("first-running-invocation", "Sisyphus-Junior");
+  const second = spawn("second-running-invocation", "task");
+  assert.equal(first?.id, "first-running-invocation");
+  assert.equal(second?.id, "second-running-invocation");
+
+  const firstUpdate = recognizeToolObservation(
+    createToolObservation({
+      providerId: "opencode",
+      sessionId,
+      toolCall: toolCall({
+        id: "first-running-invocation",
+        title: "Sisyphus-Junior",
+        status: "running",
+        commandId: "subagent:reused-task",
+      }),
+    }),
+    subagentEvidence({
+      action: "message",
+      entityIds: ["reused-task"],
+      title: "Sisyphus-Junior",
+    }),
+  ).toolCalls[0];
+  assert.equal(firstUpdate?.id, "first-running-invocation");
+  assert.equal(firstUpdate?.status, "running");
+
+  const secondResult = recognizeToolObservation(
+    createToolObservation({
+      providerId: "opencode",
+      sessionId,
+      toolCall: toolCall({
+        id: "second-running-invocation",
+        title: "Sisyphus-Junior",
+        status: "completed",
+        commandId: "subagent:reused-task",
+      }),
+    }),
+    subagentEvidence({
+      action: "result",
+      entityIds: ["reused-task"],
+      terminal: true,
+      title: "Sisyphus-Junior",
+    }),
+  ).toolCalls[0];
+  assert.equal(secondResult?.id, "second-running-invocation");
+  assert.equal(secondResult?.status, "completed");
+  disposeToolRecognitionSession("opencode", sessionId);
+});
+
 test("a background launch result with a different tool id reuses the only unidentified spawn", () => {
   const sessionId = "recognition-background-launch-result";
   const initial = createToolObservation({

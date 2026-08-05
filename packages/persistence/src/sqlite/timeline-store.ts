@@ -8,6 +8,7 @@ import type {
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
+  resolveSessionTimelineToolCallEntryId,
   sortAssistantTimelineChunks,
   sortSessionTimelineEntries,
   isTranscriptEventEntry,
@@ -438,7 +439,7 @@ function findMessageTimelineEntry(entries: SessionTimelineEntry[], message: Agen
 }
 
 function findToolCallTimelineEntry(entries: SessionTimelineEntry[], toolCall: AgentToolCall) {
-  const entryId = `tool:${toolCall.id}`;
+  const entryId = resolveSessionTimelineToolCallEntryId(toolCall);
   return entries.find((entry) => entry.kind === "tool_call" && entry.id === entryId);
 }
 

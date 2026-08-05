@@ -3215,6 +3215,46 @@ test("plain messages keeps the root output hidden while subagent detail is loadi
   assert.doesNotMatch(html, /Root envelope that must stay out of the loading state/);
 });
 
+test("plain messages keeps cached subagent detail visible during refresh", () => {
+  const html = renderPlainMessages({
+    toolCalls: [{
+      id: "tool-subagent-refreshing",
+      kind: "subagent",
+      title: "Sisyphus-Junior",
+      status: "running",
+      input: JSON.stringify({ prompt: "继续检查当前状态" }),
+      timestamp: "2026-07-22T00:00:00.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    }],
+    subagentDetails: {
+      ["session-1\0tool-subagent-refreshing"]: {
+        sessionId: "session-1",
+        parentToolCallId: "tool-subagent-refreshing",
+        throughSequence: 2,
+        entries: [{
+          id: "reply-refreshing",
+          kind: "assistant_message",
+          chunks: [{
+            id: "reply-refreshing:content",
+            kind: "content",
+            text: "已收到第二次调用",
+            timestamp: "2026-07-22T00:00:02.000Z",
+            sequence: 2,
+          }],
+          timestamp: "2026-07-22T00:00:02.000Z",
+          updatedAt: "2026-07-22T00:00:02.000Z",
+          sequence: 2,
+        }],
+        loading: true,
+      },
+    },
+    onToggleSubagentDetail: () => undefined,
+  });
+
+  assert.match(html, /已收到第二次调用/);
+  assert.doesNotMatch(html, /正在加载 Subagent 会话/);
+});
+
 test("plain messages primes the loading state before a completed subagent is expanded", () => {
   const html = renderPlainMessages({
     toolCalls: [{
@@ -4740,6 +4780,49 @@ test("plain message display supplements canonical history with live running tool
 
   assert.match(html, /node slow-tool\.js/);
   assert.match(html, /运行中/);
+});
+
+test("plain message display overlays a reused live subagent on its canonical card", () => {
+  const displayItems = resolvePlainConversationDisplayItems({
+    displayMessages: [],
+    timelineItems: [
+      {
+        id: "tool:subagent-first",
+        kind: "tool_call",
+        toolCall: {
+          id: "subagent-first",
+          commandId: "subagent:reused-task",
+          kind: "subagent",
+          title: "Sisyphus-Junior",
+          status: "completed",
+          timestamp: "2026-05-17T10:00:01.000Z",
+          updatedAt: "2026-05-17T10:00:02.000Z",
+          sequence: 2,
+        },
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:02.000Z",
+        sequence: 2,
+      },
+    ],
+    showThinking: true,
+    toolCalls: [
+      {
+        id: "subagent-second",
+        commandId: "subagent:reused-task",
+        kind: "subagent",
+        title: "quick",
+        status: "running",
+        input: JSON.stringify({ prompt: "Run the second prompt" }),
+        timestamp: "2026-05-17T10:00:03.000Z",
+        updatedAt: "2026-05-17T10:00:03.000Z",
+      },
+    ],
+  });
+
+  const subagents = displayItems.filter((item) => item.kind === "subagent");
+  assert.equal(subagents.length, 1);
+  assert.equal(subagents[0]?.kind === "subagent" ? subagents[0].toolCall.title : undefined, "quick");
+  assert.equal(subagents[0]?.kind === "subagent" ? subagents[0].toolCall.status : undefined, "running");
 });
 
 test("plain message display keeps optimistic user prompts visible alongside canonical timeline", () => {

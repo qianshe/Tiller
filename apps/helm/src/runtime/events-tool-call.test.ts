@@ -1129,6 +1129,57 @@ test("runtime terminal tool call keeps the richer running title", () => {
   );
 });
 
+test("runtime upgrades an OpenCode task placeholder to its dynamic category while running", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const sessionId = "session-opencode-dynamic-category";
+  const context = createTestContext([], capture, sessionId, {}, {
+    useCanonicalPipeline: true,
+  });
+  const initial: SessionRuntimeEvent = {
+    type: "tool-call",
+    toolCall: {
+      id: "call-opencode-dynamic-category",
+      kind: "subagent",
+      title: "task",
+      status: "running",
+      input: "{}",
+      timestamp: "2026-08-04T00:00:00.000Z",
+      updatedAt: "2026-08-04T00:00:00.000Z",
+    },
+  };
+  const identified: SessionRuntimeEvent = {
+    type: "tool-call",
+    toolCall: {
+      ...initial.toolCall,
+      title: "oracle",
+      input: JSON.stringify({
+        description: "Inspect the repository",
+        prompt: "Inspect the repository",
+        category: "oracle",
+        run_in_background: false,
+      }),
+      updatedAt: "2026-08-04T00:00:01.000Z",
+    },
+  };
+
+  handleRuntimeEvent(sessionId, initial, context);
+  handleRuntimeEvent(sessionId, identified, context);
+
+  const entry = capture.timelineEntries?.find((item) =>
+    item.kind === "tool_call" && item.toolCall.id === "call-opencode-dynamic-category",
+  );
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "subagent");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.title : undefined, "oracle");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.status : undefined, "running");
+});
+
 test("runtime hides an empty search pending snapshot until the descriptive running snapshot arrives", () => {
   const capture: TestContextCapture = {
     broadcasts: [],

@@ -17,12 +17,13 @@ function baseToolCall(overrides: Partial<AgentToolCall> = {}): AgentToolCall {
 
 test("normalizeOpenCodeToolCall classifies live task payloads as subagents", () => {
   const normalized = normalizeOpenCodeToolCall(
-    baseToolCall(),
+    baseToolCall({ title: "task" }),
     {
       toolCall: {
         rawInput: {
+          description: "Inspect timeline",
           prompt: "Inspect timeline",
-          category: "analysis",
+          subagent_type: "Sisyphus-Junior",
           run_in_background: true,
         },
       },
@@ -30,6 +31,183 @@ test("normalizeOpenCodeToolCall classifies live task payloads as subagents", () 
   );
 
   assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Sisyphus-Junior");
+});
+
+test("normalizeOpenCodeToolCall uses category-only task titles", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({ title: "task" }),
+    {
+      toolCall: {
+        rawInput: {
+          description: "Inspect the repository",
+          prompt: "Inspect the repository",
+          category: "oracle",
+          run_in_background: false,
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "oracle");
+});
+
+test("normalizeOpenCodeToolCall preserves a category temporarily used as the task title", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({ title: "unspecified-low" }),
+    {
+      toolCall: {
+        rawInput: {
+          category: "unspecified-low",
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "unspecified-low");
+});
+
+test("normalizeOpenCodeToolCall prefers category over requested subagent categories", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({ title: "task" }),
+    {
+      toolCall: {
+        rawInput: {
+          prompt: "Inspect the repository",
+          requested_subagent_type: "explore",
+          category: "unspecified-low",
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "unspecified-low");
+});
+
+test("normalizeOpenCodeToolCall reads a dynamic agent from task output text", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({ title: "task", status: "completed" }),
+    {
+      rawOutput: {
+        output: [
+          "Task Result",
+          "Agent: prometheus (category: analysis)",
+          "",
+          "PROMETHEUS_OK",
+          "<task_metadata>",
+          "subagent: prometheus",
+          "task_id: task-prometheus",
+          "</task_metadata>",
+          "to continue: task(task_id=\"task-prometheus\")",
+        ].join("\n"),
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "prometheus");
+  assert.equal(normalized.output, "PROMETHEUS_OK");
+});
+
+test("normalizeOpenCodeToolCall skips an empty rawInput frame when live input has the agent type", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({ title: "task", input: "{}" }),
+    {
+      toolCall: {
+        rawInput: {},
+        input: {
+          description: "Inspect the running subagent",
+          prompt: "Inspect the running subagent",
+          subagent_type: "Sisyphus-Junior",
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Sisyphus-Junior");
+  assert.match(normalized.input ?? "", /"subagent_type":"Sisyphus-Junior"/);
+});
+
+test("normalizeOpenCodeToolCall merges sparse input frames with result metadata", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({ title: "task", input: "{}" }),
+    {
+      toolCall: {
+        rawInput: {},
+        input: {
+          category: "quick",
+          prompt: "Inspect the running subagent",
+        },
+      },
+      rawOutput: {
+        metadata: {
+          taskId: "task-sparse-42",
+          model: {
+            modelID: "deepseek-v4-flash",
+            variant: "low",
+          },
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "quick");
+  assert.deepEqual(JSON.parse(normalized.input ?? "{}"), {
+    taskId: "task-sparse-42",
+    category: "quick",
+    prompt: "Inspect the running subagent",
+    model: {
+      modelID: "deepseek-v4-flash",
+      variant: "low",
+    },
+  });
+});
+
+test("normalizeOpenCodeToolCall upgrades running tasks from nested agent fields", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({ title: "task", input: "{}" }),
+    {
+      toolCall: {
+        rawInput: {
+          state: {
+            data: {
+              prompt: "Inspect the running subagent",
+              agentType: "Sisyphus-Junior",
+            },
+          },
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Sisyphus-Junior");
+});
+
+test("normalizeOpenCodeToolCall reads nested agent metadata before completion", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({ title: "task", status: "running" }),
+    {
+      rawOutput: {
+        state: {
+          data: {
+            metadata: {
+              agent_type: "Sisyphus-Junior",
+            },
+          },
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Sisyphus-Junior");
+  assert.equal(normalized.status, "running");
 });
 
 test("normalizeOpenCodeToolCall assigns completed subagent results to their task identity", () => {
@@ -52,7 +230,43 @@ test("normalizeOpenCodeToolCall assigns completed subagent results to their task
 
   assert.equal(normalized.kind, "subagent");
   assert.equal(normalized.commandId, "subagent:task-42");
-  assert.equal(normalized.title, "Inspect timeline");
+  assert.equal(normalized.title, "Sisyphus-Junior");
+  assert.equal(normalized.output, undefined);
+});
+
+test("normalizeOpenCodeToolCall enriches running subagents from OpenCode result metadata", () => {
+  const normalized = normalizeOpenCodeToolCall(
+    baseToolCall({
+      title: "task",
+      status: "running",
+    }),
+    {
+      rawOutput: {
+        output: "Task is still running.",
+        metadata: {
+          taskId: "task-running-42",
+          sessionId: "session-running-42",
+          agent: "Sisyphus-Junior",
+          requested_subagent_type: "sisyphus-junior",
+          model: {
+            providerID: "cpa-claude",
+            modelID: "deepseek-v4-flash",
+            variant: "low",
+          },
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.status, "running");
+  assert.equal(normalized.title, "Sisyphus-Junior");
+  assert.equal(normalized.output, undefined);
+  assert.deepEqual((JSON.parse(normalized.input ?? "{}") as { model?: unknown }).model, {
+    providerID: "cpa-claude",
+    modelID: "deepseek-v4-flash",
+    variant: "low",
+  });
 });
 
 test("normalizeOpenCodeToolCall classifies live skill payloads before output arrives", () => {
@@ -316,7 +530,7 @@ test("normalizeOpenCodeToolCall unwraps nested ACP content when subagent metadat
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Inspect the OpenCode adapter");
+  assert.equal(normalized.title, "explore");
   assert.equal(normalized.commandId, "subagent:ses_opencode_content");
   assert.match(normalized.input ?? "", /Return a short report/);
 });

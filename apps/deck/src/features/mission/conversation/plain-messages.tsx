@@ -394,19 +394,20 @@ export function PlainMessages({
           );
         }
         if (renderItem.kind === "subagent") {
+          const detailParentToolCallId = resolveSubagentDetailParentId(renderItem.toolCall);
           return (
             <div key={renderItem.renderKey} className={spacingClassName}>
               <PlainSubagentItem
                 item={renderItem.toolCall}
                 hasNewerContent={index < renderMessages.length - 1}
-                detail={sessionId ? subagentDetails[`${sessionId}\0${renderItem.toolCall.id}`] : undefined}
+                detail={sessionId ? subagentDetails[`${sessionId}\0${detailParentToolCallId}`] : undefined}
                 detailContent={sessionId ? (
                   <PlainSubagentConversation
-                    detail={subagentDetails[`${sessionId}\0${renderItem.toolCall.id}`]}
+                    detail={subagentDetails[`${sessionId}\0${detailParentToolCallId}`]}
                   />
                 ) : undefined}
                 onToggleDetail={sessionId && onToggleSubagentDetail
-                  ? (open) => onToggleSubagentDetail(sessionId, renderItem.toolCall.id, open)
+                  ? (open) => onToggleSubagentDetail(sessionId, detailParentToolCallId, open)
                   : undefined}
               />
             </div>
@@ -1062,6 +1063,10 @@ export function resolvePlainConversationDisplayItems({
   );
 }
 
+function resolveSubagentDetailParentId(toolCall: Pick<ConversationToolCallItem, "id" | "commandId">) {
+  return toolCall.commandId || toolCall.id;
+}
+
 export function resolveRemoteHistoryRevealAction({
   previousDisplayItemsLength,
   nextDisplayItemsLength,
@@ -1334,10 +1339,14 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
   showThinking: boolean,
   groupTools: boolean,
 ): PlainConversationItem[] {
-  const timelineConversationItems = buildPlainConversationItemsFromTimeline(
+  const groupedLiveToolCalls = groupToolCalls(toolCalls);
+  const timelineConversationItems = mergeLiveSubagentItemsIntoTimeline(
+    buildPlainConversationItemsFromTimeline(
     timelineItems,
     showThinking,
     groupTools,
+    ),
+    groupedLiveToolCalls,
   );
   const hasCompactionTranscriptEvent = timelineItems.some(
     (entry) => entry.kind === "context_compaction",
@@ -1381,8 +1390,16 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
   const canonicalToolCallIds = new Set(
     timelineItems.flatMap((entry) => entry.kind === "tool_call" ? [entry.toolCall.id] : []),
   );
-  const liveToolItems = groupToolCalls(
-    toolCalls.filter((toolCall) => !canonicalToolCallIds.has(toolCall.id)),
+  const canonicalSubagentCommandIds = new Set(
+    timelineConversationItems.flatMap((item) =>
+      item.kind === "subagent" && item.toolCall.commandId
+        ? [item.toolCall.commandId]
+        : []
+    ),
+  );
+  const liveToolItems = groupedLiveToolCalls.filter((toolCall) =>
+    !canonicalToolCallIds.has(toolCall.id) &&
+    !(toolCall.toolKind === "subagent" && canonicalSubagentCommandIds.has(toolCall.commandId))
   ).map((toolCall, index) =>
     toPlainToolConversationItem(
       toolCall,
@@ -1443,6 +1460,40 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
       )
     : mergedSequencedItems;
   return [...itemsWithContinuationPreface, ...optimisticUnsequencedLiveMessageItems];
+}
+
+function mergeLiveSubagentItemsIntoTimeline(
+  timelineItems: PlainConversationItem[],
+  liveToolCalls: ConversationToolCallItem[],
+) {
+  const liveByCommandId = new Map(
+    liveToolCalls
+      .filter((toolCall) => toolCall.toolKind === "subagent")
+      .map((toolCall) => [toolCall.commandId, toolCall]),
+  );
+  if (!liveByCommandId.size) {
+    return timelineItems;
+  }
+  return timelineItems.map((item) => {
+    if (item.kind !== "subagent") {
+      return item;
+    }
+    const liveToolCall = liveByCommandId.get(item.toolCall.commandId);
+    if (!liveToolCall) {
+      return item;
+    }
+    return {
+      ...item,
+      toolCall: {
+        ...item.toolCall,
+        ...liveToolCall,
+        id: item.toolCall.id,
+        commandId: item.toolCall.commandId,
+        timestamp: item.toolCall.timestamp,
+        sequence: item.sequence ?? liveToolCall.sequence,
+      },
+    };
+  });
 }
 
 function isOptimisticLiveMessage(

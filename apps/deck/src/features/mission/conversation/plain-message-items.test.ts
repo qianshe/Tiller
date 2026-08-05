@@ -11,6 +11,7 @@ import {
 } from "@tiller/shared";
 import {
   isThinkingScrollNearBottom,
+  PlainSubagentItem,
   PlainThinkingItem,
   resolveToolCallDisplayTitle,
   resolveThinkingContentClassName,
@@ -113,6 +114,46 @@ test("PlainThinkingItem keeps the summary label stable while thinking streams", 
 
   assert.match(summary, />Thinking<\/span>/u);
   assert.doesNotMatch(summary, /先分析当前文件/u);
+});
+
+test("PlainSubagentItem renders OpenCode output and model metadata", () => {
+  const html = renderToStaticMarkup(
+    createElement(PlainSubagentItem, {
+      item: {
+        kind: "tool",
+        id: "tool-opencode-subagent",
+        commandId: "subagent:task-42",
+        title: "Sisyphus-Junior",
+        status: "completed",
+        toolKind: "subagent",
+        timestamp: "2026-07-03T10:00:00.000Z",
+        text: JSON.stringify({
+          output: "Task completed in 20s.\n\nhello from subagent",
+          metadata: {
+            agent: "Sisyphus-Junior",
+            requested_subagent_type: "sisyphus-junior",
+          },
+        }),
+        input: JSON.stringify({
+          agent: "Sisyphus-Junior",
+          category: "quick",
+          model: {
+            modelID: "deepseek-v4-flash",
+            variant: "low",
+          },
+        }),
+        streams: [],
+      },
+    }),
+  );
+
+  assert.match(html, /Task completed in 20s\./u);
+  assert.match(html, /hello from subagent/u);
+  assert.match(html, />quick<\/span>/u);
+  assert.doesNotMatch(html, /Sisyphus-Junior/u);
+  assert.match(html, /modelID:[\s\S]*deepseek-v4-flash/u);
+  assert.match(html, /variant:[\s\S]*low/u);
+  assert.doesNotMatch(html, /requested_subagent_type|providerID|metadata/u);
 });
 
 test("plain message parser keeps sent context trigger above the message bubble", () => {

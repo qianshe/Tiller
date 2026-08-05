@@ -2,6 +2,7 @@ import type { SessionRuntimeEvent } from "@tiller/acp-runtime";
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
+  resolveSessionTimelineToolCallEntryId,
   type SessionTimelineBatch,
   type SessionTimelineEntry,
 } from "@tiller/shared";
@@ -185,9 +186,10 @@ function applyToolCallEvent(
   const { toolCall } = event;
   const sequence = toolCall.sequence ?? nextSequence(aggregate);
   const normalized = { ...toolCall, sequence };
-  const id = `tool:${toolCall.id}`;
+  const id = resolveSessionTimelineToolCallEntryId(toolCall);
   const canAppendWithoutSearch =
     index !== undefined &&
+    toolCall.kind !== "subagent" &&
     !index.entryById.has(id) &&
     (!toolCall.commandId || !index.toolEntryByCommandId.has(toolCall.commandId));
   if (canAppendWithoutSearch) {
@@ -201,7 +203,9 @@ function applyToolCallEvent(
     };
     entries.push(entry);
     index.entryById.set(id, entry);
-    if (toolCall.commandId) index.toolEntryByCommandId.set(toolCall.commandId, entry);
+    if (toolCall.commandId) {
+      index.toolEntryByCommandId.set(toolCall.commandId, entry);
+    }
   } else {
     appendToolCallToSessionTimeline(entries, normalized);
     if (index) rebuildSessionTimelineMutationIndex(index, entries);

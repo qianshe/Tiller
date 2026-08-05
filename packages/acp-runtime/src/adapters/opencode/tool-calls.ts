@@ -14,6 +14,15 @@ type OpenCodeToolCallRule = (
   context: OpenCodeToolCallNormalizationContext,
 ) => AgentToolCall | null;
 
+const OPENCODE_AGENT_FIELDS = [
+  "agent",
+  "agent_name",
+  "agentName",
+  "agent_type",
+  "agentType",
+];
+const OPENCODE_SUBAGENT_TYPE_FIELDS = ["subagent_type", "subagentType"];
+
 const OPENCODE_TOOL_CALL_RULES: OpenCodeToolCallRule[] = [
   normalizeOpenCodeSubagentRule,
   normalizeOpenCodeSkillRule,
@@ -222,13 +231,7 @@ function normalizeOpenCodeSubagentToolCall(
       ? { ...normalizedToolCall, status: "completed" as const }
       : normalizedToolCall;
   }
-  const inputRecord = parseJsonRecord(
-    source?.rawInput ??
-      source?.raw_input ??
-      source?.input ??
-      source?.state?.input ??
-      toolCall.input,
-  );
+  const inputRecord = resolveOpenCodeInputRecord(toolCall, source);
   const outputRecord = parseJsonRecord(
     source?.output ??
       source?.result ??
@@ -251,7 +254,7 @@ function normalizeOpenCodeSubagentToolCall(
     source?.state?.metadata,
     toolCall.output,
   );
-  const outputText = firstOpenCodeText(
+  const rawOutputText = firstOpenCodeText(
     outputRecord?.output,
     source?.output,
     source?.result,
@@ -265,16 +268,22 @@ function normalizeOpenCodeSubagentToolCall(
 
   if (
     !looksLikeOpenCodeLiveSubagentInput(toolCall.title, inputRecord) &&
-    !looksLikeOpenCodeCompletedSubagent(outputMetadata, outputText)
+    !looksLikeOpenCodeCompletedSubagent(outputMetadata, rawOutputText)
   ) {
     return null;
   }
 
-  const normalizedInput =
-    toolCall.input ??
-    stringifyRecord(outputMetadata) ??
-    stringifyRecord(inputRecord);
-  const title = resolveOpenCodeSubagentTitle(toolCall.title, inputRecord, outputMetadata);
+  const normalizedInput = resolveOpenCodeSubagentInput(
+    toolCall.input,
+    inputRecord,
+    outputMetadata,
+  );
+  const title = resolveOpenCodeSubagentTitle(
+    inputRecord,
+    outputMetadata,
+    rawOutputText,
+  );
+  const outputText = cleanOpenCodeSubagentOutput(rawOutputText);
   const taskId = firstString(
     outputMetadata?.taskId,
     outputMetadata?.task_id,
@@ -288,17 +297,19 @@ function normalizeOpenCodeSubagentToolCall(
     outputMetadata?.background_task_id,
     inputRecord?.backgroundTaskId,
     inputRecord?.background_task_id,
-    extractOpenCodeId(outputText, "background[_ -]?task[_ -]?id"),
-    extractOpenCodeId(outputText, "task[_ -]?id"),
-    extractOpenCodeId(outputText, "session[_ -]?id"),
+    extractOpenCodeId(rawOutputText, "background[_ -]?task[_ -]?id"),
+    extractOpenCodeId(rawOutputText, "task[_ -]?id"),
+    extractOpenCodeId(rawOutputText, "session[_ -]?id"),
   );
 
+  const { output: _output, ...toolCallWithoutOutput } = toolCall;
   return {
-    ...toolCall,
+    ...toolCallWithoutOutput,
     kind: "subagent" as const,
     title,
     ...(taskId ? { commandId: `subagent:${taskId}` } : {}),
     ...(normalizedInput ? { input: normalizedInput } : {}),
+    ...(outputText ? { output: outputText } : {}),
   };
 }
 
@@ -449,13 +460,86 @@ function normalizeOpenCodeOpaqueToolCall(
 }
 
 function resolveOpenCodeInputRecord(toolCall: AgentToolCall, source: any) {
-  return parseJsonRecord(
-    source?.rawInput ??
-      source?.raw_input ??
-      source?.input ??
-      source?.state?.input ??
-      toolCall.input,
+  const values = [
+    source?.rawInput,
+    source?.raw_input,
+    source?.input,
+    source?.arguments,
+    source?.args,
+    source?.params,
+    source?.state?.input,
+    source?.state?.rawInput,
+    source?.state?.raw_input,
+    source?.state,
+    source?.data,
+    source?.content,
+    toolCall.input,
+  ];
+  const records = values.flatMap((value) => collectOpenCodeRecords(value));
+  const identityRecord = records.find((record) =>
+    firstOpenCodeRecordString([record], [
+      ...OPENCODE_AGENT_FIELDS,
+      ...OPENCODE_SUBAGENT_TYPE_FIELDS,
+      "category",
+    ]) ||
+    firstString(record.prompt, record.description, record.message) ||
+    Array.isArray(record.load_skills) ||
+    Array.isArray(record.loadSkills) ||
+    typeof record.background === "boolean" ||
+    typeof record.run_in_background === "boolean" ||
+    typeof record.runInBackground === "boolean",
   );
+  if (identityRecord) {
+    return identityRecord;
+  }
+  for (const record of records) {
+    if (Object.keys(record).length > 0) {
+      return record;
+    }
+  }
+  return null;
+}
+
+function hasMeaningfulOpenCodeInput(input: string | undefined) {
+  if (!input?.trim()) {
+    return false;
+  }
+  const record = parseJsonRecord(input);
+  return !record || Object.keys(record).length > 0;
+}
+
+function resolveOpenCodeSubagentInput(
+  input: string | undefined,
+  inputRecord: Record<string, unknown> | null,
+  outputMetadata: Record<string, unknown> | null,
+) {
+  const directInput = parseJsonRecord(input);
+  if (hasMeaningfulOpenCodeInput(input) && !directInput) {
+    return input;
+  }
+
+  const inputFields = {
+    ...(inputRecord ?? {}),
+    ...(directInput ?? {}),
+  };
+  const metadataFields = outputMetadata ?? {};
+  if (!Object.keys(inputFields).length && !Object.keys(metadataFields).length) {
+    return input;
+  }
+
+  const merged = {
+    ...metadataFields,
+    ...inputFields,
+  };
+  const metadataModel = recordFrom(metadataFields.model);
+  const inputModel = recordFrom(inputFields.model);
+  if (metadataModel || inputModel) {
+    merged.model = {
+      ...(metadataModel ?? {}),
+      ...(inputModel ?? {}),
+    };
+  }
+  return stringifyRecord(merged) ?? input;
 }
 
 function resolveOpenCodeSearchLabel(descriptor: string) {
@@ -516,12 +600,24 @@ function looksLikeOpenCodeLiveSubagentInput(
   if (!input) {
     return false;
   }
+  const category = firstString(input.category);
+  if (category && title.trim().toLowerCase() === category.toLowerCase()) {
+    // Some OpenCode frames temporarily use the category as the tool title.
+    // Keep that provider-internal value from becoming the visible subagent name.
+    return true;
+  }
   const prompt = firstString(input.prompt, input.description, input.message);
   const subagentType = firstString(
     input.subagent_type,
     input.subagentType,
     input.requested_subagent_type,
     input.requestedSubagentType,
+    input.agent_type,
+    input.agentType,
+    input.agent_name,
+    input.agentName,
+    input.agent,
+    input.category,
   );
   const hasLoadSkills = Array.isArray(input.load_skills) || Array.isArray(input.loadSkills);
   const hasBackgroundFlag =
@@ -538,17 +634,24 @@ function looksLikeOpenCodeCompletedSubagent(
   metadata: Record<string, unknown> | null,
   outputText: string | undefined,
 ) {
+  if (extractOpenCodeOutputAgent(outputText)) {
+    return true;
+  }
   if (metadata) {
     const prompt = firstString(metadata.prompt, metadata.description);
     const taskId = firstString(metadata.taskId, metadata.task_id);
     const sessionId = firstString(metadata.sessionId, metadata.session_id);
-    const agent = firstString(metadata.agent, metadata.agent_name, metadata.agentName);
+    const agent = firstOpenCodeRecordString([metadata], OPENCODE_AGENT_FIELDS);
     const requestedType = firstString(
       metadata.requested_subagent_type,
       metadata.requestedSubagentType,
       metadata.subagent_type,
       metadata.subagentType,
       metadata.category,
+    );
+    const explicitSubagentType = firstOpenCodeRecordString(
+      [metadata],
+      OPENCODE_SUBAGENT_TYPE_FIELDS,
     );
     const hasSpawnDepth =
       typeof metadata.spawnDepth === "number" ||
@@ -571,6 +674,9 @@ function looksLikeOpenCodeCompletedSubagent(
     if (prompt && (taskId || sessionId) && (agent || requestedType || hasSpawnDepth)) {
       return true;
     }
+    if (agent || explicitSubagentType) {
+      return true;
+    }
   }
 
   if (!outputText) {
@@ -581,19 +687,86 @@ function looksLikeOpenCodeCompletedSubagent(
 }
 
 function resolveOpenCodeSubagentTitle(
-  currentTitle: string,
   input: Record<string, unknown> | null,
   metadata: Record<string, unknown> | null,
+  outputText?: string,
 ) {
-  if (!/^task$/iu.test(currentTitle.trim())) {
-    return currentTitle;
+  const category = firstOpenCodeRecordString(
+    [input, metadata],
+    ["category"],
+  );
+  const agent = firstOpenCodeRecordString(
+    [metadata, input],
+    OPENCODE_AGENT_FIELDS,
+  );
+  const explicitSubagentType = firstOpenCodeRecordString(
+    [input, metadata],
+    OPENCODE_SUBAGENT_TYPE_FIELDS,
+  );
+  return category ??
+    agent ??
+    extractOpenCodeOutputAgent(outputText) ??
+    explicitSubagentType ??
+    extractOpenCodeOutputField(outputText, ["subagent", "subagent_type"]) ??
+    "task";
+}
+
+function cleanOpenCodeSubagentOutput(outputText: string | undefined) {
+  if (!outputText) {
+    return undefined;
   }
-  return firstString(
-    metadata?.description,
-    input?.description,
-    metadata?.prompt,
-    input?.prompt,
-  ) ?? currentTitle;
+
+  const taskResult = outputText.match(/<task_result\b[^>]*>([\s\S]*?)<\/task_result>/iu)?.[1];
+  let cleaned = taskResult ?? outputText;
+  cleaned = cleaned
+    .replace(/<task_metadata>[\s\S]*?<\/task_metadata>/giu, "")
+    .replace(/<\/?task\b[^>]*>/giu, "")
+    .replace(/^\s*Task completed in\s+[^\r\n]*$/gimu, "")
+    .replace(/^\s*Task is still running\.?\s*$/gimu, "")
+    .replace(/^\s*Background task (?:launched|is still running)[^\r\n]*$/gimu, "")
+    .replace(/^\s*Task Result\s*:?\s*$/gimu, "")
+    .replace(/^\s*Task ID\s*:\s*[^\r\n]*$/gimu, "")
+    .replace(/^\s*Status\s*:\s*(?:pending|queued|running|completed|failed|cancelled)\s*$/gimu, "")
+    .replace(/^\s*Agent\s*:\s*[^\r\n]*$/gimu, "")
+    .replace(/^\s*---\s*$/gmu, "")
+    .replace(/^\s*to continue:\s*task\([\s\S]*$/imu, "");
+
+  const lines = cleaned
+    .split(/\r?\n/u)
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .trim();
+  return lines || undefined;
+}
+
+function extractOpenCodeOutputAgent(outputText: string | undefined) {
+  if (!outputText) {
+    return undefined;
+  }
+  const match = outputText.match(/^\s*Agent:\s*([^\r\n(]+?)(?:\s*\(category:|\s*$)/imu);
+  return match?.[1]?.trim() || undefined;
+}
+
+function extractOpenCodeOutputField(outputText: string | undefined, fields: string[]) {
+  if (!outputText) {
+    return undefined;
+  }
+  const taskMetadata = extractTaggedOutputValue(outputText, "task_metadata");
+  for (const source of [taskMetadata, outputText]) {
+    if (!source) {
+      continue;
+    }
+    for (const field of fields) {
+      const match = source.match(new RegExp(
+        `(?:^|\\r?\\n)\\s*${field}\\s*[:=]\\s*["']?([^\\r\\n]+?)["']?\\s*$`,
+        "imu",
+      ));
+      if (match?.[1]) {
+        return match[1].trim();
+      }
+    }
+  }
+  return undefined;
 }
 
 function looksLikeOpenCodeWriteOutput(outputText: string | undefined) {
@@ -818,12 +991,41 @@ function collectOpenCodeRecords(value: unknown, depth = 0): Record<string, unkno
     return [];
   }
   const records = [record];
-  for (const key of ["metadata", "output", "result", "content", "data", "value", "text"]) {
+  for (const key of [
+    "metadata",
+    "output",
+    "result",
+    "content",
+    "data",
+    "value",
+    "text",
+    "input",
+    "rawInput",
+    "raw_input",
+    "arguments",
+    "args",
+    "params",
+    "state",
+    "toolCall",
+    "tool_call",
+  ]) {
     if (record[key] !== undefined) {
       records.push(...collectOpenCodeRecords(record[key], depth + 1));
     }
   }
   return records;
+}
+
+function firstOpenCodeRecordString(values: unknown[], fields: string[]) {
+  for (const value of values) {
+    for (const record of collectOpenCodeRecords(value)) {
+      const result = firstString(...fields.map((field) => record[field]));
+      if (result) {
+        return result;
+      }
+    }
+  }
+  return undefined;
 }
 
 function resolveOpenCodeMetadata(...values: unknown[]): Record<string, unknown> | null {
@@ -851,17 +1053,18 @@ function looksLikeOpenCodeMetadataRecord(record: Record<string, unknown>) {
     "session_id",
   ].some((key) => typeof record[key] === "string" && Boolean((record[key] as string).trim()));
   const hasPrompt = typeof record.prompt === "string" || typeof record.description === "string";
-  const hasAgent = [
+  const hasAgentOrType = [
     "agent",
     "agentName",
     "agent_name",
-    "category",
+    "agentType",
+    "agent_type",
     "requestedSubagentType",
     "requested_subagent_type",
     "subagentType",
     "subagent_type",
   ].some((key) => typeof record[key] === "string" && Boolean((record[key] as string).trim()));
-  return hasIdentity || (hasPrompt && hasAgent);
+  return hasIdentity || hasAgentOrType || (hasPrompt && hasAgentOrType);
 }
 
 function firstOpenCodeText(...values: unknown[]) {

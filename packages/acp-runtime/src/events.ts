@@ -59,8 +59,12 @@ export type RuntimeEventOriginTracker = {
   subagentCommandParents: Map<string, string>;
 };
 
+const trackedSubagentRootKeys = new WeakMap<RuntimeEventOriginTracker, Set<string>>();
+
 export function createRuntimeEventOriginTracker(): RuntimeEventOriginTracker {
-  return { commandOrigins: new Map(), subagentCommandParents: new Map() };
+  const tracker = { commandOrigins: new Map(), subagentCommandParents: new Map() };
+  trackedSubagentRootKeys.set(tracker, new Set());
+  return tracker;
 }
 
 export function clearRuntimeEventOriginTrackerSession(
@@ -73,6 +77,12 @@ export function clearRuntimeEventOriginTrackerSession(
   }
   for (const key of tracker.subagentCommandParents.keys()) {
     if (key.startsWith(prefix)) tracker.subagentCommandParents.delete(key);
+  }
+  const rootKeys = trackedSubagentRootKeys.get(tracker);
+  if (rootKeys) {
+    for (const key of rootKeys) {
+      if (key.startsWith(prefix)) rootKeys.delete(key);
+    }
   }
 }
 
@@ -133,30 +143,39 @@ function attachRuntimeEventOrigin(
     : event.type === "tool-call"
       ? [event.toolCall.commandId, event.toolCall.id].filter((value): value is string => Boolean(value))
       : [];
-  // Record a provider-agnostic reverse map: a subagent root launch (no adapter
-  // resolver origin — e.g. OpenCode) seeds commandId → its own toolCall id, so
-  // later child tool calls sharing that commandId can be backfilled as its
-  // subagent children. First-write-wins to survive replay without clobbering
-  // the canonical parent established on first arrival.
-  if (
-    tracker &&
-    event.type === "tool-call" &&
+  const isUnattributedSubagentRoot = event.type === "tool-call" &&
     event.toolCall.kind === "subagent" &&
     !origin &&
-    event.toolCall.id
-  ) {
+    Boolean(event.toolCall.id);
+  const isTrackedSubagentRoot = tracker && event.type === "tool-call" &&
+    hasTrackedSubagentRoot(tracker, sessionId, event.toolCall.id);
+  const isSubagentRoot = isUnattributedSubagentRoot || isTrackedSubagentRoot;
+  const isNewSubagentRoot = isUnattributedSubagentRoot && !isTrackedSubagentRoot;
+  if (tracker && isNewSubagentRoot) {
+    // OpenCode reuses the logical task/session id for a later invocation. The
+    // latest root owns that task id, while per-tool origins remain available
+    // for delayed updates from older children.
+    rememberSubagentRoot(tracker, sessionId, event.toolCall.id);
     for (const commandId of commandIds) {
-      const key = originTrackerKey(sessionId, commandId);
-      if (!tracker.subagentCommandParents.has(key)) {
-        tracker.subagentCommandParents.set(key, event.toolCall.id);
-      }
+      tracker.commandOrigins.delete(originTrackerKey(sessionId, commandId));
+      tracker.subagentCommandParents.set(
+        originTrackerKey(sessionId, commandId),
+        event.toolCall.id,
+      );
     }
   }
-  const cachedOrigin = commandIds
-    .map((commandId) => tracker?.commandOrigins.get(originTrackerKey(sessionId, commandId)))
-    .find((candidate): candidate is RuntimeEventOrigin => Boolean(candidate));
-  const reverseParent = !origin && !cachedOrigin && tracker
-    ? commandIds
+  const originLookupIds = event.type === "tool-call"
+    ? [event.toolCall.id, event.toolCall.commandId].filter(
+      (value, index, values): value is string => Boolean(value) && values.indexOf(value) === index,
+    )
+    : commandIds;
+  const cachedOrigin = !isSubagentRoot
+    ? originLookupIds
+        .map((commandId) => tracker?.commandOrigins.get(originTrackerKey(sessionId, commandId)))
+        .find((candidate): candidate is RuntimeEventOrigin => Boolean(candidate))
+    : undefined;
+  const reverseParent = !origin && !cachedOrigin && !isSubagentRoot && tracker
+    ? originLookupIds
         .map((commandId) => tracker.subagentCommandParents.get(originTrackerKey(sessionId, commandId)))
         .find((candidate): candidate is string =>
           Boolean(candidate) &&
@@ -191,6 +210,24 @@ export function attachTrackedRuntimeEventOrigin(
 
 function originTrackerKey(sessionId: string, commandId: string) {
   return `${sessionId}\0${commandId}`;
+}
+
+function hasTrackedSubagentRoot(
+  tracker: RuntimeEventOriginTracker,
+  sessionId: string,
+  toolCallId: string,
+) {
+  return trackedSubagentRootKeys.get(tracker)?.has(originTrackerKey(sessionId, toolCallId)) ?? false;
+}
+
+function rememberSubagentRoot(
+  tracker: RuntimeEventOriginTracker,
+  sessionId: string,
+  toolCallId: string,
+) {
+  const keys = trackedSubagentRootKeys.get(tracker) ?? new Set<string>();
+  keys.add(originTrackerKey(sessionId, toolCallId));
+  trackedSubagentRootKeys.set(tracker, keys);
 }
 
 function projectSessionUpdate(

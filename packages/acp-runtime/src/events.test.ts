@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { AgentToolCall } from "@tiller/shared";
 import {
   mapSessionUpdateNotificationBatch,
   sanitizeProtocolLogPayload,
@@ -52,6 +53,71 @@ test("runtime origin tracking does not attach a subagent root to itself", () => 
     scope: "subagent",
     parentToolCallId: "root-call",
   });
+});
+
+test("runtime origin tracking isolates reused subagent roots and delayed children", () => {
+  const tracker = createRuntimeEventOriginTracker();
+  const sessionId = "session-origin-reused-task";
+  const toolCall = (
+    id: string,
+    kind: AgentToolCall["kind"],
+    title: string,
+  ): AgentToolCall => ({
+    id,
+    commandId: "subagent:reused-task",
+    kind,
+    title,
+    status: kind === "subagent" ? "running" : "completed",
+    timestamp: "2026-07-29T00:00:00.000Z",
+    updatedAt: "2026-07-29T00:00:00.000Z",
+  });
+
+  const rootOne = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("root-one", "subagent", "Agent One") },
+    tracker,
+  );
+  const childOne = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("child-one", "read", "Read") },
+    tracker,
+  );
+  const rootTwo = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("root-two", "subagent", "Agent Two") },
+    tracker,
+  );
+  const delayedRootOne = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("root-one", "subagent", "Agent One") },
+    tracker,
+  );
+  const childTwo = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("child-two", "read", "Read") },
+    tracker,
+  );
+  const delayedChildOne = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("child-one", "read", "Read") },
+    tracker,
+  );
+
+  assert.equal(rootOne.type === "tool-call" ? rootOne.origin : undefined, undefined);
+  assert.deepEqual(childOne.type === "tool-call" ? childOne.origin : undefined, {
+    scope: "subagent",
+    parentToolCallId: "root-one",
+  });
+  assert.equal(rootTwo.type === "tool-call" ? rootTwo.origin : undefined, undefined);
+  assert.equal(delayedRootOne.type === "tool-call" ? delayedRootOne.origin : undefined, undefined);
+  assert.deepEqual(childTwo.type === "tool-call" ? childTwo.origin : undefined, {
+    scope: "subagent",
+    parentToolCallId: "root-two",
+  });
+  assert.deepEqual(
+    delayedChildOne.type === "tool-call" ? delayedChildOne.origin : undefined,
+    { scope: "subagent", parentToolCallId: "root-one" },
+  );
 });
 
 test("summarizeSessionUpdateNotification reports update shape without text content", () => {

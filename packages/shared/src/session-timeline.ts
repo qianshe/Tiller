@@ -113,6 +113,12 @@ export function appendToolCallToSessionTimeline(
   return upsertToolCallEntry(entries, toolCall);
 }
 
+export function resolveSessionTimelineToolCallEntryId(toolCall: AgentToolCall) {
+  return `tool:${toolCall.kind === "subagent" && toolCall.commandId
+    ? toolCall.commandId
+    : toolCall.id}`;
+}
+
 export function sortSessionTimelineEntries(
   entries: SessionTimelineEntry[],
 ): SessionTimelineEntry[] {
@@ -389,9 +395,11 @@ function upsertToolCallEntry(
   entries: SessionTimelineEntry[],
   toolCall: AgentToolCall,
 ): SessionTimelineEntry[] {
-  const id = `tool:${toolCall.id}`;
+  const id = resolveSessionTimelineToolCallEntryId(toolCall);
   const exactIndex = entries.findIndex((entry) =>
-    entry.kind === "tool_call" && entry.id === id
+    entry.kind === "tool_call" && (
+      entry.id === id || entry.toolCall.id === toolCall.id
+    )
   );
   const existingIndex = exactIndex >= 0
     ? exactIndex
@@ -411,7 +419,12 @@ function upsertToolCallEntry(
     entries.push(entry);
     return entries;
   }
-  entries[existingIndex] = mergeToolCallEntry(entries[existingIndex] as SessionTimelineToolCallEntry, entry);
+  const merged = mergeToolCallEntry(
+    entries[existingIndex] as SessionTimelineToolCallEntry,
+    entry,
+  );
+  merged.id = resolveSessionTimelineToolCallEntryId(merged.toolCall);
+  entries[existingIndex] = merged;
   collapseDuplicateToolCommandEntries(entries, existingIndex);
   return entries;
 }
@@ -421,12 +434,17 @@ function collapseDuplicateToolCommandEntries(
   enrichedIndex: number,
 ) {
   const enriched = entries[enrichedIndex];
-  if (enriched?.kind !== "tool_call" || !enriched.toolCall.commandId) {
+  if (
+    enriched?.kind !== "tool_call" ||
+    enriched.toolCall.kind === "subagent" ||
+    !enriched.toolCall.commandId
+  ) {
     return;
   }
   const matchingIndices = entries
     .map((candidate, index) => (
       candidate.kind === "tool_call" &&
+      candidate.toolCall.kind !== "subagent" &&
       candidate.toolCall.commandId === enriched.toolCall.commandId
         ? index
         : -1
@@ -588,6 +606,10 @@ function mergeToolCallEntry(
   current: SessionTimelineToolCallEntry,
   incoming: SessionTimelineToolCallEntry,
 ): SessionTimelineToolCallEntry {
+  const kind = resolveMergedAgentToolCallKind(
+    current.toolCall,
+    incoming.toolCall,
+  );
   return {
     ...incoming,
     id: current.id,
@@ -595,13 +617,12 @@ function mergeToolCallEntry(
       ...current.toolCall,
       ...incoming.toolCall,
       id: current.toolCall.id,
-      kind: resolveMergedAgentToolCallKind(
-        current.toolCall,
-        incoming.toolCall,
-      ),
+      kind,
       title: resolveMergedToolCallTitle(current.toolCall, incoming.toolCall),
       status: resolveMergedToolCallStatus(current.toolCall, incoming.toolCall),
-      input: incoming.toolCall.input ?? current.toolCall.input,
+      input: kind === "subagent"
+        ? mergeSubagentInput(current.toolCall.input, incoming.toolCall.input)
+        : incoming.toolCall.input ?? current.toolCall.input,
       output: resolveMergedToolCallOutput(current.toolCall, incoming.toolCall),
       timestamp: current.toolCall.timestamp,
       sequence: current.toolCall.sequence ?? incoming.toolCall.sequence,
@@ -611,7 +632,53 @@ function mergeToolCallEntry(
   };
 }
 
+function mergeSubagentInput(current: string | undefined, incoming: string | undefined) {
+  if (incoming === undefined || !current) {
+    return incoming ?? current;
+  }
+  const currentRecord = parseRecord(current);
+  const incomingRecord = parseRecord(incoming);
+  if (!currentRecord || !incomingRecord) {
+    return incoming;
+  }
+  return JSON.stringify(mergeRecords(currentRecord, incomingRecord));
+}
+
+function mergeRecords(
+  current: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...current };
+  for (const [key, value] of Object.entries(incoming)) {
+    const currentValue = merged[key];
+    if (isRecord(currentValue) && isRecord(value)) {
+      merged[key] = mergeRecords(currentValue, value);
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function parseRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
 function isSameToolCommand(left: AgentToolCall, right: AgentToolCall) {
+  if (left.kind === "subagent" || right.kind === "subagent") {
+    return left.kind === "subagent" &&
+      right.kind === "subagent" &&
+      Boolean(left.commandId && left.commandId === right.commandId);
+  }
   if (left.commandId && right.commandId && left.commandId === right.commandId) {
     return true;
   }
@@ -622,6 +689,14 @@ function isSameToolCommand(left: AgentToolCall, right: AgentToolCall) {
 }
 
 function resolveMergedToolCallTitle(current: AgentToolCall, incoming: AgentToolCall) {
+  const incomingCategory = resolveSubagentCategory(incoming);
+  if (incomingCategory) {
+    return incomingCategory;
+  }
+  const currentCategory = resolveSubagentCategory(current);
+  if (currentCategory) {
+    return currentCategory;
+  }
   const currentTitle = current.title.trim();
   const incomingTitle = incoming.title.trim();
   if (isWeakMergedToolCallTitle(incomingTitle, incoming)) {
@@ -636,6 +711,22 @@ function resolveMergedToolCallTitle(current: AgentToolCall, incoming: AgentToolC
   return incoming.title;
 }
 
+function resolveSubagentCategory(toolCall: AgentToolCall) {
+  if (toolCall.kind !== "subagent" || !toolCall.input) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(toolCall.input);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const category = (parsed as Record<string, unknown>).category;
+    return typeof category === "string" && category.trim() ? category.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function resolveMergedToolCallStatus(
   current: AgentToolCall,
   incoming: AgentToolCall,
@@ -647,10 +738,16 @@ function resolveMergedToolCallStatus(
 }
 
 function shouldKeepTerminalToolStatus(current: AgentToolCall, incoming: AgentToolCall) {
+  const sameInvocation =
+    (current.kind !== "subagent" && incoming.kind !== "subagent") ||
+    current.id === incoming.id;
   return (
-    current.status === "completed" ||
-    current.status === "failed" ||
-    current.status === "cancelled"
+    sameInvocation &&
+    (
+      current.status === "completed" ||
+      current.status === "failed" ||
+      current.status === "cancelled"
+    )
   ) && (incoming.status === "running" || incoming.status === "pending");
 }
 
@@ -659,7 +756,8 @@ function isWeakMergedToolCallTitle(title: string, toolCall: AgentToolCall) {
   return !normalizedTitle ||
     normalizedTitle === toolCall.id.toLowerCase() ||
     normalizedTitle === toolCall.commandId?.toLowerCase() ||
-    normalizedTitle.startsWith("tool call ");
+    normalizedTitle.startsWith("tool call ") ||
+    (toolCall.kind === "subagent" && normalizedTitle === "task");
 }
 
 function isGenericToolCallTitle(title: string) {

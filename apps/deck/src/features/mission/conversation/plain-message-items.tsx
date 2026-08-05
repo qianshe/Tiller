@@ -973,6 +973,7 @@ export function PlainSubagentItem({
     resolveSubagentOutput(item.text) ||
     resolveSubagentPrompt(item.input) ||
     "暂无 Subagent 内容";
+  const subagentModel = resolveSubagentModel(item.input);
   const summary = codexPresentation?.summary ?? resolveSubagentSummary(item);
   const label = codexPresentation?.label ?? resolveSubagentLabel(item);
   const statusBadge = codexPresentation?.statusBadge ?? resolveSubagentStatusBadge(item);
@@ -1053,6 +1054,25 @@ export function PlainSubagentItem({
           ) : (
             <MarkdownMessage text={fallbackText} />
           )}
+          {subagentModel ? (
+            <div
+              className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-ghost/70 pt-1.5 text-2xs text-muted-foreground/70"
+              data-subagent-model
+            >
+              {subagentModel.modelId ? (
+                <span>
+                  <span className="font-medium text-muted-foreground">modelID:</span>{" "}
+                  <code>{subagentModel.modelId}</code>
+                </span>
+              ) : null}
+              {subagentModel.variant ? (
+                <span>
+                  <span className="font-medium text-muted-foreground">variant:</span>{" "}
+                  <code>{subagentModel.variant}</code>
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </details>
     </div>
@@ -1083,6 +1103,9 @@ function resolveSubagentSummary(item: ConversationToolCallItem) {
   }
   if (metadata.description) {
     return metadata.description;
+  }
+  if (metadata.name) {
+    return "";
   }
   if (item.status === "failed") {
     return "Error";
@@ -1162,13 +1185,17 @@ function parseSubagentMetadata(input: string) {
   }
   const candidates = [
     parsed,
+    recordFrom(parsed.metadata),
     recordFrom(parsed.arguments),
     recordFrom(parsed.args),
     recordFrom(parsed.params),
     recordFrom(parsed.input),
   ].filter((record): record is Record<string, unknown> => Boolean(record));
+  const category = candidates
+    .map((record) => firstString(record, ["category"]))
+    .find((value): value is string => Boolean(value));
   for (const record of candidates) {
-    const name = firstString(record, [
+    const name = category ?? firstString(record, [
       "subagent_type",
       "subagentType",
       "agent_type",
@@ -1199,6 +1226,38 @@ function parseSubagentMetadata(input: string) {
     }
   }
   return {};
+}
+
+type SubagentModelMetadata = {
+  modelId?: string;
+  variant?: string;
+};
+
+function resolveSubagentModel(input: string): SubagentModelMetadata | undefined {
+  const parsed = parseJsonRecord(input);
+  if (!parsed) {
+    return undefined;
+  }
+  const records = [
+    parsed,
+    recordFrom(parsed.metadata),
+    recordFrom(parsed.arguments),
+    recordFrom(parsed.args),
+    recordFrom(parsed.params),
+    recordFrom(parsed.input),
+  ].filter((record): record is Record<string, unknown> => Boolean(record));
+  for (const record of records) {
+    const model = recordFrom(record.model) ?? record;
+    const modelId = firstString(model, ["modelID", "modelId", "model_id"]);
+    const variant = firstString(model, ["variant"]);
+    if (modelId || variant) {
+      return {
+        ...(modelId ? { modelId } : {}),
+        ...(variant ? { variant } : {}),
+      };
+    }
+  }
+  return undefined;
 }
 
 function parseJsonRecord(input: string) {

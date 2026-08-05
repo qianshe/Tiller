@@ -12,6 +12,7 @@ import type { AgentMessage, AgentToolCall, SessionTimelineEntry } from "@tiller/
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
+  resolveSessionTimelineToolCallEntryId,
   sortAssistantTimelineChunks,
   sortSessionTimelineEntries,
 } from "@tiller/shared";
@@ -641,7 +642,7 @@ function normalizeTimelineEntry(entry: SessionTimelineEntry): SessionTimelineEnt
 }
 
 function resolveToolCallTimelineEntryId(toolCall: AgentToolCall) {
-  return `tool:${toolCall.id}`;
+  return resolveSessionTimelineToolCallEntryId(toolCall);
 }
 
 function createBlockId(sessionId: string, firstPosition: number) {
