@@ -901,9 +901,12 @@ function subagentDetailKey(sessionId: string, parentToolCallId: string) {
 function applySubagentDetailDelta(store: ReturnType<typeof useDeckStore.getState>, delta: SessionSubagentDetailDelta) {
   const key = subagentDetailKey(delta.sessionId, delta.parentToolCallId);
   store.setSessionSubagentDetails((current) => {
-    const existing = current[key];
-    if (!existing) return current;
-    const base: SessionSubagentDetail = existing;
+    const base: SessionSubagentDetail = current[key] ?? {
+      sessionId: delta.sessionId,
+      parentToolCallId: delta.parentToolCallId,
+      throughSequence: 0,
+      entries: [],
+    };
     const entries = new Map(base.entries.map((entry) => [`${entry.kind}:${entry.id}`, entry]));
     const stale = delta.batch.lastSequence < base.throughSequence;
     for (const entry of delta.batch.entries) {
@@ -917,6 +920,8 @@ function applySubagentDetailDelta(store: ReturnType<typeof useDeckStore.getState
         ...base,
         throughSequence: Math.max(base.throughSequence, delta.batch.lastSequence),
         entries: sortedEntries,
+        loading: false,
+        failed: false,
       },
     };
   });

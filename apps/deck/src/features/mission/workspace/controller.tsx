@@ -255,7 +255,7 @@ export function MissionWorktree(props: any) {
   const sessionSubagentDetails = useDeckStore((state) => state.sessionSubagentDetails);
   const setSessionSubagentDetails = useDeckStore((state) => state.setSessionSubagentDetails);
   const subagentDetailGenerationsRef = useRef(new Map<string, number>());
-  const previousActiveSessionIdRef = useRef<string | null>(activeSessionId ?? null);
+  const pendingSubagentDetailRequestsRef = useRef(new Set<string>());
 
   const loadSubagentDetail = useCallback((sessionId: string, parentToolCallId: string) => {
     const client = rpcClientRef.current;
@@ -276,6 +276,10 @@ export function MissionWorktree(props: any) {
       }));
       return;
     }
+    if (pendingSubagentDetailRequestsRef.current.has(key)) {
+      return;
+    }
+    pendingSubagentDetailRequestsRef.current.add(key);
     const generation = (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1;
     subagentDetailGenerationsRef.current.set(key, generation);
     setSessionSubagentDetails((current) => ({
@@ -296,11 +300,12 @@ export function MissionWorktree(props: any) {
         if (subagentDetailGenerationsRef.current.get(key) !== generation) return;
         const snapshot = result as SessionSubagentDetail;
         setSessionSubagentDetails((current) => {
-          if (!current[key]) return current;
+          const buffered = current[key];
+          if (!buffered) return current;
           return {
             ...current,
             [key]: {
-              ...mergeSubagentDetailSnapshot(snapshot, current[key]),
+              ...mergeSubagentDetailSnapshot(snapshot, buffered),
               loading: false,
               failed: false,
             },
@@ -315,26 +320,17 @@ export function MissionWorktree(props: any) {
             ? { ...current, [key]: { ...existing, loading: false, failed: true } }
             : current;
         });
+      })
+      .finally(() => {
+        pendingSubagentDetailRequestsRef.current.delete(key);
       });
   }, [rpcClientRef, setSessionSubagentDetails]);
 
   const toggleSubagentDetail = useCallback((sessionId: string, parentToolCallId: string, open: boolean) => {
-    const key = `${sessionId}\0${parentToolCallId}`;
     if (open) {
       loadSubagentDetail(sessionId, parentToolCallId);
-      return;
     }
-    subagentDetailGenerationsRef.current.set(
-      key,
-      (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1,
-    );
-    setSessionSubagentDetails((current) => {
-      if (!current[key]) return current;
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-  }, [loadSubagentDetail, setSessionSubagentDetails]);
+  }, [loadSubagentDetail]);
   const pendingLegacyEvidenceRequestsRef = useRef(new Set<string>());
   const loadSessionLegacyEvidence = useCallback((
     sessionId: string,
@@ -1053,24 +1049,6 @@ export function MissionWorktree(props: any) {
     name: agent.name ?? agent.id,
   }));
   const helmConnected = pairingState === "paired";
-  useEffect(() => {
-    const previousSessionId = previousActiveSessionIdRef.current;
-    const nextSessionId = activeSessionId ?? null;
-    previousActiveSessionIdRef.current = nextSessionId;
-    if (!previousSessionId || previousSessionId === nextSessionId) return;
-    const prefix = `${previousSessionId}\0`;
-    for (const key of subagentDetailGenerationsRef.current.keys()) {
-      if (key.startsWith(prefix)) {
-        subagentDetailGenerationsRef.current.set(
-          key,
-          (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1,
-        );
-      }
-    }
-    setSessionSubagentDetails((current) => Object.fromEntries(
-      Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
-    ));
-  }, [activeSessionId, setSessionSubagentDetails]);
   useEffect(() => {
     if (!helmConnected) return;
     for (const detail of Object.values(useDeckStore.getState().sessionSubagentDetails)) {

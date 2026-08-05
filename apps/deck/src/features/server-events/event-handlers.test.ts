@@ -152,7 +152,7 @@ test("session cleanup releases session-scoped caches without touching another se
   assert.ok(state.sessionAvailableCommands.s2);
 });
 
-test("subagent detail deltas update only expanded cached details and ignore stale sequences", () => {
+test("subagent detail deltas prime cached details and ignore stale sequences", () => {
   resetStore();
   const context = createSessionEventContext();
   const update = (throughSequence: number, text: string) => ({
@@ -186,7 +186,14 @@ test("subagent detail deltas update only expanded cached details and ignore stal
   });
 
   assert.equal(applySessionUpdate(update(1, "ignored"), context), true);
-  assert.deepEqual(useDeckStore.getState().sessionSubagentDetails, {});
+  const primed = useDeckStore.getState().sessionSubagentDetails["s1\0root-1"];
+  assert.equal(primed?.throughSequence, 1);
+  assert.equal(
+    primed?.entries[0]?.kind === "assistant_message"
+      ? primed.entries[0].chunks[0]?.text
+      : undefined,
+    "ignored",
+  );
 
   useDeckStore.getState().setSessionSubagentDetails({
     ["s1\0root-1"]: {
