@@ -259,8 +259,18 @@ function readCreationStats(
 }
 
 function hasFileCreationEvidence(output: string) {
-  return /"(?:oldText|old_text|originalFile|original_file)"\s*:\s*null/iu.test(output) ||
-    /"(?:type|operation)"\s*:\s*"create"/iu.test(output);
+  if (
+    /"(?:oldText|old_text|originalFile|original_file)"\s*:\s*null/iu.test(output) ||
+    /"(?:type|operation)"\s*:\s*"create"/iu.test(output)
+  ) {
+    return true;
+  }
+
+  const root = parseJsonValue(output);
+  return root !== undefined && collectNestedRecords(root).some((record) =>
+    record.exists === false &&
+    typeof (record.filepath ?? record.filePath) === "string",
+  );
 }
 
 function parseRecord(value: string): Record<string, unknown> | undefined {

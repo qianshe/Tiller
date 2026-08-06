@@ -727,6 +727,84 @@ test("terminal session timeline_batch removes matching live tool overlays", () =
   assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
 });
 
+test("streaming thinking timeline batches keep the live thought overlay stable", () => {
+  resetStore();
+  const sessionId = "session-thinking-stream";
+  const context = createSessionEventContext();
+  const applyTimelineBatch = (deliverySequence: number, text: string, streaming: boolean) =>
+    applySessionUpdate(
+      {
+        sessionId,
+        update: {
+          kind: "timeline_batch",
+          batch: {
+            replace: false,
+            deliverySequence,
+            lastSequence: deliverySequence,
+            entries: [{
+              id: "thought-1",
+              kind: "assistant_message",
+              chunks: [{
+                id: "thought-1:thinking",
+                kind: "thinking",
+                text,
+                title: "Thinking",
+                status: streaming ? "running" : "completed",
+                streamMode: "delta",
+                timestamp: `2026-07-04T10:00:0${deliverySequence}.000Z`,
+                updatedAt: `2026-07-04T10:00:0${deliverySequence}.000Z`,
+                sequence: deliverySequence,
+              }],
+              timestamp: `2026-07-04T10:00:0${deliverySequence}.000Z`,
+              updatedAt: `2026-07-04T10:00:0${deliverySequence}.000Z`,
+              sequence: deliverySequence,
+              streaming,
+            }],
+          },
+        },
+      },
+      context,
+    );
+
+  useDeckStore.setState({
+    messages: {
+      [sessionId]: [{
+        id: "thought-1",
+        role: "assistant",
+        contentKind: "thought",
+        text: "首行内容",
+        timestamp: "2026-07-04T10:00:01.000Z",
+        streaming: true,
+        streamMode: "delta",
+      }],
+    },
+  });
+
+  applyTimelineBatch(1, "首行内容", true);
+  assert.equal(useDeckStore.getState().messages[sessionId]?.[0]?.text, "首行内容");
+
+  useDeckStore.getState().setMessages((current) => ({
+    ...current,
+    [sessionId]: [{
+      id: "thought-1",
+      role: "assistant",
+      contentKind: "thought",
+      text: "首行内容\n后续内容",
+      timestamp: "2026-07-04T10:00:02.000Z",
+      streaming: true,
+      streamMode: "delta",
+    }],
+  }));
+  applyTimelineBatch(2, "首行内容\n后续内容", true);
+  assert.equal(
+    useDeckStore.getState().messages[sessionId]?.[0]?.text,
+    "首行内容\n后续内容",
+  );
+
+  applyTimelineBatch(3, "首行内容\n后续内容", false);
+  assert.equal(useDeckStore.getState().messages[sessionId]?.[0]?.text, undefined);
+});
+
 test("compaction timeline_batch removes its matching live assistant overlay", () => {
   resetStore();
   useDeckStore.setState({

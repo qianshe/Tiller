@@ -12,6 +12,7 @@ import {
 import {
   isThinkingScrollNearBottom,
   PlainSubagentItem,
+  PlainToolCallItem,
   PlainThinkingItem,
   resolveToolCallDisplayTitle,
   resolveThinkingContentClassName,
@@ -154,6 +155,40 @@ test("PlainSubagentItem renders OpenCode output and model metadata", () => {
   assert.match(html, /modelID:[\s\S]*deepseek-v4-flash/u);
   assert.match(html, /variant:[\s\S]*low/u);
   assert.doesNotMatch(html, /requested_subagent_type|providerID|metadata/u);
+});
+
+test("PlainToolCallItem renders an OpenCode new-file Write as a diff", () => {
+  const content = "# OpenCode test\n\nCreated by Write.";
+  const html = renderToStaticMarkup(
+    createElement(PlainToolCallItem, {
+      item: {
+        kind: "tool",
+        id: "tool-opencode-write",
+        commandId: "tool-opencode-write",
+        title: "docs/opencode-write-test.md",
+        status: "completed",
+        toolKind: "write",
+        timestamp: "2026-08-06T10:00:00.000Z",
+        text: JSON.stringify({
+          output: "Wrote file successfully.",
+          metadata: {
+            filepath: "D:/myProject/tools/Tiller/docs/opencode-write-test.md",
+            exists: false,
+            diagnostics: {},
+          },
+        }),
+        input: JSON.stringify({
+          filePath: "docs/opencode-write-test.md",
+          content,
+        }),
+        streams: [],
+      },
+    }),
+  );
+
+  assert.match(html, /修改统计：新增 3 行，删除 0 行/u);
+  assert.match(html, /\+# OpenCode test/u);
+  assert.doesNotMatch(html, /Wrote file successfully\./u);
 });
 
 test("plain message parser keeps sent context trigger above the message bubble", () => {
