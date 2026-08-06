@@ -2,6 +2,7 @@ import { memo, useCallback } from "react";
 import type {
   AgentMessage,
   AgentToolCall,
+  MissionPromptContextItem,
   SessionTimelineEntry,
   SessionSubagentDetail,
 } from "@tiller/shared";
@@ -22,7 +23,6 @@ type MissionMessageTimelineCopy = {
 type MissionMessageTimelineProps = {
   items: AgentMessage[];
   timelineItems?: SessionTimelineEntry[];
-  thinkingToolCalls?: AgentToolCall[];
   toolCalls?: AgentToolCall[];
   showThinking?: boolean;
   sessionId?: string;
@@ -35,6 +35,7 @@ type MissionMessageTimelineProps = {
   historyStateBySession: Record<string, MessageHistoryState | undefined>;
   onLoadOlderMessages: (sessionId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
   subagentDetails?: Record<string, SessionSubagentDetail | undefined>;
   onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
 };
@@ -45,7 +46,6 @@ type MissionMessageTimelineProps = {
 export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   items,
   timelineItems = [],
-  thinkingToolCalls = [],
   toolCalls = [],
   showThinking = true,
   sessionId,
@@ -58,6 +58,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
   historyStateBySession,
   onLoadOlderMessages,
   onToggleExpandedMessage,
+  onAddDraftContext,
   subagentDetails,
   onToggleSubagentDetail,
 }: MissionMessageTimelineProps) {
@@ -76,7 +77,6 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       sessionId={sessionId ?? null}
       items={items}
       timelineItems={timelineItems}
-      thinkingToolCalls={thinkingToolCalls}
       toolCalls={toolCalls}
       showThinking={showThinking}
       canHandoffAssistantMessage={canHandoffAssistantMessage}
@@ -88,6 +88,7 @@ export const MissionMessageTimeline = memo(function MissionMessageTimeline({
       historyState={historyState}
       onLoadOlderMessages={loadOlderMessages}
       onToggleExpandedMessage={onToggleExpandedMessage}
+      onAddDraftContext={onAddDraftContext}
       subagentDetails={subagentDetails}
       onToggleSubagentDetail={onToggleSubagentDetail}
     />

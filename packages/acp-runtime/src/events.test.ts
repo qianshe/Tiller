@@ -1,11 +1,124 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { AgentToolCall } from "@tiller/shared";
 import {
   mapSessionUpdateNotificationBatch,
   sanitizeProtocolLogPayload,
   summarizeSessionUpdateNotification,
 } from "./runtime";
-import { hasSessionConfigOptionIdValue, mapSessionUpdateNotification } from "./events";
+import {
+  attachTrackedRuntimeEventOrigin,
+  createRuntimeEventOriginTracker,
+  hasSessionConfigOptionIdValue,
+  mapSessionUpdateNotification,
+} from "./events";
+
+test("runtime origin tracking does not attach a subagent root to itself", () => {
+  const tracker = createRuntimeEventOriginTracker();
+  const root = attachTrackedRuntimeEventOrigin(
+    "session-origin-root",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "root-call",
+        commandId: "subagent:child-thread",
+        kind: "subagent",
+        title: "Subagent",
+        status: "running",
+        timestamp: "2026-07-29T00:00:00.000Z",
+        updatedAt: "2026-07-29T00:00:00.000Z",
+      },
+    },
+    tracker,
+  );
+  assert.equal(root.type === "tool-call" ? root.origin : undefined, undefined);
+
+  const child = attachTrackedRuntimeEventOrigin(
+    "session-origin-root",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "child-read",
+        commandId: "subagent:child-thread",
+        kind: "read",
+        title: "Read",
+        status: "completed",
+        timestamp: "2026-07-29T00:00:01.000Z",
+        updatedAt: "2026-07-29T00:00:01.000Z",
+      },
+    },
+    tracker,
+  );
+  assert.deepEqual(child.type === "tool-call" ? child.origin : undefined, {
+    scope: "subagent",
+    parentToolCallId: "root-call",
+  });
+});
+
+test("runtime origin tracking isolates reused subagent roots and delayed children", () => {
+  const tracker = createRuntimeEventOriginTracker();
+  const sessionId = "session-origin-reused-task";
+  const toolCall = (
+    id: string,
+    kind: AgentToolCall["kind"],
+    title: string,
+  ): AgentToolCall => ({
+    id,
+    commandId: "subagent:reused-task",
+    kind,
+    title,
+    status: kind === "subagent" ? "running" : "completed",
+    timestamp: "2026-07-29T00:00:00.000Z",
+    updatedAt: "2026-07-29T00:00:00.000Z",
+  });
+
+  const rootOne = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("root-one", "subagent", "Agent One") },
+    tracker,
+  );
+  const childOne = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("child-one", "read", "Read") },
+    tracker,
+  );
+  const rootTwo = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("root-two", "subagent", "Agent Two") },
+    tracker,
+  );
+  const delayedRootOne = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("root-one", "subagent", "Agent One") },
+    tracker,
+  );
+  const childTwo = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("child-two", "read", "Read") },
+    tracker,
+  );
+  const delayedChildOne = attachTrackedRuntimeEventOrigin(
+    sessionId,
+    { type: "tool-call", toolCall: toolCall("child-one", "read", "Read") },
+    tracker,
+  );
+
+  assert.equal(rootOne.type === "tool-call" ? rootOne.origin : undefined, undefined);
+  assert.deepEqual(childOne.type === "tool-call" ? childOne.origin : undefined, {
+    scope: "subagent",
+    parentToolCallId: "root-one",
+  });
+  assert.equal(rootTwo.type === "tool-call" ? rootTwo.origin : undefined, undefined);
+  assert.equal(delayedRootOne.type === "tool-call" ? delayedRootOne.origin : undefined, undefined);
+  assert.deepEqual(childTwo.type === "tool-call" ? childTwo.origin : undefined, {
+    scope: "subagent",
+    parentToolCallId: "root-two",
+  });
+  assert.deepEqual(
+    delayedChildOne.type === "tool-call" ? delayedChildOne.origin : undefined,
+    { scope: "subagent", parentToolCallId: "root-one" },
+  );
+});
 
 test("summarizeSessionUpdateNotification reports update shape without text content", () => {
   const summary = summarizeSessionUpdateNotification(
@@ -293,6 +406,214 @@ test("mapSessionUpdateNotification maps Codex context compacted chunks into comp
   assert.equal(mapped.event.messageId, "msg_codex_compaction_chunk");
 });
 
+test("mapSessionUpdateNotification maps Codex context compacting chunks into started compaction events", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_compaction_start",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          messageId: "msg_codex_compaction_start",
+          timestamp: "2026-07-27T09:00:00.000Z",
+          content: { type: "text", text: "Context compacting" },
+        },
+      },
+    },
+    {
+      provider: {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      providerId: "codex",
+    },
+  );
+
+  assert.ok(mapped);
+  assert.equal(mapped?.event.type, "compaction");
+  if (mapped?.event.type !== "compaction") {
+    throw new Error("Expected compaction event");
+  }
+  assert.equal(mapped.event.phase, "started");
+  assert.equal(mapped.event.messageId, "msg_codex_compaction_start");
+});
+
+test("mapSessionUpdateNotification maps Codex context compacted tool markers into compaction events", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_compaction_tool",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_compaction",
+          kind: "other",
+          title: "Context compacted",
+          status: "completed",
+          timestamp: "2026-07-26T09:00:00.000Z",
+        },
+      },
+    },
+    {
+      provider: {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      providerId: "codex",
+    },
+  );
+
+  assert.ok(mapped);
+  assert.deepEqual(mapped.event, {
+    type: "compaction",
+    phase: "completed",
+    source: "provider",
+    timestamp: "2026-07-26T09:00:00.000Z",
+    messageId: "call_codex_compaction",
+  });
+});
+
+test("mapSessionUpdateNotification keeps a real Codex tool named Context compacted as a tool", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_context_compacted_mcp",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_context_compacted_mcp",
+          kind: "mcp",
+          title: "Context compacted",
+          status: "completed",
+          rawInput: {
+            server: "example",
+            tool: "context_compacted",
+            arguments: {},
+          },
+        },
+      },
+    },
+    {
+      provider: {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+      providerId: "codex",
+    },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  assert.equal(
+    mapped?.event.type === "tool-call" ? mapped.event.toolCall.kind : undefined,
+    "mcp",
+  );
+});
+
+test("mapSessionUpdateNotification keeps an MCP tool named Context compacted as a tool from raw input", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_context_compacted_raw_mcp",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_context_compacted_raw_mcp",
+          kind: "tool",
+          title: "Context compacted",
+          status: "completed",
+          rawInput: {
+            server: "example",
+            tool: "context_compacted",
+            arguments: {},
+          },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  assert.equal(
+    mapped?.event.type === "tool-call" ? mapped.event.toolCall.kind : undefined,
+    "mcp",
+  );
+});
+
+test("mapSessionUpdateNotification keeps an MCP tool named Context compacted from regular input", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_context_compacted_input_mcp",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_context_compacted_input_mcp",
+          kind: "tool",
+          title: "Context compacted",
+          status: "completed",
+          input: {
+            server: "example",
+            name: "context_compacted",
+            arguments: {},
+          },
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  assert.equal(
+    mapped?.event.type === "tool-call" ? mapped.event.toolCall.kind : undefined,
+    "mcp",
+  );
+});
+
+test("mapSessionUpdateNotification keeps sparse Codex spawn running until wait", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_sparse_spawn",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "call_codex_sparse_spawn",
+          title: "spawn_agent",
+          status: "completed",
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "subagent");
+  assert.equal(mapped.event.toolCall.status, "running");
+  assert.equal(mapped.event.toolCall.title, "Subagent");
+  assert.deepEqual(mapped.event.toolCall.subagentOperation, {
+    action: "spawn",
+    targets: [{ id: "call_codex_sparse_spawn" }],
+  });
+});
+
 for (const provider of [
   {
     id: "claude-acp",
@@ -474,7 +795,7 @@ test("mapSessionUpdateNotification generates stable ids for replayed chunks with
 });
 
 
-test("mapSessionUpdateNotification maps realtime thinking content to think tool calls", () => {
+test("mapSessionUpdateNotification maps realtime thinking content to assistant message", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
     method: "session/update",
@@ -488,18 +809,17 @@ test("mapSessionUpdateNotification maps realtime thinking content to think tool 
     },
   });
 
-  assert.equal(mapped?.event.type, "tool-call");
-  if (mapped?.event.type !== "tool-call") {
-    throw new Error("Expected tool-call event");
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
   }
-  assert.equal(mapped.event.toolCall.id, "msg-thinking:thinking");
-  assert.equal(mapped.event.toolCall.kind, "think");
-  assert.equal(mapped.event.toolCall.title, "Thinking");
-  assert.equal(mapped.event.toolCall.output, "需要先定位实时链路");
-  assert.equal(mapped.event.toolCall.status, "running");
+  assert.equal(mapped.event.message.id, "msg-thinking");
+  assert.equal(mapped.event.message.contentKind, "thought");
+  assert.equal(mapped.event.message.text, "需要先定位实时链路");
+  assert.equal(mapped.event.message.streaming, true);
 });
 
-test("mapSessionUpdateNotification maps standard ACP thought chunks to think tool calls", () => {
+test("mapSessionUpdateNotification maps standard ACP thought chunks to assistant message", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
     method: "session/update",
@@ -512,14 +832,39 @@ test("mapSessionUpdateNotification maps standard ACP thought chunks to think too
     },
   });
 
-  assert.equal(mapped?.event.type, "tool-call");
-  if (mapped?.event.type !== "tool-call") {
-    throw new Error("Expected tool-call event");
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
   }
-  assert.equal(mapped.event.toolCall.kind, "think");
-  assert.equal(mapped.event.toolCall.title, "Thinking");
-  assert.equal(mapped.event.toolCall.output, "先分析 ACP thought chunk");
-  assert.equal(mapped.event.toolCall.status, "running");
+  assert.equal(mapped.event.message.contentKind, "thought");
+  assert.equal(mapped.event.message.text, "先分析 ACP thought chunk");
+  assert.equal(mapped.event.message.streaming, true);
+  assert.equal(mapped.event.message.streamMode, "delta");
+});
+
+test("mapSessionUpdateNotification maps ACP v2 thought upserts as snapshots", () => {
+  const mapped = mapSessionUpdateNotification({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: {
+      sessionId: "sess_acp_thought_upsert",
+      update: {
+        sessionUpdate: "agent_thought",
+        messageId: "msg-thought-upsert",
+        content: [{ type: "text", text: "替换后的完整思考" }],
+      },
+    },
+  });
+
+  assert.equal(mapped?.event.type, "message");
+  if (mapped?.event.type !== "message") {
+    throw new Error("Expected message event");
+  }
+  assert.equal(mapped.event.message.id, "msg-thought-upsert");
+  assert.equal(mapped.event.message.contentKind, "thought");
+  assert.equal(mapped.event.message.text, "替换后的完整思考");
+  assert.equal(mapped.event.message.streaming, true);
+  assert.equal(mapped.event.message.streamMode, "snapshot");
 });
 
 test("mapSessionUpdateNotification keeps generated thought chunk ids stable across deltas", () => {
@@ -546,13 +891,12 @@ test("mapSessionUpdateNotification keeps generated thought chunk ids stable acro
     },
   });
 
-  assert.equal(first?.event.type, "tool-call");
-  assert.equal(second?.event.type, "tool-call");
-  if (first?.event.type !== "tool-call" || second?.event.type !== "tool-call") {
-    throw new Error("Expected tool-call events");
+  assert.equal(first?.event.type, "message");
+  assert.equal(second?.event.type, "message");
+  if (first?.event.type !== "message" || second?.event.type !== "message") {
+    throw new Error("Expected message events");
   }
-  assert.equal(first.event.toolCall.id, second.event.toolCall.id);
-  assert.equal(first.event.toolCall.commandId, second.event.toolCall.commandId);
+  assert.equal(first.event.message.id, second.event.message.id);
 });
 
 test("mapSessionUpdateNotification maps config_option_update into config option state", () => {
@@ -868,7 +1212,7 @@ test("mapSessionUpdateNotificationBatch splits inferred command output once in c
   assert.equal(mapped.events[1]?.type, "command-output");
 });
 
-test("mapSessionUpdateNotificationBatch preserves thought chunks as thinking tool calls", () => {
+test("mapSessionUpdateNotificationBatch preserves thought chunks as assistant message", () => {
   const mapped = mapSessionUpdateNotificationBatch({
     jsonrpc: "2.0",
     method: "session/update",
@@ -884,13 +1228,13 @@ test("mapSessionUpdateNotificationBatch preserves thought chunks as thinking too
 
   assert.ok(mapped);
   assert.equal(mapped.events.length, 1);
-  assert.equal(mapped.events[0]?.type, "tool-call");
-  if (mapped.events[0]?.type !== "tool-call") {
-    throw new Error("Expected thinking tool call");
+  assert.equal(mapped.events[0]?.type, "message");
+  if (mapped.events[0]?.type !== "message") {
+    throw new Error("Expected thinking message");
   }
-  assert.equal(mapped.events[0].toolCall.kind, "think");
-  assert.equal(mapped.events[0].toolCall.id, "thought-1:thinking");
-  assert.equal(mapped.events[0].toolCall.output, "checking the repository");
+  assert.equal(mapped.events[0].message.contentKind, "thought");
+  assert.equal(mapped.events[0].message.id, "thought-1");
+  assert.equal(mapped.events[0].message.text, "checking the repository");
 });
 
 test("mapSessionUpdateNotificationBatch covers ACP session state variants without loss", () => {
@@ -1044,6 +1388,41 @@ test("mapSessionUpdateNotification derives Codex mcp tool names from rawInput se
   }));
 });
 
+test("mapSessionUpdateNotification derives Codex write titles from diff content paths", () => {
+  const mapped = mapSessionUpdateNotification(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess_codex_write",
+        update: {
+          sessionUpdate: "tool_call",
+          toolCallId: "call_codex_write",
+          title: "Editing files",
+          kind: "edit",
+          status: "completed",
+          content: [
+            {
+              type: "diff",
+              path: "D:\\repo\\packages\\acp-runtime\\src\\events.ts",
+              oldText: "old",
+              newText: "new",
+            },
+          ],
+        },
+      },
+    },
+    { providerId: "codex" },
+  );
+
+  assert.equal(mapped?.event.type, "tool-call");
+  if (mapped?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call event");
+  }
+  assert.equal(mapped.event.toolCall.kind, "write");
+  assert.equal(mapped.event.toolCall.title, "packages\\acp-runtime\\src\\events.ts");
+});
+
 test("mapSessionUpdateNotification prefers Codex rawInput over an empty input placeholder", () => {
   const mapped = mapSessionUpdateNotification({
     jsonrpc: "2.0",
@@ -1114,6 +1493,51 @@ test("mapSessionUpdateNotification keeps top-level rawInput when nested toolCall
     tool: "find_referencing_symbols",
     arguments: { relative_path: "packages/shared/src/session-timeline.ts" },
   }));
+});
+
+test("mapSessionUpdateNotification correlates nested Codex completions by the outer toolCallId", () => {
+  const sessionId = "sess_nested_codex_completion";
+  const createPayload = (update: Record<string, unknown>) => ({
+    jsonrpc: "2.0",
+    method: "session/update",
+    params: { sessionId, update },
+  });
+  const started = mapSessionUpdateNotification(
+    createPayload({
+      sessionUpdate: "tool_call",
+      toolCallId: "call_codex_codebase_search",
+      title: "Tool: mcp_router/codebase_search",
+      status: "in_progress",
+      rawInput: {
+        server: "mcp_router",
+        tool: "codebase_search",
+        arguments: { repo_path: "D:\\repo", search_string: "tool lifecycle" },
+      },
+    }),
+    { providerId: "codex" },
+  );
+  const completed = mapSessionUpdateNotification(
+    createPayload({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call_codex_codebase_search",
+      status: "completed",
+      toolCall: {
+        status: "in_progress",
+        output: "result\n".repeat(2_048),
+      },
+    }),
+    { providerId: "codex" },
+  );
+
+  assert.equal(started?.event.type, "tool-call");
+  assert.equal(completed?.event.type, "tool-call");
+  if (started?.event.type !== "tool-call" || completed?.event.type !== "tool-call") {
+    throw new Error("Expected tool-call events");
+  }
+  assert.equal(started.event.toolCall.id, "call_codex_codebase_search");
+  assert.equal(completed.event.toolCall.id, started.event.toolCall.id);
+  assert.equal(completed.event.toolCall.status, "completed");
+  assert.equal(completed.event.toolCall.output?.length, 7 * 2_048);
 });
 
 test("mapSessionUpdateNotification classifies MCP tools from rawInput server and tool", () => {
@@ -1459,7 +1883,7 @@ test("mapSessionUpdateNotification classifies ACP tool kinds without provider sp
     { acpKind: "move", expected: "write" },
     { acpKind: "execute", expected: "shell" },
     { acpKind: "search", expected: "search" },
-    { acpKind: "think", expected: "think" },
+    { acpKind: "think", expected: "tool" },
     { acpKind: "fetch", expected: "fetch" },
   ] as const;
 

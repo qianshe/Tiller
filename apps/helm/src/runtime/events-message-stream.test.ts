@@ -129,10 +129,19 @@ test("runtime session.message finalizes canonical content without stdout text", 
     capture.observedTimelineMessages?.map((message) => message.text),
     ["你好\n主人"],
   );
+  assert.equal(
+    capture.detailBroadcasts.some(
+      (item: any) =>
+        item.params?.update?.kind === "agent_message" &&
+        item.params?.update?.streaming === false &&
+        item.params?.update?.message?.text === "你好\n主人",
+    ),
+    true,
+  );
   assert.equal(capture.broadcasts.length, 0);
-  assert.ok(capture.detailBroadcasts.some((item: any) =>
-    item.params?.update?.kind === "timeline_batch"
-  ));
+  assert.ok(
+    capture.detailBroadcasts.some((item: any) => item.params?.update?.kind === "timeline_batch"),
+  );
 });
 
 test("runtime assistant streaming deltas coalesce inside the live window before timer flush", () => {
@@ -144,14 +153,20 @@ test("runtime assistant streaming deltas coalesce inside the live window before 
     sessionUpdates: [],
   };
   const timers = createManualTimerHarness();
-  const context = createTestContext(logs, capture, "session-assistant-window", {}, {
-    runtimeEventThrottleConfig: {
-      assistantWindowMs: 32,
-      assistantMaxChars: 256,
-      setTimeoutFn: timers.setTimeoutFn,
-      clearTimeoutFn: timers.clearTimeoutFn,
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-assistant-window",
+    {},
+    {
+      runtimeEventThrottleConfig: {
+        assistantWindowMs: 32,
+        assistantMaxChars: 256,
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn,
+      },
     },
-  });
+  );
 
   handleRuntimeEvent(
     "session-assistant-window",
@@ -183,14 +198,16 @@ test("runtime assistant streaming deltas coalesce inside the live window before 
   assert.equal(timers.size(), 1);
   assert.equal(capture.sessionUpdates?.length ?? 0, 0);
   assert.equal(
-    capture.detailBroadcasts.filter((item: any) => item.params?.update?.kind === "agent_message").length,
+    capture.detailBroadcasts.filter((item: any) => item.params?.update?.kind === "agent_message")
+      .length,
     0,
   );
 
   timers.flushAll();
 
-  const streamingUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.params?.update?.kind === "agent_message" && item.params?.update?.streaming === true
+  const streamingUpdate = capture.detailBroadcasts.find(
+    (item: any) =>
+      item.params?.update?.kind === "agent_message" && item.params?.update?.streaming === true,
   ) as any;
   assert.equal(streamingUpdate?.params?.update?.message?.text, "你好");
   assert.equal(capture.sessionUpdates?.length, 0);
@@ -385,7 +402,10 @@ test("runtime assistant chunks reuse one ordered segment id", () => {
 
   assert.equal(capture.persisted.length, 0);
   assert.equal(capture.observedTimelineMessages?.[0]?.text, "hello world");
-  assert.match(capture.observedTimelineMessages?.[0]?.id ?? "", /^session-stream-ordered-msg-000001-000000-/u);
+  assert.match(
+    capture.observedTimelineMessages?.[0]?.id ?? "",
+    /^session-stream-ordered-msg-000001-000000-/u,
+  );
 });
 
 test("repeated running status does not advance turn without an active assistant segment", () => {
@@ -433,7 +453,10 @@ test("repeated running status does not advance turn without an active assistant 
     context,
   );
 
-  assert.match(capture.observedTimelineMessages?.[0]?.id ?? "", /^session-no-bump-msg-000001-000000-/u);
+  assert.match(
+    capture.observedTimelineMessages?.[0]?.id ?? "",
+    /^session-no-bump-msg-000001-000000-/u,
+  );
 });
 
 test("runtime assistant stream closes before the next stage log", () => {
@@ -571,8 +594,14 @@ test("runtime user messages are persisted when no local prompt matches the provi
     capture.observedTimelineMessages?.map((message) => [message.id, message.role, message.text]),
     [["runtime-user-opencode-1", "user", "[build-mode]\nOpenCode processed prompt"]],
   );
-  assert.deepEqual(capture.timelineEntries?.map((entry) => entry.kind), ["user_message"]);
-  assert.equal(capture.summaryUpdates?.[0]?.lastMessagePreview, "[build-mode]\nOpenCode processed prompt");
+  assert.deepEqual(
+    capture.timelineEntries?.map((entry) => entry.kind),
+    ["user_message"],
+  );
+  assert.equal(
+    capture.summaryUpdates?.[0]?.lastMessagePreview,
+    "[build-mode]\nOpenCode processed prompt",
+  );
   assert.equal(
     capture.detailBroadcasts.some((item: any) => item.params?.update?.kind === "timeline_batch"),
     true,
@@ -631,15 +660,18 @@ test("runtime user echo debug logs are summarized across a replay burst", () => 
     context,
   );
 
-  const userEchoLogs = structuredLogs(capture).filter((log) => (
-    log.event === "runtime.message.user_echo.ignored"
-  ));
+  const userEchoLogs = structuredLogs(capture).filter(
+    (log) => log.event === "runtime.message.user_echo.ignored",
+  );
   const userEchoSummary = findStructuredLog(capture, "runtime.message.user_echo.ignored_summary");
   assert.equal(userEchoLogs.length, 0);
   assert.equal(userEchoSummary?.level, "debug");
   assert.equal(userEchoSummary?.fields?.count, 3);
   assert.equal(userEchoSummary?.fields?.uniqueMessages, 3);
-  assert.equal(userEchoSummary?.fields?.totalChars, "first prompt".length + "ok".length + "third prompt".length);
+  assert.equal(
+    userEchoSummary?.fields?.totalChars,
+    "first prompt".length + "ok".length + "third prompt".length,
+  );
   assert.equal(userEchoSummary?.fields?.firstSeq, userEchoSummary?.fields?.lastSeq);
   assert.equal(userEchoSummary?.fields?.firstMessageId, "runtime-user-echo-1");
   assert.equal(userEchoSummary?.fields?.lastMessageId, "runtime-user-echo-3");
@@ -664,7 +696,10 @@ test("fatal ACP connection errors mark the active runtime stale", () => {
 
   assert.equal(context.sessions.has("session-1"), false);
   assert.deepEqual(capture.persisted, []);
-  assert.equal(findStructuredLog(capture, "runtime.recoverable.marked")?.fields?.code, "ACP_CONNECTION_EXITED");
+  assert.equal(
+    findStructuredLog(capture, "runtime.recoverable.marked")?.fields?.code,
+    "ACP_CONNECTION_EXITED",
+  );
 });
 
 test("runtime wrapped user echoes are ignored when they contain the client prompt", () => {
@@ -681,7 +716,8 @@ test("runtime wrapped user echoes are ignored when they contain the client promp
       },
     ],
   } as HelmHandlerContext["sessionMessageStore"];
-  const wrappedEchoText = "[search-mode]\nMAXIMIZE SEARCH EFFORT.\n\n你深度检查一下前端还有什么缺陷？";
+  const wrappedEchoText =
+    "[search-mode]\nMAXIMIZE SEARCH EFFORT.\n\n你深度检查一下前端还有什么缺陷？";
 
   handleRuntimeEvent(
     "session-1",
@@ -789,9 +825,15 @@ test("runtime tool-call updates do not split assistant content after the tool bo
     timelineEntries: [],
   };
   const sessionId = "session-tool-update-message";
-  const context = createTestContext(logs, capture, sessionId, {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    sessionId,
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     sessionId,
@@ -875,16 +917,18 @@ test("runtime tool-call updates do not split assistant content after the tool bo
     context,
   );
 
-  const assistantEntries = capture.timelineEntries?.filter(
-    (entry) => entry.kind === "assistant_message",
-  ) ?? [];
+  const assistantEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
   assert.equal(assistantEntries.length, 2);
   assert.deepEqual(
     assistantEntries.map((entry) => entry.chunks.map((chunk) => chunk.text).join("")),
     ["工具前说明", "工具后第一段工具后第二段"],
   );
   const toolEntry = capture.timelineEntries?.find((entry) => entry.kind === "tool_call");
-  assert.equal(toolEntry?.kind === "tool_call" ? toolEntry.toolCall.status : undefined, "completed");
+  assert.equal(
+    toolEntry?.kind === "tool_call" ? toolEntry.toolCall.status : undefined,
+    "completed",
+  );
 });
 
 test("runtime command output does not split assistant content", () => {
@@ -896,9 +940,15 @@ test("runtime command output does not split assistant content", () => {
     timelineEntries: [],
   };
   const sessionId = "session-command-output-message";
-  const context = createTestContext(logs, capture, sessionId, {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    sessionId,
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     sessionId,
@@ -948,9 +998,8 @@ test("runtime command output does not split assistant content", () => {
     context,
   );
 
-  const assistantEntries = capture.timelineEntries?.filter(
-    (entry) => entry.kind === "assistant_message",
-  ) ?? [];
+  const assistantEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
   assert.equal(assistantEntries.length, 1);
   assert.equal(
     assistantEntries[0]?.chunks.map((chunk) => chunk.text).join(""),
@@ -970,9 +1019,15 @@ test("runtime subagent child tools do not split cumulative assistant text", () =
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-subagent-child-message", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-subagent-child-message",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     "session-subagent-child-message",
@@ -1027,13 +1082,14 @@ test("runtime subagent child tools do not split cumulative assistant text", () =
     context,
   );
 
-  const assistantEntries = capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
+  const assistantEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
   const toolEntries = capture.timelineEntries?.filter((entry) => entry.kind === "tool_call") ?? [];
   assert.equal(assistantEntries.length, 1);
   assert.equal(toolEntries.length, 0);
   assert.equal(
     capture.sessionUpdates?.some((update) =>
-      Object.hasOwn(JSON.parse(update.payloadJson) as object, "origin")
+      Object.hasOwn(JSON.parse(update.payloadJson) as object, "origin"),
     ),
     false,
   );
@@ -1053,22 +1109,28 @@ test("runtime subagent child tools do not finalize the main thinking segment", (
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-subagent-child-thinking", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-subagent-child-thinking",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     "session-subagent-child-thinking",
     {
-      type: "tool-call",
-      toolCall: {
+      type: "message",
+      message: {
         id: "provider-main-thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "先分析",
+        role: "assistant",
+        contentKind: "thought",
+        text: "先分析",
         timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
+        streaming: true,
+        streamMode: "snapshot",
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -1095,15 +1157,15 @@ test("runtime subagent child tools do not finalize the main thinking segment", (
   handleRuntimeEvent(
     "session-subagent-child-thinking",
     {
-      type: "tool-call",
-      toolCall: {
+      type: "message",
+      message: {
         id: "provider-main-thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "先分析，再继续",
+        role: "assistant",
+        contentKind: "thought",
+        text: "先分析，再继续",
         timestamp: "2026-04-30T00:00:03.000Z",
-        updatedAt: "2026-04-30T00:00:03.000Z",
+        streaming: true,
+        streamMode: "snapshot",
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -1131,9 +1193,15 @@ test("runtime splits compaction summary and reply on distinct provider message i
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-boundary-split", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-boundary-split",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
   const summary = [
     "## Objective",
     "- Continue the repository cleanup task.",
@@ -1228,9 +1296,15 @@ test("runtime assistant chunks stay in one canonical segment when subagent activ
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-subagent-message", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-subagent-message",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
 
   handleRuntimeEvent(
     "session-subagent-message",
@@ -1283,21 +1357,26 @@ test("runtime assistant chunks stay in one canonical segment when subagent activ
     context,
   );
 
-  const assistantEntries = capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
-  const subagentEntries = capture.timelineEntries?.filter((entry) => entry.kind === "tool_call") ?? [];
+  const assistantEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "assistant_message") ?? [];
+  const subagentEntries =
+    capture.timelineEntries?.filter((entry) => entry.kind === "tool_call") ?? [];
   assert.equal(assistantEntries.length, 1);
   assert.equal(subagentEntries.length, 1);
-  assert.equal(subagentEntries[0]?.kind === "tool_call" ? subagentEntries[0].toolCall.kind : undefined, "subagent");
-  assert.equal(subagentEntries[0]?.kind === "tool_call" ? subagentEntries[0].toolCall.status : undefined, "running");
+  assert.equal(
+    subagentEntries[0]?.kind === "tool_call" ? subagentEntries[0].toolCall.kind : undefined,
+    "subagent",
+  );
+  assert.equal(
+    subagentEntries[0]?.kind === "tool_call" ? subagentEntries[0].toolCall.status : undefined,
+    "running",
+  );
   assert.equal(assistantEntries[0]?.kind, "assistant_message");
   if (assistantEntries[0]?.kind !== "assistant_message") {
     throw new Error("Expected assistant_message");
   }
   assert.equal(assistantEntries[0].chunks.length, 1);
-  assert.equal(
-    assistantEntries[0].chunks[0]?.text,
-    "我会重新做一次最小 subagent 调用测试。",
-  );
+  assert.equal(assistantEntries[0].chunks[0]?.text, "我会重新做一次最小 subagent 调用测试。");
 });
 
 test("runtime keeps independent assistant occurrences around a Subagent result without Built-in events", () => {
@@ -1308,9 +1387,15 @@ test("runtime keeps independent assistant occurrences around a Subagent result w
     persisted: [],
     timelineEntries: [],
   };
-  const context = createTestContext(logs, capture, "session-subagent-independent", {}, {
-    useCanonicalPipeline: true,
-  });
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-subagent-independent",
+    {},
+    {
+      useCanonicalPipeline: true,
+    },
+  );
   const running: AgentToolCall = {
     id: "call-subagent-independent",
     commandId: "child-independent",
@@ -1373,13 +1458,15 @@ test("runtime keeps independent assistant occurrences around a Subagent result w
   );
 
   const timeline = capture.timelineEntries ?? [];
-  assert.deepEqual(timeline.map((entry) => entry.kind), [
-    "tool_call",
-    "assistant_message",
-    "assistant_message",
-  ]);
+  assert.deepEqual(
+    timeline.map((entry) => entry.kind),
+    ["tool_call", "assistant_message", "assistant_message"],
+  );
   const toolEntry = timeline[0];
-  assert.equal(toolEntry?.kind === "tool_call" ? toolEntry.toolCall.status : undefined, "completed");
+  assert.equal(
+    toolEntry?.kind === "tool_call" ? toolEntry.toolCall.status : undefined,
+    "completed",
+  );
   const assistantEntries = timeline.filter((entry) => entry.kind === "assistant_message");
   assert.deepEqual(
     assistantEntries.flatMap((entry) => entry.chunks.map((chunk) => chunk.text)),
@@ -1475,11 +1562,20 @@ test("runtime-generated independent assistant messages get distinct stream segme
     context,
   );
 
-  assert.equal(capture.observedTimelineMessages?.[0]?.text, "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata.");
-  assert.equal(capture.observedTimelineMessages?.[1]?.text, "你好主人，我会按你的项目规则继续处理。");
+  assert.equal(
+    capture.observedTimelineMessages?.[0]?.text,
+    "Model metadata for `gpt-5.5` not found. Defaulting to fallback metadata.",
+  );
+  assert.equal(
+    capture.observedTimelineMessages?.[1]?.text,
+    "你好主人，我会按你的项目规则继续处理。",
+  );
   assert.match(capture.observedTimelineMessages?.[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.match(capture.observedTimelineMessages?.[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
-  assert.notEqual(capture.observedTimelineMessages?.[0]?.id, capture.observedTimelineMessages?.[1]?.id);
+  assert.notEqual(
+    capture.observedTimelineMessages?.[0]?.id,
+    capture.observedTimelineMessages?.[1]?.id,
+  );
 });
 
 test("runtime config state overwrites a stale stored model selection", () => {
@@ -1665,7 +1761,10 @@ test("runtime model state overwrites a stale stored model selection", () => {
       type: "model-options",
       state: {
         currentModelId: "gpt-5.5",
-        options: [{ id: "gpt-5.4", name: "gpt-5.4" }, { id: "gpt-5.5", name: "gpt-5.5" }],
+        options: [
+          { id: "gpt-5.4", name: "gpt-5.4" },
+          { id: "gpt-5.5", name: "gpt-5.5" },
+        ],
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -1720,7 +1819,10 @@ test("runtime-generated short assistant replies split after provider diagnostics
 
   assert.equal(capture.observedTimelineMessages?.[0]?.text.startsWith("Model metadata for"), true);
   assert.equal(capture.observedTimelineMessages?.[1]?.text, "OK");
-  assert.notEqual(capture.observedTimelineMessages?.[0]?.id, capture.observedTimelineMessages?.[1]?.id);
+  assert.notEqual(
+    capture.observedTimelineMessages?.[0]?.id,
+    capture.observedTimelineMessages?.[1]?.id,
+  );
 });
 
 test("runtime running status starts a fresh assistant segment for the next prompt", () => {
@@ -1774,5 +1876,209 @@ test("runtime running status starts a fresh assistant segment for the next promp
 
   assert.match(capture.observedTimelineMessages?.[0]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
   assert.match(capture.observedTimelineMessages?.[1]?.id ?? "", /^session-1-msg-\d{6}-\d{6}-/u);
-  assert.notEqual(capture.observedTimelineMessages?.[0]?.id, capture.observedTimelineMessages?.[1]?.id);
+  assert.notEqual(
+    capture.observedTimelineMessages?.[0]?.id,
+    capture.observedTimelineMessages?.[1]?.id,
+  );
+});
+
+test("runtime shared provider messageId keeps thinking and content as independent timeline chunks", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const timers = createManualTimerHarness();
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-shared-thought-content",
+    {},
+    {
+      useCanonicalPipeline: true,
+      runtimeEventThrottleConfig: {
+        assistantWindowMs: 32,
+        assistantMaxChars: 256,
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn,
+      },
+    },
+  );
+  const sessionId = "session-shared-thought-content";
+  const sharedId = "msg-shared-thinking-content";
+
+  // The acp-runtime finish() wrapper emits a thought message first (running,
+  // delta) and then a content message (delta), both sharing the same provider
+  // messageId when a single session/update carries thinking + text blocks.
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: sharedId,
+        role: "assistant",
+        contentKind: "thought",
+        text: "先检查文件",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        streaming: true,
+        streamMode: "delta",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: sharedId,
+        role: "assistant",
+        text: "文件检查完成",
+        timestamp: "2026-04-30T00:00:02.000Z",
+        streamMode: "delta",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  // A Read tool-call boundary forces the live assistant buffer to flush.
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-read-shared",
+        kind: "read",
+        title: "README.md",
+        status: "completed",
+        timestamp: "2026-04-30T00:00:03.000Z",
+        updatedAt: "2026-04-30T00:00:03.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const assistantEntries = (capture.timelineEntries ?? []).filter(
+    (entry) => entry.kind === "assistant_message",
+  );
+  const thinkingChunks = assistantEntries.flatMap((entry) =>
+    entry.kind === "assistant_message"
+      ? entry.chunks.filter((chunk) => chunk.kind === "thinking")
+      : [],
+  );
+  const contentChunks = assistantEntries.flatMap((entry) =>
+    entry.kind === "assistant_message"
+      ? entry.chunks.filter((chunk) => chunk.kind === "content")
+      : [],
+  );
+
+  assert.equal(thinkingChunks.length, 1, "thinking should land in its own chunk");
+  assert.equal(thinkingChunks[0]?.text, "先检查文件");
+  assert.equal(contentChunks.length, 1, "content should land in its own chunk");
+  assert.equal(contentChunks[0]?.text, "文件检查完成");
+});
+
+test("runtime content-then-thought order keeps content out of the thinking chunk (user symptom)", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const timers = createManualTimerHarness();
+  const context = createTestContext(
+    logs,
+    capture,
+    "session-content-then-thought",
+    {},
+    {
+      useCanonicalPipeline: true,
+      runtimeEventThrottleConfig: {
+        assistantWindowMs: 32,
+        assistantMaxChars: 256,
+        setTimeoutFn: timers.setTimeoutFn,
+        clearTimeoutFn: timers.clearTimeoutFn,
+      },
+    },
+  );
+  const sessionId = "session-content-then-thought";
+  const sharedId = "msg-content-then-thought";
+
+  // User-reported symptom: a completed standalone thought update arrives
+  // AFTER the content message, both sharing the provider messageId. Without
+  // contentKind isolation the late thought overwrites the buffered content's
+  // contentKind, so the merged text is routed into the thinking chunk and the
+  // content output disappears ("read output recognized as thinking").
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: sharedId,
+        role: "assistant",
+        text: "read output body",
+        timestamp: "2026-04-30T00:00:01.000Z",
+        streamMode: "delta",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "message",
+      message: {
+        id: sharedId,
+        role: "assistant",
+        contentKind: "thought",
+        text: "standalone thought after content",
+        timestamp: "2026-04-30T00:00:02.000Z",
+        streaming: false,
+        streamMode: "snapshot",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+  // Read tool-call boundary forces any remaining live assistant buffer to flush.
+  handleRuntimeEvent(
+    sessionId,
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "call-read-after-thought",
+        kind: "read",
+        title: "README.md",
+        status: "completed",
+        timestamp: "2026-04-30T00:00:03.000Z",
+        updatedAt: "2026-04-30T00:00:03.000Z",
+      },
+    } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const assistantEntries = (capture.timelineEntries ?? []).filter(
+    (entry) => entry.kind === "assistant_message",
+  );
+  const thinkingChunks = assistantEntries.flatMap((entry) =>
+    entry.kind === "assistant_message"
+      ? entry.chunks.filter((chunk) => chunk.kind === "thinking")
+      : [],
+  );
+  const contentChunks = assistantEntries.flatMap((entry) =>
+    entry.kind === "assistant_message"
+      ? entry.chunks.filter((chunk) => chunk.kind === "content")
+      : [],
+  );
+
+  assert.equal(contentChunks.length, 1, "content should land in its own chunk");
+  assert.equal(contentChunks[0]?.text, "read output body");
+  assert.equal(thinkingChunks.length, 1, "thinking should land in its own chunk");
+  assert.equal(thinkingChunks[0]?.text, "standalone thought after content");
+  // The content body must never leak into the thinking chunk.
+  assert.ok(
+    !thinkingChunks.some((chunk) => chunk.text.includes("read output body")),
+    "content body must not be merged into the thinking chunk",
+  );
 });

@@ -8,6 +8,7 @@ import {
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
 import { useEffectiveViewport } from "../../features/preferences";
+import { clearProcessedApprovalHistory } from "../../features/approvals";
 
 const OverviewPage = lazy(() =>
   import("../../features/overview/ui/page").then((module) => ({
@@ -48,6 +49,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
   } as MissionRouteSource;
   const {
     activeView,
+    agentsInitialTab,
     copy,
     connection,
     activeHelm,
@@ -67,6 +69,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     notifications,
     clearNotifications,
     approvalItemsById,
+    approvalHistory,
     toolCalls,
     navigateToView,
     respondToPermission,
@@ -150,6 +153,10 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     loggingConnectionKnownConnected,
     refreshLoggingSettings,
     saveLoggingLevel,
+    helmUpdateState,
+    helmUpdateClient,
+    refreshHelmUpdate,
+    startHelmUpdate,
   } = source;
 function renderOverview() {
   return (
@@ -194,6 +201,7 @@ function renderDashboard() {
     sessionPlans,
     toolCalls,
     approvalItemsById,
+    approvalHistory,
     notifications,
     resolveDisplaySessionTitle,
   });
@@ -211,6 +219,9 @@ function renderDashboard() {
         respondToPermission(approvalRequestId, decision)
       }
       onClearNotifications={clearNotifications}
+      onClearApprovalHistory={() => {
+        void clearProcessedApprovalHistory(rpcClientRef.current, dispatch);
+      }}
     />
   );
 }
@@ -221,6 +232,7 @@ function renderAgents() {
       isMobile={isMobile}
       daemonHost={daemonHost}
       daemonPort={daemonPort}
+      initialTab={agentsInitialTab}
       defaultDaemonHost={DEFAULT_DAEMON_HOST}
       defaultDaemonPort={DEFAULT_DAEMON_PORT}
       isEmbeddedHelmDeck={IS_EMBEDDED_HELM_DECK}
@@ -314,6 +326,10 @@ function renderSettings() {
       loggingConnectionKnownConnected={loggingConnectionKnownConnected}
       onRefreshLoggingSettings={refreshLoggingSettings}
       onSaveLoggingLevel={saveLoggingLevel}
+      helmUpdate={helmUpdateState}
+      helmUpdateClient={helmUpdateClient}
+      onRefreshHelmUpdate={refreshHelmUpdate}
+      onStartHelmUpdate={startHelmUpdate}
     />
   );
 }

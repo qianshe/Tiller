@@ -18,6 +18,20 @@ type RadialMenuProps = {
 
 type Position = { left: number; top: number } | null;
 
+export function isWithinRadialMenu(target: EventTarget | null): boolean {
+  if (
+    target === null
+    || (typeof target !== "object" && typeof target !== "function")
+  ) {
+    return false;
+  }
+  const closest = (target as { closest?: unknown }).closest;
+  return typeof closest === "function"
+    && Boolean(
+      (closest as (selector: string) => unknown).call(target, "[data-radial]"),
+    );
+}
+
 export function RadialMenu({ activeView, items, onNavigate, enabled = false }: RadialMenuProps) {
   const [position, setPosition] = useState<Position>(null);
   const [open, setOpen] = useState(false);
@@ -30,8 +44,7 @@ export function RadialMenu({ activeView, items, onNavigate, enabled = false }: R
     if (!open) return undefined;
 
     const closeOnOutsidePointer = (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (!target?.closest("[data-radial]")) {
+      if (!isWithinRadialMenu(event.target)) {
         setOpen(false);
       }
     };
@@ -119,6 +132,12 @@ export function RadialMenu({ activeView, items, onNavigate, enabled = false }: R
     }
   };
 
+  const onHoverPointerEnter = (event: PointerEvent<HTMLElement>) => {
+    if (event.pointerType === "mouse") {
+      setOpen(true);
+    }
+  };
+
   const onItemKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -148,6 +167,8 @@ export function RadialMenu({ activeView, items, onNavigate, enabled = false }: R
   };
 
   const radius = 64;
+  const hoverZoneSize = (radius + 24) * 2;
+  const hoverZoneOffset = hoverZoneSize / 2 - 24;
   const angleStep = (Math.PI * 2) / items.length;
   const startAngle = -Math.PI / 2;
   const githubActionRight = "clamp(24px, 4.2vw, 56px)";
@@ -164,6 +185,26 @@ export function RadialMenu({ activeView, items, onNavigate, enabled = false }: R
   return (
     <div data-radial className="pointer-events-none z-[60]" style={containerStyle}>
       <div className="relative pointer-events-auto" style={{ width: 48, height: 48 }}>
+        <div
+          data-radial-hover-zone
+          aria-hidden="true"
+          onPointerEnter={onHoverPointerEnter}
+          onPointerLeave={(event) => {
+            if (!isWithinRadialMenu(event.relatedTarget)) {
+              setOpen(false);
+            }
+          }}
+          style={{
+            position: "absolute",
+            left: -hoverZoneOffset,
+            top: -hoverZoneOffset,
+            width: hoverZoneSize,
+            height: hoverZoneSize,
+            borderRadius: "50%",
+            pointerEvents: "auto",
+            zIndex: 0,
+          }}
+        />
         {open ? (
           <div className="pointer-events-none absolute left-1/2 -translate-x-1/2 whitespace-nowrap" style={{ top: 58 }}>
             <span
@@ -211,6 +252,7 @@ export function RadialMenu({ activeView, items, onNavigate, enabled = false }: R
                 color: active ? "var(--on-primary)" : "var(--foreground)",
                 backdropFilter: "blur(20px)",
                 boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 8px 20px rgb(0 0 0 / 0.22)",
+                zIndex: 1,
               }}
               aria-label={item.label}
               aria-current={active ? "page" : undefined}
@@ -227,15 +269,18 @@ export function RadialMenu({ activeView, items, onNavigate, enabled = false }: R
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}
+          onPointerEnter={onHoverPointerEnter}
           onKeyDown={onTriggerKeyDown}
           className="wb-focus-ring absolute grid h-12 w-12 place-items-center overflow-visible rounded-full"
           style={{
             left: 0,
             top: 0,
-            background: "var(--surface-elevated)",
+            background: "transparent",
             color: "var(--foreground)",
-            backdropFilter: "blur(20px)",
-            boxShadow: "inset 0 0 0 1px var(--border-ghost), 0 14px 32px rgb(0 0 0 / 0.30)",
+            backdropFilter: "blur(2px) saturate(125%)",
+            WebkitBackdropFilter: "blur(2px) saturate(125%)",
+            boxShadow: "inset 0 0 0 2.5px var(--primary), 0 14px 32px rgb(0 0 0 / 0.18)",
+            zIndex: 1,
             cursor: dragging ? "grabbing" : "grab",
             transform: open ? "rotate(45deg)" : "rotate(0deg)",
             transition: "transform 320ms cubic-bezier(0.34, 1.56, 0.64, 1)",

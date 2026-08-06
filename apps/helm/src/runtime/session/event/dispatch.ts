@@ -3,10 +3,7 @@ import type { HelmHandlerContext } from "../../../handlers/context";
 import { assertCanonicalTimelinePipeline } from "./canonical";
 import { handleRuntimeCommandOutputEvent } from "./command-output";
 import { handleRuntimeCompactionEvent } from "./compaction";
-import {
-  handleRuntimeAssistantMessage,
-  handleRuntimeUserMessage,
-} from "./message-stream";
+import { handleRuntimeAssistantMessage, handleRuntimeUserMessage } from "./message-stream";
 import {
   handleRuntimeAvailableCommandsEvent,
   handleRuntimeCanonicalStateEvent,
@@ -18,10 +15,7 @@ import {
   handleRuntimePlanEvent,
   handleRuntimeStatusEvent,
 } from "./state-handlers";
-import {
-  finalizeRuntimeThinking,
-  handleRuntimeToolCallEvent,
-} from "./tool-call";
+import { handleRuntimeToolCallEvent } from "./tool-call";
 
 export function dispatchNormalizedRuntimeEvent(
   sessionId: string,
@@ -38,9 +32,7 @@ export function dispatchNormalizedRuntimeEvent(
         handleRuntimeUserMessage(sessionId, event, context);
         return;
       }
-      if (handleRuntimeAssistantMessage(sessionId, event, context)) {
-        finalizeRuntimeThinking(sessionId, "completed", context);
-      }
+      handleRuntimeAssistantMessage(sessionId, event, context);
       return;
     case "compaction":
       handleRuntimeCompactionEvent(sessionId, event, context);

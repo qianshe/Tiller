@@ -24,3 +24,20 @@ test("terminal timeline tool calls win over stale live running overlays", () => 
 
   assert.equal(merged?.status, "completed");
 });
+
+test("identified subagent titles win over stale live task overlays", () => {
+  const historical = {
+    ...toolCall("running"),
+    title: "Sisyphus-Junior",
+    commandId: "subagent:task-1",
+  };
+  const live = {
+    ...toolCall("running"),
+    title: "task",
+  };
+
+  const [merged] = mergeHistoricalAndLiveToolCalls([historical], [live]);
+
+  assert.equal(merged?.title, "Sisyphus-Junior");
+  assert.equal(merged?.commandId, "subagent:task-1");
+});

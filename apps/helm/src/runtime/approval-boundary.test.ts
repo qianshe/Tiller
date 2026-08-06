@@ -71,6 +71,160 @@ const request = {
   cwd: "D:/repo",
 };
 
+const localCommandRequest = {
+  id: "approval-shell",
+  command: '{"command":"rg --files","cwd":"D:/repo"}',
+  reason: "execute",
+  cwd: "D:/repo",
+  category: "local_command" as const,
+};
+
+test("full-access sessions auto-approve local commands without a saved policy", () => {
+  const { context, notifications, responses, summaryUpdates } = createContext({
+    sessions: new Map([
+      [
+        "session-1",
+        {
+          summary: { id: "session-1", agentId: "codex", projectId: "tiller", agentMode: "agent-full-access" },
+          runtime: {
+            supportsPermissionResponses: true,
+            respondPermission: (requestId: string, decision: string) => {
+              responses.push({ requestId, decision });
+            },
+          },
+        },
+      ],
+    ]),
+  });
+
+  handleRuntimePermissionRequest(
+    {
+      sessionId: "session-1",
+      request: localCommandRequest,
+      logScope: "session=session-1",
+      sequence: 1,
+      update: {} as any,
+    },
+    context,
+  );
+
+  assert.deepEqual(responses, [{ requestId: "approval-shell", decision: "allow" }]);
+  assert.deepEqual(notifications, []);
+  assert.deepEqual(summaryUpdates, []);
+});
+
+test("full-access sessions keep external actions behind manual approval", () => {
+  const { context, notifications, responses } = createContext({
+    sessions: new Map([
+      [
+        "session-1",
+        {
+          summary: { id: "session-1", agentId: "codex", projectId: "tiller", agentMode: "agent-full-access" },
+          runtime: {
+            supportsPermissionResponses: true,
+            respondPermission: (requestId: string, decision: string) => {
+              responses.push({ requestId, decision });
+            },
+          },
+        },
+      ],
+    ]),
+  });
+
+  handleRuntimePermissionRequest(
+    {
+      sessionId: "session-1",
+      request: { ...request, category: "external_action" },
+      logScope: "session=session-1",
+      sequence: 1,
+      update: {} as any,
+    },
+    context,
+  );
+
+  assert.deepEqual(responses, []);
+  assert.equal(notifications.some((item) => item.method === "approval/created"), true);
+});
+
+test("full-access sessions respect explicit confirm rules for local commands", () => {
+  const { context, notifications, responses } = createContext({
+    sessions: new Map([
+      [
+        "session-1",
+        {
+          summary: { id: "session-1", agentId: "codex", projectId: "tiller", agentMode: "agent-full-access" },
+          runtime: {
+            supportsPermissionResponses: true,
+            respondPermission: (requestId: string, decision: string) => {
+              responses.push({ requestId, decision });
+            },
+          },
+        },
+      ],
+    ]),
+    readApprovalPolicy: () => ({
+      rules: [
+        {
+          id: "confirm-rg",
+          action: "confirm",
+          label: "Confirm rg",
+          providerId: "codex",
+          commandPattern: "rg --files",
+          createdAt: "2026-08-03T00:00:00.000Z",
+          updatedAt: "2026-08-03T00:00:00.000Z",
+        },
+      ],
+    }),
+  });
+
+  handleRuntimePermissionRequest(
+    {
+      sessionId: "session-1",
+      request: localCommandRequest,
+      logScope: "session=session-1",
+      sequence: 1,
+      update: {} as any,
+    },
+    context,
+  );
+
+  assert.deepEqual(responses, []);
+  assert.equal(notifications.some((item) => item.method === "approval/created"), true);
+});
+
+test("agent sessions keep local commands behind manual approval", () => {
+  const { context, notifications, responses } = createContext({
+    sessions: new Map([
+      [
+        "session-1",
+        {
+          summary: { id: "session-1", agentId: "codex", projectId: "tiller", agentMode: "agent" },
+          runtime: {
+            supportsPermissionResponses: true,
+            respondPermission: (requestId: string, decision: string) => {
+              responses.push({ requestId, decision });
+            },
+          },
+        },
+      ],
+    ]),
+  });
+
+  handleRuntimePermissionRequest(
+    {
+      sessionId: "session-1",
+      request: localCommandRequest,
+      logScope: "session=session-1",
+      sequence: 1,
+      update: {} as any,
+    },
+    context,
+  );
+
+  assert.deepEqual(responses, []);
+  assert.equal(notifications.some((item) => item.method === "approval/created"), true);
+});
+
 test("approval boundary creates a manual pending approval when no policy matches", () => {
   const { context, notifications, summaryUpdates } = createContext();
 
@@ -87,12 +241,31 @@ test("approval boundary creates a manual pending approval when no policy matches
 
   assert.equal(context.approvalIndex.get("approval-1")?.sessionId, "session-1");
   assert.equal(summaryUpdates.length, 1);
+  const createdApproval = (
+    notifications[0]?.params as
+      | { approval?: { createdAt: string; updatedAt: string } }
+      | undefined
+  )?.approval;
+  assert.ok(createdApproval);
+  assert.equal(createdApproval.createdAt, createdApproval.updatedAt);
+  assert.ok(Number.isFinite(Date.parse(createdApproval.createdAt)));
   assert.deepEqual(notifications, [
     {
       method: "approval/created",
       params: {
         sessionId: "session-1",
         request,
+        approval: {
+          id: "approval-1",
+          sessionId: "session-1",
+          runtimeInstanceId: "session-1",
+          toolCallId: undefined,
+          sequence: 1,
+          status: "pending",
+          request,
+          createdAt: createdApproval.createdAt,
+          updatedAt: createdApproval.updatedAt,
+        },
         session: { id: "session-1", agentId: "codex", projectId: "tiller" },
       },
     },

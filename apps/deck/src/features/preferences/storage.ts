@@ -15,7 +15,7 @@ export {
 
 export const DECK_PREFERENCES_STORAGE_KEY = "tiller.deck-preferences";
 
-export type DeckTheme = "system" | "light" | "dark" | "tiller";
+export type DeckTheme = "system" | "light" | "dark" | "harbor" | "voyage" | "chart";
 export type DeckDensity = "compact" | "default" | "cozy";
 export type DeckTimeFormat = "relative" | "absolute";
 
@@ -89,9 +89,12 @@ export function readDeckPreferences(): DeckPreferences {
       language: isDeckLanguage(parsed.language)
         ? parsed.language
         : DEFAULT_DECK_PREFERENCES.language,
-      theme: isDeckTheme(parsed.theme)
-        ? parsed.theme
-        : DEFAULT_DECK_PREFERENCES.theme,
+      // 已下线的 tiller 主题迁移到最接近的 harbor（同为冷蓝调亮色）。
+      theme: parsed.theme === "tiller"
+        ? "harbor"
+        : isDeckTheme(parsed.theme)
+          ? parsed.theme
+          : DEFAULT_DECK_PREFERENCES.theme,
       reduceMotion: parsed.reduceMotion === true,
       density: isDeckDensity(parsed.density)
         ? parsed.density
@@ -176,7 +179,8 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function isDeckTheme(value: unknown): value is DeckTheme {
   return (
-    value === "system" || value === "light" || value === "dark" || value === "tiller"
+    value === "system" || value === "light" || value === "dark" ||
+    value === "harbor" || value === "voyage" || value === "chart"
   );
 }
 

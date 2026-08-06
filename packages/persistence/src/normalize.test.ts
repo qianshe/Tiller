@@ -49,3 +49,18 @@ test("normalizeLegacyPersistedAgentToolCall upgrades title-only MCP history with
   assert.equal(normalized?.kind, "mcp");
   assert.equal(normalized?.title, "Tool: search_context");
 });
+
+test("normalizeLegacyPersistedAgentToolCall demotes legacy Thinking tools", () => {
+  const legacyToolCall = {
+    id: "legacy-thinking-tool",
+    kind: "think",
+    title: "Thinking",
+    status: "completed",
+    output: "Inspect the repository first",
+    timestamp: "2026-07-07T12:00:00.000Z",
+    updatedAt: "2026-07-07T12:00:01.000Z",
+  } as unknown as AgentToolCall;
+  const normalized = normalizeLegacyPersistedAgentToolCall(legacyToolCall);
+
+  assert.equal(normalized?.kind, "tool");
+});

@@ -241,6 +241,28 @@ test("notification reports preserve the diagnostics needed for feedback", () => 
   ].join("\n"));
 });
 
+test("notification reports include structured system error diagnostics", () => {
+  const report = formatNotificationReport({
+    ...commonProps.notifications[0]!,
+    source: "rpc",
+    sessionId: undefined,
+    details: {
+      phase: "notification-handler",
+      method: "session/update",
+      helmKey: "localhost:47631",
+      updateKind: "timeline_batch",
+      errorName: "Error",
+      errorStack: "Error: Maximum update depth exceeded.",
+    },
+  });
+
+  assert.match(report, /诊断信息:/);
+  assert.match(report, /阶段: notification-handler/);
+  assert.match(report, /RPC 方法: session\/update/);
+  assert.match(report, /Helm: localhost:47631/);
+  assert.match(report, /错误堆栈:\nError: Maximum update depth exceeded\./);
+});
+
 test("copyNotificationReport writes the complete report to the clipboard", async () => {
   const writes: string[] = [];
 
@@ -305,6 +327,35 @@ test("DashboardPage keeps permission activity details compact", () => {
 
   assert.match(html, /权限: MCP · sanshu\/zhi\. 等待审批\. Codex\. Tiller\. feature\/0\.1\.6\. 待处理/);
   assert.doesNotMatch(html, /Approve MCP tool call with a long permission reason/);
+});
+
+test("DashboardPage renders persisted approval outcomes and exposes processed-history cleanup", () => {
+  const html = renderToStaticMarkup(
+    createElement(DashboardPage, {
+      ...commonProps,
+      approvals: [],
+      approvalHistory: [
+        {
+          id: "history-1",
+          sessionId: "session-1",
+          kind: "shell_command",
+          target: "Run tests",
+          status: "resolved",
+          decision: "deny",
+          createdAt: "2026-06-02T00:00:00.000Z",
+          updatedAt: "2026-06-02T00:01:00.000Z",
+          agentName: "Codex",
+          projectName: "Tiller",
+          worktreeName: "feature/0.1.6",
+        },
+      ],
+      onClearApprovalHistory: () => undefined,
+    } as any),
+  );
+
+  assert.match(html, /已拒绝/);
+  assert.match(activityStreamSource, /title="清理已处理"/);
+  assert.match(activityStreamSource, /activeTab === "权限"/);
 });
 
 test("DashboardPage puts desktop notifications after the permission tab and keeps mobile notifications after approvals", () => {

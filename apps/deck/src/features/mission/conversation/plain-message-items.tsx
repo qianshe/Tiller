@@ -1,13 +1,30 @@
-import { memo, useEffect, useRef, useState, type ReactNode, type UIEvent } from "react";
+import {
+  memo,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type UIEvent,
+} from "react";
 import { createPortal } from "react-dom";
 import type {
   AgentMessage,
   AgentPromptImageContent,
   AgentToolCall,
+  MissionPromptContextItem,
+  SessionTimelineThinkingChunk,
   SessionSubagentDetail,
 } from "@tiller/shared";
+import {
+  parseMissionPromptContext,
+  stripMissionPromptContext,
+} from "@tiller/shared";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../../helm-connection/helm-endpoint";
-import { Badge, Button, Icon } from "../../../shared/ui";
+import {
+  Badge,
+  Button,
+  Icon,
+} from "../../../shared/ui";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import type { ConversationToolCallItem } from "../../logbook";
 import { resolveToolCallTone } from "../../logbook/tool-call-tone";
@@ -26,6 +43,9 @@ import {
 } from "./tool-call-change-stats";
 import { ToolCallDiffPreview } from "./tool-call-diff-preview";
 import { resolveCodexSubagentPresentation } from "./codex-subagent-presentation";
+import { normalizeQuotedSelection, resolveReviewContextTitle } from "./text-selection";
+import { SelectionCommentPopover } from "../ui/selection-comment-popover";
+import { PromptContextMenu } from "../ui/prompt-context-menu";
 
 const DEFAULT_ATTACHMENT_HOST = "127.0.0.1";
 const DEFAULT_ATTACHMENT_PORT = "47631";
@@ -210,6 +230,7 @@ type PlainMessageItemProps = {
   message: AgentMessage;
   onDismiss?: (messageId: string) => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
 };
 
 type AssistantMessageActions = {
@@ -225,20 +246,31 @@ export const PlainMessageItem = memo(function PlainMessageItem({
   message,
   onDismiss,
   onToggleExpandedMessage,
+  onAddDraftContext,
 }: PlainMessageItemProps) {
   const isSystem = message.role === "system";
   const isAssistant = message.role === "assistant";
   const isStreaming = isAssistant && message.streaming;
+  const renderedUserPrompt = message.role === "user"
+    ? parseMissionPromptContext(message.text)
+    : null;
+  const userBodyText = renderedUserPrompt?.body ?? message.text;
+  const userPromptContexts = renderedUserPrompt?.contexts ?? [];
   const isCollapsible =
-    message.role === "user" && shouldCollapsePlainMessage(message.text);
+    message.role === "user" && shouldCollapsePlainMessage(userBodyText);
   const messageBodyClassName =
     isCollapsible && !isExpanded
       ? "plain-message-body plain-message-body-collapsed"
       : "plain-message-body";
   const [previewImage, setPreviewImage] = useState<PlainMessageImagePreview | null>(null);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [quoteDraft, setQuoteDraft] = useState<{
+    anchorRange: Range;
+    comment: string;
+    excerpt: string;
+  } | null>(null);
   const copyResetTimeoutRef = useRef<number | null>(null);
-  const hasCopyableUserText = message.role === "user" && Boolean(message.text.trim());
+  const hasCopyableUserText = message.role === "user" && Boolean(userBodyText.trim());
   const hasCopyableAssistantText = isAssistant && Boolean(assistantActions?.copyText.trim());
   const hasAssistantHandoff =
     hasCopyableAssistantText &&
@@ -284,7 +316,77 @@ export const PlainMessageItem = memo(function PlainMessageItem({
       resetCopyStateAfter(1800);
       return;
     }
-    await copyMessageText(message.text);
+    await copyMessageText(stripMissionPromptContext(message.text));
+  }
+
+  const [quoteSelection, setQuoteSelection] = useState<{
+    anchorRange: Range;
+    excerpt: string;
+  } | null>(null);
+
+  const articleRef = useRef<HTMLElement>(null);
+  // 监听 document selectionchange 而非 onMouseUp:移动端触摸选择不会可靠触发 mouseup,
+  // selectionchange 在鼠标拖选与触摸拖选下都会触发,配合防抖等选区稳定后再弹气泡。
+  useEffect(() => {
+    if (!onAddDraftContext || message.role === "system") {
+      return;
+    }
+    let timer: number | null = null;
+    const handleSelectionChange = () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+      timer = window.setTimeout(() => {
+        const article = articleRef.current;
+        // 流式消息(DOM 仍在更新)禁用 quote 选区,避免 anchorRange 失效导致 popover 飘移。
+        if (!article || article.closest('[data-streaming="true"]')) {
+          return;
+        }
+        const selection = typeof window !== "undefined" ? window.getSelection() : null;
+        const anchor = selection?.anchorNode;
+        const focus = selection?.focusNode;
+        if (
+          !selection ||
+          selection.rangeCount === 0 ||
+          !anchor ||
+          !focus ||
+          !article.contains(anchor) ||
+          !article.contains(focus)
+        ) {
+          return;
+        }
+        const normalized = normalizeQuotedSelection(selection.toString());
+        if (!normalized) {
+          setQuoteSelection(null);
+          return;
+        }
+        setQuoteDraft(null);
+        setQuoteSelection({
+          anchorRange: selection.getRangeAt(0).cloneRange(),
+          excerpt: normalized.excerpt,
+        });
+      }, 200);
+    };
+    document.addEventListener("selectionchange", handleSelectionChange);
+    return () => {
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+      document.removeEventListener("selectionchange", handleSelectionChange);
+    };
+  }, [onAddDraftContext, message.role]);
+
+  function startQuoteDraft() {
+    if (!quoteSelection) return;
+    setQuoteDraft({ ...quoteSelection, comment: "" });
+    setQuoteSelection(null);
+    window.getSelection()?.removeAllRanges();
+  }
+
+  function clearQuoteInteraction() {
+    setQuoteSelection(null);
+    setQuoteDraft(null);
+    window.getSelection()?.removeAllRanges();
   }
 
   async function copyAssistantMessage() {
@@ -295,6 +397,10 @@ export const PlainMessageItem = memo(function PlainMessageItem({
     }
     await copyMessageText(assistantActions.copyText);
   }
+
+  const quoteContainment = articleRef.current?.closest<HTMLElement>(
+    '[data-mission-mobile-pane="chat"]',
+  ) ?? undefined;
 
   return (
     <article
@@ -309,6 +415,7 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             : "ml-auto grid w-full justify-items-end gap-2 text-left",
       )}
       data-streaming={isStreaming ? "true" : undefined}
+      ref={articleRef}
     >
       {isAssistant ? (
         <span
@@ -340,6 +447,9 @@ export const PlainMessageItem = memo(function PlainMessageItem({
               />
             ))}
           </div>
+        ) : null}
+        {message.role === "user" && userPromptContexts.length ? (
+          <SentPromptContexts contexts={userPromptContexts} />
         ) : null}
         {isSystem ? (
           <div className="flex min-w-0 items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-[12px] leading-[1.5] text-foreground/80">
@@ -378,6 +488,41 @@ export const PlainMessageItem = memo(function PlainMessageItem({
             {renderPlainMessageContent(message, isCollapsible && !isExpanded, isStreaming)}
           </div>
         )}
+        {quoteSelection ? (
+          <SelectionCommentPopover
+            anchor={quoteSelection.anchorRange}
+            containment={quoteContainment}
+            mode="actions"
+            onCancel={clearQuoteInteraction}
+            onOpenComposer={startQuoteDraft}
+          />
+        ) : null}
+        {quoteDraft && onAddDraftContext ? (
+          <SelectionCommentPopover
+            anchor={quoteDraft.anchorRange}
+            containment={quoteContainment}
+            comment={quoteDraft.comment}
+            context={(
+              <span className="line-clamp-2 min-w-0">“{quoteDraft.excerpt}”</span>
+            )}
+            mode="composer"
+            onCancel={clearQuoteInteraction}
+            onChangeComment={(comment) => setQuoteDraft((current) => current
+              ? { ...current, comment }
+              : current)}
+            onSubmit={() => {
+              onAddDraftContext({
+                id: `${message.id}:${quoteDraft.excerpt}`,
+                kind: "quote",
+                label: `${message.role} 引用`,
+                comment: quoteDraft.comment.trim(),
+                excerpt: quoteDraft.excerpt,
+                source: { kind: "quote", messageId: message.id, role: message.role },
+              });
+              clearQuoteInteraction();
+            }}
+          />
+        ) : null}
         {message.role === "user" && hasUserMessageActions ? (
           <div
             className={cn(
@@ -518,15 +663,30 @@ function PlainThinkingIcon() {
 }
 
 export function PlainThinkingItem({
-  item,
+  items,
   hasNewerContent = false,
 }: {
-  item: AgentToolCall;
+  items: SessionTimelineThinkingChunk[];
   hasNewerContent?: boolean;
 }) {
-  const isRunning = item.status === "pending" || item.status === "running";
-  const text = item.output?.trim() || item.input?.trim() || "暂无 Thinking 内容";
-  const preview = resolveThinkingSummaryPreview(text);
+  const thinkingItems = items.length > 0 ? items : [{
+    id: "empty-thinking",
+    kind: "thinking" as const,
+    text: "",
+    title: "Thinking",
+    status: "completed" as const,
+    timestamp: "",
+    updatedAt: "",
+  }];
+  const text = thinkingItems
+    .map((item) => item.text.trim() || "暂无 Thinking 内容")
+    .join("\n\n");
+  const latestThinkingItem = thinkingItems.at(-1);
+  const isRunning = latestThinkingItem?.status === "pending" ||
+    latestThinkingItem?.status === "running";
+  // The first line is still incomplete while a thought is streaming. Keep the
+  // summary label stable until the provider publishes a terminal snapshot.
+  const preview = isRunning ? "" : resolveThinkingSummaryPreview(text);
   const contentRef = useRef<HTMLDivElement | null>(null);
   const shouldFollowStreamRef = useRef(true);
   const contentClassName = resolveThinkingContentClassName({
@@ -606,8 +766,18 @@ export function PlainThinkingItem({
         </summary>
         {open ? (
           <div ref={contentRef} className={contentClassName} onScroll={handleThinkingScroll}>
-            <div className="plain-thinking-text whitespace-pre-wrap [overflow-wrap:anywhere]">
-              {text}
+            <div className={cn(
+              "plain-thinking-parts min-w-0",
+              thinkingItems.length > 1 && "divide-y divide-border-ghost/70",
+            )}>
+              {thinkingItems.map((item, index) => (
+                <div
+                  key={`${item.id}-${index}`}
+                  className="plain-thinking-text whitespace-pre-wrap py-1 [overflow-wrap:anywhere]"
+                >
+                  {item.text.trim() || "暂无 Thinking 内容"}
+                </div>
+              ))}
             </div>
           </div>
         ) : null}
@@ -803,6 +973,7 @@ export function PlainSubagentItem({
     resolveSubagentOutput(item.text) ||
     resolveSubagentPrompt(item.input) ||
     "暂无 Subagent 内容";
+  const subagentModel = resolveSubagentModel(item.input);
   const summary = codexPresentation?.summary ?? resolveSubagentSummary(item);
   const label = codexPresentation?.label ?? resolveSubagentLabel(item);
   const statusBadge = codexPresentation?.statusBadge ?? resolveSubagentStatusBadge(item);
@@ -834,18 +1005,24 @@ export function PlainSubagentItem({
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary
-          className="flex w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
+          className="flex min-w-0 w-full cursor-pointer list-none items-center gap-2 rounded-sm py-1 text-xs leading-4 text-muted-foreground outline-none focus-visible:ring-1 focus-visible:ring-border-ghost [&::-webkit-details-marker]:hidden"
           aria-label={open ? `收起 ${label}` : `展开 ${label}`}
         >
           <span className="flex min-w-0 flex-1 items-center gap-2">
             <span className="inline-flex size-4 shrink-0 items-center justify-center rounded-sm bg-amber-500/10 text-amber-700 dark:bg-amber-300/10 dark:text-amber-300">
               <Icon name="message" size={12} className="shrink-0" />
             </span>
-            <span className="inline-flex h-4 shrink-0 items-center font-medium leading-none text-amber-700 dark:text-amber-300">
+            <span
+              className="inline-flex h-4 min-w-0 flex-1 items-center truncate font-medium leading-none text-amber-700 dark:text-amber-300"
+              title={label}
+            >
               {label}
             </span>
             {summary ? (
-              <span className="inline-flex h-4 min-w-0 items-center truncate leading-none text-muted-foreground/70">
+              <span
+                className="inline-flex h-4 min-w-0 max-w-[45%] shrink items-center truncate leading-none text-muted-foreground/70"
+                title={summary}
+              >
                 {summary}
               </span>
             ) : null}
@@ -877,6 +1054,25 @@ export function PlainSubagentItem({
           ) : (
             <MarkdownMessage text={fallbackText} />
           )}
+          {subagentModel ? (
+            <div
+              className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border-ghost/70 pt-1.5 text-2xs text-muted-foreground/70"
+              data-subagent-model
+            >
+              {subagentModel.modelId ? (
+                <span>
+                  <span className="font-medium text-muted-foreground">modelID:</span>{" "}
+                  <code>{subagentModel.modelId}</code>
+                </span>
+              ) : null}
+              {subagentModel.variant ? (
+                <span>
+                  <span className="font-medium text-muted-foreground">variant:</span>{" "}
+                  <code>{subagentModel.variant}</code>
+                </span>
+              ) : null}
+            </div>
+          ) : null}
         </div>
       </details>
     </div>
@@ -907,6 +1103,9 @@ function resolveSubagentSummary(item: ConversationToolCallItem) {
   }
   if (metadata.description) {
     return metadata.description;
+  }
+  if (metadata.name) {
+    return "";
   }
   if (item.status === "failed") {
     return "Error";
@@ -986,13 +1185,17 @@ function parseSubagentMetadata(input: string) {
   }
   const candidates = [
     parsed,
+    recordFrom(parsed.metadata),
     recordFrom(parsed.arguments),
     recordFrom(parsed.args),
     recordFrom(parsed.params),
     recordFrom(parsed.input),
   ].filter((record): record is Record<string, unknown> => Boolean(record));
+  const category = candidates
+    .map((record) => firstString(record, ["category"]))
+    .find((value): value is string => Boolean(value));
   for (const record of candidates) {
-    const name = firstString(record, [
+    const name = category ?? firstString(record, [
       "subagent_type",
       "subagentType",
       "agent_type",
@@ -1023,6 +1226,38 @@ function parseSubagentMetadata(input: string) {
     }
   }
   return {};
+}
+
+type SubagentModelMetadata = {
+  modelId?: string;
+  variant?: string;
+};
+
+function resolveSubagentModel(input: string): SubagentModelMetadata | undefined {
+  const parsed = parseJsonRecord(input);
+  if (!parsed) {
+    return undefined;
+  }
+  const records = [
+    parsed,
+    recordFrom(parsed.metadata),
+    recordFrom(parsed.arguments),
+    recordFrom(parsed.args),
+    recordFrom(parsed.params),
+    recordFrom(parsed.input),
+  ].filter((record): record is Record<string, unknown> => Boolean(record));
+  for (const record of records) {
+    const model = recordFrom(record.model) ?? record;
+    const modelId = firstString(model, ["modelID", "modelId", "model_id"]);
+    const variant = firstString(model, ["variant"]);
+    if (modelId || variant) {
+      return {
+        ...(modelId ? { modelId } : {}),
+        ...(variant ? { variant } : {}),
+      };
+    }
+  }
+  return undefined;
 }
 
 function parseJsonRecord(input: string) {
@@ -1173,19 +1408,36 @@ function summarizeToolGroupTitle(labels: string[]) {
   return labels.slice(0, 3).join(" / ");
 }
 
+function SentPromptContexts({ contexts }: { contexts: MissionPromptContextItem[] }) {
+  return (
+    <div
+      className="mission-message-attachments ml-auto flex w-full max-w-[min(56rem,76%)] flex-wrap justify-end gap-2 justify-self-end"
+      data-prompt-context-boundary="message"
+      aria-label="已发送评论"
+    >
+      <PromptContextMenu
+        contexts={contexts}
+        align="end"
+        resolveTitle={resolveReviewContextTitle}
+      />
+    </div>
+  );
+}
+
 function renderPlainMessageContent(
   message: AgentMessage,
   collapsed: boolean,
   streaming = false,
 ) {
   if (message.role === "user") {
+    const parsed = parseMissionPromptContext(message.text);
     return (
       <div
         className={
           collapsed ? "plain-message-text plain-message-text-collapsed line-clamp-3 overflow-hidden whitespace-pre-wrap" : "plain-message-text whitespace-pre-wrap"
         }
       >
-        {message.text}
+        {parsed.body}
       </div>
     );
   }

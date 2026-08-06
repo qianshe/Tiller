@@ -143,11 +143,13 @@ export function useOpenSessionStreams(options: OpenSessionStreamsOptions) {
     });
 
     if (messageSessionIds.length > 0) {
+      messageSessionIds.forEach((sessionId) => {
+        pendingTimelineRequestSessionIdsRef.current.add(sessionId);
+      });
       setMessageHistoryState((current: any) => {
         return markSessionHistoryEntriesLoading(current, messageSessionIds);
       });
       messageSessionIds.forEach((sessionId) => {
-        pendingTimelineRequestSessionIdsRef.current.add(sessionId);
         void dispatch(client, "session/list_timeline", {
           sessionId,
           limit: DEFAULT_MESSAGE_PAGE_LIMIT,

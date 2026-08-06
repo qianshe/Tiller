@@ -6,6 +6,7 @@ import { emitFirstHelmPromptTrace } from "../../prompt-trace";
 import {
   normalizeRuntimeAssistantMessageId,
   shouldFlushActiveAssistantSegment,
+  shouldTreatIncomingAssistantMessageAsSnapshot,
   startNextAssistantResponseSegment,
 } from "../../segment-state";
 import {
@@ -29,10 +30,7 @@ import {
   shouldIgnoreRuntimeUserMessage,
 } from "./user-echo";
 
-function clearAssistantDeltaTimer(
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
+function clearAssistantDeltaTimer(sessionId: string, context: HelmHandlerContext) {
   const state = runtimeEventState(context);
   clearRuntimeEventTimer(
     context,
@@ -41,10 +39,7 @@ function clearAssistantDeltaTimer(
   state.delete(sessionId, RUNTIME_EVENT_STATE_KEY.assistantDeltaTimer);
 }
 
-function flushPendingAssistantDelta(
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
+function flushPendingAssistantDelta(sessionId: string, context: HelmHandlerContext) {
   clearAssistantDeltaTimer(sessionId, context);
   const deltaMessage = context.liveMessageBuffer.flushPending(sessionId);
   if (!deltaMessage) {
@@ -63,13 +58,20 @@ function flushPendingAssistantDelta(
     message: orderedDelta,
     streaming: true,
   });
+  const bufferedMessage = context.liveMessageBuffer.peek(sessionId);
+  if (bufferedMessage && !isPotentialCompactionSummary(sessionId, bufferedMessage, context)) {
+    assertCanonicalTimelinePipeline(context);
+    routeCanonicalTimelineEvent(
+      sessionId,
+      { type: "message", message: orderedDelta },
+      context,
+      orderedDelta.sequence,
+    );
+  }
   return true;
 }
 
-export function scheduleAssistantDeltaFlush(
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
+export function scheduleAssistantDeltaFlush(sessionId: string, context: HelmHandlerContext) {
   const pendingChars = context.liveMessageBuffer.pendingLength(sessionId);
   if (pendingChars <= 0) {
     clearAssistantDeltaTimer(sessionId, context);
@@ -134,12 +136,26 @@ export function handleRuntimeAssistantMessage(
   event: Extract<SessionRuntimeEvent, { type: "message" }>,
   context: HelmHandlerContext,
 ) {
-  if (shouldFlushActiveAssistantSegment(sessionId, event.message.id)) {
+  const incomingIsSnapshot = shouldTreatIncomingAssistantMessageAsSnapshot(
+    sessionId,
+    event.message.id,
+    event.message.text,
+    event.message.streamMode,
+  );
+  if (
+    shouldFlushActiveAssistantSegment(
+      sessionId,
+      event.message.id,
+      event.message.text,
+      event.message.streamMode,
+    )
+  ) {
     flushLiveAssistantMessage(sessionId, context);
     startNextAssistantResponseSegment(sessionId);
   }
   const message = {
     ...event.message,
+    ...(incomingIsSnapshot ? { streamMode: "snapshot" as const } : {}),
     id: normalizeRuntimeAssistantMessageId(sessionId, event.message),
     sequence: event.message.sequence ?? nextLiveEventSequence(sessionId, context),
   };
@@ -148,7 +164,12 @@ export function handleRuntimeAssistantMessage(
     phase: "helm.runtime.first_message",
     meta: { chars: message.text.length },
   });
-  if (context.liveMessageBuffer.peek(sessionId)?.id !== message.id) {
+  const bufferedMessage = context.liveMessageBuffer.peek(sessionId);
+  if (
+    bufferedMessage &&
+    (bufferedMessage.id !== message.id ||
+      (bufferedMessage.contentKind ?? "content") !== (message.contentKind ?? "content"))
+  ) {
     flushLiveAssistantMessage(sessionId, context);
   }
   context.liveMessageBuffer.append(sessionId, message);
@@ -160,10 +181,7 @@ export function handleRuntimeAssistantMessage(
   return false;
 }
 
-export function flushLiveAssistantMessage(
-  sessionId: string,
-  context: HelmHandlerContext,
-) {
+export function flushLiveAssistantMessage(sessionId: string, context: HelmHandlerContext) {
   assertCanonicalTimelinePipeline(context);
   clearAssistantDeltaTimer(sessionId, context);
   const message = context.liveMessageBuffer.finalize(sessionId);
@@ -173,6 +191,10 @@ export function flushLiveAssistantMessage(
   const finalizedMessage = {
     ...message,
     streaming: false,
+    // The live buffer stores the accumulated full text. Its terminal
+    // publication is therefore a snapshot, even when the provider sent
+    // earlier chunks as deltas.
+    streamMode: "snapshot" as const,
   };
   const originalEvent = {
     type: "message" as const,
@@ -185,12 +207,7 @@ export function flushLiveAssistantMessage(
   if (expandedEvents?.length && expandedEvents.every(isFinalizedAssistantMessageOrCompaction)) {
     for (const event of expandedEvents) {
       if (event.type === "compaction") {
-        routeFinalizedAssistantCompaction(
-          sessionId,
-          event,
-          context,
-          finalizedMessage.sequence,
-        );
+        routeFinalizedAssistantCompaction(sessionId, event, context, finalizedMessage.sequence);
         continue;
       }
       routeFinalizedAssistantMessage(sessionId, event.message, context);
@@ -211,6 +228,22 @@ function resolveFinalizedMessageProviderId(
   );
 }
 
+function isPotentialCompactionSummary(
+  sessionId: string,
+  message: Extract<SessionRuntimeEvent, { type: "message" }>["message"],
+  context: Pick<HelmHandlerContext, "sessions" | "sessionStore">,
+) {
+  const providerId = resolveFinalizedMessageProviderId(sessionId, context)?.toLowerCase();
+  if (providerId === "opencode" && /^\s*##\s+(?:objective|goal)\b/iu.test(message.text)) {
+    return true;
+  }
+  const expandedEvents = expandAdapterRuntimeEvent(providerId, {
+    type: "message",
+    message: { ...message, streaming: false },
+  });
+  return expandedEvents?.some((event) => event.type === "compaction") ?? false;
+}
+
 function isFinalizedAssistantMessageOrCompaction(
   event: SessionRuntimeEvent,
 ): event is Extract<SessionRuntimeEvent, { type: "message" | "compaction" }> {
@@ -223,6 +256,15 @@ function routeFinalizedAssistantMessage(
   context: HelmHandlerContext,
 ) {
   assertCanonicalTimelinePipeline(context);
+  // The canonical timeline is authoritative, but the live activity store
+  // still contains the last streaming overlay until it receives an explicit
+  // terminal message update. Publish that transition at the same write seam
+  // so the assistant marker turns green without waiting for a timeline reload.
+  createSessionEventPublisher(context).sessionUpdate(sessionId, {
+    kind: "agent_message",
+    message: { ...message, streaming: false },
+    streaming: false,
+  });
   const prepared = prepareRuntimeSessionUpdate(
     sessionId,
     { type: "message", message },
@@ -256,12 +298,7 @@ function routeFinalizedAssistantCompaction(
   assertCanonicalTimelinePipeline(context);
   startNextAssistantResponseSegment(sessionId);
   const hydratedEvent = hydrateRuntimeCompactionEventSummary(sessionId, event, context);
-  const prepared = prepareRuntimeSessionUpdate(
-    sessionId,
-    hydratedEvent,
-    context,
-    sequence,
-  );
+  const prepared = prepareRuntimeSessionUpdate(sessionId, hydratedEvent, context, sequence);
   routeCanonicalTimelineEvent(
     sessionId,
     hydratedEvent,

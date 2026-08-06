@@ -448,13 +448,13 @@ test("session update reducer keeps stronger tool classification when sparse patc
   assert.equal(finalState.toolCalls[0]?.output, "ok");
 });
 
-test("session update reducer deduplicates overlapping thinking tool snapshots", () => {
+test("session update reducer does not promote tools titled Thinking into assistant thinking", () => {
   const finalState = [
     {
       type: "tool-call" as const,
       toolCall: {
         id: "thinking-1",
-        kind: "think" as const,
+        kind: "tool" as const,
         title: "Thinking",
         status: "running" as const,
         output: "Line 1\nLine 2\nLine 3",
@@ -463,28 +463,15 @@ test("session update reducer deduplicates overlapping thinking tool snapshots", 
         sequence: 1,
       },
     },
-    {
-      type: "tool-call" as const,
-      toolCall: {
-        id: "thinking-1",
-        kind: "think" as const,
-        title: "Thinking",
-        status: "completed" as const,
-        output: "Line 2\nLine 3\nLine 4",
-        timestamp: at(2),
-        updatedAt: at(2),
-        sequence: 2,
-      },
-    },
   ].reduce(applySessionRuntimeEventToState, createEmptySessionUpdateReducerState());
 
-  assert.equal(finalState.toolCalls[0]?.output, "Line 1\nLine 2\nLine 3\nLine 4");
-  assert.equal(finalState.entries[0]?.kind, "assistant_message");
+  assert.equal(finalState.toolCalls[0]?.output, "Line 1\nLine 2\nLine 3");
+  assert.equal(finalState.entries[0]?.kind, "tool_call");
   assert.equal(
-    finalState.entries[0]?.kind === "assistant_message"
-      ? finalState.entries[0].chunks[0]?.text
+    finalState.entries[0]?.kind === "tool_call"
+      ? finalState.entries[0].toolCall.kind
       : undefined,
-    "Line 1\nLine 2\nLine 3\nLine 4",
+    "tool",
   );
 });
 

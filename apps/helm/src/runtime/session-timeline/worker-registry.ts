@@ -4,7 +4,11 @@ export type SessionTimelineWorkerRegistry = {
   forSession(sessionId: string, options?: { providerId?: string; lastSequence?: number }): SessionTimelineWorker;
   has(sessionId: string): boolean;
   remove(sessionId: string): void;
-  evictIdle(options?: { now?: number; idleMs?: number }): string[];
+  evictIdle(options?: {
+    now?: number;
+    idleMs?: number;
+    beforeRemove?: (sessionId: string, worker: SessionTimelineWorker) => void;
+  }): string[];
   size(): number;
 };
 
@@ -42,6 +46,7 @@ export function createSessionTimelineWorkerRegistry(options: { now?: () => numbe
       const removed: string[] = [];
       for (const [sessionId, state] of workers) {
         if (currentTime - state.lastTouchedAt < idleMs) continue;
+        options.beforeRemove?.(sessionId, state.worker);
         workers.delete(sessionId);
         removed.push(sessionId);
       }

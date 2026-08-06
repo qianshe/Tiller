@@ -2,10 +2,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import type {
   AgentMessage,
   AgentToolCall,
+  MissionPromptContextItem,
   SessionTimelineEntry,
+  SessionTimelineThinkingChunk,
   SessionSubagentDetail,
 } from "@tiller/shared";
 import {
+  mergeStreamingText,
   normalizeComparableReplayText,
   isTranscriptEventEntry,
   looksLikeCompactionLifecycleMessage,
@@ -18,7 +21,6 @@ import {
   coalesceDisplayMessages,
   groupToolCalls,
   mergeAgentMessages,
-  sortAgentMessagesByTimeline,
   type ConversationToolCallItem,
 } from "../../logbook";
 import {
@@ -32,6 +34,8 @@ import { TranscriptEventRow } from "./transcript-event-row";
 
 export const INITIAL_PLAIN_MESSAGE_RENDER_LIMIT = 96;
 export const PLAIN_MESSAGE_RENDER_LOAD_STEP = 96;
+const TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS = 60_000;
+const USER_PROMPT_REPRESENTATION_WINDOW_MS = 10_000;
 const PLAIN_MESSAGE_TOP_LOAD_THRESHOLD_PX = 200;
 const PLAIN_HISTORY_REVEAL_LOCK_DATASET_KEY = "plainHistoryRevealLock";
 const PLAIN_HISTORY_REVEAL_UNLOCK_DELAY_MS = 220;
@@ -40,7 +44,6 @@ type PlainMessagesProps = {
   sessionId: string | null;
   items: AgentMessage[];
   timelineItems?: SessionTimelineEntry[];
-  thinkingToolCalls?: AgentToolCall[];
   toolCalls?: AgentToolCall[];
   showThinking?: boolean;
   canHandoffAssistantMessage?: boolean;
@@ -56,6 +59,7 @@ type PlainMessagesProps = {
   };
   onLoadOlderMessages: () => void;
   onToggleExpandedMessage: (messageId: string) => void;
+  onAddDraftContext?: (item: MissionPromptContextItem) => void;
   subagentDetails?: Record<string, (SessionSubagentDetail & { loading?: boolean; failed?: boolean }) | undefined>;
   onToggleSubagentDetail?: (sessionId: string, parentToolCallId: string, open: boolean) => void;
 };
@@ -64,7 +68,6 @@ export function PlainMessages({
   sessionId,
   items,
   timelineItems = [],
-  thinkingToolCalls = [],
   toolCalls = [],
   showThinking = true,
   canHandoffAssistantMessage = false,
@@ -76,6 +79,7 @@ export function PlainMessages({
   historyState,
   onLoadOlderMessages,
   onToggleExpandedMessage,
+  onAddDraftContext,
   subagentDetails = {},
   onToggleSubagentDetail,
 }: PlainMessagesProps) {
@@ -108,15 +112,16 @@ export function PlainMessages({
     setDismissedSystemMessageIds(new Set());
   }, [sessionId]);
 
+  const incomingTimelineItems = Array.isArray(timelineItems) ? timelineItems : [];
   if (timelineCacheRef.current.sessionId !== sessionId) {
     timelineCacheRef.current = { items: [], sessionId };
   }
-  if (timelineItems.length > 0) {
-    timelineCacheRef.current = { items: timelineItems, sessionId };
+  if (incomingTimelineItems.length > 0) {
+    timelineCacheRef.current = { items: incomingTimelineItems, sessionId };
   }
   const effectiveTimelineItems =
-    timelineItems.length > 0 || !historyState?.loading
-      ? timelineItems
+    incomingTimelineItems.length > 0 || !historyState?.loading
+      ? incomingTimelineItems
       : timelineCacheRef.current.items;
 
   const displayMessages = useMemo(
@@ -133,7 +138,6 @@ export function PlainMessages({
       displayMessages,
       timelineItems: effectiveTimelineItems,
       showThinking,
-      thinkingToolCalls,
       toolCalls,
     }),
     [
@@ -142,7 +146,6 @@ export function PlainMessages({
       historyState?.hasMore,
       sessionId,
       showThinking,
-      thinkingToolCalls,
       toolCalls,
     ],
   );
@@ -367,7 +370,7 @@ export function PlainMessages({
           return (
             <div key={renderItem.renderKey} className={spacingClassName}>
               <PlainThinkingItem
-                item={renderItem.toolCall}
+                items={renderItem.thinkingParts ?? [renderItem.thinking]}
                 hasNewerContent={index < renderMessages.length - 1}
               />
             </div>
@@ -391,19 +394,20 @@ export function PlainMessages({
           );
         }
         if (renderItem.kind === "subagent") {
+          const detailParentToolCallId = resolveSubagentDetailParentId(renderItem.toolCall);
           return (
             <div key={renderItem.renderKey} className={spacingClassName}>
               <PlainSubagentItem
                 item={renderItem.toolCall}
                 hasNewerContent={index < renderMessages.length - 1}
-                detail={sessionId ? subagentDetails[`${sessionId}\0${renderItem.toolCall.id}`] : undefined}
+                detail={sessionId ? subagentDetails[`${sessionId}\0${detailParentToolCallId}`] : undefined}
                 detailContent={sessionId ? (
                   <PlainSubagentConversation
-                    detail={subagentDetails[`${sessionId}\0${renderItem.toolCall.id}`]}
+                    detail={subagentDetails[`${sessionId}\0${detailParentToolCallId}`]}
                   />
                 ) : undefined}
                 onToggleDetail={sessionId && onToggleSubagentDetail
-                  ? (open) => onToggleSubagentDetail(sessionId, renderItem.toolCall.id, open)
+                  ? (open) => onToggleSubagentDetail(sessionId, detailParentToolCallId, open)
                   : undefined}
               />
             </div>
@@ -428,6 +432,7 @@ export function PlainMessages({
               message={renderItem.message}
               onDismiss={renderItem.message.role === "system" ? dismissSystemMessage : undefined}
               onToggleExpandedMessage={onToggleExpandedMessage}
+              onAddDraftContext={onAddDraftContext}
             />
           </div>
         );
@@ -441,18 +446,18 @@ function PlainSubagentConversation({
 }: {
   detail?: SessionSubagentDetail & { loading?: boolean; failed?: boolean };
 }) {
-  if (!detail?.entries.length) return null;
+  const entries = normalizeTimelineItems(detail?.entries);
+  if (!entries.length) return null;
   const items = resolvePlainConversationDisplayItems({
     displayMessages: [],
-    timelineItems: sortSessionTimelineEntries(detail.entries),
+    timelineItems: sortSessionTimelineEntries(entries),
     showThinking: true,
-    thinkingToolCalls: [],
     toolCalls: [],
     groupTools: false,
   });
   const renderItems = resolvePlainMessageRenderItems(items);
   return (
-    <div className="grid" data-subagent-conversation>
+    <div className="grid min-w-0 grid-cols-[minmax(0,1fr)]" data-subagent-conversation>
       {renderItems.map((item, index) => {
         const previousKind = renderItems[index - 1]?.kind;
         const startsSection = index > 0 &&
@@ -475,7 +480,7 @@ function PlainSubagentConversation({
           return (
             <div key={item.renderKey} className={className}>
               <PlainThinkingItem
-                item={item.toolCall}
+                items={item.thinkingParts ?? [item.thinking]}
                 hasNewerContent={index < renderItems.length - 1}
               />
             </div>
@@ -507,7 +512,14 @@ export type RemoteHistoryRevealBaseline = {
 
 type PlainConversationItem =
   | { kind: "message"; sourceIndex?: number; timestamp: string; sequence?: number; message: AgentMessage }
-  | { kind: "thinking"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: AgentToolCall }
+  | {
+      kind: "thinking";
+      sourceIndex?: number;
+      timestamp: string;
+      sequence?: number;
+      thinking: SessionTimelineThinkingChunk;
+      thinkingParts?: SessionTimelineThinkingChunk[];
+    }
   | { kind: "subagent"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: ConversationToolCallItem }
   | { kind: "tool"; sourceIndex?: number; timestamp: string; sequence?: number; toolCall: ConversationToolCallItem }
   | { kind: "tool-group"; sourceIndex?: number; timestamp: string; sequence?: number; group: ConversationToolCallItem[] }
@@ -525,7 +537,8 @@ export type PlainMessageRenderItem =
   | {
       kind: "thinking";
       renderKey: string;
-      toolCall: AgentToolCall;
+      thinking: SessionTimelineThinkingChunk;
+      thinkingParts?: SessionTimelineThinkingChunk[];
     }
   | {
       kind: "tool";
@@ -549,6 +562,97 @@ export type PlainMessageRenderItem =
     };
 
 export type PlainConversationRenderKind = PlainMessageRenderItem["kind"];
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function isRenderableAgentMessage(value: unknown): value is AgentMessage {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    (value.role === "assistant" || value.role === "system" || value.role === "user") &&
+    typeof value.text === "string" &&
+    typeof value.timestamp === "string"
+  );
+}
+
+function isRenderableToolLike(value: unknown): value is AgentToolCall {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return (
+    typeof value.id === "string" &&
+    typeof value.kind === "string" &&
+    typeof value.title === "string" &&
+    typeof value.status === "string" &&
+    typeof value.timestamp === "string"
+  );
+}
+
+function isRenderableTimelineChunk(value: unknown) {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.text !== "string" || typeof value.timestamp !== "string") {
+    return false;
+  }
+  if (value.kind === "content") {
+    return true;
+  }
+  return value.kind === "thinking" &&
+    typeof value.title === "string" &&
+    typeof value.status === "string" &&
+    typeof value.updatedAt === "string";
+}
+
+function isRenderableTimelineEntry(value: unknown): value is SessionTimelineEntry {
+  if (!isRecord(value) || typeof value.id !== "string" || typeof value.kind !== "string" || typeof value.timestamp !== "string") {
+    return false;
+  }
+  switch (value.kind) {
+    case "user_message":
+    case "system_message":
+      return isRenderableAgentMessage(value.message);
+    case "assistant_message":
+      return Array.isArray(value.chunks) && value.chunks.every(isRenderableTimelineChunk);
+    case "tool_call":
+      return isRenderableToolLike(value.toolCall);
+    case "command_output": {
+      const output = value.output;
+      return isRecord(output) &&
+        typeof value.commandId === "string" &&
+        typeof output.id === "string" &&
+        typeof output.commandId === "string" &&
+        typeof output.text === "string" &&
+        typeof output.stream === "string" &&
+        typeof output.timestamp === "string";
+    }
+    case "context_compaction":
+      return typeof value.phase === "string" && typeof value.source === "string";
+    case "history_gap":
+      return typeof value.message === "string";
+    default:
+      return false;
+  }
+}
+
+function normalizeAgentMessages(items: AgentMessage[] | null | undefined) {
+  return Array.isArray(items)
+    ? items.filter(isRenderableAgentMessage)
+    : [];
+}
+
+function normalizeAgentToolCalls(toolCalls: AgentToolCall[] | null | undefined) {
+  return Array.isArray(toolCalls)
+    ? toolCalls.filter(isRenderableToolLike)
+    : [];
+}
+
+function normalizeTimelineItems(items: SessionTimelineEntry[] | null | undefined) {
+  return Array.isArray(items)
+    ? items.filter(isRenderableTimelineEntry)
+    : [];
+}
 
 function resolvePlainConversationMessageRole(
   item: PlainMessageRenderItem | undefined,
@@ -596,13 +700,14 @@ export function resolvePlainMessageRenderItems(
       };
     }
     if (item.kind === "thinking") {
-      const baseKey = `thinking-${item.toolCall.id}`;
+      const baseKey = `thinking-${item.thinking.id}`;
       const seenCount = seenKeys.get(baseKey) ?? 0;
       seenKeys.set(baseKey, seenCount + 1);
       return {
         kind: "thinking",
         renderKey: seenCount === 0 ? baseKey : `${baseKey}#${seenCount}`,
-        toolCall: item.toolCall,
+        thinking: item.thinking,
+        thinkingParts: item.thinkingParts,
       };
     }
     if (item.kind === "tool") {
@@ -666,12 +771,16 @@ function resolvePlainMessageRenderSignaturePart(item: PlainMessageRenderItem) {
     ].join(":");
   }
   if (item.kind === "thinking") {
-    return resolveToolRenderSignaturePart(
+    const thinkingParts = item.thinkingParts ?? [item.thinking];
+    return [
       item.renderKey,
-      item.toolCall,
-      item.toolCall.output ?? "",
-      item.toolCall.input ?? "",
-    );
+      ...thinkingParts.map((thinking) => resolveToolRenderSignaturePart(
+        thinking.id,
+        thinking,
+        thinking.text,
+        "",
+      )),
+    ].join(":");
   }
   if (item.kind === "subagent") {
     return resolveToolRenderSignaturePart(
@@ -705,7 +814,7 @@ function resolvePlainMessageRenderSignaturePart(item: PlainMessageRenderItem) {
 
 function resolveToolRenderSignaturePart(
   renderKey: string,
-  toolCall: AgentToolCall | ConversationToolCallItem,
+  toolCall: AgentToolCall | ConversationToolCallItem | SessionTimelineThinkingChunk,
   outputText: string,
   inputText: string,
 ) {
@@ -756,7 +865,23 @@ export function resolveFinalAssistantActionTarget(
 }
 
 function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[] = []) {
-  const sortedMessages = sortAgentMessagesByTimeline(items);
+  const sortedMessages = normalizeAgentMessages(items)
+    .map((message, index) => ({ message, index }))
+    .sort((left, right) => {
+      const sequenceDelta = compareOptionalTimelineSequence(
+        left.message.sequence,
+        right.message.sequence,
+      );
+      if (sequenceDelta !== null) {
+        return sequenceDelta;
+      }
+      const timestampDelta = comparePlainItemTimestamps(
+        left.message.timestamp,
+        right.message.timestamp,
+      );
+      return timestampDelta !== 0 ? timestampDelta : left.index - right.index;
+    })
+    .map((entry) => entry.message);
   return coalesceDisplayMessages(
     sortedMessages.filter(
       (message) => !isAcpPromptWrapperEcho(message, sortedMessages),
@@ -766,10 +891,10 @@ function sortDisplayMessages(items: AgentMessage[], boundaryTimestamps: string[]
 }
 
 export function resolvePlainDisplayMessages(
-  items: AgentMessage[],
+  items: AgentMessage[] | null | undefined,
   boundaryTimestamps: string[] = [],
 ) {
-  return sortDisplayMessages(items, boundaryTimestamps);
+  return sortDisplayMessages(normalizeAgentMessages(items), boundaryTimestamps);
 }
 
 export function shouldAutoLoadOlderHistory(
@@ -901,11 +1026,10 @@ export function resolveLocalHistoryRevealPlan({
 }
 
 export function resolvePlainConversationDisplayItems({
-  sessionId: _sessionId,
+  sessionId,
   displayMessages,
   timelineItems,
   showThinking,
-  thinkingToolCalls,
   toolCalls,
   groupTools = true,
 }: {
@@ -913,152 +1037,34 @@ export function resolvePlainConversationDisplayItems({
   displayMessages: AgentMessage[];
   timelineItems: SessionTimelineEntry[];
   showThinking: boolean;
-  thinkingToolCalls: AgentToolCall[];
   toolCalls: AgentToolCall[];
   groupTools?: boolean;
 }) {
-  if (!timelineItems.length) {
+  const safeDisplayMessages = normalizeAgentMessages(displayMessages);
+  const safeTimelineItems = normalizeTimelineItems(timelineItems);
+  const safeToolCalls = normalizeAgentToolCalls(toolCalls);
+
+  if (!safeTimelineItems.length) {
     return buildPlainConversationItems(
-      displayMessages,
-      showThinking ? thinkingToolCalls : [],
-      toolCalls,
+      safeDisplayMessages,
+      safeToolCalls,
       showThinking,
       groupTools,
     );
   }
 
-  const canonicalItems = buildPlainConversationItemsFromTimeline(
-    timelineItems,
+  return buildPlainConversationItemsFromTimelineWithLiveMessages(
+    sessionId,
+    safeTimelineItems,
+    safeDisplayMessages,
+    safeToolCalls,
     showThinking,
-    groupTools,
-  );
-  const canonicalToolCallIds = new Set(
-    timelineItems.flatMap((entry) => {
-      if (entry.kind === "tool_call") {
-        return [entry.toolCall.id];
-      }
-      if (entry.kind === "assistant_message") {
-        return entry.chunks.flatMap((chunk) => chunk.kind === "thinking" ? [chunk.id] : []);
-      }
-      return [];
-    }),
-  );
-  const liveToolCalls = groupToolCalls(
-    toolCalls.filter((toolCall) =>
-      toolCall.kind !== "think" && !canonicalToolCallIds.has(toolCall.id)
-    ),
-  );
-  const liveToolItems = liveToolCalls.map((toolCall, index) =>
-    toPlainToolConversationItem(toolCall, canonicalItems.length + index, !groupTools)
-  );
-  const canonicalAndLiveItems = liveToolItems.length
-    ? maybeMergeAdjacentToolItems(
-        mergeAdjacentThinkingItems(
-          [...canonicalItems, ...liveToolItems].sort(comparePlainConversationItems),
-        ),
-        groupTools,
-      )
-    : canonicalItems;
-  const optimisticMessages = resolveOptimisticTimelineSupplementMessages(
-    displayMessages,
-    timelineItems,
-  );
-  if (!optimisticMessages.length) {
-    return canonicalAndLiveItems;
-  }
-
-  const optimisticItems = buildPlainConversationItems(
-    optimisticMessages,
-    [],
-    [],
-    showThinking,
-    groupTools,
-  );
-  return maybeMergeAdjacentToolItems(
-    mergeAdjacentThinkingItems(
-      [...canonicalAndLiveItems, ...optimisticItems],
-    ),
     groupTools,
   );
 }
 
-function resolveOptimisticTimelineSupplementMessages(
-  displayMessages: AgentMessage[],
-  timelineItems: SessionTimelineEntry[],
-) {
-  const canonicalRepresentedMessageIds = new Set(
-    timelineItems.flatMap((entry) => {
-      if (entry.kind === "user_message" || entry.kind === "system_message") {
-        return [entry.message.id];
-      }
-      if (entry.kind === "assistant_message") {
-        return entry.chunks.some(
-          (chunk) => chunk.kind === "content" && Boolean(chunk.text.trim()),
-        )
-          ? [entry.id]
-          : [];
-      }
-      return [];
-    }),
-  );
-  const canonicalAssistantMessages = timelineItems.flatMap((entry) => {
-    if (entry.kind !== "assistant_message") {
-      return [];
-    }
-    return entry.chunks.flatMap((chunk) => {
-      if (chunk.kind !== "content" || !chunk.text.trim()) {
-        return [];
-      }
-      return [{
-        id: chunk.id,
-        role: "assistant" as const,
-        text: chunk.text,
-        timestamp: chunk.timestamp,
-        sequence: chunk.sequence,
-        streaming: chunk.streaming,
-      }];
-    });
-  });
-
-  return displayMessages.filter((message) => {
-    if (canonicalRepresentedMessageIds.has(message.id)) {
-      return false;
-    }
-    if (message.role === "user") {
-      return true;
-    }
-    return message.role === "assistant" &&
-      message.streaming === true &&
-      !isRepresentedOptimisticAssistantMessage(message, canonicalAssistantMessages);
-  });
-}
-
-function isRepresentedOptimisticAssistantMessage(
-  message: AgentMessage,
-  canonicalAssistantMessages: AgentMessage[],
-) {
-  const normalizedMessageText = normalizeComparableReplayText(message.text);
-  if (!normalizedMessageText) {
-    return false;
-  }
-  const optimisticTime = Date.parse(message.timestamp);
-  return canonicalAssistantMessages.some((canonicalMessage) => {
-    const normalizedCanonicalText = normalizeComparableReplayText(canonicalMessage.text);
-    if (
-      !normalizedCanonicalText ||
-      (
-        !normalizedCanonicalText.includes(normalizedMessageText) &&
-        !normalizedMessageText.includes(normalizedCanonicalText)
-      )
-    ) {
-      return false;
-    }
-    const canonicalTime = Date.parse(canonicalMessage.timestamp);
-    if (!Number.isFinite(optimisticTime) || !Number.isFinite(canonicalTime)) {
-      return true;
-    }
-    return canonicalTime >= optimisticTime - 15_000;
-  });
+function resolveSubagentDetailParentId(toolCall: Pick<ConversationToolCallItem, "id" | "commandId">) {
+  return toolCall.commandId || toolCall.id;
 }
 
 export function resolveRemoteHistoryRevealAction({
@@ -1106,9 +1112,15 @@ export function resolveRemoteHistoryRevealBaseline({
 }
 
 function normalizePlainMessageRenderSource(
-  item: PlainMessageRenderSource,
+  item: PlainMessageRenderSource | null | undefined,
 ): PlainConversationItem | null {
+  if (!item || typeof item !== "object") {
+    return null;
+  }
   if ("role" in item) {
+    if (!isRenderableAgentMessage(item)) {
+      return null;
+    }
     const text = normalizePlainMessageText(item.text);
     if (!text) {
       return null;
@@ -1120,7 +1132,13 @@ function normalizePlainMessageRenderSource(
       message: text === item.text ? item : { ...item, text },
     };
   }
+  if (!("kind" in item) || typeof item.kind !== "string") {
+    return null;
+  }
   if (item.kind === "message") {
+    if (!isRenderableAgentMessage(item.message)) {
+      return null;
+    }
     const text = normalizePlainMessageText(item.message.text);
     if (!text) {
       return null;
@@ -1130,7 +1148,19 @@ function normalizePlainMessageRenderSource(
       message: text === item.message.text ? item.message : { ...item.message, text },
     };
   }
-  return item;
+  if (item.kind === "thinking") {
+    return isRenderableTimelineChunk(item.thinking) && item.thinking.kind === "thinking" ? item : null;
+  }
+  if (item.kind === "tool" || item.kind === "subagent") {
+    return isRenderableToolLike(item.toolCall) ? item : null;
+  }
+  if (item.kind === "tool-group") {
+    return Array.isArray(item.group) && item.group.every(isRenderableToolLike) ? item : null;
+  }
+  if (item.kind === "transcript-event") {
+    return isRenderableTimelineEntry(item.entry) ? item : null;
+  }
+  return null;
 }
 
 function normalizePlainMessageText(text: string): string {
@@ -1140,13 +1170,13 @@ function normalizePlainMessageText(text: string): string {
 
 function buildPlainConversationItems(
   messages: AgentMessage[],
-  thinkingToolCalls: AgentToolCall[],
   toolCalls: AgentToolCall[],
   showThinking: boolean,
   groupTools = true,
 ): PlainConversationItem[] {
-  const visibleToolCalls = toolCalls.filter((toolCall) => toolCall.kind !== "think");
-  const messageItems = messages.flatMap<PlainConversationItem>((message, index) => {
+  const safeMessages = normalizeAgentMessages(messages);
+  const visibleToolCalls = normalizeAgentToolCalls(toolCalls);
+  const messageItems = safeMessages.flatMap<PlainConversationItem>((message, index) => {
     if (message.role === "assistant" && message.contentKind === "thought") {
       return showThinking
         ? [{
@@ -1154,12 +1184,13 @@ function buildPlainConversationItems(
             sourceIndex: index,
             timestamp: message.timestamp,
             sequence: message.sequence,
-            toolCall: {
+            thinking: {
               id: `${message.id}:thinking`,
-              kind: "think",
+              kind: "thinking",
               title: "Thinking",
               status: message.streaming === false ? "completed" : "running",
-              output: message.text,
+              streamMode: message.streamMode,
+              text: message.text,
               timestamp: message.timestamp,
               updatedAt: message.timestamp,
               sequence: message.sequence,
@@ -1172,20 +1203,13 @@ function buildPlainConversationItems(
       ? [{ kind: "message" as const, sourceIndex: index, timestamp: message.timestamp, sequence: message.sequence, message: text === message.text ? message : { ...message, text } }]
       : [];
   });
-  const thinkingItems = thinkingToolCalls.map((toolCall, index) => ({
-    kind: "thinking" as const,
-    sourceIndex: messages.length + index,
-    timestamp: toolCall.timestamp,
-    sequence: toolCall.sequence,
-    toolCall,
-  }));
   const normalizedToolCalls = groupToolCalls(visibleToolCalls);
   const toolItems = normalizedToolCalls.map((toolCall, index) => toPlainToolConversationItem(
     toolCall,
-    messages.length + thinkingItems.length + index,
+    messages.length + index,
     !groupTools,
   ));
-  const sorted = [...messageItems, ...thinkingItems, ...toolItems].sort(comparePlainConversationItems);
+  const sorted = [...messageItems, ...toolItems].sort(comparePlainConversationItems);
   return maybeMergeAdjacentToolItems(mergeAdjacentThinkingItems(sorted), groupTools);
 }
 
@@ -1194,6 +1218,7 @@ function buildPlainConversationItemsFromTimeline(
   showThinking: boolean,
   groupTools = true,
 ): PlainConversationItem[] {
+  timelineItems = normalizeTimelineItems(timelineItems);
   const items: PlainConversationItem[] = [];
   const hasCompactionTranscriptEvent = timelineItems.some(
     (entry) => entry.kind === "context_compaction",
@@ -1247,16 +1272,7 @@ function buildPlainConversationItemsFromTimeline(
               sourceIndex,
               timestamp: chunk.timestamp,
               sequence: chunk.sequence,
-              toolCall: {
-                id: chunk.id,
-                kind: "think",
-                title: chunk.title,
-                status: chunk.status,
-                output: chunk.text,
-                timestamp: chunk.timestamp,
-                updatedAt: chunk.updatedAt,
-                sequence: chunk.sequence,
-              },
+              thinking: chunk,
             });
             sourceIndex += 1;
           }
@@ -1315,6 +1331,610 @@ function buildPlainConversationItemsFromTimeline(
   );
 }
 
+function buildPlainConversationItemsFromTimelineWithLiveMessages(
+  sessionId: string | null | undefined,
+  timelineItems: SessionTimelineEntry[],
+  messages: AgentMessage[],
+  toolCalls: AgentToolCall[],
+  showThinking: boolean,
+  groupTools: boolean,
+): PlainConversationItem[] {
+  const groupedLiveToolCalls = groupToolCalls(toolCalls);
+  const timelineConversationItems = mergeLiveSubagentItemsIntoTimeline(
+    buildPlainConversationItemsFromTimeline(
+    timelineItems,
+    showThinking,
+    groupTools,
+    ),
+    groupedLiveToolCalls,
+  );
+  const hasCompactionTranscriptEvent = timelineItems.some(
+    (entry) => entry.kind === "context_compaction",
+  );
+  const timelineMessageIds = collectTimelineMessageIds(timelineItems);
+  const representedLiveUserMessageIds = resolveTimelineRepresentedUserMessageIds(
+    timelineItems,
+    messages,
+  );
+  const representedLiveAssistantMessageIds = resolveTimelineRepresentedAssistantMessageIds(
+    timelineItems,
+    messages,
+  );
+  const continuationPrefaceMessageIds = resolveContinuationPrefaceMessageIds(messages);
+  const continuationPrefaceAnchor = resolveContinuationPrefaceAnchor(
+    messages,
+    continuationPrefaceMessageIds,
+  );
+  const liveMessageItems = messages.flatMap<PlainConversationItem>((message, index) => {
+    if (
+      hasCompactionTranscriptEvent &&
+      (
+        looksLikeContinuationSummary(message.text) ||
+        looksLikeCompactionLifecycleMessage(message.text)
+      )
+    ) {
+      return [];
+    }
+    if (
+      timelineMessageIds.has(message.id) ||
+      representedLiveUserMessageIds.has(message.id) ||
+      representedLiveAssistantMessageIds.has(message.id)
+    ) {
+      return [];
+    }
+    return buildPlainConversationItems([message], [], showThinking, groupTools).map((item) => ({
+      ...item,
+      sourceIndex: timelineConversationItems.length + index,
+    }));
+  });
+  const canonicalToolCallIds = new Set(
+    timelineItems.flatMap((entry) => entry.kind === "tool_call" ? [entry.toolCall.id] : []),
+  );
+  const canonicalSubagentCommandIds = new Set(
+    timelineConversationItems.flatMap((item) =>
+      item.kind === "subagent" && item.toolCall.commandId
+        ? [item.toolCall.commandId]
+        : []
+    ),
+  );
+  const liveToolItems = groupedLiveToolCalls.filter((toolCall) =>
+    !canonicalToolCallIds.has(toolCall.id) &&
+    !(toolCall.toolKind === "subagent" && canonicalSubagentCommandIds.has(toolCall.commandId))
+  ).map((toolCall, index) =>
+    toPlainToolConversationItem(
+      toolCall,
+      timelineConversationItems.length + messages.length + index,
+      !groupTools,
+    )
+  );
+  const continuationPrefaceItems = continuationPrefaceAnchor
+    ? liveMessageItems.filter(
+        (item) => item.kind === "message" &&
+          continuationPrefaceMessageIds.has(item.message.id),
+      )
+    : [];
+  const regularLiveMessageItems = continuationPrefaceItems.length
+    ? liveMessageItems.filter(
+        (item) => item.kind !== "message" ||
+          !continuationPrefaceMessageIds.has(item.message.id),
+      )
+    : liveMessageItems;
+  const regularLiveItems = [
+    ...regularLiveMessageItems,
+    ...liveToolItems,
+  ];
+
+  if (!regularLiveItems.length && !continuationPrefaceItems.length) {
+    return timelineConversationItems;
+  }
+
+  const sequencedLiveItems = regularLiveItems.filter(
+    (item) => typeof item.sequence === "number",
+  );
+  const unsequencedLiveItems = regularLiveItems.filter(
+    (item) => typeof item.sequence !== "number",
+  );
+  const optimisticUnsequencedLiveMessageItems = unsequencedLiveItems.filter(
+    (item) => item.kind === "message" && isOptimisticLiveMessage(sessionId, item.message),
+  );
+  const historicalUnsequencedLiveItems = unsequencedLiveItems.filter(
+    (item) => item.kind !== "message" || !isOptimisticLiveMessage(sessionId, item.message),
+  );
+  const mergedSequencedTimelineItems = mergeSequencedLiveMessageItemsIntoTimeline(
+    timelineConversationItems,
+    sequencedLiveItems,
+  );
+  const mergedTimelineAndLiveItems = mergeUnsequencedLiveMessageItemsIntoTimeline(
+    mergedSequencedTimelineItems,
+    historicalUnsequencedLiveItems,
+  );
+  const mergedSequencedItems = maybeMergeAdjacentToolItems(
+    mergeAdjacentThinkingItems(mergeAdjacentMessageItems(mergedTimelineAndLiveItems)),
+    groupTools,
+  );
+  const itemsWithContinuationPreface = continuationPrefaceItems.length
+    ? insertContinuationPrefaceItems(
+        mergedSequencedItems,
+        continuationPrefaceItems,
+        continuationPrefaceAnchor,
+      )
+    : mergedSequencedItems;
+  return [...itemsWithContinuationPreface, ...optimisticUnsequencedLiveMessageItems];
+}
+
+function mergeLiveSubagentItemsIntoTimeline(
+  timelineItems: PlainConversationItem[],
+  liveToolCalls: ConversationToolCallItem[],
+) {
+  const liveByCommandId = new Map(
+    liveToolCalls
+      .filter((toolCall) => toolCall.toolKind === "subagent")
+      .map((toolCall) => [toolCall.commandId, toolCall]),
+  );
+  if (!liveByCommandId.size) {
+    return timelineItems;
+  }
+  return timelineItems.map((item) => {
+    if (item.kind !== "subagent") {
+      return item;
+    }
+    const liveToolCall = liveByCommandId.get(item.toolCall.commandId);
+    if (!liveToolCall) {
+      return item;
+    }
+    return {
+      ...item,
+      toolCall: {
+        ...item.toolCall,
+        ...liveToolCall,
+        id: item.toolCall.id,
+        commandId: item.toolCall.commandId,
+        timestamp: item.toolCall.timestamp,
+        sequence: item.sequence ?? liveToolCall.sequence,
+      },
+    };
+  });
+}
+
+function isOptimisticLiveMessage(
+  sessionId: string | null | undefined,
+  message: AgentMessage,
+) {
+  if (!sessionId) {
+    return false;
+  }
+  if (message.role === "user") {
+    return message.id === `${sessionId}-user-pending`;
+  }
+  return message.role === "assistant" && message.streaming === true;
+}
+
+function mergeSequencedLiveMessageItemsIntoTimeline(
+  timelineItems: PlainConversationItem[],
+  liveItems: PlainConversationItem[],
+) {
+  if (!timelineItems.length) {
+    return [...liveItems].sort(compareSequencedPlainConversationItems);
+  }
+  if (!liveItems.length) {
+    return timelineItems;
+  }
+
+  const merged = [...timelineItems];
+  const sortedLiveItems = [...liveItems].sort(compareSequencedPlainConversationItems);
+  for (const liveItem of sortedLiveItems) {
+    const insertIndex = resolveSequencedLiveMessageInsertIndex(merged, liveItem);
+    merged.splice(insertIndex, 0, liveItem);
+  }
+  return merged;
+}
+
+function mergeUnsequencedLiveMessageItemsIntoTimeline(
+  timelineItems: PlainConversationItem[],
+  liveItems: PlainConversationItem[],
+) {
+  if (!timelineItems.length) {
+    return [...liveItems].sort(compareUnsequencedPlainConversationItems);
+  }
+  if (!liveItems.length) {
+    return timelineItems;
+  }
+
+  const merged = [...timelineItems];
+  const sortedLiveItems = [...liveItems].sort(compareUnsequencedPlainConversationItems);
+  for (const liveItem of sortedLiveItems) {
+    const insertIndex = resolveUnsequencedLiveMessageInsertIndex(merged, liveItem);
+    merged.splice(insertIndex, 0, liveItem);
+  }
+  return merged;
+}
+
+function resolveSequencedLiveMessageInsertIndex(
+  items: PlainConversationItem[],
+  liveItem: PlainConversationItem,
+) {
+  const liveSequence = liveItem.sequence;
+  if (typeof liveSequence !== "number") {
+    return items.length;
+  }
+
+  let fallbackIndex = items.length;
+  for (let index = 0; index < items.length; index += 1) {
+    const currentItem = items[index];
+    if (!currentItem || typeof currentItem.sequence !== "number") {
+      continue;
+    }
+    const timelineDelta = currentItem.sequence - liveSequence;
+    const timestampDelta = comparePlainItemTimestamps(currentItem.timestamp, liveItem.timestamp);
+    const sourceIndexDelta = comparePlainConversationSourceIndex(currentItem, liveItem);
+    const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
+      timelineDelta,
+      timestampDelta,
+    );
+    if (sequenceResetTimestampDelta !== null) {
+      if (sourceIndexDelta !== null) {
+        if (sourceIndexDelta > 0) {
+          return index;
+        }
+        fallbackIndex = index + 1;
+        continue;
+      }
+      if (sequenceResetTimestampDelta > 0) {
+        return index;
+      }
+      fallbackIndex = index + 1;
+      continue;
+    }
+    if (currentItem.sequence > liveSequence) {
+      return index;
+    }
+    if (currentItem.sequence === liveSequence) {
+      if (timestampDelta > 0) {
+        return index;
+      }
+      if (sourceIndexDelta !== null) {
+        if (sourceIndexDelta > 0) {
+          return index;
+        }
+        fallbackIndex = index + 1;
+        continue;
+      }
+    }
+    fallbackIndex = index + 1;
+  }
+  return fallbackIndex;
+}
+
+function resolveUnsequencedLiveMessageInsertIndex(
+  items: PlainConversationItem[],
+  liveItem: PlainConversationItem,
+) {
+  for (let index = 0; index < items.length; index += 1) {
+    const currentItem = items[index];
+    if (!currentItem) {
+      continue;
+    }
+    const timestampDelta = comparePlainItemTimestamps(currentItem.timestamp, liveItem.timestamp);
+    if (timestampDelta > 0) {
+      return index;
+    }
+    if (timestampDelta === 0) {
+      const sourceIndexDelta = comparePlainConversationSourceIndex(currentItem, liveItem);
+      if (sourceIndexDelta !== null) {
+        if (sourceIndexDelta > 0) {
+          return index;
+        }
+        continue;
+      }
+      if (plainConversationKindRank(currentItem) > plainConversationKindRank(liveItem)) {
+        return index;
+      }
+    }
+  }
+  return items.length;
+}
+
+function compareUnsequencedPlainConversationItems(
+  left: PlainConversationItem,
+  right: PlainConversationItem,
+) {
+  const transcriptAnchorDelta = compareTranscriptEventAnchorSourceIndex(left, right);
+  if (transcriptAnchorDelta !== null) {
+    return transcriptAnchorDelta;
+  }
+  const timestampDelta = comparePlainItemTimestamps(left.timestamp, right.timestamp);
+  if (timestampDelta !== 0) {
+    return timestampDelta;
+  }
+  const sourceIndexDelta = comparePlainConversationSourceIndex(left, right);
+  if (sourceIndexDelta !== null) {
+    return sourceIndexDelta;
+  }
+  return plainConversationKindRank(left) - plainConversationKindRank(right);
+}
+
+function resolveContinuationPrefaceMessageIds(messages: AgentMessage[]) {
+  const markerIndex = messages.findIndex((message) =>
+    looksLikeContinuationSummary(message.text)
+  );
+  if (markerIndex === -1) {
+    return new Set<string>();
+  }
+  const ids = new Set<string>();
+  for (let index = markerIndex; index < messages.length; index += 1) {
+    const message = messages[index];
+    if (!message) {
+      continue;
+    }
+    if (index > markerIndex && typeof message.sequence === "number") {
+      break;
+    }
+    ids.add(message.id);
+  }
+  return ids;
+}
+
+function resolveContinuationPrefaceAnchor(
+  messages: AgentMessage[],
+  continuationPrefaceMessageIds: ReadonlySet<string>,
+) {
+  return messages.find((message) =>
+    !continuationPrefaceMessageIds.has(message.id) &&
+    typeof message.sequence === "number"
+  );
+}
+
+function insertContinuationPrefaceItems(
+  items: PlainConversationItem[],
+  continuationPrefaceItems: PlainConversationItem[],
+  anchor: AgentMessage | undefined,
+) {
+  if (!continuationPrefaceItems.length || !anchor) {
+    return items;
+  }
+  const insertIndex = resolveContinuationPrefaceInsertIndex(items, anchor);
+  const next = [...items];
+  next.splice(
+    insertIndex,
+    0,
+    ...continuationPrefaceItems.sort(compareUnsequencedPlainConversationItems),
+  );
+  return next;
+}
+
+function resolveContinuationPrefaceInsertIndex(
+  items: PlainConversationItem[],
+  anchor: AgentMessage,
+) {
+  const anchorSequence = anchor.sequence;
+  if (typeof anchorSequence === "number") {
+    for (let index = 0; index < items.length; index += 1) {
+      if (items[index]?.sequence === anchorSequence) {
+        return index;
+      }
+    }
+    for (let index = 0; index < items.length; index += 1) {
+      const currentSequence = items[index]?.sequence;
+      if (typeof currentSequence === "number" && currentSequence > anchorSequence) {
+        return index;
+      }
+    }
+  }
+  const anchorTime = Date.parse(anchor.timestamp);
+  for (let index = 0; index < items.length; index += 1) {
+    const currentItem = items[index];
+    if (!currentItem) {
+      continue;
+    }
+    const currentTime = Date.parse(currentItem.timestamp);
+    if (Number.isFinite(currentTime) && currentTime >= anchorTime) {
+      return index;
+    }
+  }
+  return 0;
+}
+
+function collectTimelineMessageIds(timelineItems: SessionTimelineEntry[]) {
+  const ids = new Set<string>();
+  for (const entry of timelineItems) {
+    if (entry.kind === "user_message" || entry.kind === "system_message") {
+      ids.add(entry.message.id);
+      continue;
+    }
+    if (entry.kind === "assistant_message") {
+      const contentChunks = entry.chunks.filter(
+        (chunk) => chunk.kind === "content" && Boolean(chunk.text.trim()),
+      );
+      if (contentChunks.length > 0) {
+        ids.add(entry.id);
+        for (const chunk of contentChunks) {
+          ids.add(chunk.id);
+        }
+      }
+    }
+  }
+  return ids;
+}
+
+type TimelineUserMessageAnchor = {
+  id: string;
+  entryId: string;
+  text: string;
+  timestamp: string;
+  sequence?: number;
+};
+
+function resolveTimelineRepresentedUserMessageIds(
+  entries: SessionTimelineEntry[],
+  messages: AgentMessage[],
+) {
+  const candidates = messages.filter(
+    (message) => message.role === "user" && Boolean(message.text.trim()),
+  );
+  const represented = new Set<string>();
+  for (const anchor of collectTimelineUserMessageAnchors(entries)) {
+    const matchIndex = findRepresentedUserMessageIndex(candidates, anchor);
+    if (matchIndex === -1) {
+      continue;
+    }
+    const [match] = candidates.splice(matchIndex, 1);
+    if (match) {
+      represented.add(match.id);
+    }
+  }
+  return represented;
+}
+
+function collectTimelineUserMessageAnchors(
+  entries: SessionTimelineEntry[],
+): TimelineUserMessageAnchor[] {
+  return entries.flatMap((entry) => {
+    if (entry.kind !== "user_message") {
+      return [];
+    }
+    return [{
+      id: entry.message.id,
+      entryId: entry.id,
+      text: entry.message.text.trim(),
+      timestamp: entry.message.timestamp,
+      sequence: entry.message.sequence ?? entry.sequence,
+    }];
+  });
+}
+
+function findRepresentedUserMessageIndex(
+  candidates: AgentMessage[],
+  anchor: TimelineUserMessageAnchor,
+) {
+  const idMatchIndex = candidates.findIndex(
+    (message) => message.id === anchor.id || message.id === anchor.entryId,
+  );
+  if (idMatchIndex !== -1) {
+    return idMatchIndex;
+  }
+
+  let nearestIndex = -1;
+  let nearestDelta = Number.POSITIVE_INFINITY;
+  let textFallbackIndex = -1;
+  for (const [index, message] of candidates.entries()) {
+    if (message.text.trim() !== anchor.text) {
+      continue;
+    }
+    if (textFallbackIndex === -1) {
+      textFallbackIndex = index;
+    }
+    if (
+      typeof anchor.sequence === "number" &&
+      typeof message.sequence === "number" &&
+      anchor.sequence === message.sequence
+    ) {
+      return index;
+    }
+    const delta = Math.abs(Date.parse(anchor.timestamp) - Date.parse(message.timestamp));
+    if (
+      Number.isFinite(delta) &&
+      delta <= USER_PROMPT_REPRESENTATION_WINDOW_MS &&
+      delta < nearestDelta
+    ) {
+      nearestDelta = delta;
+      nearestIndex = index;
+    }
+  }
+  return nearestIndex === -1 ? textFallbackIndex : nearestIndex;
+}
+
+function resolveTimelineRepresentedAssistantMessageIds(
+  timelineItems: SessionTimelineEntry[],
+  messages: AgentMessage[],
+) {
+  const candidates = messages.filter((message) =>
+    message.role === "assistant" &&
+    message.contentKind !== "thought" &&
+    Boolean(message.text.trim())
+  );
+  const represented = new Set<string>();
+  for (const snapshot of collectTimelineAssistantMessageSnapshots(timelineItems)) {
+    const matchIndex = findRepresentedAssistantMessageIndex(candidates, snapshot);
+    if (matchIndex === -1) {
+      continue;
+    }
+    const [match] = candidates.splice(matchIndex, 1);
+    if (match) {
+      represented.add(match.id);
+    }
+  }
+  return represented;
+}
+
+type TimelineAssistantMessageSnapshot = {
+  id: string;
+  text: string;
+  timestamp: string;
+  sequence?: number;
+};
+
+function collectTimelineAssistantMessageSnapshots(
+  timelineItems: SessionTimelineEntry[],
+): TimelineAssistantMessageSnapshot[] {
+  const snapshots: TimelineAssistantMessageSnapshot[] = [];
+  for (const entry of timelineItems) {
+    if (entry.kind !== "assistant_message") {
+      continue;
+    }
+    let cumulativeText = "";
+    for (const chunk of entry.chunks) {
+      if (chunk.kind !== "content") {
+        continue;
+      }
+      cumulativeText += chunk.text;
+      const text = cumulativeText.trim();
+      if (!text) {
+        continue;
+      }
+      snapshots.push({
+        id: entry.id,
+        text,
+        timestamp: chunk.timestamp,
+        sequence: chunk.sequence ?? entry.sequence,
+      });
+    }
+  }
+  return snapshots;
+}
+
+function findRepresentedAssistantMessageIndex(
+  candidates: AgentMessage[],
+  snapshot: TimelineAssistantMessageSnapshot,
+) {
+  const idMatchIndex = candidates.findIndex((message) => message.id === snapshot.id);
+  if (idMatchIndex !== -1) {
+    return idMatchIndex;
+  }
+  const snapshotText = normalizeComparableReplayText(snapshot.text);
+  const snapshotTime = Date.parse(snapshot.timestamp);
+  let nearestIndex = -1;
+  let nearestDelta = Number.POSITIVE_INFINITY;
+  for (const [index, message] of candidates.entries()) {
+    if (normalizeComparableReplayText(message.text) !== snapshotText) {
+      continue;
+    }
+    if (
+      typeof snapshot.sequence === "number" &&
+      typeof message.sequence === "number" &&
+      snapshot.sequence === message.sequence
+    ) {
+      return index;
+    }
+    const messageTime = Date.parse(message.timestamp);
+    const delta = Math.abs(messageTime - snapshotTime);
+    if (Number.isFinite(delta) && delta <= USER_PROMPT_REPRESENTATION_WINDOW_MS && delta < nearestDelta) {
+      nearestDelta = delta;
+      nearestIndex = index;
+    }
+  }
+  return nearestIndex;
+}
+
 function compareSequencedPlainConversationItems(
   left: PlainConversationItem,
   right: PlainConversationItem,
@@ -1327,9 +1947,23 @@ function compareSequencedPlainConversationItems(
     left.sequence,
     right.sequence,
   );
+  const timestampDelta = comparePlainItemTimestamps(left.timestamp, right.timestamp);
   const sourceIndexDelta = comparePlainConversationSourceIndex(left, right);
   if (timelineDelta !== null) {
+    const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
+      timelineDelta,
+      timestampDelta,
+    );
+    if (sequenceResetTimestampDelta !== null) {
+      if (sourceIndexDelta !== null) {
+        return sourceIndexDelta;
+      }
+      return sequenceResetTimestampDelta;
+    }
     return timelineDelta;
+  }
+  if (timestampDelta !== 0) {
+    return timestampDelta;
   }
   if (sourceIndexDelta !== null) {
     return sourceIndexDelta;
@@ -1405,49 +2039,63 @@ function mergeAdjacentThinkingItems(
 ): PlainConversationItem[] {
   return items.reduce<PlainConversationItem[]>((merged, item) => {
     const last = merged.at(-1);
-    if (
-      last?.kind !== "thinking" ||
-      item.kind !== "thinking" ||
-      !shouldMergeAdjacentThinkingItems(last.toolCall, item.toolCall)
-    ) {
+    if (last?.kind !== "thinking" || item.kind !== "thinking") {
       merged.push(item);
       return merged;
     }
+
+    const currentParts = last.thinkingParts ?? [last.thinking];
+    const incomingParts = item.thinkingParts ?? [item.thinking];
+    const currentPart = currentParts.at(-1);
+    const incomingPart = incomingParts[0];
+    if (!currentPart || !incomingPart) {
+      merged.push(item);
+      return merged;
+    }
+
+    const nextParts = shouldMergeAdjacentThinkingItems(currentPart, incomingPart)
+      ? [
+          ...currentParts.slice(0, -1),
+          mergeThinkingChunks(currentPart, incomingPart),
+          ...incomingParts.slice(1),
+        ]
+      : [...currentParts, ...incomingParts];
 
     merged[merged.length - 1] = {
       kind: "thinking",
       sourceIndex: last.sourceIndex,
       timestamp: last.timestamp,
       sequence: last.sequence ?? item.sequence,
-      toolCall: mergeThinkingToolCalls(last.toolCall, item.toolCall),
+      thinking: nextParts[0] ?? last.thinking,
+      thinkingParts: nextParts.length > 1 ? nextParts : undefined,
     };
     return merged;
   }, []);
 }
 
 function shouldMergeAdjacentThinkingItems(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
+  current: SessionTimelineThinkingChunk,
+  incoming: SessionTimelineThinkingChunk,
 ) {
   if (current.id === incoming.id) {
     return true;
   }
-  if (!isGenericThinkingToolCall(current) || !isGenericThinkingToolCall(incoming)) {
+  if (!isGenericThinkingChunk(current) || !isGenericThinkingChunk(incoming)) {
     return false;
   }
   return areGenericThinkingSnapshotsCompatible(current, incoming);
 }
 
-function isGenericThinkingToolCall(toolCall: AgentToolCall) {
-  return /^thinking$/iu.test(toolCall.title.trim());
+function isGenericThinkingChunk(chunk: SessionTimelineThinkingChunk) {
+  return /^thinking$/iu.test(chunk.title.trim());
 }
 
 function areGenericThinkingSnapshotsCompatible(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
+  current: SessionTimelineThinkingChunk,
+  incoming: SessionTimelineThinkingChunk,
 ) {
-  const currentText = resolveThinkingToolCallText(current);
-  const incomingText = resolveThinkingToolCallText(incoming);
+  const currentText = current.text.trim();
+  const incomingText = incoming.text.trim();
   if (!currentText || !incomingText) {
     return true;
   }
@@ -1456,10 +2104,6 @@ function areGenericThinkingSnapshotsCompatible(
     currentText.endsWith(incomingText) ||
     incomingText.startsWith(currentText) ||
     incomingText.endsWith(currentText);
-}
-
-function resolveThinkingToolCallText(toolCall: AgentToolCall) {
-  return (toolCall.output ?? toolCall.input ?? "").trim();
 }
 
 function mergeAdjacentMessageItems(
@@ -1492,18 +2136,17 @@ function mergeAdjacentMessageItems(
   }, []);
 }
 
-function mergeThinkingToolCalls(
-  current: AgentToolCall,
-  incoming: AgentToolCall,
-): AgentToolCall {
+function mergeThinkingChunks(
+  current: SessionTimelineThinkingChunk,
+  incoming: SessionTimelineThinkingChunk,
+): SessionTimelineThinkingChunk {
   return {
     ...current,
     ...incoming,
     id: current.id,
     title: resolveMergedThinkingTitle(current.title, incoming.title),
     status: resolveMergedThinkingStatus(current.status, incoming.status),
-    output: mergeThinkingText(current.output, incoming.output),
-    input: mergeThinkingText(current.input, incoming.input),
+    text: mergeThinkingText(current.text, incoming.text, incoming.streamMode),
     timestamp: current.timestamp,
     updatedAt: incoming.updatedAt,
   };
@@ -1517,26 +2160,18 @@ function resolveMergedThinkingTitle(
 }
 
 function resolveMergedThinkingStatus(
-  _current: AgentToolCall["status"],
-  incoming: AgentToolCall["status"],
+  _current: SessionTimelineThinkingChunk["status"],
+  incoming: SessionTimelineThinkingChunk["status"],
 ) {
   return incoming;
 }
 
 function mergeThinkingText(
-  current: string | undefined,
-  incoming: string | undefined,
+  current: string,
+  incoming: string,
+  streamMode: SessionTimelineThinkingChunk["streamMode"] | "auto" = "auto",
 ) {
-  if (!current) {
-    return incoming;
-  }
-  if (!incoming || current.endsWith(incoming)) {
-    return current;
-  }
-  if (incoming.startsWith(current)) {
-    return incoming;
-  }
-  return `${current}\n\n${incoming}`;
+  return mergeStreamingText(current, incoming, streamMode ?? "auto") ?? "";
 }
 
 function isAcpPromptWrapperEcho(message: AgentMessage, messages: AgentMessage[]) {
@@ -1571,12 +2206,23 @@ function comparePlainConversationItems(left: PlainConversationItem, right: Plain
   if (transcriptAnchorDelta !== null) {
     return transcriptAnchorDelta;
   }
+  const timestampDelta = comparePlainItemTimestamps(left.timestamp, right.timestamp);
   const timelineDelta = compareOptionalTimelineSequence(
     left.sequence,
     right.sequence,
   );
   if (timelineDelta !== null) {
+    const sequenceResetTimestampDelta = compareSequenceResetTimestampDelta(
+      timelineDelta,
+      timestampDelta,
+    );
+    if (sequenceResetTimestampDelta !== null) {
+      return sequenceResetTimestampDelta;
+    }
     return timelineDelta;
+  }
+  if (timestampDelta !== 0) {
+    return timestampDelta;
   }
   const sourceIndexDelta = comparePlainConversationSourceIndex(left, right);
   if (sourceIndexDelta !== null) {
@@ -1594,6 +2240,30 @@ function compareOptionalTimelineSequence(
   }
   const sequenceDelta = left - right;
   return sequenceDelta === 0 ? null : sequenceDelta;
+}
+
+function compareSequenceResetTimestampDelta(
+  timelineDelta: number,
+  timestampDelta: number,
+) {
+  if (
+    timestampDelta === 0 ||
+    Math.abs(timestampDelta) < TIMELINE_SEQUENCE_RESET_TIMESTAMP_GAP_MS
+  ) {
+    return null;
+  }
+  return Math.sign(timelineDelta) === Math.sign(timestampDelta)
+    ? null
+    : timestampDelta;
+}
+
+function comparePlainItemTimestamps(leftTimestamp: string, rightTimestamp: string) {
+  const leftTime = Date.parse(leftTimestamp);
+  const rightTime = Date.parse(rightTimestamp);
+  if (!Number.isFinite(leftTime) || !Number.isFinite(rightTime)) {
+    return 0;
+  }
+  return leftTime - rightTime;
 }
 
 function comparePlainConversationSourceIndex(

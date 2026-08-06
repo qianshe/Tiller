@@ -29,9 +29,8 @@ type ClaudeToolCallRule = (
 ) => AgentToolCall | null;
 
 const CLAUDE_TOOL_CALL_RULES: ClaudeToolCallRule[] = [
-  normalizeClaudeUnavailableThinkingToolCall,
-  normalizeClaudeCompletedSubagentToolCall,
   normalizeClaudeTaskOutputToolCall,
+  normalizeClaudeCompletedSubagentToolCall,
   normalizeClaudePayloadSubagentToolCall,
   normalizeClaudeTitleSubagentToolCall,
   normalizeClaudeSubagentMessageToolCall,
@@ -39,19 +38,6 @@ const CLAUDE_TOOL_CALL_RULES: ClaudeToolCallRule[] = [
   normalizeClaudeMcpToolCall,
   normalizeClaudeShellSearchToolCall,
 ];
-
-function normalizeClaudeUnavailableThinkingToolCall({
-  toolCall,
-  source,
-}: ClaudeToolCallNormalizationContext) {
-  if (toolCall.kind !== "think" || toolCall.status !== "failed") {
-    return null;
-  }
-  const output = extractClaudeToolOutputText(toolCall, source);
-  return /no such tool available:\s*think\b/iu.test(output ?? "")
-    ? { ...toolCall, kind: "tool" as const }
-    : null;
-}
 
 type ClaudeToolCallProjection = {
   id: string;
@@ -179,7 +165,7 @@ export function createClaudeToolCallNormalizer(
         };
       }
       const lifecycleUpdate = normalized.kind === "subagent" &&
-        isClaudeSubagentLifecycleUpdate(toolCall);
+        isClaudeSubagentLifecycleUpdate(toolCall, update);
       if (normalized.kind === "subagent") {
         const primary = normalized.commandId
           ? sessionProjections.primaryByCommandId.get(normalized.commandId)
@@ -276,8 +262,16 @@ function normalizeClaudeCompletedSubagentToolCall({
 
 function normalizeClaudeTitleSubagentToolCall({
   toolCall,
+  update,
+  source,
 }: ClaudeToolCallNormalizationContext) {
-  if (!CLAUDE_SUBAGENT_TOOL_NAME.test(toolCall.title ?? "")) {
+  const toolName = resolveClaudeToolName(toolCall, update, source);
+  if (
+    !CLAUDE_SUBAGENT_TOOL_NAME.test(toolCall.title ?? "") &&
+    !CLAUDE_TASK_SUBAGENT_TOOL_NAME.test(toolCall.title ?? "") &&
+    !CLAUDE_SUBAGENT_TOOL_NAME.test(toolName) &&
+    !CLAUDE_TASK_SUBAGENT_TOOL_NAME.test(toolName)
+  ) {
     return null;
   }
   return { ...toolCall, kind: "subagent" as const };
@@ -285,16 +279,42 @@ function normalizeClaudeTitleSubagentToolCall({
 
 function normalizeClaudeTaskOutputToolCall({
   toolCall,
+  update,
+  source,
 }: ClaudeToolCallNormalizationContext) {
-  if (!CLAUDE_SUBAGENT_OUTPUT_TOOL_NAME.test(toolCall.title ?? "")) {
+  if (!CLAUDE_SUBAGENT_OUTPUT_TOOL_NAME.test(resolveClaudeToolName(toolCall, update, source))) {
     return null;
   }
+  const input = objectFromUnknown(
+    source?.rawInput ??
+      source?.raw_input ??
+      source?.input ??
+      update?.rawInput ??
+      update?.raw_input ??
+      update?.input ??
+      toolCall.input,
+  );
+  const rawOutput = source?.rawOutput ??
+    source?.raw_output ??
+    source?.output ??
+    source?.result ??
+    source?.content ??
+    source?.text;
+  const task = resolveClaudeTaskResult(rawOutput);
+  const output = extractClaudeToolOutputText(toolCall, source);
+  const taskId = stringFrom(input?.task_id ?? input?.taskId)?.trim() ??
+    task?.id ??
+    extractClaudeTaskId(output);
+  const taskOutput = task?.output ?? extractClaudeTaskOutput(output);
+  const status = task?.status ?? extractClaudeTaskStatus(output) ?? toolCall.status;
   const { input: _input, output: _output, ...summary } = toolCall;
   return {
     ...summary,
     kind: "subagent" as const,
     title: "Subagent",
-    status: "running" as const,
+    status,
+    ...(taskId ? { commandId: `subagent:${taskId}` } : {}),
+    ...(taskOutput ? { output: taskOutput } : {}),
   };
 }
 
@@ -568,10 +588,13 @@ function trimClaudeToolCallProjections(
   }
 }
 
-function isClaudeSubagentLifecycleUpdate(toolCall: AgentToolCall) {
+function isClaudeSubagentLifecycleUpdate(toolCall: AgentToolCall, update?: unknown) {
   const title = toolCall.title?.trim() ?? "";
+  const resolvedName = resolveClaudeToolName(toolCall, update, update);
   return CLAUDE_SUBAGENT_MESSAGE_TOOL_NAME.test(title) ||
-    CLAUDE_SUBAGENT_OUTPUT_TOOL_NAME.test(title);
+    CLAUDE_SUBAGENT_OUTPUT_TOOL_NAME.test(title) ||
+    CLAUDE_SUBAGENT_MESSAGE_TOOL_NAME.test(resolvedName) ||
+    CLAUDE_SUBAGENT_OUTPUT_TOOL_NAME.test(resolvedName);
 }
 
 function isWeakClaudeToolCallPlaceholder(
@@ -721,6 +744,86 @@ function objectFromUnknown(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" ? value as Record<string, unknown> : null;
 }
 
+function resolveClaudeToolName(
+  toolCall: AgentToolCall,
+  update: any,
+  source: any,
+) {
+  for (const candidate of [source?._meta, update?._meta]) {
+    const meta = objectFromUnknown(candidate);
+    const claudeCode = objectFromUnknown(meta?.claudeCode);
+    const toolName = stringFrom(claudeCode?.toolName ?? claudeCode?.tool_name)?.trim();
+    if (toolName) {
+      return toolName;
+    }
+  }
+  return stringFrom(
+    source?.toolName ??
+      source?.tool_name ??
+      source?.name ??
+      update?.toolName ??
+      update?.tool_name ??
+      update?.name ??
+      toolCall.title,
+  )?.trim() ?? "";
+}
+
+function resolveClaudeTaskResult(value: unknown) {
+  const record = objectFromUnknown(value);
+  const task = objectFromUnknown(record?.task) ?? record;
+  if (!task) {
+    return undefined;
+  }
+  const id = stringFrom(task.task_id ?? task.taskId)?.trim();
+  const output = normalizeClaudeTaskOutput(extractClaudeText(task.output));
+  const status = claudeTaskStatusFromValue(
+    task.status ?? record?.status ?? record?.retrieval_status,
+  );
+  if (!id && !output && !status) {
+    return undefined;
+  }
+  return { id, output, status };
+}
+
+function normalizeClaudeTaskOutput(value: string | undefined) {
+  if (!value) {
+    return undefined;
+  }
+  const taggedOutput = extractClaudeTaskOutput(value);
+  const normalized = (taggedOutput ?? value)
+    .replace(/<task_id>[\s\S]*?<\/task_id>/giu, "")
+    .replace(/<(?:status|retrieval_status)>[\s\S]*?<\/(?:status|retrieval_status)>/giu, "")
+    .replace(/<usage>[\s\S]*?<\/usage>/giu, "")
+    .replace(/(?:^|\r?\n)agentId:\s*\S+(?:\s+\(use SendMessage[^\r\n]*\))?/iu, "")
+    .trim();
+  return normalized || undefined;
+}
+
+function claudeTaskStatusFromValue(value: unknown): AgentToolCall["status"] | undefined {
+  const normalized = stringFrom(value)?.trim().toLowerCase();
+  if (
+    normalized === "pending" ||
+    normalized === "queued" ||
+    normalized === "running" ||
+    normalized === "in_progress" ||
+    normalized === "in-progress" ||
+    normalized === "not_ready" ||
+    normalized === "not-ready"
+  ) {
+    return "running";
+  }
+  if (normalized === "completed" || normalized === "done" || normalized === "success") {
+    return "completed";
+  }
+  if (normalized === "failed" || normalized === "error") {
+    return "failed";
+  }
+  if (normalized === "cancelled" || normalized === "canceled") {
+    return "cancelled";
+  }
+  return undefined;
+}
+
 function stringFrom(value: unknown): string | undefined {
   if (typeof value === "string") {
     return value;
@@ -784,7 +887,9 @@ function extractClaudeText(value: unknown): string | undefined {
   const record = value as Record<string, unknown>;
   return extractClaudeText(record.text) ??
     extractClaudeText(record.output) ??
-    extractClaudeText(record.content);
+    extractClaudeText(record.content) ??
+    extractClaudeText(record.task) ??
+    extractClaudeText(record.result);
 }
 
 function looksLikeClaudeBackgroundAgentLaunch(output: string | undefined) {
@@ -801,6 +906,13 @@ function extractClaudeBackgroundAgentId(output: string | undefined) {
 
 function extractClaudeTaskId(output: string | undefined) {
   return output?.match(/<task_id>\s*([^<\s]+)\s*<\/task_id>/iu)?.[1];
+}
+
+function extractClaudeTaskStatus(
+  output: string | undefined,
+): AgentToolCall["status"] | undefined {
+  const status = output?.match(/<(?:status|retrieval_status)>\s*([^<]+?)\s*<\/(?:status|retrieval_status)>/iu)?.[1];
+  return claudeTaskStatusFromValue(status);
 }
 
 function extractClaudeTaskLifecycleId(

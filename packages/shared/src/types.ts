@@ -360,12 +360,18 @@ export type PermissionRequestOption = {
   label: string;
 };
 
+export type PermissionRequestCategory =
+  | "local_command"
+  | "local_file_write"
+  | "external_action";
+
 export type PermissionRequest = {
   id: string;
   toolCallId?: string;
   command: string;
   reason: string;
   cwd: string;
+  category?: PermissionRequestCategory;
   options?: PermissionRequestOption[];
 };
 
@@ -421,7 +427,6 @@ export type AgentToolCallKind =
   | "search"
   | "shell"
   | "fetch"
-  | "think"
   | "todo"
   | "subagent"
   | "tool"
@@ -454,6 +459,8 @@ export type AgentToolCall = {
   title: string;
   status: AgentToolCallStatus;
   mcp?: AgentToolCallMcp;
+  /** Codex multi-agent role, when the provider includes it in the payload. */
+  subagentRole?: string;
   subagentOperation?: AgentSubagentOperation;
   commandId?: string;
   input?: string;

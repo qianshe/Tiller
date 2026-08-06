@@ -70,3 +70,53 @@ test("runtime descriptor persistence drops legacy provider history and marks err
   assert.equal(descriptor.state, "stale");
   assert.equal(descriptor.providerHistory, undefined);
 });
+
+test("runtime descriptor persistence preserves and explicitly clears pending config", () => {
+  let current = {
+    sessionId: "session-1",
+    providerId: "codex",
+    runtimeSessionId: "runtime-1",
+    capabilities: { sessionLoad: true },
+    pendingConfig: {
+      model: "opus",
+      configOptions: [{ configId: "web-search", value: false }],
+    },
+    lastSeenAt: "2026-05-28T00:00:00.000Z",
+    state: "resumeable" as const,
+  };
+  const service = createRuntimeDescriptorService({
+    sessionRuntimeStore: {
+      get: () => current,
+      upsert: (descriptor) => {
+        current = descriptor as typeof current;
+      },
+    },
+    getAgents: () => [agent],
+  });
+  const summary = sessionSummary({ runtimeSessionId: "runtime-1" });
+
+  service.persistRuntimeDescriptor(summary, agent, { sessionLoad: true });
+  assert.deepEqual(current.pendingConfig, {
+    model: "opus",
+    configOptions: [{ configId: "web-search", value: false }],
+  });
+
+  service.persistRuntimeDescriptor(summary, agent, { sessionLoad: true }, {
+    reasoningEffort: "high",
+    configOptions: [
+      { configId: "web-search", value: true },
+      { configId: "notifications", value: false },
+    ],
+  });
+  assert.deepEqual(current.pendingConfig, {
+    model: "opus",
+    reasoningEffort: "high",
+    configOptions: [
+      { configId: "web-search", value: true },
+      { configId: "notifications", value: false },
+    ],
+  });
+
+  service.persistRuntimeDescriptor(summary, agent, { sessionLoad: true }, null);
+  assert.equal(current.pendingConfig, undefined);
+});

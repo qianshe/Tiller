@@ -3,6 +3,7 @@ import type {
   AcpAgentProvider,
   AgentPromptContent,
   AgentPromptImageContent,
+  MissionPromptContextItem,
   ProjectSummary,
   SessionReasoningEffort,
   WorktreeSummary,
@@ -59,6 +60,7 @@ type StartResumeContext = Omit<
 type SubmitPromptContext = {
   prompt: string;
   promptImages: AgentPromptImageContent[];
+  draftContexts: MissionPromptContextItem[];
   rpcClientRef: RpcClientRef;
   setImagePasteNotice: (value: string) => void;
   activeSessionId: string | null;
@@ -69,6 +71,8 @@ type SubmitPromptContext = {
   ) => boolean;
   setPrompt: (value: string) => void;
   setPromptImages: (images: AgentPromptImageContent[]) => void;
+  clearDraftContexts: () => void;
+  setCommandRetentionNotice?: (value: string | null) => void;
   createClientUserMessageId: (sessionId: string) => string;
   appendUserMessage: (
     sessionId: string,
@@ -237,6 +241,7 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
   const {
     prompt,
     promptImages,
+    draftContexts,
     rpcClientRef,
     activeSessionId,
     activeSessionCanChat = true,
@@ -244,6 +249,8 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
     setImagePasteNotice,
     setPrompt,
     setPromptImages,
+    clearDraftContexts,
+    setCommandRetentionNotice,
     createClientUserMessageId,
     appendUserMessage,
     dispatch,
@@ -259,6 +266,7 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
     {
       prompt,
       promptImages,
+      draftContexts,
       activeSessionId,
       activeSessionCanChat,
     },
@@ -268,6 +276,8 @@ export function submitPrompt(event: FormEvent<HTMLFormElement>, context: SubmitP
       setImagePasteNotice,
       setPrompt,
       setPromptImages,
+      clearDraftContexts,
+      setCommandRetentionNotice,
       createClientUserMessageId,
       appendExistingSessionPrompt: appendUserMessage,
       dispatch,

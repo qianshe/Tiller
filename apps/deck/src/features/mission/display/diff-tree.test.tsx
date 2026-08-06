@@ -28,7 +28,7 @@ test("diff patch renders hunk lines with semantic colors and horizontal scrollin
     "+const newValue = 2;",
   ].join("\n");
 
-  const html = renderToStaticMarkup(renderDiffPatch(patch));
+  const html = renderToStaticMarkup(renderDiffPatch({ patch }));
 
   assert.match(html, /max-w-full/);
   assert.match(html, /min-w-0/);
@@ -50,6 +50,23 @@ test("diff patch renders hunk lines with semantic colors and horizontal scrollin
   assert.match(html, /bg-\[var\(--diff-hunk-bg\)\]/);
 });
 
+test("renderDiffPatch keeps line keys unique across multiple hunk headers", () => {
+  const patch = [
+    "@@ -1,1 +1,1 @@",
+    " const first = 1;",
+    "@@ -10,1 +10,1 @@",
+    " const second = 2;",
+  ].join("\n");
+
+  const html = renderToStaticMarkup(renderDiffPatch({ patch }));
+  const lineKeys = Array.from(html.matchAll(/data-diff-line-key="([^"]+)"/g)).map(
+    (match) => match[1],
+  );
+
+  assert.equal(lineKeys.length, 4);
+  assert.equal(new Set(lineKeys).size, lineKeys.length);
+});
+
 test("diff tree compacts single-directory chains", () => {
   const tree = buildMissionDiffTree([
     diff("apps/deck/src/features/mission/hooks/slash-commands.ts"),
@@ -67,6 +84,58 @@ test("diff tree compacts single-directory chains", () => {
   assert.equal(compactDeck?.count, 2);
 });
 
+test("renderDiffPatch exposes a hover comment button in the left gutter", () => {
+  const html = renderToStaticMarkup(
+    renderDiffPatch({
+      patch: [
+        "@@ -1,2 +1,3 @@",
+        " const keep = true;",
+        "-const oldValue = 1;",
+        "+const newValue = 2;",
+      ].join("\n"),
+      selectedLineKeys: new Set<string>(),
+      onSelectRange: () => undefined,
+    }),
+  );
+
+  assert.match(html, /data-diff-line-key=/);
+  assert.match(html, /aria-pressed="false"/);
+  assert.match(html, /mission-diff-comment-trigger/);
+  assert.match(html, /group-hover:opacity-100/);
+  assert.match(html, /grid-cols-\[2\.5rem_max-content\]/u);
+  assert.match(html, /mission-diff-comment-trigger[^\"]*absolute/);
+  assert.match(html, /aria-label="添加第 1 行评论"/u);
+});
+
+test("renderDiffPatch renders a line-number tap trigger without a duplicate icon in coarse pointer mode", () => {
+  const html = renderToStaticMarkup(
+    renderDiffPatch({
+      patch: [
+        "@@ -1,2 +1,3 @@",
+        " const keep = true;",
+        "-const oldValue = 1;",
+        "+const newValue = 2;",
+      ].join("\n"),
+      selectedLineKeys: new Set<string>(),
+      onSelectRange: () => undefined,
+      pointerMode: "coarse",
+    }),
+  );
+
+  assert.match(html, /data-diff-coarse-trigger="true"/u);
+  const lineKeys = Array.from(html.matchAll(/data-diff-line-key="([^"]+)"/g)).map(
+    (match) => match[1],
+  );
+  assert.equal(lineKeys.length, new Set(lineKeys).size);
+  assert.match(html, /aria-label="轻点第 1 行添加评论"/u);
+  assert.match(html, /aria-pressed="false"/u);
+  assert.match(html, /tabular-nums/);
+  assert.match(html, /focus-visible:ring-2/);
+  assert.doesNotMatch(html, /diff-coarse-comment-icon/u);
+  assert.doesNotMatch(html, /group-hover:opacity-100/u);
+  assert.doesNotMatch(html, /mission-diff-comment-trigger/u);
+});
+
 test("diff stats color additions and deletions by semantic value", () => {
   const html = renderToStaticMarkup(renderDiffStats(diff("a.ts", 3, 0)));
 
@@ -74,4 +143,13 @@ test("diff stats color additions and deletions by semantic value", () => {
   assert.match(html, /diff-deletions[^\"]*text-muted-foreground/);
   assert.match(html, /\+3/);
   assert.match(html, /-0/);
+});
+
+test("diff stats do not render zero-line changes as +0/-0", () => {
+  const html = renderToStaticMarkup(renderDiffStats(diff("empty.txt", 0, 0)));
+
+  assert.match(html, /title="无行级变更"/u);
+  assert.match(html, /—/u);
+  assert.doesNotMatch(html, />\+0</);
+  assert.doesNotMatch(html, />-0</);
 });

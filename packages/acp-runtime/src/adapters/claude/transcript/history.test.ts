@@ -1,10 +1,15 @@
 import assert from "node:assert/strict";
+import { dirname, join } from "node:path";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import test from "node:test";
 import {
   extractClaudeCompactionFromTranscriptText,
   extractClaudeCompactionSummaryFromTranscriptText,
   extractClaudeVisibleMessagesFromTranscriptText,
+  readClaudeTranscriptCompactionFromDisk,
 } from "./history";
+import { resolveClaudeTranscriptPath } from "./plan";
 
 test("extractClaudeVisibleMessagesFromTranscriptText keeps visible user and assistant replies in transcript order", () => {
   const transcript = [
@@ -116,6 +121,62 @@ test("extractClaudeCompactionSummaryFromTranscriptText selects the summary compl
       summaryMessageId: "summary-1",
     },
   );
+});
+
+test("readClaudeTranscriptCompactionFromDisk ignores stale summaries when hydrating a live marker", () => {
+  const claudeConfigDir = mkdtempSync(join(tmpdir(), "tiller-claude-stale-compaction-"));
+  const options = {
+    runtimeSessionId: "runtime-claude-stale",
+    cwd: "D:/repo",
+    claudeConfigDir,
+    completedAt: "2026-07-17T15:24:06.137Z",
+  };
+  const transcriptPath = resolveClaudeTranscriptPath(options);
+  mkdirSync(dirname(transcriptPath), { recursive: true });
+  writeFileSync(
+    transcriptPath,
+    compactSummary(
+      "summary-old",
+      "2026-07-17T15:00:00.000Z",
+      "Old compacted summary",
+    ),
+    "utf8",
+  );
+
+  try {
+    assert.equal(readClaudeTranscriptCompactionFromDisk(options), undefined);
+  } finally {
+    rmSync(claudeConfigDir, { recursive: true, force: true });
+  }
+});
+
+test("readClaudeTranscriptCompactionFromDisk keeps a recent summary eligible for hydration", () => {
+  const claudeConfigDir = mkdtempSync(join(tmpdir(), "tiller-claude-recent-compaction-"));
+  const options = {
+    runtimeSessionId: "runtime-claude-recent",
+    cwd: "D:/repo",
+    claudeConfigDir,
+    completedAt: "2026-07-17T15:24:06.137Z",
+  };
+  const transcriptPath = resolveClaudeTranscriptPath(options);
+  mkdirSync(dirname(transcriptPath), { recursive: true });
+  writeFileSync(
+    transcriptPath,
+    [
+      compactSummary("summary-old", "2026-07-17T15:00:00.000Z", "Old compacted summary"),
+      compactSummary("summary-new", "2026-07-17T15:23:58.000Z", "New compacted summary"),
+    ].join("\n"),
+    "utf8",
+  );
+
+  try {
+    assert.deepEqual(readClaudeTranscriptCompactionFromDisk(options), {
+      summaryMessageId: "summary-new",
+      summaryText: "New compacted summary",
+    });
+  } finally {
+    rmSync(claudeConfigDir, { recursive: true, force: true });
+  }
 });
 
 function visibleUser(id: string, text: string, timestamp: string) {

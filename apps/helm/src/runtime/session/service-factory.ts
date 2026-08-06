@@ -28,6 +28,7 @@ import { createProviderLifecycle, type HelmRuntimeHandle } from "../provider-lif
 import {
   cleanupRuntimeEventState,
   ensureLiveEventSequenceForSession,
+  flushRuntimeSessionState,
   handleRuntimeEvent as dispatchRuntimeEvent,
 } from "../events";
 import { markSessionResumeUnavailable, } from "../resume-info";
@@ -203,17 +204,31 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     dispatcher: sessionTimelineDispatcher,
   });
   const sessionTimelineIdleEvictionTimer = setInterval(() => {
-    sessionTimelineWorkers.evictIdle();
+    const context = options.createHandlerContext();
+    sessionTimelineWorkers.evictIdle({
+      beforeRemove: (sessionId) => {
+        clearTransientSessionRuntimeState(sessionId, context);
+      },
+    });
   }, 60_000);
   sessionTimelineIdleEvictionTimer.unref?.();
-  function resetSessionTimelineRuntimeState(sessionId: string) {
-    const context = options.createHandlerContext();
-    context.promptQueue.remove(sessionId);
+
+  function clearTransientSessionRuntimeState(
+    sessionId: string,
+    context: HelmHandlerContext,
+  ) {
+    flushRuntimeSessionState(sessionId, context);
     context.liveMessageBuffer.remove(sessionId);
     context.runtimeMetrics?.removeSession(sessionId);
     cleanupRuntimeEventState(sessionId, context);
-    diffHydration.remove(sessionId);
     sessionTimelineFlushScheduler.remove(sessionId);
+  }
+
+  function resetSessionTimelineRuntimeState(sessionId: string) {
+    const context = options.createHandlerContext();
+    clearTransientSessionRuntimeState(sessionId, context);
+    context.promptQueue.remove(sessionId);
+    diffHydration.remove(sessionId);
     sessionTimelineWorkers.remove(sessionId);
     sessionLiveStateStore.remove(sessionId);
     sessionApprovalStateStore.remove(sessionId);
@@ -307,8 +322,14 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     summary: SessionSummary,
     agent: AcpAgentProvider | undefined,
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
+    pendingConfig?: StoredSessionRuntimeDescriptor["pendingConfig"] | null,
   ) {
-    runtimeDescriptorService.persistRuntimeDescriptor(summary, agent, capabilities);
+    runtimeDescriptorService.persistRuntimeDescriptor(
+      summary,
+      agent,
+      capabilities,
+      pendingConfig,
+    );
   }
 
   async function publishDiffUpdate(sessionId: string, files: FileDiffSummary[]) {
@@ -369,12 +390,9 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         ...context.liveMessageBuffer.sessionIds(),
       ]);
       for (const sessionId of transientSessionIds) {
+        clearTransientSessionRuntimeState(sessionId, context);
         options.sessionUpdateStore.compactTail(sessionId);
         context.promptQueue.remove(sessionId);
-        context.liveMessageBuffer.remove(sessionId);
-        context.runtimeMetrics?.removeSession(sessionId);
-        cleanupRuntimeEventState(sessionId, context);
-        sessionTimelineFlushScheduler.remove(sessionId);
         sessionTimelineWorkers.remove(sessionId);
         sessionSubagentDetailService?.flush(sessionId);
       }

@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { Readable, Writable } from "node:stream";
 import { setImmediate as waitUntilNextEventLoopTurn } from "node:timers/promises";
 import * as acp from "@agentclientprotocol/sdk";
-import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
+import type { AcpAgentProvider, AgentPromptContent, PermissionDecision, PermissionRequestCategory, SessionConfigOptionValue, SessionReasoningEffort, WorktreeSummary } from "@tiller/shared";
 import {
   beginAdapterPromptObservation,
   disposeAdapterSession,
@@ -129,7 +129,8 @@ export class AcpConnection {
   private constructor(private readonly state: AcpConnectionState) {
     this.terminalClient = new ConnectionTerminalClient({
       resolveSession: (runtimeSessionId) => this.requireSessionByRuntimeId(runtimeSessionId),
-      requestPermission: (sessionId, command, reason) => this.requestClientPermission(sessionId, command, reason),
+      requestPermission: (sessionId, command, reason, category) =>
+        this.requestClientPermission(sessionId, command, reason, category),
     });
     this.state.child.once("exit", (code, signal) => {
       this.status = "closed";
@@ -464,20 +465,7 @@ export class AcpConnection {
     if (!modeAppliedAsSdk) {
       await applyOption("mode", directConfigApplied ? undefined : nextConfig.agentMode);
     }
-    const modelAppliedAsConfig = directConfigApplied ? false : await applyOption("model", nextConfig.model);
-    if (!modelAppliedAsConfig && nextConfig.model && session.modelState?.options.some((model) => model.id === nextConfig.model)) {
-      await withConnectionRequest(
-        "session/set_model",
-        this.state.agent.unstable_setSessionModel({ sessionId: session.runtimeSessionId, modelId: nextConfig.model }),
-        this.state.child,
-        this.state.getStderrBuffer,
-        this.state.logFile,
-        this.state.provider,
-      );
-      session.modelState = { ...session.modelState, currentModelId: nextConfig.model };
-      session.onEvent({ type: "model-options", state: session.modelState });
-      runtimeApplied = true;
-    }
+    await applyOption("model", directConfigApplied ? undefined : nextConfig.model);
     await applyOption("thought_level", directConfigApplied ? undefined : nextConfig.reasoningEffort);
 
     return {
@@ -693,10 +681,11 @@ export class AcpConnection {
           void this.dispose().catch(() => undefined);
         },
       );
+      const loadConfigOptions = extractSessionConfigOptions(result);
       return {
         runtimeSessionId: resolveRuntimeSessionId(result, request.runtimeSessionId),
-        configOptions: extractSessionConfigOptions(result),
-        modelState: extractAcpModelState(result),
+        configOptions: loadConfigOptions,
+        modelState: extractAcpModelState(loadConfigOptions),
       };
     }
 
@@ -716,10 +705,11 @@ export class AcpConnection {
           void this.dispose().catch(() => undefined);
         },
       );
+      const resumeConfigOptions = extractSessionConfigOptions(result);
       return {
         runtimeSessionId: resolveRuntimeSessionId(result, request.runtimeSessionId),
-        configOptions: extractSessionConfigOptions(result),
-        modelState: extractAcpModelState(result),
+        configOptions: resumeConfigOptions,
+        modelState: extractAcpModelState(resumeConfigOptions),
       };
     }
 
@@ -734,10 +724,11 @@ export class AcpConnection {
       this.state.logFile,
       this.state.provider,
     );
+    const newSessionConfigOptions = extractSessionConfigOptions(result);
     return {
       runtimeSessionId: resolveRuntimeSessionId(result, request.tillerSessionId),
-      configOptions: extractSessionConfigOptions(result),
-      modelState: extractAcpModelState(result),
+      configOptions: newSessionConfigOptions,
+      modelState: extractAcpModelState(newSessionConfigOptions),
     };
   }
 
@@ -762,7 +753,9 @@ export class AcpConnection {
   private async handleRequestPermission(params: acp.RequestPermissionRequest): Promise<acp.RequestPermissionResponse> {
     const session = this.findSessionByRuntimeId(params.sessionId);
     const mapped = mapSdkPermissionRequest(params, this.nextPermissionRequestId("sdk-permission"), session?.worktree.path ?? this.state.launchCwd);
-    session?.onEvent({ type: "status", status: "waiting_for_permission", message: "ACP agent requested permission" });
+    // ACP permission is an agent->client request. The Helm approval boundary
+    // decides whether it is manual or automatic, so publishing a waiting
+    // status here would leave auto-approved requests stuck in that status.
     session?.onEvent({ type: "permission-request", request: mapped.request });
     return await new Promise<acp.RequestPermissionResponse>((resolve) => {
       this.pendingPermissionReplies.set(mapped.id, {
@@ -790,7 +783,8 @@ export class AcpConnection {
       session: this.requireSessionByRuntimeId(params.sessionId),
       path: params.path,
       content: params.content,
-      requestPermission: (sessionId, command, reason) => this.requestClientPermission(sessionId, command, reason),
+      requestPermission: (sessionId, command, reason, category) =>
+        this.requestClientPermission(sessionId, command, reason, category),
     });
   }
 
@@ -814,13 +808,17 @@ export class AcpConnection {
     return await this.terminalClient.release(params);
   }
 
-  private async requestClientPermission(sessionId: string, command: string, reason: string): Promise<boolean> {
+  private async requestClientPermission(
+    sessionId: string,
+    command: string,
+    reason: string,
+    category: PermissionRequestCategory,
+  ): Promise<boolean> {
     const session = this.findSessionByRuntimeId(sessionId);
     const id = this.nextPermissionRequestId("sdk-client-permission");
-    session?.onEvent({ type: "status", status: "waiting_for_permission", message: reason });
     session?.onEvent({
       type: "permission-request",
-      request: { id, command, reason, cwd: session?.worktree.path ?? this.state.launchCwd },
+      request: { id, command, reason, category, cwd: session?.worktree.path ?? this.state.launchCwd },
     });
     return await new Promise<boolean>((resolve) => {
       this.pendingPermissionReplies.set(id, { kind: "client", resolve });

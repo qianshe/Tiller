@@ -28,7 +28,6 @@ import {
 } from "./support";
 import {
   finalizeActiveRuntimeToolCalls,
-  finalizeRuntimeThinking,
 } from "./tool-call";
 
 export function handleRuntimeStatusEvent(
@@ -52,7 +51,6 @@ export function handleRuntimeStatusEvent(
       : event.status === "cancelled"
         ? "cancelled"
         : "completed";
-    finalizeRuntimeThinking(sessionId, terminalStatus, context);
     finalizeActiveRuntimeToolCalls(sessionId, terminalStatus, context, {
       includeSubagents: terminalStatus !== "completed",
     });
@@ -240,7 +238,6 @@ export function handleRuntimeErrorEvent(
 ) {
   assertCanonicalTimelinePipeline(context);
   flushLiveAssistantMessage(sessionId, context);
-  finalizeRuntimeThinking(sessionId, "failed", context);
   finalizeActiveRuntimeToolCalls(sessionId, "failed", context);
   context.sessionTimelineFlushScheduler.flushNow(sessionId);
   logRuntimeError(context, "runtime.error", {

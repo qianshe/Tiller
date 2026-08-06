@@ -13,6 +13,9 @@ export function buildMissionPanelContext(panelPages: any) {
   return {
     selectedMissionDisplayTabId: panelPages.selectedDisplayTabId,
     setSelectedMissionDisplayTabId: panelPages.setSelectedDisplayTabId,
+    missionGitErrorTabOpen: panelPages.gitErrorTabOpen,
+    openMissionGitErrorTab: panelPages.openGitErrorTab,
+    closeMissionGitErrorTab: panelPages.closeGitErrorTab,
     openedMissionDiffFilePaths: panelPages.openedDiffFilePaths,
     selectedMissionDiffFilePath: panelPages.selectedDiffFilePath,
     setSelectedMissionDiffFilePath: panelPages.setSelectedDiffFilePath,
@@ -76,6 +79,10 @@ export function buildAppRouteContext(input: any) {
     loggingConnectionKnownConnected: input.loggingConnectionKnownConnected,
     refreshLoggingSettings: input.refreshLoggingSettings,
     saveLoggingLevel: input.saveLoggingLevel,
+    helmUpdateState: input.helmUpdateState,
+    helmUpdateClient: input.helmUpdateClient,
+    refreshHelmUpdate: input.refreshHelmUpdate,
+    startHelmUpdate: input.startHelmUpdate,
   };
 }
 

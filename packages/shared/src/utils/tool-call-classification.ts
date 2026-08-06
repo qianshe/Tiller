@@ -9,6 +9,12 @@ export function resolveMergedAgentToolCallKind(
   incoming: ToolCallClassificationSnapshot,
 ): AgentToolCallKind {
   if (
+    incoming.kind === "subagent" &&
+    (current.kind === "tool" || current.kind === "unknown")
+  ) {
+    return "subagent";
+  }
+  if (
     current.kind === "shell" &&
     incoming.kind === "search" &&
     isStructuredSearchToolCallInput(incoming.input ?? current.input)

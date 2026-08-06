@@ -24,3 +24,17 @@ export function shouldAttemptSilentReconnect(input: {
     Boolean(input.port.trim())
   );
 }
+
+export function shouldRunSilentReconnect(input: {
+  missionVisualMode: boolean;
+  connection: "connecting" | "connected" | "disconnected";
+  tokenPresent: boolean;
+  embedded?: boolean;
+  host: string;
+  port: string;
+}): boolean {
+  if (input.missionVisualMode) {
+    return false;
+  }
+  return shouldAttemptSilentReconnect(input);
+}

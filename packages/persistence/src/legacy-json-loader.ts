@@ -154,7 +154,6 @@ const LEGACY_VALID_TOOL_CALL_KINDS = new Set<AgentToolCallKind>([
   "search",
   "shell",
   "fetch",
-  "think",
   "todo",
   "subagent",
   "tool",
@@ -169,6 +168,7 @@ function normalizeLegacyAgentToolCall(toolCall: AgentToolCall): AgentToolCall {
 function normalizeLegacyAgentToolCallKind(value: unknown): AgentToolCallKind {
   if (value === "terminal") return "shell";
   if (value === "edit") return "write";
+  if (value === "think") return "tool";
   return typeof value === "string" && LEGACY_VALID_TOOL_CALL_KINDS.has(value as AgentToolCallKind)
     ? (value as AgentToolCallKind)
     : "unknown";

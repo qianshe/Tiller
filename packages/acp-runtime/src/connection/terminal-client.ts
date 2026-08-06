@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import type { PermissionRequestCategory } from "@tiller/shared";
 import { terminateChildProcess } from "../process";
 import type { SessionRuntimeEvent } from "../runtime-types";
 import {
@@ -17,7 +18,12 @@ type ConnectionTerminalSession = {
 
 type ConnectionTerminalClientOptions = {
   resolveSession: (runtimeSessionId: string) => ConnectionTerminalSession;
-  requestPermission: (sessionId: string, command: string, reason: string) => Promise<boolean>;
+  requestPermission: (
+    sessionId: string,
+    command: string,
+    reason: string,
+    category: PermissionRequestCategory,
+  ) => Promise<boolean>;
 };
 
 export class ConnectionTerminalClient {
@@ -35,6 +41,7 @@ export class ConnectionTerminalClient {
       params.sessionId,
       commandLine,
       "ACP agent requested terminal execution.",
+      "local_command",
     );
     if (!allowed) {
       throw new Error(`Denied ACP terminal command: ${commandLine}`);

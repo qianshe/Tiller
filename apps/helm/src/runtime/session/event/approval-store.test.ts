@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type {
+  CanonicalApproval,
   CanonicalApprovalState,
   CanonicalSessionState,
   SessionUpdateRecord,
@@ -25,6 +26,7 @@ function sessionState(sequence: number): CanonicalSessionState {
 
 test("approval state store exposes state only after atomic persistence succeeds", () => {
   let persisted: CanonicalApprovalState | undefined;
+  let persistedHistory: CanonicalApproval | undefined;
   const commits: number[] = [];
   const persistence: SessionApprovalStore = {
     get: () => persisted,
@@ -32,11 +34,14 @@ test("approval state store exposes state only after atomic persistence succeeds"
       persisted = state;
       return state;
     },
-    commitUpdate: (update, state) => {
+    commitUpdate: (update, state, _sessionState, historyRecord) => {
       commits.push(update.sequence);
       persisted = state;
+      persistedHistory = historyRecord;
       return state;
     },
+    listHistory: () => ({ approvals: [], hasMore: false }),
+    clearProcessedHistory: () => 0,
     remove: () => undefined,
     close: () => undefined,
   };
@@ -73,6 +78,31 @@ test("approval state store exposes state only after atomic persistence succeeds"
   assert.deepEqual(commits, [1]);
   assert.deepEqual(store.get("session-1"), next);
   assert.equal(next.active["approval-1"]?.status, "pending");
+  assert.equal(persistedHistory?.id, "approval-1");
+  assert.equal(persistedHistory?.createdAt, "2026-07-11T18:00:00.000Z");
+
+  const expired = store.commit(
+    "session-1",
+    {
+      type: "expired",
+      approvalId: "approval-1",
+      updatedAt: "2026-07-11T18:01:00.000Z",
+    },
+    2,
+    {
+      ...update,
+      sequence: 2,
+      updateType: "approval-status",
+      receivedAt: "2026-07-11T18:01:00.000Z",
+      payloadJson: '{"type":"approval-status","status":"expired"}',
+    },
+    sessionState(2),
+  );
+
+  assert.deepEqual(commits, [1, 2]);
+  assert.deepEqual(expired.active, {});
+  assert.equal(persistedHistory?.status, "expired");
+  assert.equal(persistedHistory?.createdAt, "2026-07-11T18:00:00.000Z");
 });
 
 test("approval state store keeps its previous cache when persistence fails", () => {
@@ -83,6 +113,8 @@ test("approval state store keeps its previous cache when persistence fails", () 
     commitUpdate: () => {
       throw new Error("commit failed");
     },
+    listHistory: () => ({ approvals: [], hasMore: false }),
+    clearProcessedHistory: () => 0,
     remove: () => undefined,
     close: () => undefined,
   };

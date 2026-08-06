@@ -15,3 +15,10 @@ export {
   type DispatchToHelm,
 } from "./request-dispatch";
 export { DeckRpcClient } from "./rpc-client";
+export {
+  clearHelmUpdateIntent,
+  isHelmVersionAtLeast,
+  readHelmUpdateIntent,
+  writeHelmUpdateIntent,
+  type HelmUpdateIntent,
+} from "./update-intent";

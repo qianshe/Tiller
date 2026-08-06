@@ -28,6 +28,13 @@ test("Workbench v6 Tailwind inline color aliases are registered", () => {
   }
 });
 
+test("Voyage activates Tailwind dark utilities", () => {
+  assert.match(
+    tokensCss,
+    /@custom-variant dark \(&:where\(\[data-theme="dark"\] \*, \[data-theme="voyage"\] \*\)\);/,
+  );
+});
+
 test("Workbench v6 shell utility classes are available", () => {
   for (const className of [
     ".h-ctl-xs",

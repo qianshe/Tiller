@@ -1,0 +1,65 @@
+/* tokens/themes/chart.css — Paper-chart warm light theme for [data-theme="chart"]
+ *
+ * Warm paper surfaces with navy primary and a signal-red destructive, in the
+ * lineage of vintage nautical charts / Solarized-light paper tones.
+ */
+
+@layer base {
+  [data-theme="chart"] {
+    --background:           #f2ede2;
+    --canvas:               #ece6d8;
+    --surface:              #faf7ef;
+    --surface-sunken:       #e5decd;
+    --surface-elevated:     #fffdf7;
+    --surface-emphasis:     #ddd5c2;
+    --popover-glass:        rgb(250 247 239 / 0.88);
+
+    --foreground:           #221f18;
+    --muted-foreground:     #5c5648;
+
+    --primary:              #1e4e79;
+    --primary-strong:       #2e6ba0;
+    --on-primary:           #f8fbff;
+    --primary-soft:         rgb(30 78 121 / 0.12);
+
+    --success:              #33691e;
+    --success-container:    #33691e;
+    --on-success-container: #f6fff0;
+    --warning:              #8a5f00;
+    --on-warning:           #8a5f00;
+    --destructive:          #b3402e;
+
+    --diff-added-bg:        rgb(51 105 30 / 0.13);
+    --diff-added-text:      #2c5a1a;
+    --diff-added-border:    #33691e;
+    --diff-deleted-bg:      rgb(179 64 46 / 0.12);
+    --diff-deleted-text:    #97361f;
+    --diff-deleted-border:  #b3402e;
+    --diff-hunk-bg:         rgb(30 78 121 / 0.14);
+    --diff-hunk-text:       #1e4e79;
+    --diff-meta-bg:         #ece6d8;
+    --diff-meta-text:       #5c5648;
+    --markdown-code-bg:     #262219;
+    --markdown-code-fg:     #f0ebe0;
+    --markdown-code-head:   #e5dfd0;
+
+    --border-ghost:         rgb(66 58 40 / 0.18);
+    --ring:                 #1e4e79;
+
+    --terminal-bg:          #262219;
+    --terminal-fg:          #f0ebe0;
+
+    --shadow-ambient:       0 0 84px rgb(30 78 121 / 0.08);
+
+    --color-text-inverse:   #ffffff;
+    --color-subtle:         #6f6857;
+    --color-surface:        rgba(250, 247, 239, 0.9);
+    --color-surface-strong: rgba(250, 247, 239, 0.96);
+    --color-secondary-text: #221f18;
+    --color-border-strong:  rgba(66, 58, 40, 0.24);
+    --shadow-panel:         0 20px 44px rgba(40, 30, 10, 0.10);
+    --shadow-card:          0 16px 34px rgba(40, 30, 10, 0.08);
+    --deck-color-scheme:    light;
+    --deck-body-background: var(--background);
+  }
+}

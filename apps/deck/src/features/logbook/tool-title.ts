@@ -336,10 +336,45 @@ export function resolveMergedToolTitle(
   currentTitle: string,
   incomingTitle: string,
   id: string,
+  isSubagent = false,
+  currentInput?: string,
+  incomingInput?: string,
 ) {
-  return isInformativeToolTitle(incomingTitle, id) && !isFallbackToolTitle(incomingTitle)
+  if (isSubagent) {
+    const incomingCategory = resolveSubagentCategory(incomingInput);
+    if (incomingCategory) {
+      return incomingCategory;
+    }
+    const currentCategory = resolveSubagentCategory(currentInput);
+    if (currentCategory) {
+      return currentCategory;
+    }
+  }
+  return isInformativeToolTitle(incomingTitle, id) &&
+    !isFallbackToolTitle(incomingTitle) &&
+    !(isSubagent && isWeakSubagentTitle(incomingTitle))
     ? incomingTitle
     : currentTitle || incomingTitle || id;
+}
+
+function isWeakSubagentTitle(title: string) {
+  return /^(?:task|subagent|tool|unknown)$/iu.test(title.trim());
+}
+
+function resolveSubagentCategory(input: string | undefined) {
+  if (!input) {
+    return undefined;
+  }
+  try {
+    const parsed: unknown = JSON.parse(input);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return undefined;
+    }
+    const category = (parsed as Record<string, unknown>).category;
+    return typeof category === "string" && category.trim() ? category.trim() : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isInformativeToolTitle(title: string | undefined, id: string) {

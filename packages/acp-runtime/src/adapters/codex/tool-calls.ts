@@ -7,13 +7,35 @@ import { extractCodexSkillNameFromText, formatCodexSkillTitle } from "./skill-to
 
 const CODEX_SUBAGENT_TOOL_TITLE = /^spawn_agents_/u;
 const CODEX_MULTI_AGENT_TOOL_TITLE = /^(?:spawn_agent|send_message|send_input|followup_task|wait_agent|interrupt_agent|list_agents|close_agent|resume_agent)$/u;
+const CODEX_SPARSE_LIFECYCLE_TOOL_TITLE = /^(?:spawn_agent|wait_agent|close_agent)$/u;
 const CODEX_MULTI_AGENT_NAMESPACE = "multi_agent_v1";
 const CODEX_WEB_NAMESPACE = "web";
+const CODEX_APP_SERVER_TOOL_NAMES: Record<string, string> = {
+  spawnAgent: "spawn_agent",
+  sendMessage: "send_message",
+  sendInput: "send_input",
+  followupTask: "followup_task",
+  waitAgent: "wait_agent",
+  interruptAgent: "interrupt_agent",
+  listAgents: "list_agents",
+  closeAgent: "close_agent",
+  resumeAgent: "resume_agent",
+};
+
+export type CodexSubagentActivityKind = "started" | "interacted" | "interrupted";
+
+export type CodexSubagentActivity = {
+  kind: CodexSubagentActivityKind;
+  threadId?: string;
+  path?: string;
+};
 
 type CodexToolCallNormalizationContext = {
   toolCall: AgentToolCall;
   input: Record<string, unknown> | null;
   descriptor: CodexToolDescriptor | null;
+  activity: CodexSubagentActivity | null;
+  update: any;
 };
 
 type CodexToolCallRule = {
@@ -23,33 +45,28 @@ type CodexToolCallRule = {
 
 const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
   {
-    match: ({ toolCall, input, descriptor }) =>
-      looksLikeCodexSubagentToolCall(toolCall, input, descriptor),
-    normalize: ({ toolCall, input, descriptor }) => {
-      const toolName = descriptor?.name ?? extractCodexMultiAgentToolName(input);
-      const identity = resolveCodexSubagentIdentity(input);
-      const operation = resolveCodexSubagentOperation(toolName, input, toolCall.id);
+    match: ({ toolCall, input, descriptor, activity }) =>
+      looksLikeCodexSubagentToolCall(toolCall, input, descriptor, activity),
+    normalize: ({ toolCall, input, descriptor, activity }) => {
+      const toolName = resolveCodexMultiAgentToolName(toolCall.title, input, descriptor);
+      const operation = activity
+        ? resolveCodexSubagentActivityOperation(activity, toolCall.id)
+        : resolveCodexSubagentOperation(toolName, input, toolCall.id);
+      const commandId = activity
+        ? resolveCodexSubagentActivityCommandId(activity, toolCall.id)
+        : resolveCodexSubagentCommandId(toolName, input, toolCall.id);
+      const isExecWrappedSubagent = toolCall.title.trim().toLowerCase() === "exec" &&
+        isCodexMultiAgentNamespace(input);
+      const subagentRole = isExecWrappedSubagent ? undefined : resolveCodexSubagentRole(input);
       return {
         ...toolCall,
         kind: "subagent" as const,
-        ...(operation
-          ? {
-              commandId: toolCall.id,
-              subagentOperation: operation,
-              ...(identity
-                ? { title: `Subagent: ${identity}` }
-                : isOpaqueCodexToolTitle(toolCall.title) && toolName
-                  ? { title: toolName }
-                  : {}),
-            }
-          : identity && isCodexSubagentLifecycleTool(toolName)
-          ? {
-              commandId: `subagent:${identity}`,
-              title: `Subagent: ${identity}`,
-            }
-          : isOpaqueCodexToolTitle(toolCall.title) && toolName
-            ? { title: toolName }
-            : {}),
+        title: isExecWrappedSubagent
+          ? "Subagent"
+          : resolveCodexSubagentTitle(input, toolCall.title),
+        ...(commandId ? { commandId } : {}),
+        ...(subagentRole ? { subagentRole } : {}),
+        ...(operation ? { subagentOperation: operation } : {}),
       };
     },
   },
@@ -63,6 +80,16 @@ const CODEX_TOOL_CALL_RULES: CodexToolCallRule[] = [
         title: formatCodexSkillTitle(extractCodexSkillNameFromToolCall(toolCall, input)!),
       };
     },
+  },
+  {
+    match: ({ toolCall, input, update }) =>
+      toolCall.kind === "write" &&
+      isGenericCodexWriteTitle(toolCall.title) &&
+      resolveCodexWritePaths(input, update).length > 0,
+    normalize: ({ toolCall, input, update }) => ({
+      ...toolCall,
+      title: formatCodexWriteTitle(resolveCodexWritePaths(input, update)),
+    }),
   },
   {
     match: ({ toolCall, input, descriptor }) => Boolean(resolveCodexMcp(toolCall, input, descriptor)),
@@ -111,10 +138,13 @@ export function normalizeCodexToolCall(
 ): AgentToolCall {
   const input = resolveNormalizedCodexToolInput(toolCall, update);
   const descriptor = resolveCodexToolDescriptor(input);
+  const activity = resolveCodexSubagentActivity(input, update);
   const context: CodexToolCallNormalizationContext = {
     toolCall,
     input,
     descriptor,
+    activity,
+    update,
   };
   for (const rule of CODEX_TOOL_CALL_RULES) {
     if (rule.match(context)) {
@@ -122,6 +152,116 @@ export function normalizeCodexToolCall(
     }
   }
   return toolCall;
+}
+
+function resolveCodexWritePaths(
+  input: Record<string, unknown> | null,
+  update: any,
+) {
+  const paths: string[] = [];
+  const seen = new Set<string>();
+  const addPath = (value: unknown) => {
+    const path = stringValue(value);
+    if (!path) {
+      return;
+    }
+    const identity = path.replace(/\\/gu, "/");
+    if (!seen.has(identity)) {
+      seen.add(identity);
+      paths.push(path);
+    }
+  };
+
+  for (const source of [update, update?.toolCall, update?.tool_call]) {
+    collectCodexPathsFromContent(source?.content, addPath);
+    collectCodexPathsFromLocations(source?.locations, addPath);
+  }
+  collectCodexPathsFromChanges(input?.changes, addPath);
+  return paths;
+}
+
+function collectCodexPathsFromContent(
+  content: unknown,
+  addPath: (value: unknown) => void,
+) {
+  if (!Array.isArray(content)) {
+    return;
+  }
+  for (const item of content) {
+    const record = recordValue(item);
+    if (!record) {
+      continue;
+    }
+    if (record.type === "diff") {
+      addPath(record.path);
+    }
+  }
+}
+
+function collectCodexPathsFromLocations(
+  locations: unknown,
+  addPath: (value: unknown) => void,
+) {
+  if (!Array.isArray(locations)) {
+    return;
+  }
+  for (const location of locations) {
+    addPath(recordValue(location)?.path);
+  }
+}
+
+function collectCodexPathsFromChanges(
+  changes: unknown,
+  addPath: (value: unknown) => void,
+) {
+  if (Array.isArray(changes)) {
+    for (const change of changes) {
+      const record = recordValue(change);
+      addPath(record?.path ?? record?.file_path ?? record?.filePath);
+    }
+    return;
+  }
+  const record = recordValue(changes);
+  if (!record) {
+    return;
+  }
+  const directPath = record.path ?? record.file_path ?? record.filePath;
+  if (directPath) {
+    addPath(directPath);
+    return;
+  }
+  for (const [path, change] of Object.entries(record)) {
+    if (looksLikeCodexFileChange(change)) {
+      addPath(path);
+    }
+  }
+}
+
+function looksLikeCodexFileChange(value: unknown) {
+  const record = recordValue(value);
+  return Boolean(
+    record &&
+    (record.type === "add" ||
+      record.type === "delete" ||
+      record.type === "update" ||
+      record.kind ||
+      record.unified_diff),
+  );
+}
+
+function isGenericCodexWriteTitle(title: string) {
+  const normalized = title.trim();
+  return isOpaqueCodexToolTitle(title) ||
+    /^(?:Edit|Editing files?|Write|Writing files?)$/iu.test(normalized);
+}
+
+function formatCodexWriteTitle(paths: string[]) {
+  const firstPath = compactCodexWritePath(paths[0]!);
+  return paths.length === 1 ? firstPath : `${firstPath} (+${paths.length - 1} more)`;
+}
+
+function compactCodexWritePath(path: string) {
+  return path.match(/(?:^|[\\/])((?:apps|packages|docs|scripts)[\\/].*)$/u)?.[1] ?? path;
 }
 
 function resolveCodexWebToolTitle(descriptor: CodexToolDescriptor) {
@@ -141,8 +281,12 @@ function looksLikeCodexSubagentToolCall(
   toolCall: AgentToolCall,
   input: Record<string, unknown> | null,
   descriptor: CodexToolDescriptor | null,
+  activity: CodexSubagentActivity | null = null,
 ) {
-  const toolName = descriptor?.name ?? extractCodexMultiAgentToolName(input);
+  if (activity) {
+    return true;
+  }
+  const toolName = resolveCodexMultiAgentToolName(toolCall.title, input, descriptor);
   if (toolName && (isCodexMultiAgentToolName(toolName) || isCodexMultiAgentNamespace(input))) {
     return true;
   }
@@ -157,9 +301,14 @@ export function looksLikeCodexSubagentPayload(
   const normalizedTitle = title.trim();
   const normalizedInput = mergeCodexToolArguments(input);
   if (!normalizedInput) {
+    return Boolean(resolveSparseCodexLifecycleToolName(normalizedTitle));
+  }
+  // Ordinary file and command tools can legitimately contain a `path` field;
+  // that field is not sufficient evidence of a subagent operation.
+  if (/^(?:view_image|shell_command|apply_patch|tool_search)$/iu.test(normalizedTitle)) {
     return false;
   }
-  const toolName = extractCodexMultiAgentToolName(normalizedInput);
+  const toolName = resolveCodexMultiAgentToolName(normalizedTitle, normalizedInput);
   if (toolName && (isCodexMultiAgentToolName(toolName) || isCodexMultiAgentNamespace(normalizedInput))) {
     return true;
   }
@@ -167,7 +316,16 @@ export function looksLikeCodexSubagentPayload(
     !CODEX_SUBAGENT_TOOL_TITLE.test(normalizedTitle) &&
     !CODEX_MULTI_AGENT_TOOL_TITLE.test(normalizedTitle)
   ) {
-    return false;
+    // Opaque or generic title — keep checking if the input itself carries strong
+    // subagent fingerprints (fork_context / path), because the initial ACP update
+    // may arrive before the provider emits structured namespace/name metadata.
+    const hasOpaqueSubagentSignal =
+      normalizedInput.fork_context === true ||
+      normalizedInput.forkContext === true ||
+      (typeof normalizedInput.path === "string" && normalizedInput.path.trim().length > 0);
+    if (!hasOpaqueSubagentSignal) {
+      return false;
+    }
   }
   if (typeof normalizedInput.path === "string" && normalizedInput.path.trim()) {
     return true;
@@ -232,17 +390,17 @@ function resolveNormalizedCodexToolInput(
   update: any,
 ) {
   return mergeCodexInputSources([
-    parseJsonRecord(toolCall.input),
+    parseCodexToolInput(toolCall.input),
     parseJsonRecord(toolCall.output),
-    parseJsonRecordValue(update?.rawInput ?? update?.raw_input),
+    parseCodexToolInput(update?.rawInput ?? update?.raw_input),
     parseJsonRecordValue(update?.input ?? update?.arguments ?? update?.args ?? update?.params),
     parseJsonRecordValue(update?.rawOutput ?? update?.raw_output),
     parseJsonRecordValue(update?.output ?? update?.result ?? update?.content ?? update?.text),
-    parseJsonRecordValue(update?.toolCall?.rawInput ?? update?.toolCall?.raw_input),
+    parseCodexToolInput(update?.toolCall?.rawInput ?? update?.toolCall?.raw_input),
     parseJsonRecordValue(update?.toolCall?.input ?? update?.toolCall?.arguments ?? update?.toolCall?.args ?? update?.toolCall?.params),
     parseJsonRecordValue(update?.toolCall?.rawOutput ?? update?.toolCall?.raw_output),
     parseJsonRecordValue(update?.toolCall?.output ?? update?.toolCall?.result ?? update?.toolCall?.content ?? update?.toolCall?.text),
-    parseJsonRecordValue(update?.tool_call?.rawInput ?? update?.tool_call?.raw_input),
+    parseCodexToolInput(update?.tool_call?.rawInput ?? update?.tool_call?.raw_input),
     parseJsonRecordValue(update?.tool_call?.input ?? update?.tool_call?.arguments ?? update?.tool_call?.args ?? update?.tool_call?.params),
     parseJsonRecordValue(update?.tool_call?.rawOutput ?? update?.tool_call?.raw_output),
     parseJsonRecordValue(update?.tool_call?.output ?? update?.tool_call?.result ?? update?.tool_call?.content ?? update?.tool_call?.text),
@@ -290,6 +448,38 @@ function mergeCodexToolArguments(input: Record<string, unknown> | null) {
   return nested ? { ...input, ...nested } : input;
 }
 
+function resolveCodexWrappedToolCall(source: unknown): {
+  namespace: string;
+  name: string;
+} | null {
+  if (typeof source !== "string") {
+    return null;
+  }
+  const match = source.match(/tools\.([A-Za-z0-9_]+)__([A-Za-z0-9_]+)\s*\(/u);
+  if (!match?.[1] || !match[2] || match.index === undefined) {
+    return null;
+  }
+  return {
+    namespace: match[1],
+    name: match[2],
+  };
+}
+
+function parseCodexToolInput(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "string") {
+    return recordValue(value);
+  }
+  const parsed = parseJsonRecord(value);
+  if (parsed) {
+    return parsed;
+  }
+  const wrapped = resolveCodexWrappedToolCall(value);
+  if (!wrapped) {
+    return null;
+  }
+  return wrapped;
+}
+
 function extractCodexMultiAgentToolName(input: Record<string, unknown> | null) {
   if (!input) {
     return undefined;
@@ -306,6 +496,106 @@ function isCodexMultiAgentToolName(value: string) {
   return CODEX_MULTI_AGENT_TOOL_TITLE.test(value) || CODEX_SUBAGENT_TOOL_TITLE.test(value);
 }
 
+export function resolveCodexSubagentTitle(
+  input: Record<string, unknown> | null,
+  fallback?: string,
+) {
+  const normalized = mergeCodexToolArguments(input);
+  const content = firstString(
+    normalized?.message,
+    normalized?.prompt,
+    normalized?.description,
+    normalized?.task,
+    normalized?.task_name,
+    normalized?.taskName,
+    normalized?.agent_name,
+    normalized?.agentName,
+    normalized?.nickname,
+  );
+  if (content && isReadableCodexSubagentTitle(content)) {
+    return compactCodexSubagentTitle(content);
+  }
+  const fallbackTitle = firstString(fallback);
+  if (fallbackTitle && isReadableCodexSubagentTitle(fallbackTitle)) {
+    return compactCodexSubagentTitle(fallbackTitle);
+  }
+  return "Subagent";
+}
+
+/**
+ * Reads the explicit role assigned by Codex to a spawned agent. This stays in
+ * the Codex adapter because `agent_type`/`agent_role` are provider metadata,
+ * not ACP-wide fields.
+ */
+export function resolveCodexSubagentRole(
+  input: Record<string, unknown> | null,
+) {
+  const normalized = mergeCodexToolArguments(input);
+  if (!normalized) {
+    return undefined;
+  }
+  const metadata = recordValue(normalized.metadata ?? normalized._meta ?? normalized.meta);
+  const candidates = [
+    normalized.agent_type,
+    normalized.agentType,
+    normalized.agent_role,
+    normalized.agentRole,
+    normalized.new_agent_role,
+    normalized.newAgentRole,
+    metadata?.agent_type,
+    metadata?.agentType,
+    metadata?.agent_role,
+    metadata?.agentRole,
+    metadata?.new_agent_role,
+    metadata?.newAgentRole,
+  ];
+  return firstString(...candidates);
+}
+
+function compactCodexSubagentTitle(value: string) {
+  const firstLine = value.split(/\r?\n/u).map((line) => line.trim()).find(Boolean) ?? value;
+  return firstLine.replace(/\s+/gu, " ").trim();
+}
+
+function isReadableCodexSubagentTitle(value: string) {
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    isOpaqueCodexToolTitle(normalized) ||
+    isCodexMultiAgentToolName(normalized) ||
+    /^(?:spawnAgent|sendMessage|sendInput|followupTask|wait|interruptAgent|listAgents|closeAgent|resumeAgent)$/u.test(normalized) ||
+    /^(?:start|interact|interrupt)\b.*\bsubagent\b/iu.test(normalized) ||
+    CODEX_SUBAGENT_TOOL_TITLE.test(normalized)
+  ) {
+    return false;
+  }
+  return !/^(?:agent|thread|task|call)[-_:/][\w-]+$/iu.test(normalized) &&
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(normalized);
+}
+
+function resolveCodexMultiAgentToolName(
+  title: string,
+  input: Record<string, unknown> | null,
+  descriptor?: CodexToolDescriptor | null,
+) {
+  const candidate = descriptor?.name ?? extractCodexMultiAgentToolName(input) ?? title;
+  const normalized = candidate.trim().replace(/^tool:\s*/iu, "");
+  const appServerName = CODEX_APP_SERVER_TOOL_NAMES[normalized];
+  if (appServerName) {
+    return appServerName;
+  }
+  if (normalized === "wait" && looksLikeCodexAppServerSubagentPayload(input)) {
+    return "wait_agent";
+  }
+  return resolveSparseCodexLifecycleToolName(normalized) ??
+    (isCodexMultiAgentToolName(normalized) ? normalized : undefined);
+}
+
+function resolveSparseCodexLifecycleToolName(title: string) {
+  const normalized = title.trim().replace(/^tool:\s*/iu, "");
+  return CODEX_SPARSE_LIFECYCLE_TOOL_TITLE.test(normalized) ? normalized : undefined;
+}
+
 function isCodexSubagentLifecycleTool(toolName: string | undefined) {
   return toolName === "spawn_agent" ||
     toolName === "wait_agent" ||
@@ -313,24 +603,41 @@ function isCodexSubagentLifecycleTool(toolName: string | undefined) {
     toolName === "interrupt_agent";
 }
 
-function resolveCodexSubagentIdentity(input: Record<string, unknown> | null) {
-  const normalized = mergeCodexToolArguments(input);
-  if (!normalized) {
+function resolveCodexSubagentActivityCommandId(
+  activity: CodexSubagentActivity,
+  toolCallId: string,
+) {
+  return activity.threadId
+    ? `subagent:${activity.threadId}`
+    : activity.path
+      ? `subagent:${activity.path}`
+      : toolCallId;
+}
+
+function resolveCodexSubagentCommandId(
+  _toolName: string | undefined,
+  _input: Record<string, unknown> | null,
+  toolCallId: string,
+) {
+  // Operation rows (spawn/wait/close/interrupt) are independent timeline
+  // records. Their target thread IDs belong to subagentOperation.targets and
+  // must not become a shared commandId that the Deck groups into one row.
+  return toolCallId;
+}
+
+function resolveCodexSubagentActivityOperation(
+  activity: CodexSubagentActivity,
+  toolCallId: string,
+): AgentToolCall["subagentOperation"] | undefined {
+  if (activity.kind === "interacted") {
     return undefined;
   }
-  const direct = firstString(
-    normalized.task_name,
-    normalized.taskName,
-    normalized.agent_name,
-    normalized.agentName,
-    normalized.target,
-  );
-  if (direct) {
-    return direct;
-  }
-  return Array.isArray(normalized.targets)
-    ? firstString(...normalized.targets)
-    : undefined;
+  const id = activity.threadId ?? activity.path ?? toolCallId;
+  const label = lastCodexSubagentPathSegment(activity.path);
+  return {
+    action: activity.kind === "started" ? "spawn" : "close",
+    targets: [{ id, ...(label ? { label } : {}) }],
+  };
 }
 
 function resolveCodexSubagentOperation(
@@ -338,7 +645,12 @@ function resolveCodexSubagentOperation(
   input: Record<string, unknown> | null,
   toolCallId: string,
 ): AgentToolCall["subagentOperation"] | undefined {
-  if (toolName !== "spawn_agent" && toolName !== "wait_agent" && toolName !== "close_agent") {
+  if (
+    toolName !== "spawn_agent" &&
+    toolName !== "wait_agent" &&
+    toolName !== "close_agent" &&
+    toolName !== "interrupt_agent"
+  ) {
     return undefined;
   }
   const normalized = mergeCodexToolArguments(input);
@@ -348,30 +660,185 @@ function resolveCodexSubagentOperation(
       ? "wait"
       : "close";
   if (action === "spawn") {
-    const label = firstString(
-      normalized?.task_name,
-      normalized?.taskName,
-      normalized?.agent_name,
-      normalized?.agentName,
-      normalized?.nickname,
-    );
-    const id = firstString(normalized?.agent_id, normalized?.agentId, label) ?? toolCallId;
-    return {
-      action,
-      targets: [{ id, ...(label ? { label } : {}) }],
-    };
+    const targets = resolveCodexSubagentTargets(normalized, toolCallId, true);
+    return { action, targets };
   }
-  const targets = [
-    firstString(normalized?.target, normalized?.agent_id, normalized?.agentId),
-    ...(Array.isArray(normalized?.targets)
-      ? normalized.targets.map((target) => firstString(target))
-      : []),
-  ].filter((target): target is string => Boolean(target));
-  const uniqueTargets = [...new Set(targets)];
   return {
     action,
-    targets: uniqueTargets.map((id) => ({ id, label: id })),
+    targets: resolveCodexSubagentTargets(normalized, toolCallId, false),
   };
+}
+
+function resolveCodexSubagentTargets(
+  input: Record<string, unknown> | null,
+  toolCallId: string,
+  fallbackToToolCallId: boolean,
+) {
+  const normalized = mergeCodexToolArguments(input);
+  if (!normalized) {
+    return fallbackToToolCallId ? [{ id: toolCallId }] : [];
+  }
+  const labelsById = new Map<string, string>();
+  const ids: string[] = [];
+  const add = (value: unknown, label?: unknown) => {
+    const id = firstString(
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>).id ??
+          (value as Record<string, unknown>).agent_id ??
+          (value as Record<string, unknown>).agentId ??
+          (value as Record<string, unknown>).thread_id ??
+          (value as Record<string, unknown>).threadId
+        : value,
+    );
+    if (!id || ids.includes(id)) {
+      return;
+    }
+    ids.push(id);
+    const resolvedLabel = firstString(
+      label,
+      value && typeof value === "object" && !Array.isArray(value)
+        ? (value as Record<string, unknown>).label ??
+          (value as Record<string, unknown>).name ??
+          (value as Record<string, unknown>).nickname
+        : undefined,
+    );
+    if (resolvedLabel) {
+      labelsById.set(id, resolvedLabel);
+    }
+  };
+
+  for (const id of extractCodexReceiverThreadIds(normalized)) {
+    add(id);
+  }
+  add(normalized.target);
+  for (const target of arrayValue(normalized.targets)) {
+    add(target);
+  }
+  for (const id of arrayValue(normalized.agent_ids ?? normalized.agentIds)) {
+    add(id);
+  }
+  add(normalized.agent_id ?? normalized.agentId);
+  const states = recordValue(normalized.agentsStates ?? normalized.agents_states);
+  if (states) {
+    for (const [id, state] of Object.entries(states)) {
+      add(id, recordValue(state)?.name ?? recordValue(state)?.nickname);
+    }
+  }
+
+  if (!ids.length && fallbackToToolCallId) {
+    add(toolCallId, firstString(
+      normalized.task_name,
+      normalized.taskName,
+      normalized.agent_name,
+      normalized.agentName,
+      normalized.nickname,
+    ));
+  }
+  const spawnLabel = firstString(
+    normalized.task_name,
+    normalized.taskName,
+    normalized.agent_name,
+    normalized.agentName,
+    normalized.nickname,
+  );
+  return ids.map((id) => ({
+    id,
+    ...(labelsById.get(id) ?? (ids.length === 1 && spawnLabel ? spawnLabel : undefined)
+      ? { label: labelsById.get(id) ?? spawnLabel }
+      : {}),
+  }));
+}
+
+function arrayValue(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function lastCodexSubagentPathSegment(path: string | undefined) {
+  const segments = path?.split(/[\\/]/u).filter(Boolean);
+  return segments?.at(-1);
+}
+
+export function resolveCodexSubagentActivity(
+  input: unknown,
+  update: unknown,
+): CodexSubagentActivity | null {
+  const updateRecord = recordValue(update);
+  const toolCallRecord = recordValue(updateRecord?.toolCall);
+  const snakeToolCallRecord = recordValue(updateRecord?.tool_call);
+  // Live and replayed ACP updates can retain different halves of this metadata.
+  const candidates = [
+    parseJsonRecordValue(input),
+    parseJsonRecordValue(updateRecord?.rawInput ?? updateRecord?.raw_input),
+    parseJsonRecordValue(toolCallRecord?.rawInput ?? toolCallRecord?.raw_input),
+    parseJsonRecordValue(snakeToolCallRecord?.rawInput ?? snakeToolCallRecord?.raw_input),
+    resolveCodexSubagentMeta(updateRecord),
+    resolveCodexSubagentMeta(toolCallRecord),
+    resolveCodexSubagentMeta(snakeToolCallRecord),
+  ];
+  for (const candidate of candidates) {
+    const activityKind = resolveCodexSubagentActivityKind(candidate);
+    if (!activityKind) {
+      continue;
+    }
+    const threadId = firstString(
+      candidate?.agentThreadId,
+      candidate?.agent_thread_id,
+      candidate?.threadId,
+    );
+    const path = firstString(candidate?.agentPath, candidate?.agent_path, candidate?.path);
+    if (threadId || path) {
+      return {
+        kind: activityKind,
+        ...(threadId ? { threadId } : {}),
+        ...(path ? { path } : {}),
+      };
+    }
+  }
+  return null;
+}
+
+function resolveCodexSubagentMeta(source: unknown): Record<string, unknown> | null {
+  const record = recordValue(source);
+  const meta = recordValue(record?._meta ?? record?.meta);
+  const codex = recordValue(meta?.codex);
+  return recordValue(codex?.subagent);
+}
+
+function resolveCodexSubagentActivityKind(input: unknown): CodexSubagentActivityKind | undefined {
+  const record = recordValue(input);
+  const value = stringValue(
+    record?.activityKind ?? record?.activity_kind ?? record?.activity ?? record?.kind,
+  );
+  return value === "started" || value === "interacted" || value === "interrupted"
+    ? value
+    : undefined;
+}
+
+function extractCodexReceiverThreadIds(input: Record<string, unknown> | null) {
+  // Codex App Server uses `ids` for wait/close targets while the older
+  // multi-agent payload uses `receiverThreadIds`. Treat both as target
+  // identities so the app-server wait operation stays in the subagent path.
+  const candidates = [input?.receiverThreadIds, input?.receiver_thread_ids, input?.ids];
+  const value = candidates.find((candidate) => Array.isArray(candidate) && candidate.length > 0) ??
+    candidates.find((candidate) => Array.isArray(candidate));
+  return Array.isArray(value)
+    ? value.map((item) => firstString(
+        item,
+        item && typeof item === "object" && !Array.isArray(item)
+          ? (item as Record<string, unknown>).id ??
+            (item as Record<string, unknown>).threadId ??
+            (item as Record<string, unknown>).thread_id
+          : undefined,
+      )).filter((id): id is string => Boolean(id))
+    : [];
+}
+
+function looksLikeCodexAppServerSubagentPayload(input: Record<string, unknown> | null) {
+  const normalized = mergeCodexToolArguments(input);
+  if (!normalized) {
+    return false;
+  }
+  return extractCodexReceiverThreadIds(normalized).length > 0;
 }
 
 function isOpaqueCodexToolTitle(title: string) {
@@ -388,6 +855,12 @@ function parseJsonRecordValue(input: unknown): Record<string, unknown> | null {
   if (typeof input === "string") {
     return parseJsonRecord(input);
   }
+  return input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : null;
+}
+
+function recordValue(input: unknown): Record<string, unknown> | null {
   return input && typeof input === "object" && !Array.isArray(input)
     ? input as Record<string, unknown>
     : null;

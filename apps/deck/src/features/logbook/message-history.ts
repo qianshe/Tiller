@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@tiller/shared";
+import { mergeStreamingText, type AgentMessage } from "@tiller/shared";
 
 const PROVIDER_PARAGRAPH_MESSAGE_ID_PATTERN = /^(?<base>.+)#p\d+$/u;
 
@@ -63,6 +63,21 @@ export function mergeAgentMessages(
         );
       }
       return [...items, incoming];
+    }
+
+    if (
+      last.role === "assistant" &&
+      incoming.role === "assistant" &&
+      incoming.streamMode === "delta" &&
+      (last.id === incoming.id || shouldMergeAssistantStreamChunk(last, incoming))
+    ) {
+      return replaceLastMessage(
+        items,
+        last,
+        incoming,
+        mergeStreamingText(last.text, incoming.text, "delta") ?? last.text,
+        incoming.timestamp,
+      );
     }
 
     const duplicateProviderStream = resolveDuplicateProviderStreamMessage(

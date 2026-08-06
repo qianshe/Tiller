@@ -1,13 +1,22 @@
-import { useState, type CSSProperties } from "react";
+import { useState, type CSSProperties, type ReactNode } from "react";
+import type { FileDiffSummary } from "@tiller/shared";
 import {
+  Icon,
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "../../../shared/ui";
+import { copyTextToClipboard } from "../../../shared/utils/clipboard";
 import { MarkdownMessage } from "../../../shared/ui/markdown";
 import { cn } from "../../../shared/utils/cn";
-import type { GitCommit, GitGraphState } from "../../../store/facade";
+import type { GitCommit, GitCommitDetailState, GitGraphState } from "../../../store/facade";
+import {
+  buildMissionDiffTree,
+  formatDiffStatus,
+  renderDiffPatch,
+  type MissionDiffTreeNode,
+} from "./diff-tree";
 
 type GitGraphPanelProps = {
   style?: CSSProperties;
@@ -48,7 +57,9 @@ export function GitGraphPanel({
   );
 
   function handleToggleCommit(hash: string) {
-    onSelectCommit?.(hash);
+    if (expandedCommitHash !== hash) {
+      onSelectCommit?.(hash);
+    }
     setExpandedCommitHash((current) => (current === hash ? null : hash));
   }
 
@@ -116,7 +127,6 @@ export function GitGraphPanel({
                         row={row}
                         laneCount={visibleLaneCount}
                         isFirst={index === 0}
-                        isLast={index === rows.length - 1}
                       />
                       <span className="flex h-full min-w-0 items-center gap-2 overflow-hidden border-b border-border-ghost">
                         {row.commit.refs.length > 0 ? (
@@ -140,7 +150,11 @@ export function GitGraphPanel({
                 </Tooltip>
                 {isSelected ? (
                   <div className="space-y-2 border-b border-border-ghost bg-surface px-3 py-2 text-left text-xs">
-                    <CommitDetail commit={row.commit} />
+                    <CommitDetail
+                      commit={row.commit}
+                      detail={gitGraph.commitDetails?.[row.commit.hash]}
+                      showFiles
+                    />
                   </div>
                 ) : null}
               </div>
@@ -152,8 +166,29 @@ export function GitGraphPanel({
   );
 }
 
-function CommitDetail({ commit }: { commit: GitCommit }) {
+function CommitDetail({
+  commit,
+  detail,
+  showFiles = false,
+}: {
+  commit: GitCommit;
+  detail?: GitCommitDetailState;
+  showFiles?: boolean;
+}) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const tooltipMarkdown = buildCommitTooltipMarkdown(commit);
+  const copyHash = async () => {
+    try {
+      await copyTextToClipboard(
+        commit.hash,
+        typeof navigator === "undefined" ? undefined : navigator.clipboard,
+      );
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 1400);
+    } catch {
+      setCopyState("failed");
+    }
+  };
   return (
     <>
       <div className="font-medium text-foreground">{commit.subject}</div>
@@ -182,9 +217,146 @@ function CommitDetail({ commit }: { commit: GitCommit }) {
         <span>时间</span>
         <span>{new Date(commit.authoredAt).toLocaleString("zh-CN")}</span>
         <span>提交</span>
-        <span className="font-mono">{commit.hash}</span>
+        <span className="flex min-w-0 items-center gap-1 font-mono">
+          <span className="min-w-0 truncate" title={commit.hash}>{commit.hash}</span>
+          <button
+            type="button"
+            className="grid size-5 shrink-0 place-items-center rounded text-muted-foreground hover:bg-surface-emphasis hover:text-foreground"
+            aria-label="复制提交哈希"
+            title={copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制提交哈希"}
+            onClick={(event) => {
+              event.stopPropagation();
+              void copyHash();
+            }}
+          >
+            <Icon name={copyState === "copied" ? "check" : "copy"} size={10} />
+          </button>
+        </span>
       </div>
+      {showFiles ? <CommitFileDiffs detail={detail} /> : null}
     </>
+  );
+}
+
+type CommitFileViewMode = "list" | "tree";
+
+export function CommitFileDiffs({
+  detail,
+  defaultViewMode = "list",
+}: {
+  detail?: GitCommitDetailState;
+  defaultViewMode?: CommitFileViewMode;
+}) {
+  const [viewMode, setViewMode] = useState<CommitFileViewMode>(defaultViewMode);
+  if (!detail || detail.loading) {
+    return <div className="text-2xs text-muted-foreground">正在加载提交详情...</div>;
+  }
+  if (detail.error) {
+    return <div className="text-2xs text-destructive">{detail.error}</div>;
+  }
+  if (!detail.files.length) {
+    return <div className="text-2xs text-muted-foreground">该提交没有文件变更。</div>;
+  }
+  return (
+    <div className="grid gap-1">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-2xs text-muted-foreground">文件变更 ({detail.files.length})</span>
+        <div className="flex items-center overflow-hidden rounded border border-border-ghost">
+          {([
+            { mode: "list", label: "列表", ariaLabel: "列表视图" },
+            { mode: "tree", label: "树形", ariaLabel: "树形视图" },
+          ] as const).map(({ mode, label, ariaLabel }) => (
+            <button
+              key={mode}
+              type="button"
+              aria-label={ariaLabel}
+              aria-pressed={viewMode === mode}
+              className={cn(
+                "px-1.5 py-0.5 text-2xs transition-colors",
+                viewMode === mode
+                  ? "bg-surface-emphasis text-foreground"
+                  : "text-muted-foreground hover:bg-surface-emphasis/50",
+              )}
+              onClick={() => setViewMode(mode)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="overflow-hidden rounded border border-border-ghost bg-surface-sunken">
+        {viewMode === "list"
+          ? detail.files.map((file) => renderCommitFileEntry({ file, label: file.path, depth: 0 }))
+          : buildMissionDiffTree(detail.files).map((node) => renderCommitFileTreeNode(node, 0))}
+      </div>
+    </div>
+  );
+}
+
+function renderCommitFileTreeNode(node: MissionDiffTreeNode, depth: number): ReactNode {
+  if (node.kind === "file" && node.file) {
+    return renderCommitFileEntry({ file: node.file, label: node.name, depth, key: node.id });
+  }
+  return (
+    <details
+      key={node.id}
+      data-commit-tree-directory={node.path}
+      open
+      className="group/dir"
+    >
+      <summary
+        className="flex h-6 cursor-pointer list-none items-center gap-1.5 border-b border-border-ghost px-2 text-2xs font-medium text-muted-foreground hover:bg-surface-emphasis/50"
+        style={{ paddingLeft: `${8 + depth * 12}px` }}
+      >
+        <Icon
+          name="chevronDown"
+          size={10}
+          className="shrink-0 -rotate-90 transition-transform group-open/dir:rotate-0"
+        />
+        <span className="min-w-0 truncate" title={node.path}>{node.name}</span>
+        <span className="rounded-sm bg-surface-emphasis/70 px-1 font-mono tabular-nums">{node.count}</span>
+      </summary>
+      {node.children?.map((child) => renderCommitFileTreeNode(child, depth + 1))}
+    </details>
+  );
+}
+
+function renderCommitFileEntry({
+  file,
+  label,
+  depth,
+  key,
+}: {
+  file: FileDiffSummary & { originalPath?: string };
+  label: string;
+  depth: number;
+  key?: string;
+}) {
+  return (
+    <details
+      key={key ?? `${file.originalPath ?? ""}:${file.path}`}
+      className="group border-b border-border-ghost last:border-b-0"
+    >
+      <summary
+        className="flex h-7 cursor-pointer list-none items-center gap-2 px-2 text-2xs hover:bg-surface-emphasis/50"
+        style={depth > 0 ? { paddingLeft: `${8 + depth * 12}px` } : undefined}
+      >
+        <span className="w-3 shrink-0 font-semibold text-primary">
+          {formatDiffStatus(file.status)}
+        </span>
+        <span className="min-w-0 flex-1 truncate font-mono" title={file.path}>{label}</span>
+        <span className="shrink-0 tabular-nums text-emerald-600">+{file.additions}</span>
+        <span className="shrink-0 tabular-nums text-destructive">-{file.deletions}</span>
+        <Icon name="chevronDown" size={10} className="shrink-0 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="max-h-80 overflow-auto border-t border-border-ghost">
+        {file.patch ? (
+          renderDiffPatch({ patch: file.patch })
+        ) : (
+          <div className="px-3 py-2 text-2xs text-muted-foreground">该文件没有文本 patch。</div>
+        )}
+      </div>
+    </details>
   );
 }
 
@@ -192,12 +364,10 @@ function GraphLaneCell({
   row,
   laneCount,
   isFirst,
-  isLast,
 }: {
   row: GraphRowModel;
   laneCount: number;
   isFirst: boolean;
-  isLast: boolean;
 }) {
   const width = Math.max(laneCount, 1) * GRAPH_LANE_WIDTH;
   const centerY = GRAPH_ROW_HEIGHT / 2;
@@ -219,7 +389,7 @@ function GraphLaneCell({
           const x = laneCenterX(laneIndex);
           const strokeColor = resolveGraphLaneColor(laneIndex);
           const lineTop = isFirst ? centerY : -GRAPH_LINE_OVERDRAW;
-          const lineBottom = row.continuingLanes.includes(laneIndex) && !isLast
+          const lineBottom = row.continuingLanes.includes(laneIndex)
             ? GRAPH_ROW_HEIGHT + GRAPH_LINE_OVERDRAW
             : centerY;
           return (
@@ -275,7 +445,6 @@ function GraphLaneCell({
 
 function buildGraphRows(commits: GitCommit[]): GraphRowModel[] {
   const rows: GraphRowModel[] = [];
-  const visibleCommitHashes = new Set(commits.map((commit) => commit.hash));
   let lanes: Array<string | null> = [];
 
   for (const commit of commits) {
@@ -292,22 +461,18 @@ function buildGraphRows(commits: GitCommit[]): GraphRowModel[] {
     }
 
     const activeLanes = lanes.flatMap((value, index) =>
-      value && visibleCommitHashes.has(value) ? [index] : [],
+      value ? [index] : [],
     );
     const joinLanes = matchingLanes.filter((laneIndex) => laneIndex !== lane);
     const nextLanes = [...lanes];
     const [firstParent, ...otherParents] = commit.parents;
-    nextLanes[lane] =
-      firstParent && visibleCommitHashes.has(firstParent) ? firstParent : null;
+    nextLanes[lane] = firstParent ?? null;
     for (const joinLane of joinLanes) {
       nextLanes[joinLane] = null;
     }
 
     const mergeLanes: number[] = [];
     for (const parentHash of otherParents) {
-      if (!visibleCommitHashes.has(parentHash)) {
-        continue;
-      }
       let parentLane = nextLanes.indexOf(parentHash);
       if (parentLane === -1) {
         parentLane = nextLanes.findIndex(
@@ -321,18 +486,11 @@ function buildGraphRows(commits: GitCommit[]): GraphRowModel[] {
       mergeLanes.push(parentLane);
     }
 
-    for (let index = 0; index < nextLanes.length; index += 1) {
-      const laneValue = nextLanes[index];
-      if (laneValue && !visibleCommitHashes.has(laneValue)) {
-        nextLanes[index] = null;
-      }
-    }
-
     while (nextLanes.length > 0 && nextLanes.at(-1) === null) {
       nextLanes.pop();
     }
     const continuingLanes = nextLanes.flatMap((value, index) =>
-      value && visibleCommitHashes.has(value) ? [index] : [],
+      value ? [index] : [],
     );
 
     rows.push({

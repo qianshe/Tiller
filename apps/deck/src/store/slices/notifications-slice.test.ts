@@ -32,6 +32,33 @@ test("notifications keep runtime error context without prompt contents", () => {
   assert.equal("prompt" in notification!, false);
 });
 
+test("notifications preserve structured diagnostics without raw payloads", () => {
+  const store = createTestStore();
+  store.getState().addNotification({
+    kind: "error",
+    message: "Maximum update depth exceeded.",
+    source: "rpc",
+    details: {
+      phase: "notification-handler",
+      method: "session/update",
+      sessionId: "session-1",
+      updateKind: "timeline_batch",
+      errorName: "Error",
+      errorStack: "Error: Maximum update depth exceeded.",
+    },
+  });
+
+  assert.deepEqual(store.getState().notifications[0]?.details, {
+    phase: "notification-handler",
+    method: "session/update",
+    sessionId: "session-1",
+    updateKind: "timeline_batch",
+    errorName: "Error",
+    errorStack: "Error: Maximum update depth exceeded.",
+  });
+  assert.equal("params" in store.getState().notifications[0]!, false);
+});
+
 test("notifications omit absent optional context", () => {
   const store = createTestStore();
   store.getState().addNotification({

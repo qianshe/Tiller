@@ -16,6 +16,20 @@ export type HelmLoggingSettings = {
   acpTrace: string;
 };
 
+export type HelmUpdateState = {
+  status: "checking" | "available" | "installing" | "restarting" | "up-to-date" | "failed" | "unsupported";
+  currentVersion: string;
+  latestVersion?: string;
+  updateAvailable: boolean;
+  canUpdate: boolean;
+  checkStatus?: "checked" | "failed" | "disabled" | "unsupported";
+  cannotUpdateReason?: string;
+  manualCommand?: string;
+  checkedAt?: string;
+  targetVersion?: string;
+  message?: string;
+};
+
 export type HelmInventoryBucket = {
   helms?: HelmSummary[];
   projects: ProjectSummary[];
@@ -25,6 +39,7 @@ export type HelmInventoryBucket = {
   statuses: Record<string, SessionStatus>;
   trustedDevices: TrustedDeviceSummary[];
   logging?: HelmLoggingSettings;
+  update?: HelmUpdateState;
 };
 
 export type HelmListUpdater =

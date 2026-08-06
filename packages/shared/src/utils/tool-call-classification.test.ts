@@ -27,3 +27,13 @@ test("resolveMergedAgentToolCallKind keeps shell classification without native s
     "shell",
   );
 });
+
+test("resolveMergedAgentToolCallKind preserves a later subagent classification", () => {
+  assert.equal(
+    resolveMergedAgentToolCallKind(
+      { kind: "tool" },
+      { kind: "subagent" },
+    ),
+    "subagent",
+  );
+});

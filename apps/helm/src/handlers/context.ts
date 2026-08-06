@@ -45,6 +45,7 @@ import type { RuntimeMetrics } from "../logging/runtime-metrics";
 import type { SessionTimelineWorkerRegistry } from "../runtime/session-timeline/worker-registry";
 import type { TillerLogger } from "../logging/logger";
 import type { SessionSubagentDetailService } from "../runtime/session/subagent-detail-service";
+import type { UpdateService } from "../updates/service";
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -109,6 +110,8 @@ export type HelmHandlerContext = {
     emit(event: PromptTraceEvent): void;
   };
   requestShutdown?: (reason: "rpc") => void;
+  updateService?: UpdateService;
+  isLocalConnection?: () => boolean;
 
   getHelms: () => HelmSummary[];
   setHelms: (items: HelmSummary[]) => void;
@@ -254,6 +257,7 @@ export type HelmHandlerContext = {
     summary: SessionSummary,
     agent: AcpAgentProvider | undefined,
     capabilities?: StoredSessionRuntimeDescriptor["capabilities"],
+    pendingConfig?: StoredSessionRuntimeDescriptor["pendingConfig"] | null,
   ) => void;
   readSessionLiveState?: (sessionId: string) => SessionLiveStateSnapshot | undefined;
   updateSessionSummary: (

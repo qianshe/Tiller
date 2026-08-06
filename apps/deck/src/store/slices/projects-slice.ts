@@ -5,6 +5,7 @@ export type WorktreeGitState = {
   branches: string[];
   currentBranch?: string;
   message?: string;
+  error?: string;
   loading?: boolean;
 };
 
@@ -22,13 +23,45 @@ export type GitStatusState = {
   projectId: string;
   cwd: string;
   branch: string;
+  detached: boolean;
+  upstreamBranch?: string; // full `remote/branch`
+  ahead: number;
+  behind: number;
+  pushTarget?: string;
+  trackingStale: boolean;
+  remoteRefreshError?: string;
   clean: boolean;
   files: GitStatusFile[];
   loading?: boolean;
   committing?: boolean;
+  discarding?: boolean;
+  pushing?: boolean;
+  pulling?: boolean;
   lastUpdated?: string;
   message?: string;
+  error?: string;
 };
+
+// Single source for the required-field defaults of GitStatusState; every
+// snapshot builder must spread this so new required fields cannot be missed.
+export function createGitStatusState(
+  projectId: string,
+  cwd: string,
+  current?: Partial<GitStatusState>,
+): GitStatusState {
+  return {
+    projectId,
+    cwd,
+    branch: "",
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    trackingStale: false,
+    clean: false,
+    files: [],
+    ...current,
+  };
+}
 
 export type GitRef = {
   name: string;
@@ -49,14 +82,36 @@ export type GitCommit = {
   deletions?: number;
 };
 
+export type GitCommitFile = {
+  path: string;
+  originalPath?: string;
+  status: "modified" | "added" | "deleted";
+  additions: number;
+  deletions: number;
+  patch?: string;
+};
+
+export type GitCommitDetailState = {
+  commitHash: string;
+  files: GitCommitFile[];
+  loading?: boolean;
+  message?: string;
+  error?: string;
+};
+
 export type GitGraphState = {
   projectId: string;
   cwd: string;
   head?: string;
+  // Server-computed refs signature; echoed back as knownSignature so an
+  // unchanged graph answers without the commit payload.
+  signature?: string;
   commits: GitCommit[];
+  commitDetails?: Record<string, GitCommitDetailState>;
   loading?: boolean;
   lastUpdated?: string;
   message?: string;
+  error?: string;
 };
 
 export type ProjectsUpdater =

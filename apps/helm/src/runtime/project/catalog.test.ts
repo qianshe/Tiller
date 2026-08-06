@@ -86,6 +86,19 @@ test("loadAvailableWorktrees falls back to the process cwd only when no projects
   }
 });
 
+test("loadAvailableProjects returns no project when none are configured", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "tiller-catalog-"));
+  try {
+    const configPath = join(dir, "config.json");
+    const catalog = makeCatalog(configPath, "D:/repos/sandbox");
+
+    assert.deepEqual(catalog.loadAvailableProjects(), []);
+    assert.deepEqual(await catalog.loadAvailableProjectsWithSemanticSummaries(), []);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("project catalog enriches summary from configured summary file", async () => {
   const root = mkdtempSync(join(tmpdir(), "tiller-catalog-"));
   try {

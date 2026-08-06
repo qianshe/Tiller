@@ -10,3 +10,5 @@ export type {
   MissionPermissionDrawerCopy,
 } from "./permission-drawer";
 export { MissionQueuedPrompts } from "./queued-prompts";
+export { MissionOnboardingEmpty } from "./onboarding-empty";
+export type { MissionOnboardingEmptyProps } from "./onboarding-empty";

@@ -8,6 +8,7 @@ import type { DeckStore } from "./index";
 import {
   MAX_DECK_NOTIFICATIONS,
   type DeckNotification,
+  type DeckNotificationDetails,
 } from "./slices/notifications-slice";
 
 export const DECK_STORE_STORAGE_KEY = "tiller.deck.store";
@@ -40,10 +41,18 @@ function sanitizeNotification(notification: DeckNotification): DeckNotification 
   const legacy = notification as DeckNotification & {
     retryPrompt?: unknown;
     retriedAt?: unknown;
+    details?: unknown;
   };
-  const { retryPrompt: _retryPrompt, retriedAt: _retriedAt, ...safeNotification } = legacy;
+  const {
+    retryPrompt: _retryPrompt,
+    retriedAt: _retriedAt,
+    details: rawDetails,
+    ...safeNotification
+  } = legacy;
+  const details = normalizeNotificationDetails(rawDetails);
   return {
     ...safeNotification,
+    ...(details ? { details } : {}),
     source: safeNotification.source ?? "runtime",
   };
 }
@@ -249,6 +258,44 @@ function isDeckNotification(value: unknown): value is DeckNotification {
     typeof value.createdAt === "string" &&
     (typeof value.source === "undefined" || typeof value.source === "string") &&
     (typeof value.code === "undefined" || typeof value.code === "string") &&
-    (typeof value.sessionId === "undefined" || typeof value.sessionId === "string")
+    (typeof value.sessionId === "undefined" || typeof value.sessionId === "string") &&
+    (typeof value.details === "undefined" || isNotificationDetails(value.details))
   );
+}
+
+const NOTIFICATION_DETAIL_KEYS = [
+  "phase",
+  "helmKey",
+  "method",
+  "sessionId",
+  "kind",
+  "updateKind",
+  "updateId",
+  "errorName",
+  "errorCode",
+  "errorStack",
+  "componentStack",
+] as const;
+
+function isNotificationDetails(value: unknown): value is DeckNotificationDetails {
+  if (!isRecord(value)) {
+    return false;
+  }
+  return NOTIFICATION_DETAIL_KEYS.every((key) => (
+    typeof value[key] === "undefined" || typeof value[key] === "string"
+  ));
+}
+
+function normalizeNotificationDetails(value: unknown) {
+  if (!isNotificationDetails(value)) {
+    return undefined;
+  }
+  const details: Record<string, string> = {};
+  for (const key of NOTIFICATION_DETAIL_KEYS) {
+    const item = value[key];
+    if (typeof item === "string" && item.trim()) {
+      details[key] = item;
+    }
+  }
+  return Object.keys(details).length > 0 ? details : undefined;
 }

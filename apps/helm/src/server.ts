@@ -2,6 +2,7 @@ import { WebSocket, WebSocketServer } from "ws";
 import qrcode from "qrcode-terminal";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   ensureTillerConfigDefaults,
   getDefaultConfigPath,
@@ -81,6 +82,8 @@ import {
   PREVIEW_UPDATE_COMMAND,
   resolveUpdateOptions,
 } from "./updates/check.js";
+import { isLoopbackAddress, isPublishedRuntime } from "./updates/runtime-policy.js";
+import { createUpdateService } from "./updates/service.js";
 
 // Tiller verification ping by Antigravity 🐾
 const configPath = getDefaultConfigPath();
@@ -113,6 +116,7 @@ const logger = createTillerLogger({
 const { logInfo, logDebug, logWarn, logError } = logger;
 const runtimeMetrics = createRuntimeMetrics({ logger });
 const TILLER_LOG_FILE = logger.logFile;
+const IS_PUBLISHED_RUNTIME = isPublishedRuntime(import.meta.url, TILLER_VERSION);
 
 const {
   sessionStore,
@@ -159,6 +163,27 @@ const handlerNotificationContext = createHandlerNotificationContext({
   sessionTopics,
 });
 const { broadcastNotification } = handlerNotificationContext;
+const updateService = createUpdateService({
+  currentVersion: TILLER_VERSION,
+  config: tillerConfig,
+  env: process.env,
+  host: HOST,
+  port: PORT,
+  isPublishedRuntime: IS_PUBLISHED_RUNTIME,
+  logPath: resolve(LOGS_DIR, "update.log"),
+  requestShutdown: (reason) => {
+    setTimeout(() => {
+      void shutdownHelm(reason);
+    }, 0);
+  },
+  updaterLaunch: resolveUpdaterLaunch(),
+  emitStatus: (status) => {
+    broadcastNotification("daemon/update/status", {
+      ...status,
+      occurredAt: new Date().toISOString(),
+    });
+  },
+});
 const liveMessageBuffer = createLiveMessageBuffer();
 const contextState = createHelmContextState({
   helms: loadAvailableHelms(),
@@ -321,14 +346,19 @@ async function checkForTillerUpdatesOnStart() {
   }
 
   try {
-    const notice = buildUpdateNotice(await loadUpdateVersions(TILLER_VERSION), options);
-    if (notice.kind === "latest-update") {
+    const result = await updateService.check(false, false, () => undefined);
+    if (result.updateAvailable && result.latestVersion) {
       logger.warn("updates.latest_available", {
-        current: notice.current,
-        latest: notice.latest,
+        current: result.currentVersion,
+        latest: result.latestVersion,
         command: LATEST_UPDATE_COMMAND,
       });
-    } else if (notice.kind === "preview-hint") {
+    }
+    const notice = buildUpdateNotice(
+      await loadUpdateVersions(TILLER_VERSION),
+      options,
+    );
+    if (notice.kind === "preview-hint") {
       logger.warn("updates.preview_available", {
         current: notice.current,
         preview: notice.preview,
@@ -352,7 +382,12 @@ try {
 }
 
 const httpServer = createServer(handleHttpRequest);
-const server = new WebSocketServer({ server: httpServer });
+const server = new WebSocketServer({
+  server: httpServer,
+  // Git diff/patch 等文本载荷压缩率高;仅压缩 >1KB 的消息,
+  // 本地少客户端场景下 zlib 上下文的内存开销可以忽略。
+  perMessageDeflate: { threshold: 1024 },
+});
 const stopWebSocketHeartbeat = installWebSocketHeartbeat(server);
 
 server.on("connection", (socket) => {
@@ -473,11 +508,35 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
         void shutdownHelm(reason);
       }, 0);
     },
+    updateService,
+    isLocalConnection: () => {
+      const socket = socketId ? authenticatedSockets.listAll().find((record) => record.socketId === socketId)?.socket : undefined;
+      if (!socket) return false;
+      const remoteAddress = (socket as WebSocket & { _socket?: { remoteAddress?: string } })._socket?.remoteAddress;
+      return Boolean(remoteAddress && isLoopbackAddress(remoteAddress));
+    },
     ...handlerCatalogContext,
     trustedDeviceStore,
     authenticatedSockets,
     toTrustedDeviceSummary,
     ...handlerSessionContextFactory.forSocket(socketId),
+  };
+}
+
+function resolveUpdaterLaunch() {
+  if (!IS_PUBLISHED_RUNTIME) return undefined;
+  const entryPath = fileURLToPath(import.meta.url);
+  return {
+    updaterPath: resolve(entryPath, "../updater.js"),
+    nodeExecutable: process.execPath,
+    helmEntryPath: entryPath,
+    helmArgs: process.argv.slice(2),
+    cwd: process.cwd(),
+    env: process.env,
+    parentPid: process.pid,
+    host: HOST,
+    port: PORT,
+    logPath: resolve(LOGS_DIR, "update.log"),
   };
 }
 

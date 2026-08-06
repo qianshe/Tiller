@@ -1,4 +1,5 @@
 import { useState, type CSSProperties } from "react";
+import type { ApprovalStatus, PermissionDecision } from "@tiller/shared";
 import { AgentIcon, Icon, StatusDot } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import type { DashboardNotification } from "../orchestration/dashboard-view-model";
@@ -6,8 +7,13 @@ import { DashboardNotificationList } from "./notification-list";
 
 export type DashboardActivityApproval = {
   id: string;
+  sessionId?: string;
   kind: string;
   target: string;
+  status?: ApprovalStatus;
+  decision?: PermissionDecision;
+  createdAt?: string;
+  updatedAt?: string;
   agentName?: string;
   projectName?: string;
   worktreeName?: string;
@@ -41,7 +47,17 @@ type DashboardActivity = {
   agentName?: string | null;
   projectName?: string | null;
   worktreeName?: string | null;
-  statusLabel: "启动中" | "运行中" | "等待审批" | "错误" | "已取消" | "空闲";
+  statusLabel:
+    | "启动中"
+    | "运行中"
+    | "等待审批"
+    | "处理中"
+    | "已允许"
+    | "已拒绝"
+    | "已过期"
+    | "错误"
+    | "已取消"
+    | "空闲";
   selected?: boolean;
   detail?: string;
   planSummary?: DashboardActivitySession["planSummary"];
@@ -55,6 +71,7 @@ type DashboardActivityStreamProps = {
   notifications?: DashboardNotification[];
   onOpenSession?: (sessionId: string) => void;
   onClearNotifications?: () => void;
+  onClearApprovalHistory?: () => void;
   isMobile?: boolean;
 };
 
@@ -107,8 +124,37 @@ function resolveSessionActivityState(status: string | undefined): Pick<Dashboard
   return { tone: "idle", statusLabel: "空闲" };
 }
 
-function formatApprovalDetail(_approval: DashboardActivityApproval) {
-  return "待处理";
+function formatApprovalDetail(approval: DashboardActivityApproval) {
+  if (approval.status === "expired") return "请求已失效";
+  if (approval.status === "resolving") return "正在提交";
+  if (approval.status !== "resolved") return "待处理";
+  switch (approval.decision) {
+    case "deny":
+      return "已拒绝";
+    case "allow_session":
+      return "已允许 · 本会话";
+    case "allow_always":
+      return "已允许 · 始终";
+    default:
+      return "已允许 · 本次";
+  }
+}
+
+function resolveApprovalActivityState(
+  approval: DashboardActivityApproval,
+): Pick<DashboardActivity, "tone" | "statusLabel"> {
+  if (approval.status === "resolving") {
+    return { tone: "primary", statusLabel: "处理中" };
+  }
+  if (approval.status === "resolved") {
+    return approval.decision === "deny"
+      ? { tone: "danger", statusLabel: "已拒绝" }
+      : { tone: "active", statusLabel: "已允许" };
+  }
+  if (approval.status === "expired") {
+    return { tone: "idle", statusLabel: "已过期" };
+  }
+  return { tone: "warning", statusLabel: "等待审批" };
 }
 
 function resolveActivityDetail(activity: DashboardActivity) {
@@ -148,19 +194,19 @@ function buildActivities(
     });
   });
 
-  const approvalTimestampMs = Date.now();
   approvals.forEach((approval) => {
+    const timestampMs = parseActivityTimestamp(approval.updatedAt ?? approval.createdAt);
     list.push({
       id: `approval-${approval.id}`,
-      time: formatActivityTimeFromTimestamp(approvalTimestampMs),
-      timestampMs: approvalTimestampMs,
-      tone: "warning" as const,
+      sessionId: approval.sessionId,
+      time: formatActivityTimeFromTimestamp(timestampMs),
+      timestampMs: timestampMs ?? undefined,
+      ...resolveApprovalActivityState(approval),
       title: approval.kind || approval.target,
       type: "权限",
       agentName: approval.agentName || "Agent",
       projectName: approval.projectName,
       worktreeName: approval.worktreeName,
-      statusLabel: "等待审批" as const,
       detail: formatApprovalDetail(approval),
     });
   });
@@ -226,6 +272,7 @@ export function DashboardActivityStream({
   notifications = [],
   onOpenSession,
   onClearNotifications,
+  onClearApprovalHistory,
   isMobile = false,
 }: DashboardActivityStreamProps) {
   const [activeTab, setActiveTab] = useState<ActivityTab>("最近");
@@ -234,6 +281,9 @@ export function DashboardActivityStream({
   const filteredActivities = filterActivitiesByTab(activeTab, orderedActivities);
   const sparklinePoints = buildActivitySparkline(rawActivities);
   const recentActivityCount = sparklinePoints.reduce((total, value) => total + value, 0);
+  const processedApprovalCount = approvals.filter(
+    (approval) => approval.status === "resolved" || approval.status === "expired",
+  ).length;
   const acpColumnStyle = {
     "--dashboard-activity-acp-width": resolveAcpColumnWidth(rawActivities),
   } as CSSProperties;
@@ -322,6 +372,21 @@ export function DashboardActivityStream({
                 title="清空通知"
                 aria-label="清空通知"
                 onClick={onClearNotifications}
+              >
+                <Icon name="trash" size={12} />
+              </button>
+            ) : null}
+          </>
+        ) : activeTab === "权限" ? (
+          <>
+            <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{approvals.length} 条</span>
+            {processedApprovalCount > 0 && onClearApprovalHistory ? (
+              <button
+                type="button"
+                className="grid h-6 w-6 place-items-center rounded text-muted-foreground hover:bg-surface-sunken hover:text-foreground"
+                title="清理已处理"
+                aria-label="清理已处理权限记录"
+                onClick={onClearApprovalHistory}
               >
                 <Icon name="trash" size={12} />
               </button>

@@ -31,6 +31,7 @@ type PairingState = "idle" | "waiting" | "input" | "paired" | "rejected";
 type AgentsPageProps = {
   daemonHost: string;
   daemonPort: string;
+  initialTab?: "agents" | "projects";
   defaultDaemonHost: string;
   defaultDaemonPort: string;
   isEmbeddedHelmDeck: boolean;
@@ -104,6 +105,7 @@ type AgentsPageProps = {
 export function AgentsPage({
   daemonHost,
   daemonPort,
+  initialTab = "agents",
   defaultDaemonHost,
   defaultDaemonPort,
   isEmbeddedHelmDeck,
@@ -319,6 +321,7 @@ export function AgentsPage({
               copy={copy}
               renderTrustedDevicesPanel={renderTrustedDevicesPanel}
               isMobile={true}
+              initialTab={initialTab}
               onBack={() => setMobileScreen("list")}
             />
           </div>
@@ -380,6 +383,7 @@ export function AgentsPage({
               dispatch={dispatch}
               copy={copy}
               renderTrustedDevicesPanel={renderTrustedDevicesPanel}
+              initialTab={initialTab}
             />
           </div>
         </div>

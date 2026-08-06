@@ -47,13 +47,23 @@ export async function requestInitialSync(
       loading: boolean;
     }) => void;
     sessionPageLimit: number;
+    onUpdateCheckError?: (error: unknown) => void;
   },
 ) {
-  const { dispatch, setSessionHistoryState, sessionPageLimit } = context;
+  const { dispatch, setSessionHistoryState, sessionPageLimit, onUpdateCheckError } = context;
   await dispatch(client, "helm/list", {});
   await dispatch(client, "project/list", {});
   await dispatch(client, "agent/list", {});
   await dispatch(client, "agent/connections", {});
+  try {
+    await dispatch(client, "daemon/update/check", {});
+  } catch (error) {
+    if (isMethodNotFound(error)) {
+      // Older Helms do not expose the optional update method.
+    } else {
+      onUpdateCheckError?.(error);
+    }
+  }
   try {
     await dispatch(client, "logging/get", {});
   } catch {
@@ -67,7 +77,13 @@ export async function requestInitialSync(
     throw error;
   }
   await dispatch(client, "approval/list_pending", {});
+  await dispatch(client, "approval/list", { limit: 100 });
   await dispatch(client, "device/list", {});
+}
+
+function isMethodNotFound(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  return (error as { code?: unknown }).code === -32601;
 }
 
 export async function subscribeToSessionTopic(

@@ -4,6 +4,8 @@ export {
 export {
   normalizeDiffPath,
   readWorktreeGitDiffs,
+  readWorktreeGitDiffStats,
+  readWorktreeGitFileDiffs,
 } from "./git-diff";
 export {
   alignSessionProjectBinding,

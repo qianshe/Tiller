@@ -128,24 +128,27 @@ export function handleRuntimePermissionRequest(
     { type: "pending-approval-count", count: pendingApprovalCount },
     sequence,
   );
+  const createdAt = new Date().toISOString();
+  const canonicalApproval = {
+    id: input.request.id,
+    sessionId: input.sessionId,
+    runtimeInstanceId:
+      sessionRecord?.runtime?.runtimeSessionId ??
+      sessionRecord?.summary.runtimeSessionId ??
+      input.sessionId,
+    toolCallId: input.request.toolCallId,
+    sequence,
+    status: "pending" as const,
+    request: input.request,
+    createdAt,
+    updatedAt: createdAt,
+  };
   try {
     approvalStateStore.commit(
       input.sessionId,
       {
         type: "requested",
-        approval: {
-          id: input.request.id,
-          sessionId: input.sessionId,
-          runtimeInstanceId:
-            sessionRecord?.runtime?.runtimeSessionId ??
-            sessionRecord?.summary.runtimeSessionId ??
-            input.sessionId,
-          toolCallId: input.request.toolCallId,
-          sequence,
-          status: "pending",
-          request: input.request,
-          updatedAt: new Date().toISOString(),
-        },
+        approval: canonicalApproval,
       },
       sequence,
       update,
@@ -176,6 +179,7 @@ export function handleRuntimePermissionRequest(
   context.broadcastNotification("approval/created", {
     sessionId: input.sessionId,
     request: input.request,
+    approval: canonicalApproval,
     session: context.sessions.get(input.sessionId)?.summary ?? null,
   });
 }
@@ -208,7 +212,7 @@ function resolveAutoApprovalDecision(
   context: HelmHandlerContext,
 ): PermissionDecision | null {
   try {
-    return resolveApprovalPolicyDecision(
+    const policyDecision = resolveApprovalPolicyDecision(
       context.readApprovalPolicy(),
       input.request,
       {
@@ -217,6 +221,16 @@ function resolveAutoApprovalDecision(
         worktreePath: input.request.cwd,
       },
     );
+    if (policyDecision === "confirm") {
+      return null;
+    }
+    if (policyDecision) {
+      return policyDecision;
+    }
+    return sessionRecord?.summary.agentMode === "agent-full-access" &&
+      (input.request.category === "local_command" || input.request.category === "local_file_write")
+      ? "allow"
+      : null;
   } catch (error) {
     context.logWarn(
       `[tiller] approval policy read failed; falling back to manual approval: ${error instanceof Error ? error.message : String(error)}`,

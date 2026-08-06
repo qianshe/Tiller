@@ -15,6 +15,7 @@ import type {
 import type { HelmHandlerContext } from "../handlers/context";
 import {
   cleanupRuntimeEventState,
+  flushRuntimeSessionState,
   handleRuntimeEvent,
   flushRuntimeUserEchoLogSummaryForTest,
   nextLiveEventSequenceForTest,
@@ -29,6 +30,58 @@ import {
   structuredLogs,
   type TestContextCapture,
 } from "./session/event/test-support.js";
+
+function assistantThoughtEvent(
+  id: string,
+  text: string,
+  timestamp: string,
+  options: { streaming?: boolean; streamMode?: AgentMessage["streamMode"] } = {},
+): Extract<SessionRuntimeEvent, { type: "message" }> {
+  return {
+    type: "message",
+    message: {
+      id,
+      role: "assistant",
+      contentKind: "thought",
+      text,
+      timestamp,
+      streaming: options.streaming ?? true,
+      streamMode: options.streamMode ?? "delta",
+    },
+  };
+}
+
+test("runtime keeps a tool titled Thinking in the tool timeline", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext([], capture, "session-legacy-think-tool");
+
+  handleRuntimeEvent(
+    "session-legacy-think-tool",
+    {
+      type: "tool-call",
+      toolCall: {
+        id: "tool-think-1",
+        kind: "tool",
+        title: "Thinking",
+        status: "completed",
+        output: "Inspect the repository",
+        timestamp: "2026-07-30T00:00:00.000Z",
+        updatedAt: "2026-07-30T00:00:01.000Z",
+      },
+    },
+    context,
+  );
+
+  assert.equal(capture.timelineEntries?.length, 1);
+  const entry = capture.timelineEntries?.[0];
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "tool");
+});
 
 test("runtime terminal tool calls publish canonical timeline batches without compatibility tool_call updates", () => {
   const logs: string[] = [];
@@ -77,7 +130,104 @@ test("runtime terminal tool calls publish canonical timeline batches without com
   assert.equal(appendedToolCalls.length, 0);
 });
 
-test("runtime running tool calls stay in live updates and do not append canonical history", () => {
+test("runtime keeps a merged Codex subagent lifecycle under the spawn id", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const sessionId = "session-codex-merged-subagent";
+  const context = createTestContext([], capture, sessionId, {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: "spawn-call",
+      kind: "subagent",
+      title: "Inspect the adapter",
+      status: "completed",
+      input: JSON.stringify({ prompt: "Inspect the adapter" }),
+      subagentOperation: { action: "spawn", targets: [{ id: "child-thread" }] },
+      timestamp: "2026-07-01T00:00:01.000Z",
+      updatedAt: "2026-07-01T00:00:02.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: "spawn-call",
+      kind: "subagent",
+      title: "Inspect the adapter",
+      status: "completed",
+      input: JSON.stringify({ prompt: "Inspect the adapter" }),
+      output: "All tests passed.",
+      subagentOperation: { action: "wait", targets: [{ id: "child-thread" }] },
+      timestamp: "2026-07-01T00:00:01.000Z",
+      updatedAt: "2026-07-01T00:00:04.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  const entries = capture.timelineEntries?.filter((entry) => entry.kind === "tool_call") ?? [];
+  assert.equal(entries.length, 1);
+  const entry = entries[0];
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.toolCall.id, "spawn-call");
+  assert.equal(entry?.toolCall.status, "completed");
+  assert.equal(entry?.toolCall.output, "All tests passed.");
+  assert.equal(entry?.toolCall.subagentOperation?.action, "wait");
+});
+
+test("runtime allows a merged Codex wait timeout to remain running", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const sessionId = "session-codex-wait-timeout";
+  const context = createTestContext([], capture, sessionId, {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: "spawn-call",
+      kind: "subagent",
+      title: "Inspect the adapter",
+      status: "completed",
+      subagentOperation: { action: "spawn", targets: [{ id: "child-thread" }] },
+      timestamp: "2026-07-01T00:00:01.000Z",
+      updatedAt: "2026-07-01T00:00:02.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: "spawn-call",
+      kind: "subagent",
+      title: "Inspect the adapter",
+      status: "running",
+      output: "等待超时，子代理仍在运行",
+      subagentOperation: { action: "wait", targets: [{ id: "child-thread" }] },
+      timestamp: "2026-07-01T00:00:01.000Z",
+      updatedAt: "2026-07-01T00:00:04.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  const entry = capture.timelineEntries?.find((candidate) => candidate.kind === "tool_call");
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.toolCall.id, "spawn-call");
+  assert.equal(entry?.toolCall.status, "running");
+});
+
+test("runtime running tool calls enter canonical history without a duplicate journal row", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -114,10 +264,433 @@ test("runtime running tool calls stay in live updates and do not append canonica
     item.method === "session/update" && item.params?.update?.kind === "tool_call"
   ) as { params?: { update?: { toolCall?: { status?: string } } } } | undefined;
 
-  assert.equal(timelineBatchUpdate, undefined);
-  assert.ok(legacyToolCallUpdate);
-  assert.equal(legacyToolCallUpdate?.params?.update?.toolCall?.status, "running");
+  assert.ok(timelineBatchUpdate);
+  assert.equal(legacyToolCallUpdate, undefined);
+  assert.equal(
+    capture.timelineEntries?.find((entry) => entry.kind === "tool_call")?.toolCall.status,
+    "running",
+  );
   assert.equal(capture.sessionUpdates?.length ?? 0, 0);
+});
+
+test("runtime cleanup persists an ordinary running tool without changing its status", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext([], capture, "session-cleanup-running-tool", {}, {
+    useCanonicalPipeline: true,
+    runtimeEventThrottleConfig: { toolCallWindowMs: 64 },
+  });
+
+  handleRuntimeEvent("session-cleanup-running-tool", {
+    type: "tool-call",
+    toolCall: {
+      id: "tool-cleanup-running",
+      kind: "shell",
+      title: "pnpm test",
+      status: "running",
+      commandId: "cmd-cleanup-running",
+      output: "still running",
+      timestamp: "2026-07-26T00:00:00.000Z",
+      updatedAt: "2026-07-26T00:00:01.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  flushRuntimeSessionState("session-cleanup-running-tool", context);
+
+  const entry = capture.timelineEntries?.find((candidate) =>
+    candidate.kind === "tool_call" && candidate.toolCall.id === "tool-cleanup-running",
+  );
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.toolCall.status, "running");
+  assert.equal(entry?.toolCall.output, "still running");
+  assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["tool-call"]);
+});
+
+test("runtime cleanup persists a running background_output snapshot for recovery", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext([], capture, "session-cleanup-background-output", {}, {
+    useCanonicalPipeline: true,
+    runtimeEventThrottleConfig: { toolCallWindowMs: 64 },
+  });
+
+  handleRuntimeEvent("session-cleanup-background-output", {
+    type: "tool-call",
+    toolCall: {
+      id: "background-output-1",
+      kind: "tool",
+      title: "background_output",
+      status: "running",
+      input: JSON.stringify({ task_id: "task-1" }),
+      output: "Background task is still running",
+      timestamp: "2026-07-26T00:00:00.000Z",
+      updatedAt: "2026-07-26T00:00:01.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  flushRuntimeSessionState("session-cleanup-background-output", context);
+
+  const entry = capture.timelineEntries?.find((candidate) =>
+    candidate.kind === "tool_call" && candidate.toolCall.id === "background-output-1",
+  );
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.toolCall.status, "running");
+  assert.equal(entry?.toolCall.title, "background_output");
+});
+
+test("runtime completes OpenCode background_output when its subagent result arrives", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext([], capture, "session-opencode-background-completion", {}, {
+    useCanonicalPipeline: true,
+  });
+
+  handleRuntimeEvent("session-opencode-background-completion", {
+    type: "tool-call",
+    toolCall: {
+      id: "background-output-before-result",
+      kind: "tool",
+      title: "background_output",
+      status: "running",
+      input: JSON.stringify({ task_id: "bg-before-result" }),
+      timestamp: "2026-07-28T00:00:00.000Z",
+      updatedAt: "2026-07-28T00:00:01.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent("session-opencode-background-completion", {
+    type: "tool-call",
+    toolCall: {
+      id: "subagent-before-result",
+      kind: "subagent",
+      title: "Run the background task",
+      status: "completed",
+      input: JSON.stringify({ backgroundTaskId: "bg-before-result" }),
+      timestamp: "2026-07-28T00:00:02.000Z",
+      updatedAt: "2026-07-28T00:00:03.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  const completedFirst = capture.timelineEntries?.find((entry) =>
+    entry.kind === "tool_call" && entry.toolCall.id === "background-output-before-result",
+  );
+  assert.equal(completedFirst?.kind, "tool_call");
+  assert.equal(completedFirst?.toolCall.status, "completed");
+
+  handleRuntimeEvent("session-opencode-background-completion", {
+    type: "tool-call",
+    toolCall: {
+      id: "subagent-after-result",
+      kind: "subagent",
+      title: "Run the second background task",
+      status: "completed",
+      input: JSON.stringify({ backgroundTaskId: "bg-after-result" }),
+      timestamp: "2026-07-28T00:00:04.000Z",
+      updatedAt: "2026-07-28T00:00:05.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent("session-opencode-background-completion", {
+    type: "tool-call",
+    toolCall: {
+      id: "background-output-after-result",
+      kind: "tool",
+      title: "background_output",
+      status: "running",
+      input: JSON.stringify({ task_id: "bg-after-result" }),
+      timestamp: "2026-07-28T00:00:06.000Z",
+      updatedAt: "2026-07-28T00:00:07.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  const completedAfter = capture.timelineEntries?.find((entry) =>
+    entry.kind === "tool_call" && entry.toolCall.id === "background-output-after-result",
+  );
+  assert.equal(completedAfter?.kind, "tool_call");
+  assert.equal(completedAfter?.toolCall.status, "completed");
+  assert.equal(completedAfter?.toolCall.kind, "tool");
+});
+
+test("runtime completes OpenCode background_output from the real launch and result payloads", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const context = createTestContext([], capture, "session-opencode-background-real-shape");
+  const taskId = "bg-real-shape";
+  const subagentSessionId = "ses-real-shape";
+  const launchInput = JSON.stringify({
+    truncated: false,
+    prompt: "Reply with exactly: SUBAGENT_OK",
+    agent: "Sisyphus-Junior",
+    category: "quick",
+    description: "Reply with exactly: SUBAGENT_OK",
+    run_in_background: true,
+    taskId: subagentSessionId,
+    sessionId: subagentSessionId,
+    backgroundTaskId: taskId,
+  });
+  const launchOutput = JSON.stringify({
+    output: [
+      "Background task launched.",
+      "Background Task ID: bg-real-shape",
+      "Status: pending",
+      "<task_metadata>",
+      "session_id: ses-real-shape",
+      "background_task_id: bg-real-shape",
+      "</task_metadata>",
+    ].join("\\n"),
+    metadata: {
+      taskId: subagentSessionId,
+      sessionId: subagentSessionId,
+      backgroundTaskId: taskId,
+    },
+  });
+
+  handleRuntimeEvent("session-opencode-background-real-shape", {
+    type: "tool-call",
+    toolCall: {
+      id: "call-real-subagent",
+      kind: "subagent",
+      title: "Reply with exactly: SUBAGENT_OK",
+      status: "running",
+      input: launchInput,
+      output: launchOutput,
+      timestamp: "2026-07-28T00:00:00.000Z",
+      updatedAt: "2026-07-28T00:00:00.100Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent("session-opencode-background-real-shape", {
+    type: "tool-call",
+    toolCall: {
+      id: "call-real-background-output",
+      kind: "tool",
+      title: "background_output",
+      status: "running",
+      input: JSON.stringify({ task_id: taskId }),
+      timestamp: "2026-07-28T00:00:01.000Z",
+      updatedAt: "2026-07-28T00:00:01.100Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent("session-opencode-background-real-shape", {
+    type: "tool-call",
+    toolCall: {
+      id: "call-real-subagent",
+      kind: "subagent",
+      title: "Reply with exactly: SUBAGENT_OK",
+      status: "completed",
+      input: JSON.stringify({
+        truncated: false,
+        backgroundTaskId: taskId,
+        agent: "Sisyphus-Junior",
+        category: "quick",
+        description: "Reply with exactly: SUBAGENT_OK",
+        sessionId: subagentSessionId,
+        taskId: subagentSessionId,
+      }),
+      output: JSON.stringify({
+        output: "Task Result\\n\\nTask ID: bg-real-shape\\n\\n---\\n\\nSUBAGENT_OK",
+        metadata: {
+          truncated: false,
+          backgroundTaskId: taskId,
+          agent: "Sisyphus-Junior",
+          category: "quick",
+          description: "Reply with exactly: SUBAGENT_OK",
+          sessionId: subagentSessionId,
+          taskId: subagentSessionId,
+        },
+      }),
+      timestamp: "2026-07-28T00:00:00.000Z",
+      updatedAt: "2026-07-28T00:00:02.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  const backgroundOutput = (capture.timelineEntries ?? []).find((entry) =>
+    entry.kind === "tool_call" && entry.toolCall.id === "call-real-background-output",
+  );
+  assert.equal(backgroundOutput?.kind, "tool_call");
+  assert.equal(backgroundOutput?.toolCall.status, "completed");
+});
+
+test("runtime closes the real OpenCode background_output and Thinking sequence", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const sessionId = "session-opencode-real-retest";
+  const context = createTestContext([], capture, sessionId);
+  const taskId = "bg_348250a7";
+  const subagentSessionId = "ses_0593ecee3ffeelSz5IDVb2Bh49";
+  const subagentId = "call_71f5f74135514d80beeeb548";
+  const thinkingId = `${sessionId}-msg-000001-000001-pmsgfa6c17c390015`;
+
+  for (const output of ["The", " user wants to", " test again."]) {
+    handleRuntimeEvent(
+      sessionId,
+      assistantThoughtEvent(thinkingId, output, "2026-07-28T03:25:10.000Z"),
+      context,
+    );
+  }
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: subagentId,
+      kind: "subagent",
+      title: "Reply with exactly: SUBAGENT_RETEST_OK",
+      status: "running",
+      input: JSON.stringify({
+        category: "quick",
+        load_skills: [],
+        prompt: "Reply with exactly: SUBAGENT_RETEST_OK",
+        run_in_background: true,
+      }),
+      timestamp: "2026-07-28T03:25:10.000Z",
+      updatedAt: "2026-07-28T03:25:10.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: subagentId,
+      kind: "subagent",
+      title: "Reply with exactly: SUBAGENT_RETEST_OK",
+      status: "running",
+      input: JSON.stringify({
+        truncated: false,
+        prompt: "Reply with exactly: SUBAGENT_RETEST_OK",
+        agent: "Sisyphus-Junior",
+        category: "quick",
+        requested_subagent_type: "sisyphus-junior",
+        load_skills: [],
+        description: "Reply with exactly: SUBAGENT_RETEST_OK",
+        run_in_background: true,
+        taskId: subagentSessionId,
+        sessionId: subagentSessionId,
+        backgroundTaskId: taskId,
+      }),
+      output: JSON.stringify({
+        output: "Background task launched. Status: pending",
+        metadata: { backgroundTaskId: taskId, sessionId: subagentSessionId, taskId: subagentSessionId },
+      }),
+      timestamp: "2026-07-28T03:25:10.000Z",
+      updatedAt: "2026-07-28T03:25:10.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(sessionId, {
+    type: "message",
+    message: {
+      id: `${sessionId}-msg-000001-000000-pmsgfa6c107940016i`,
+      role: "assistant",
+      text: "已启动，等待结果中...",
+      streaming: false,
+      timestamp: "2026-07-28T03:25:10.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(sessionId, {
+    type: "status",
+    status: "idle",
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: "call_4360d36dcdbe40f3b768c4b4",
+      kind: "tool",
+      title: "background_output",
+      status: "running",
+      input: JSON.stringify({ task_id: taskId }),
+      timestamp: "2026-07-28T03:25:20.000Z",
+      updatedAt: "2026-07-28T03:25:20.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(sessionId, {
+    type: "tool-call",
+    toolCall: {
+      id: subagentId,
+      kind: "subagent",
+      title: "Reply with exactly: SUBAGENT_RETEST_OK",
+      status: "completed",
+      input: JSON.stringify({
+        truncated: false,
+        backgroundTaskId: taskId,
+        agent: "Sisyphus-Junior",
+        category: "quick",
+        description: "Reply with exactly: SUBAGENT_RETEST_OK",
+        sessionId: subagentSessionId,
+        taskId: subagentSessionId,
+      }),
+      output: JSON.stringify({
+        output: "Task Result\\n\\nTask ID: bg_348250a7\\n\\n---\\n\\nSUBAGENT_RETEST_OK",
+        metadata: {
+          truncated: false,
+          backgroundTaskId: taskId,
+          agent: "Sisyphus-Junior",
+          category: "quick",
+          description: "Reply with exactly: SUBAGENT_RETEST_OK",
+          sessionId: subagentSessionId,
+          taskId: subagentSessionId,
+        },
+      }),
+      timestamp: "2026-07-28T03:25:20.000Z",
+      updatedAt: "2026-07-28T03:25:22.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(
+    sessionId,
+    assistantThoughtEvent(
+      `${sessionId}-msg-000001-000001-pmsgfa6c17c390015`,
+      "The subagent test passed again.",
+      "2026-07-28T03:25:22.000Z",
+    ),
+    context,
+  );
+  handleRuntimeEvent(sessionId, {
+    type: "message",
+    message: {
+      id: `${sessionId}-msg-000001-000001-pmsgfa6c390015`,
+      role: "assistant",
+      text: "重测通过 ✅ — 收到 `SUBAGENT_RETEST_OK`，耗时 15 秒。",
+      streaming: false,
+      timestamp: "2026-07-28T03:25:22.000Z",
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  const backgroundOutput = (capture.timelineEntries ?? []).find((entry) =>
+    entry.kind === "tool_call" && entry.toolCall.id === "call_4360d36dcdbe40f3b768c4b4",
+  );
+  assert.equal(backgroundOutput?.kind, "tool_call");
+  assert.equal(backgroundOutput?.toolCall.status, "completed");
+
+  const thinkingChunks = (capture.timelineEntries ?? [])
+    .filter((entry) => entry.kind === "assistant_message")
+    .flatMap((entry) => entry.chunks)
+    .filter((chunk) => chunk.kind === "thinking");
+  assert.equal(thinkingChunks.at(-1)?.status, "completed");
+  assert.equal(
+    (capture.timelineEntries ?? []).some((entry) =>
+      entry.kind === "assistant_message" &&
+      entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text.includes("重测通过")),
+    ),
+    true,
+  );
 });
 
 test("runtime repairs a shell placeholder when native search input arrives", () => {
@@ -283,13 +856,15 @@ test("runtime publishes the first running tool-call immediately and coalesces la
 
   assert.equal(timers.size(), 1);
   assert.equal(capture.sessionUpdates?.length ?? 0, 0);
-  const liveToolCallUpdates = capture.detailBroadcasts.filter(
-    (item: any) => item.params?.update?.kind === "tool_call",
-  ) as any[];
-  assert.equal(liveToolCallUpdates.length, 1);
-  assert.equal(liveToolCallUpdates[0]?.params?.update?.toolCall?.status, "running");
-  assert.equal(liveToolCallUpdates[0]?.params?.update?.toolCall?.title, "rg test");
-  assert.equal(liveToolCallUpdates[0]?.params?.update?.toolCall?.output, "A");
+  const initialTimelineBatch = capture.detailBroadcasts.find(
+    (item: any) => item.params?.update?.kind === "timeline_batch",
+  ) as any;
+  const initialToolCallEntry = initialTimelineBatch?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call",
+  );
+  assert.equal(initialToolCallEntry?.toolCall?.status, "running");
+  assert.equal(initialToolCallEntry?.toolCall?.title, "rg test");
+  assert.equal(initialToolCallEntry?.toolCall?.output, "A");
 
   handleRuntimeEvent(
     "session-tool-window",
@@ -308,9 +883,9 @@ test("runtime publishes the first running tool-call immediately and coalesces la
     context,
   );
 
-  const timelineBatchUpdate = capture.detailBroadcasts.find(
+  const timelineBatchUpdate = capture.detailBroadcasts.filter(
     (item: any) => item.params?.update?.kind === "timeline_batch",
-  ) as any;
+  ).at(-1) as any;
   const toolCallEntry = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
     (entry: any) => entry.kind === "tool_call",
   );
@@ -373,9 +948,9 @@ test("runtime terminal tool-call snapshots retain live MCP metadata when complet
     context,
   );
 
-  const timelineBatchUpdate = capture.detailBroadcasts.find(
+  const timelineBatchUpdate = capture.detailBroadcasts.filter(
     (item: any) => item.params?.update?.kind === "timeline_batch",
-  ) as any;
+  ).at(-1) as any;
   const toolCallEntry = timelineBatchUpdate?.params?.update?.batch?.entries?.find(
     (entry: any) => entry.kind === "tool_call",
   );
@@ -554,6 +1129,57 @@ test("runtime terminal tool call keeps the richer running title", () => {
   );
 });
 
+test("runtime upgrades an OpenCode task placeholder to its dynamic category while running", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+    sessionUpdates: [],
+  };
+  const sessionId = "session-opencode-dynamic-category";
+  const context = createTestContext([], capture, sessionId, {}, {
+    useCanonicalPipeline: true,
+  });
+  const initial: SessionRuntimeEvent = {
+    type: "tool-call",
+    toolCall: {
+      id: "call-opencode-dynamic-category",
+      kind: "subagent",
+      title: "task",
+      status: "running",
+      input: "{}",
+      timestamp: "2026-08-04T00:00:00.000Z",
+      updatedAt: "2026-08-04T00:00:00.000Z",
+    },
+  };
+  const identified: SessionRuntimeEvent = {
+    type: "tool-call",
+    toolCall: {
+      ...initial.toolCall,
+      title: "oracle",
+      input: JSON.stringify({
+        description: "Inspect the repository",
+        prompt: "Inspect the repository",
+        category: "oracle",
+        run_in_background: false,
+      }),
+      updatedAt: "2026-08-04T00:00:01.000Z",
+    },
+  };
+
+  handleRuntimeEvent(sessionId, initial, context);
+  handleRuntimeEvent(sessionId, identified, context);
+
+  const entry = capture.timelineEntries?.find((item) =>
+    item.kind === "tool_call" && item.toolCall.id === "call-opencode-dynamic-category",
+  );
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.kind : undefined, "subagent");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.title : undefined, "oracle");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.status : undefined, "running");
+});
+
 test("runtime hides an empty search pending snapshot until the descriptive running snapshot arrives", () => {
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -614,13 +1240,16 @@ test("runtime hides an empty search pending snapshot until the descriptive runni
 
   assert.equal(timers.size(), 0);
 
-  const liveUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.params?.update?.kind === "tool_call" &&
-    item.params.update.toolCall?.id === "call-native-grep"
-  ) as any;
-  assert.equal(liveUpdate?.params?.update?.toolCall?.title, "Grep: export type");
-  assert.equal(liveUpdate?.params?.update?.toolCall?.status, "running");
-  assert.equal(liveUpdate?.params?.update?.toolCall?.sequence, 42);
+  const runningTimelineUpdate = capture.detailBroadcasts.filter((item: any) =>
+    item.params?.update?.kind === "timeline_batch" &&
+    item.params.update.batch?.entries?.some?.((entry: any) => entry.toolCall?.id === "call-native-grep")
+  ).at(-1) as any;
+  const runningEntry = runningTimelineUpdate?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call" && entry.toolCall?.id === "call-native-grep",
+  );
+  assert.equal(runningEntry?.toolCall?.title, "Grep: export type");
+  assert.equal(runningEntry?.toolCall?.status, "running");
+  assert.equal(runningEntry?.toolCall?.sequence, 42);
   assert.equal(
     capture.detailBroadcasts.some((item: any) =>
       item.params?.update?.kind === "tool_call" &&
@@ -687,12 +1316,15 @@ test("runtime falls back to a generic live tool title and clears its placeholder
   assert.equal(timers.size(), 1);
   timers.flushAll();
   assert.equal(timers.size(), 0);
-  const liveUpdate = capture.detailBroadcasts.find((item: any) =>
-    item.params?.update?.kind === "tool_call" &&
-    item.params.update.toolCall?.id === "call-native-grep-fallback"
-  ) as any;
-  assert.equal(liveUpdate?.params?.update?.toolCall?.title, "grep");
-  assert.equal(liveUpdate?.params?.update?.toolCall?.status, "running");
+  const fallbackTimelineUpdate = capture.detailBroadcasts.filter((item: any) =>
+    item.params?.update?.kind === "timeline_batch" &&
+    item.params.update.batch?.entries?.some?.((entry: any) => entry.toolCall?.id === "call-native-grep-fallback")
+  ).at(-1) as any;
+  const fallbackEntry = fallbackTimelineUpdate?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call" && entry.toolCall?.id === "call-native-grep-fallback",
+  );
+  assert.equal(fallbackEntry?.toolCall?.title, "grep");
+  assert.equal(fallbackEntry?.toolCall?.status, "running");
 
   handleRuntimeEvent("session-search-placeholder-fallback", {
     type: "tool-call",
@@ -983,34 +1615,20 @@ test("runtime tool-call events persist and broadcast without stage log", () => {
   assert.deepEqual(logs, []);
   assert.equal(appendedToolCalls.length, 0);
   assert.deepEqual(capture.broadcasts, []);
-  const toolCallBroadcast = capture.detailBroadcasts[0] as any;
-  assert.equal(typeof toolCallBroadcast.params.update.toolCall.sequence, "number");
-  delete toolCallBroadcast.params.update.toolCall.sequence;
-  assert.deepEqual(capture.detailBroadcasts, [
-    {
-      sessionId: "session-1",
-      method: "session/update",
-      params: {
-        sessionId: "session-1",
-        update: {
-          kind: "tool_call",
-          toolCall: {
-            id: "call-1",
-            kind: "tool",
-            title: "zhi",
-            status: "running",
-            timestamp: "2026-04-30T00:00:01.000Z",
-            updatedAt: "2026-04-30T00:00:01.000Z",
-            input: "git branch --show-current",
-            output: "main",
-          },
-        },
-      },
-    },
-  ]);
+  const toolCallTimeline = capture.detailBroadcasts.find((item: any) =>
+    item.params?.update?.kind === "timeline_batch",
+  ) as any;
+  const toolCallEntry = toolCallTimeline?.params?.update?.batch?.entries?.find(
+    (entry: any) => entry.kind === "tool_call",
+  );
+  assert.equal(typeof toolCallEntry?.toolCall?.sequence, "number");
+  assert.equal(toolCallEntry?.toolCall?.id, "call-1");
+  assert.equal(toolCallEntry?.toolCall?.status, "running");
+  assert.equal(toolCallEntry?.toolCall?.input, "git branch --show-current");
+  assert.equal(toolCallEntry?.toolCall?.output, "main");
 });
 
-test("runtime ACP thought chunks with generated ids stay in one thinking stream", () => {
+test("runtime assistant thought chunks with generated ids stay in one thinking stream", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const appendedToolCalls: AgentToolCall[] = [];
@@ -1021,49 +1639,43 @@ test("runtime ACP thought chunks with generated ids stay in one thinking stream"
 
   handleRuntimeEvent(
     "session-thought-stream",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thought-stream-msg-alpha:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "先看 ACP ",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thought-stream-msg-alpha",
+      "先看 ACP ",
+      "2026-04-30T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
     "session-thought-stream",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thought-stream-msg-beta:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "再对照 Zed",
-        timestamp: "2026-04-30T00:00:02.000Z",
-        updatedAt: "2026-04-30T00:00:02.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thought-stream-msg-beta",
+      "再对照 Zed",
+      "2026-04-30T00:00:02.000Z",
+    ),
     context,
   );
 
-  const thoughtUpdates = capture.sessionUpdates?.map((update) =>
-    JSON.parse(update.payloadJson).toolCall as AgentToolCall,
-  ) ?? [];
-  assert.equal(thoughtUpdates.length, 2);
-  assert.equal(thoughtUpdates[0]?.id, thoughtUpdates[1]?.id);
-  assert.match(thoughtUpdates[0]?.id ?? "", /^session-thought-stream-msg-\d{6}-\d{6}-.+:thinking$/u);
-  assert.deepEqual(capture.sessionUpdates?.map((update) => update.sequence), [1, 2]);
+  const assistantEntry = capture.timelineEntries?.find(
+    (entry) => entry.kind === "assistant_message",
+  );
+  assert.equal(assistantEntry?.kind, "assistant_message");
+  assert.match(assistantEntry?.id ?? "", /^session-thought-stream-msg-\d{6}-\d{6}-.+$/u);
+  assert.equal(
+    assistantEntry?.kind === "assistant_message"
+      ? assistantEntry.chunks.find((chunk) => chunk.kind === "thinking")?.text
+      : undefined,
+    "先看 ACP 再对照 Zed",
+  );
+  assert.equal(
+    capture.timelineEntries?.some((entry) => entry.kind === "tool_call"),
+    false,
+  );
   assert.equal(appendedToolCalls.length, 0);
   assert.equal(capture.persisted.length, 0);
 });
 
-test("runtime thinking broadcasts deltas instead of persisted cumulative output", () => {
+test("runtime assistant thinking broadcasts message deltas", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = { broadcasts: [], detailBroadcasts: [], persisted: [] };
   const storedById = new Map<string, AgentToolCall>();
@@ -1083,40 +1695,31 @@ test("runtime thinking broadcasts deltas instead of persisted cumulative output"
 
   handleRuntimeEvent(
     "session-thinking-delta",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thinking-delta-msg-a:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "A",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thinking-delta-msg-a",
+      "A",
+      "2026-04-30T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
     "session-thinking-delta",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thinking-delta-msg-b:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "B",
-        timestamp: "2026-04-30T00:00:02.000Z",
-        updatedAt: "2026-04-30T00:00:02.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thinking-delta-msg-b",
+      "B",
+      "2026-04-30T00:00:02.000Z",
+    ),
     context,
   );
 
-  const thoughtOutputs = capture.sessionUpdates?.map((update) =>
-    (JSON.parse(update.payloadJson).toolCall as AgentToolCall).output,
-  );
+  const thoughtOutputs = capture.detailBroadcasts
+    .filter((item: any) =>
+      item.method === "session/update" &&
+      item.params?.update?.kind === "agent_message" &&
+      item.params.update.message?.contentKind === "thought" &&
+      item.params.update.streaming === true
+    )
+    .map((item: any) => item.params.update.message.text);
   assert.deepEqual(thoughtOutputs, ["A", "B"]);
   assert.deepEqual([...storedById.values()], []);
 });
@@ -1142,18 +1745,11 @@ test("runtime status completion finalizes active thinking stream", () => {
 
   handleRuntimeEvent(
     "session-thinking-complete",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "session-thinking-complete-msg-a:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "A",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "session-thinking-complete-msg-a",
+      "A",
+      "2026-04-30T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
@@ -1242,7 +1838,7 @@ test("runtime idle status preserves background subagents and unique journal sequ
   assert.equal(new Set(updateSequences).size, updateSequences.length, JSON.stringify(updateSequences));
 });
 
-test("runtime errors finalize active thinking without reusing its journal sequence", () => {
+test("runtime errors flush active assistant thinking without reusing its journal sequence", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -1255,18 +1851,11 @@ test("runtime errors finalize active thinking without reusing its journal sequen
 
   handleRuntimeEvent(
     "session-thinking-error",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "error-thinking:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Inspect the failed request",
-        timestamp: "2026-07-13T00:00:01.000Z",
-        updatedAt: "2026-07-13T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "error-thinking",
+      "Inspect the failed request",
+      "2026-07-13T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
@@ -1283,7 +1872,7 @@ test("runtime errors finalize active thinking without reusing its journal sequen
   const thinkingChunk = thinkingEntry?.kind === "assistant_message"
     ? thinkingEntry.chunks.find((chunk) => chunk.kind === "thinking")
     : undefined;
-  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.status : undefined, "failed");
+  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.status : undefined, "completed");
   assert.equal(thinkingEntry?.sequence, 1);
   const updateSequences = capture.sessionUpdates?.map((update) => update.sequence) ?? [];
   assert.equal(new Set(updateSequences).size, updateSequences.length, JSON.stringify(updateSequences));
@@ -1302,18 +1891,11 @@ test("runtime tool boundaries finalize active thinking before splitting the assi
 
   handleRuntimeEvent(
     "session-thinking-tool-boundary",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "tool-boundary-thinking:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Choose the next command",
-        timestamp: "2026-07-13T00:00:01.000Z",
-        updatedAt: "2026-07-13T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "tool-boundary-thinking",
+      "Choose the next command",
+      "2026-07-13T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
@@ -1342,43 +1924,6 @@ test("runtime tool boundaries finalize active thinking before splitting the assi
   assert.equal(new Set(updateSequences).size, updateSequences.length, JSON.stringify(updateSequences));
 });
 
-test("runtime ignores structurally empty thinking frames", () => {
-  const logs: string[] = [];
-  const capture: TestContextCapture = {
-    broadcasts: [],
-    detailBroadcasts: [],
-    persisted: [],
-    timelineEntries: [],
-  };
-  const context = createTestContext(logs, capture, "session-empty-thinking");
-
-  for (const [index, output] of ["\u200B\u2060\uFEFF", "{}", "[]", "null"].entries()) {
-    handleRuntimeEvent(
-      "session-empty-thinking",
-      {
-        type: "tool-call",
-        toolCall: {
-          id: `empty-thinking-${index}:thinking`,
-          kind: "think",
-          title: "Thinking",
-          status: "running",
-          output,
-          timestamp: "2026-07-13T00:00:01.000Z",
-          updatedAt: "2026-07-13T00:00:01.000Z",
-        },
-      } satisfies SessionRuntimeEvent,
-      context,
-    );
-  }
-  handleRuntimeEvent(
-    "session-empty-thinking",
-    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
-    context,
-  );
-
-  assert.deepEqual(capture.timelineEntries, []);
-});
-
 test("runtime assistant content finalizes active thinking before clearing its segment", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
@@ -1391,18 +1936,11 @@ test("runtime assistant content finalizes active thinking before clearing its se
 
   handleRuntimeEvent(
     "session-thinking-before-content",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "reply-with-thought:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Inspect the canonical timeline",
-        timestamp: "2026-07-13T00:00:01.000Z",
-        updatedAt: "2026-07-13T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent(
+      "reply-with-thought",
+      "Inspect the canonical timeline",
+      "2026-07-13T00:00:01.000Z",
+    ),
     context,
   );
   handleRuntimeEvent(
@@ -1433,6 +1971,101 @@ test("runtime assistant content finalizes active thinking before clearing its se
   );
 });
 
+test("runtime assistant deltas without an explicit streaming flag finalize active thinking", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-thinking-before-implicit-content");
+
+  handleRuntimeEvent(
+    "session-thinking-before-implicit-content",
+    assistantThoughtEvent(
+      "implicit-content-thinking",
+      "Wait for the background result",
+      "2026-07-28T00:00:00.000Z",
+    ),
+    context,
+  );
+  handleRuntimeEvent("session-thinking-before-implicit-content", {
+    type: "message",
+    message: {
+      id: "implicit-content",
+      role: "assistant",
+      text: "The background result is complete.",
+      timestamp: "2026-07-28T00:00:01.000Z",
+      streamMode: "delta",
+    },
+  } satisfies SessionRuntimeEvent, context);
+  flushRuntimeSessionState("session-thinking-before-implicit-content", context);
+
+  const assistantEntry = capture.timelineEntries?.find(
+    (entry) => entry.kind === "assistant_message",
+  );
+  const thinkingChunk = assistantEntry?.kind === "assistant_message"
+    ? assistantEntry.chunks.find((chunk) => chunk.kind === "thinking")
+    : undefined;
+  assert.equal(thinkingChunk?.kind === "thinking" ? thinkingChunk.status : undefined, "completed");
+  assert.equal(assistantEntry?.kind === "assistant_message" ? assistantEntry.streaming : undefined, false);
+});
+
+test("runtime finalized assistant messages complete thinking before rotating message segments", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext([], capture, "session-thinking-segment-rotation");
+
+  handleRuntimeEvent("session-thinking-segment-rotation", {
+    type: "message",
+    message: {
+      id: "provider-message-before-thinking",
+      role: "assistant",
+      text: "已启动，等待结果中...",
+      timestamp: "2026-07-28T00:00:00.000Z",
+      streaming: false,
+    },
+  } satisfies SessionRuntimeEvent, context);
+  handleRuntimeEvent(
+    "session-thinking-segment-rotation",
+    assistantThoughtEvent(
+      "provider-thinking",
+      "等待后台任务结果",
+      "2026-07-28T00:00:01.000Z",
+    ),
+    context,
+  );
+  handleRuntimeEvent("session-thinking-segment-rotation", {
+    type: "message",
+    message: {
+      id: "provider-message-after-thinking",
+      role: "assistant",
+      text: "重测通过 ✅",
+      timestamp: "2026-07-28T00:00:02.000Z",
+      streaming: false,
+    },
+  } satisfies SessionRuntimeEvent, context);
+
+  const thinkingChunks = (capture.timelineEntries ?? [])
+    .filter((entry) => entry.kind === "assistant_message")
+    .flatMap((entry) => entry.chunks)
+    .filter((chunk) => chunk.kind === "thinking");
+  assert.equal(thinkingChunks.length, 1);
+  assert.equal(thinkingChunks[0]?.status, "completed");
+  assert.equal(
+    (capture.timelineEntries ?? []).some((entry) =>
+      entry.kind === "assistant_message" &&
+      entry.chunks.some((chunk) => chunk.kind === "content" && chunk.text === "重测通过 ✅"),
+    ),
+    true,
+  );
+});
+
 test("runtime timeline store nests thinking and assistant content under one assistant entry", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
@@ -1459,18 +2092,7 @@ test("runtime timeline store nests thinking and assistant content under one assi
 
   handleRuntimeEvent(
     "session-timeline-nested",
-    {
-      type: "tool-call",
-      toolCall: {
-        id: "reply-1:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "Plan",
-        timestamp: "2026-04-30T00:00:01.000Z",
-        updatedAt: "2026-04-30T00:00:01.000Z",
-      },
-    } satisfies SessionRuntimeEvent,
+    assistantThoughtEvent("reply-1", "Plan", "2026-04-30T00:00:01.000Z"),
     context,
   );
   handleRuntimeEvent(

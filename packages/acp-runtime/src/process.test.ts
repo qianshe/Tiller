@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { Readable } from "node:stream";
 import test from "node:test";
-import { createProtocolStdoutStream } from "./process.js";
+import { createProtocolStdoutStream, resolveLaunchSpec } from "./process.js";
 
 async function collect(stream: NodeJS.ReadableStream): Promise<string> {
   const chunks: Buffer[] = [];
@@ -10,6 +13,25 @@ async function collect(stream: NodeJS.ReadableStream): Promise<string> {
   }
   return Buffer.concat(chunks).toString("utf8");
 }
+
+test("resolveLaunchSpec keeps existing Windows executable paths intact", () => {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-process-path-"));
+  const executablePath = join(tempDir, "agent.exe");
+  writeFileSync(executablePath, "", "utf8");
+
+  try {
+    assert.deepEqual(resolveLaunchSpec(executablePath, ["acp"]), {
+      command: executablePath,
+      args: ["acp"],
+    });
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
 
 test("createProtocolStdoutStream drops taskkill success lines before ACP JSON parsing", async () => {
   const discarded: string[] = [];

@@ -71,13 +71,26 @@ test("readDeckPreferences preserves stored technical panel preferences", () => {
   );
 });
 
-test("readDeckPreferences preserves the Tiller theme", () => {
-  assert.equal(isDeckTheme("tiller"), true);
+test("nautical themes are valid and the retired tiller value is not", () => {
+  assert.equal(isDeckTheme("harbor"), true);
+  assert.equal(isDeckTheme("voyage"), true);
+  assert.equal(isDeckTheme("chart"), true);
+  assert.equal(isDeckTheme("tiller"), false);
+});
 
+test("readDeckPreferences preserves the nautical themes", () => {
+  for (const theme of ["harbor", "voyage", "chart"] as const) {
+    withStoredPreferences(JSON.stringify({ theme }), () => {
+      assert.equal(readDeckPreferences().theme, theme);
+    });
+  }
+});
+
+test("readDeckPreferences migrates the stored tiller theme to harbor", () => {
   withStoredPreferences(JSON.stringify({ theme: "tiller" }), () => {
     const preferences = readDeckPreferences();
 
-    assert.equal(preferences.theme, "tiller");
+    assert.equal(preferences.theme, "harbor");
   });
 });
 

@@ -36,6 +36,7 @@ export type ConversationToolCallItem = {
   title: string;
   status: AgentToolCall["status"];
   toolKind: AgentToolCall["kind"];
+  subagentRole?: AgentToolCall["subagentRole"];
   subagentOperation?: AgentToolCall["subagentOperation"];
   timestamp: string;
   sequence?: number;
@@ -104,10 +105,11 @@ export function groupToolCalls(
       groups.set(key, {
         kind: "tool",
         id: call.id,
-        commandId: key,
+        commandId: call.commandId ?? call.id,
         title: resolveDisplayToolTitle(displayCall, key),
         status: call.status,
         toolKind: displayKind,
+        subagentRole: call.subagentRole,
         subagentOperation: call.subagentOperation,
         timestamp: call.timestamp,
         sequence: call.sequence,
@@ -119,15 +121,21 @@ export function groupToolCalls(
     }
 
     current.text = `${current.text}${call.output ?? ""}`;
-    current.input = current.input || call.input || "";
+    current.input = current.toolKind === "subagent" || displayKind === "subagent"
+      ? mergeSubagentInputs(current.input, call.input)
+      : current.input || call.input || "";
     current.sequence = firstTimelineSequence(current.sequence, call.sequence);
     current.status = call.status;
+    current.subagentRole = call.subagentRole ?? current.subagentRole;
     current.subagentOperation = call.subagentOperation ?? current.subagentOperation;
     if (displayKind === current.toolKind) {
       current.title = resolveMergedToolTitle(
         current.title,
         resolveDisplayToolTitle(displayCall, key),
         call.id,
+        current.toolKind === "subagent" || displayKind === "subagent",
+        current.input,
+        call.input,
       );
     }
     if (call.stream && !current.streams.includes(call.stream)) {
@@ -135,6 +143,50 @@ export function groupToolCalls(
     }
   }
   return Array.from(groups.values());
+}
+
+function mergeSubagentInputs(current: string, incoming: string | undefined) {
+  if (!incoming) {
+    return current;
+  }
+  if (!current) {
+    return incoming;
+  }
+  const currentRecord = parseRecord(current);
+  const incomingRecord = parseRecord(incoming);
+  if (!currentRecord || !incomingRecord) {
+    return current;
+  }
+  return JSON.stringify(mergeRecords(currentRecord, incomingRecord));
+}
+
+function mergeRecords(
+  current: Record<string, unknown>,
+  incoming: Record<string, unknown>,
+): Record<string, unknown> {
+  const merged: Record<string, unknown> = { ...current };
+  for (const [key, value] of Object.entries(incoming)) {
+    const currentValue = merged[key];
+    if (isRecord(currentValue) && isRecord(value)) {
+      merged[key] = mergeRecords(currentValue, value);
+    } else {
+      merged[key] = value;
+    }
+  }
+  return merged;
+}
+
+function parseRecord(value: string): Record<string, unknown> | null {
+  try {
+    const parsed: unknown = JSON.parse(value);
+    return isRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 export function commandChunkToToolCall(chunk: CommandChunk): AgentToolCall {
@@ -173,7 +225,14 @@ export function mergeToolCallHistory(
       ...existing,
       ...next,
       kind: resolveMergedAgentToolCallKind(existing, next),
-      title: resolveMergedToolTitle(existing.title, next.title, next.id),
+      title: resolveMergedToolTitle(
+        existing.title,
+        next.title,
+        next.id,
+        existing.kind === "subagent" || next.kind === "subagent",
+        existing.input,
+        next.input,
+      ),
       output: mergeToolCallHistoryOutput(existing, next),
       input: next.input ?? existing.input,
       timestamp: existing.timestamp,
@@ -188,17 +247,6 @@ export function mergeToolCallHistory(
     .map((entry) => entry.toolCall);
 }
 
-export function dropActiveThinkingToolCalls(toolCalls: AgentToolCall[]) {
-  return toolCalls.filter((toolCall) => !isActiveThinkingToolCall(toolCall));
-}
-
-export function isActiveThinkingToolCall(toolCall: AgentToolCall) {
-  return (
-    toolCall.kind === "think" &&
-    (toolCall.status === "pending" || toolCall.status === "running")
-  );
-}
-
 function mergeToolCallHistoryOutput(
   current: AgentToolCall,
   incoming: AgentToolCall,
@@ -206,34 +254,7 @@ function mergeToolCallHistoryOutput(
   if (current.status === "completed" && incoming.status === "completed" && incoming.output) {
     return incoming.output;
   }
-  if (current.kind === "think" || incoming.kind === "think") {
-    return mergeThinkingToolCallOutput(current.output, incoming.output);
-  }
   return mergeToolCallOutput(current.output, incoming.output);
-}
-
-function mergeThinkingToolCallOutput(
-  currentOutput: string | undefined,
-  incomingOutput: string | undefined,
-) {
-  if (!incomingOutput) {
-    return currentOutput;
-  }
-  if (!currentOutput || incomingOutput.startsWith(currentOutput)) {
-    return incomingOutput;
-  }
-  if (currentOutput.startsWith(incomingOutput) || currentOutput.endsWith(incomingOutput)) {
-    return currentOutput;
-  }
-
-  const overlapped = mergeTextByLineOverlap(currentOutput, incomingOutput);
-  if (overlapped) {
-    return overlapped;
-  }
-
-  return incomingOutput.length >= currentOutput.length
-    ? incomingOutput
-    : currentOutput;
 }
 
 function mergeToolCallOutput(
@@ -250,22 +271,6 @@ function mergeToolCallOutput(
     return currentOutput;
   }
   return `${currentOutput}${incomingOutput}`;
-}
-
-function mergeTextByLineOverlap(currentText: string, incomingText: string) {
-  const currentLines = currentText.split(/\r?\n/u);
-  const incomingLines = incomingText.split(/\r?\n/u);
-  const overlapLineCount = Math.min(currentLines.length, incomingLines.length);
-  for (let size = overlapLineCount; size >= 1; size -= 1) {
-    const currentSlice = currentLines.slice(-size).join("\n");
-    const incomingSlice = incomingLines.slice(0, size).join("\n");
-    if (currentSlice !== incomingSlice) {
-      continue;
-    }
-    const suffix = incomingLines.slice(size).join("\n");
-    return suffix ? `${currentText}\n${suffix}` : currentText;
-  }
-  return null;
 }
 
 function firstTimelineSequence(current: number | undefined, incoming: number | undefined) {

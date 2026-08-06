@@ -54,8 +54,7 @@ export function splitMissionToolCalls(
     toolCalls,
   );
   return {
-    thinkingToolCalls: effectiveToolCalls.filter((toolCall) => toolCall.kind === "think"),
-    timelineToolCalls: effectiveToolCalls.filter((toolCall) => toolCall.kind !== "think"),
+    timelineToolCalls: effectiveToolCalls,
     boundaryTimestamps: effectiveToolCalls.map((toolCall) => toolCall.timestamp),
   };
 }

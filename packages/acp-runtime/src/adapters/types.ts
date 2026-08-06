@@ -11,6 +11,7 @@ import type { ToolEvidence, ToolObservation } from "../tool-recognition";
 export type AcpLaunchContext = {
   fallbackCwd: string;
   sessionConfig?: {
+    agentMode?: string;
     model?: string;
     reasoningEffort?: SessionReasoningEffort;
   };

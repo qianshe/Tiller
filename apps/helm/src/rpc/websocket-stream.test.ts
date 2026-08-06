@@ -119,6 +119,49 @@ test("websocket stream coalesces streaming entities above soft high-water", asyn
   assert.equal((sent[0] ?? "").includes('"text":"ab"'), true);
 });
 
+test("websocket stream preserves append-only deltas above soft high-water", () => {
+  const sent: string[] = [];
+  let coalesced = 0;
+  const socket = {
+    readyState: 1,
+    bufferedAmount: 3,
+    send(value: string) { sent.push(value); },
+    on() { return this; },
+    off() { return this; },
+    close() {},
+  } as any;
+  const stream = createWebSocketJsonRpcStream(socket, () => undefined, {
+    softHighWaterBytes: 2,
+    hardHighWaterBytes: 10,
+    onCoalesced: (count) => { coalesced += count; },
+  });
+  const update = (text: string) => ({
+    jsonrpc: "2.0" as const,
+    method: "session/update",
+    params: {
+      sessionId: "s1",
+      update: {
+        kind: "agent_message",
+        streaming: true,
+        message: { id: "m1", text, streamMode: "delta" },
+      },
+    },
+  });
+
+  stream.send(update("a") as any);
+  stream.send(update("b") as any);
+
+  const messages = decodeMessages(sent);
+  assert.equal(coalesced, 0);
+  assert.deepEqual(
+    messages.map((message) => [
+      message.params.update.message.text,
+      message.params.update.message.streamMode,
+    ]),
+    [["a", "delta"], ["b", "delta"]],
+  );
+});
+
 test("websocket stream coalesces subagent entries by identity and sends latest sequences in order", async () => {
   const sent: string[] = [];
   const socket = {

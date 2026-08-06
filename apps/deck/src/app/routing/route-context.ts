@@ -1,8 +1,9 @@
+import type { NavigateToViewOptions } from "./route-view";
 import type { AppView } from "./routes";
 
 export type AppRouteContext = Record<string, any>;
 
 export type MissionRouteSource = Record<string, any> & {
   activeView: AppView;
-  navigateToView: (view: AppView) => void;
+  navigateToView: (view: AppView, options?: NavigateToViewOptions) => void;
 };

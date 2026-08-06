@@ -51,7 +51,10 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.match(stylesSource, /body\[data-theme="light"\] \.landing-copy/);
   assert.match(stylesSource, /body\[data-theme="dark"\] \.landing-hero::before/);
   assert.match(stylesSource, /rgb\(7 11 24 \/ 0\.42\)/);
-  assert.match(stylesSource, /body\[data-theme="tiller"\] \.landing-hero::before/);
+  assert.match(stylesSource, /body\[data-theme="harbor"\] \.landing-hero::before/);
+  assert.match(stylesSource, /body\[data-theme="voyage"\] \.landing-hero::before/);
+  assert.match(stylesSource, /body\[data-theme="chart"\] \.landing-hero::before/);
+  assert.doesNotMatch(stylesSource, /data-theme="tiller"/);
   assert.match(stylesSource, /rgb\(11 18 38 \/ 0\.32\)/);
   assert.doesNotMatch(stylesSource, /\.shell\.theme-light \.landing-hero h1/);
   assert.doesNotMatch(stylesSource, /\.shell\.theme-light \.landing-copy/);

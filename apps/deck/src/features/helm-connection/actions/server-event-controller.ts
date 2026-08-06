@@ -1,5 +1,12 @@
 import type { AgentToolCall, PromptTraceEvent } from "@tiller/shared";
 import { daemonProfileKey } from "../daemon-profiles";
+import {
+  clearHelmUpdateIntent,
+  readHelmUpdateIntent,
+  writeHelmUpdateIntent,
+} from "../update-intent";
+import { resolveHelmUpdateStatus } from "../update-status";
+import { useDeckStore } from "../../../store";
 import { DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "../helm-endpoint";
 import { clearTrustedDeviceCache, readTrustedDeviceCache, writeTrustedDeviceCache } from "../../auth/beacon-cache";
 import { agentModelOptionsKey, writeAgentModelOptionsCache } from "../../agents/facade";
@@ -196,7 +203,23 @@ export function createServerEventController(source: any, helpers: any) {
     applySessionResult(method, result, sourceHelmKey, current, sessionContext());
   }
 
-  function handleRpcNotification(method: string, params: unknown) {
+  function handleRpcNotification(method: string, params: unknown, sourceHelmKey = defaultHelmKey()) {
+    if (method === "daemon/update/status") {
+      const payload = params as Record<string, unknown>;
+      const previous = useDeckStore.getState().helmInventories[sourceHelmKey]?.update;
+      const resolved = resolveHelmUpdateStatus(
+        payload,
+        previous,
+        readHelmUpdateIntent(sourceHelmKey)?.targetVersion,
+      );
+      useDeckStore.getState().applyHelmInventory(sourceHelmKey, { update: resolved.update });
+      if (resolved.intent.kind === "write") {
+        writeHelmUpdateIntent(sourceHelmKey, resolved.intent.targetVersion);
+      } else if (resolved.intent.kind === "clear") {
+        clearHelmUpdateIntent(sourceHelmKey);
+      }
+      return;
+    }
     if (method === "approval/created") {
       applyApprovalCreated(params as any);
       return;

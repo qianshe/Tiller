@@ -6,6 +6,83 @@ import { MissionDisplayPanel } from "./panel.js";
 
 const noop = () => undefined;
 
+test("mission display panel shows Git errors in a dedicated display tab", () => {
+  const html = renderToStaticMarkup(
+    createElement(MissionDisplayPanel, {
+      style: {},
+      pages: [{ id: "graph", title: "Graph" }],
+      selectedPage: { id: "git-error", title: "Git 错误" },
+      openedDiffFilePaths: [],
+      overviewItems: [],
+      runtimeOverviewItems: [],
+      selectedDiffFilePath: null,
+      diffs: [],
+      noDiffSummary: "未选择文件。",
+      gitStatus: {
+        projectId: "p1",
+        cwd: "/repo",
+        branch: "main",
+        detached: false,
+        ahead: 0,
+        behind: 0,
+        trackingStale: true,
+        remoteRefreshError: "origin unavailable",
+        error: "origin unavailable",
+        clean: true,
+        files: [],
+      },
+      onAddPage: noop,
+      onSelectPage: noop,
+      onDragStart: noop,
+      onDrop: noop,
+      onRenamePage: noop,
+      onMovePage: noop,
+      onDeletePage: noop,
+      onOpenDiffDetail: noop,
+      onCloseDiffFile: noop,
+      onCollapse: noop,
+    }),
+  );
+
+  assert.match(html, /Git 错误/);
+  assert.match(html, /origin unavailable/);
+  assert.match(html, /\/repo/);
+  assert.doesNotMatch(html, /git-graph-panel/);
+});
+
+test("mission display panel keeps an opened Git error tab after selecting a diff", () => {
+  const html = renderToStaticMarkup(
+    createElement(MissionDisplayPanel, {
+      style: {},
+      pages: [{ id: "diff-detail", title: "Diff 详情" }],
+      selectedPage: { id: "diff-detail", title: "Diff 详情" },
+      gitErrorTabOpen: true,
+      openedDiffFilePaths: [],
+      overviewItems: [],
+      runtimeOverviewItems: [],
+      selectedDiffFilePath: null,
+      diffs: [],
+      noDiffSummary: "未选择文件。",
+      onAddPage: noop,
+      onSelectPage: noop,
+      onDragStart: noop,
+      onDrop: noop,
+      onRenamePage: noop,
+      onMovePage: noop,
+      onDeletePage: noop,
+      onOpenDiffDetail: noop,
+      onCloseDiffFile: noop,
+      onCloseGitErrorTab: noop,
+      onCollapse: noop,
+    }),
+  );
+
+  assert.match(html, />Git 错误</);
+  assert.match(html, /关闭 Git 错误/);
+  assert.match(html, /未选择文件/);
+  assert.doesNotMatch(html, /git-error-panel/);
+});
+
 test("mission display panel focuses on diff detail with single-layer tabs", () => {
   const html = renderToStaticMarkup(
     createElement(MissionDisplayPanel, {

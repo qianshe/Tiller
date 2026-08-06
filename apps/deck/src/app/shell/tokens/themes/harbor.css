@@ -1,0 +1,66 @@
+/* tokens/themes/harbor.css — Harbor nautical light theme for [data-theme="harbor"]
+ *
+ * Cool blue-grey light surfaces with a deep marine primary. Successor of the
+ * retired mid-grey "tiller" theme; elevation ladder is strictly monotonic
+ * (sunken < canvas < background < surface < elevated).
+ */
+
+@layer base {
+  [data-theme="harbor"] {
+    --background:           #e6ebf0;
+    --canvas:               #dde4ea;
+    --surface:              #f3f6f9;
+    --surface-sunken:       #d5dde4;
+    --surface-elevated:     #ffffff;
+    --surface-emphasis:     #c8d2db;
+    --popover-glass:        rgb(243 246 249 / 0.85);
+
+    --foreground:           #111820;
+    --muted-foreground:     #48586b;
+
+    --primary:              #1a5d8f;
+    --primary-strong:       #2e79b8;
+    --on-primary:           #f7fafc;
+    --primary-soft:         rgb(26 93 143 / 0.14);
+
+    --success:              #1e7a4e;
+    --success-container:    #1e7a4e;
+    --on-success-container: #f7fafc;
+    --warning:              #8a6114;
+    --on-warning:           #8a6114;
+    --destructive:          #a83232;
+
+    --diff-added-bg:        rgb(30 122 78 / 0.14);
+    --diff-added-text:      #17623d;
+    --diff-added-border:    #1e7a4e;
+    --diff-deleted-bg:      rgb(168 50 50 / 0.12);
+    --diff-deleted-text:    #8e2a2a;
+    --diff-deleted-border:  #a83232;
+    --diff-hunk-bg:         rgb(26 93 143 / 0.16);
+    --diff-hunk-text:       #1a5d8f;
+    --diff-meta-bg:         #dde4ea;
+    --diff-meta-text:       #48586b;
+    --markdown-code-bg:     #1f2933;
+    --markdown-code-fg:     #e8eef5;
+    --markdown-code-head:   #d8dee6;
+
+    --border-ghost:         rgb(26 46 66 / 0.16);
+    --ring:                 #1a5d8f;
+
+    --terminal-bg:          #1f2933;
+    --terminal-fg:          #e8eef5;
+
+    --shadow-ambient:       0 0 84px rgb(26 93 143 / 0.10);
+
+    --color-text-inverse:   #ffffff;
+    --color-subtle:         #5b6b7d;
+    --color-surface:        rgba(243, 246, 249, 0.9);
+    --color-surface-strong: rgba(243, 246, 249, 0.96);
+    --color-secondary-text: #111820;
+    --color-border-strong:  rgba(26, 46, 66, 0.22);
+    --shadow-panel:         0 20px 44px rgba(0, 0, 0, 0.10);
+    --shadow-card:          0 16px 34px rgba(0, 0, 0, 0.08);
+    --deck-color-scheme:    light;
+    --deck-body-background: var(--background);
+  }
+}

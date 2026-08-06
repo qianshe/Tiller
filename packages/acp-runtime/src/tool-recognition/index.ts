@@ -34,6 +34,6 @@ export function disposeToolRecognitionSession(providerId: string | undefined, se
 }
 
 export { createToolObservation, promptEventsToToolObservations } from "./observation";
-export { evidenceFromProjectedToolCall } from "./evidence";
+export { collectSubagentEntityIds, evidenceFromProjectedToolCall } from "./evidence";
 export { classifyStructuredFileOperation } from "./file-operation";
 export type { ToolEvidence, ToolObservation, ToolRecognitionResult, SubagentAction } from "./types";

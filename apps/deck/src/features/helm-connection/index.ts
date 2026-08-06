@@ -1,4 +1,9 @@
 export { useHelmConnection } from "./hooks/connection";
+export {
+  createHelmUpdateActions,
+  type HelmUpdateTarget,
+} from "./actions/update-actions";
+export { useHelmUpdateLifecycle } from "./hooks/update-lifecycle";
 export { useAppControllers } from "./actions/deck-controllers";
 export {
   daemonProfileKey,
@@ -15,3 +20,10 @@ export {
 export { DeckRpcClient } from "./rpc-client";
 export { shouldCheckHelmHealth } from "./reconnect-policy";
 export type { HelmHealthStatus } from "../../store/facade";
+export {
+  clearHelmUpdateIntent,
+  isHelmVersionAtLeast,
+  readHelmUpdateIntent,
+  writeHelmUpdateIntent,
+  type HelmUpdateIntent,
+} from "./update-intent";

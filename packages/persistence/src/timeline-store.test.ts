@@ -306,31 +306,35 @@ test("sqlite timeline upsertMessage updates one entry in a 20k-entry fixture", (
   }
 });
 
-test("sqlite timeline upsertToolCall merges thinking into one assistant entry", () => {
+test("sqlite timeline upsertToolCall keeps legacy Thinking tools separate from assistant messages", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");
   const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
 
   try {
     store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", sequence: 2 }));
-    const updated = store.upsertToolCall("session-1", toolCall({
+    const legacyToolCall = {
+      ...toolCall({
       id: "assistant-1:thinking",
       commandId: "assistant-1:thinking",
-      kind: "think",
+      kind: "tool",
       output: "reasoning",
       status: "completed",
       title: "Thinking",
       sequence: 1,
-    }));
+      }),
+      kind: "think",
+    } as unknown as AgentToolCall;
+    const updated = store.upsertToolCall("session-1", legacyToolCall);
 
-    assert.equal(updated?.id, "assistant-1");
+    assert.equal(updated?.id, "tool:assistant-1:thinking");
     const persisted = store.list("session-1");
-    assert.equal(persisted.length, 1);
-    assert.deepEqual(
-      persisted[0]?.kind === "assistant_message"
-        ? persisted[0].chunks.map((chunk) => chunk.kind)
-        : [],
-      ["thinking", "content"],
+    assert.equal(persisted.length, 2);
+    assert.equal(persisted.some((entry) => entry.kind === "assistant_message"), true);
+    const toolEntry = persisted.find((entry) => entry.kind === "tool_call");
+    assert.equal(
+      toolEntry?.kind === "tool_call" ? toolEntry.toolCall.kind : undefined,
+      "tool",
     );
   } finally {
     store.close();
@@ -703,13 +707,11 @@ test("sqlite timeline store persists ordered unified entries", () => {
   try {
     const entries = buildCanonicalTimeline([
       message({ id: "user-1", role: "user", text: "Start", sequence: 1 }),
-      toolCall({
-        id: "assistant-1:thinking",
-        commandId: "assistant-1:thinking",
-        kind: "think",
-        output: "Reasoning",
-        status: "completed",
-        title: "Thinking",
+      message({
+        id: "assistant-1",
+        role: "assistant",
+        contentKind: "thought",
+        text: "Reasoning",
         sequence: 2,
       }),
       message({ id: "assistant-1", role: "assistant", text: "Done", sequence: 3 }),

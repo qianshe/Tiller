@@ -38,18 +38,37 @@ test("extractSessionConfigOptions flattens grouped option choices", () => {
   ]);
 });
 
-test("extractAcpModelState supports camel and snake model fields", () => {
-  assert.deepEqual(extractAcpModelState({
-    models: {
-      current_model_id: "gpt-5.4",
-      available_models: [
-        { model_id: "gpt-5.4", name: "GPT 5.4", description: "fast" },
-      ],
-    },
-  }), {
-    currentModelId: "gpt-5.4",
-    options: [{ id: "gpt-5.4", name: "GPT 5.4", description: "fast" }],
+test("extractAcpModelState reads model options from configOptions category", () => {
+  const options = extractSessionConfigOptions({
+    configOptions: [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        currentValue: "gpt-5.4",
+        options: [
+          { value: "gpt-5.4", name: "GPT 5.4" },
+          { value: "gpt-5.4-mini", label: "GPT 5.4 Mini" },
+        ],
+      },
+    ],
   });
+
+  assert.deepEqual(extractAcpModelState(options), {
+    currentModelId: "gpt-5.4",
+    options: [
+      { id: "gpt-5.4", name: "GPT 5.4" },
+      { id: "gpt-5.4-mini", name: "GPT 5.4 Mini" },
+    ],
+  });
+});
+
+test("extractAcpModelState returns undefined when no model configOption is present", () => {
+  const options = extractSessionConfigOptions({
+    configOptions: [{ id: "mode", category: "mode", currentValue: "build" }],
+  });
+
+  assert.equal(extractAcpModelState(options), undefined);
 });
 
 test("resolveCombinedSessionConfigState keeps explicit config model before model state", () => {

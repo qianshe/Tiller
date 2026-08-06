@@ -11,6 +11,9 @@ test("OpenRPC document includes core request and notification methods", () => {
   assert.ok(names.includes("session/prompt"));
   assert.ok(names.includes("session/update"));
   assert.ok(names.includes("session/cancel"));
+  assert.ok(names.includes("daemon/update/check"));
+  assert.ok(names.includes("daemon/update/start"));
+  assert.ok(names.includes("daemon/update/status"));
 });
 
 test("request methods carry a result schema, notifications do not", () => {
@@ -19,4 +22,6 @@ test("request methods carry a result schema, notifications do not", () => {
   const cancel = doc.methods.find((method) => method.name === "session/cancel");
   assert.ok(prompt?.result);
   assert.equal(cancel?.result, undefined);
+  const updateStatus = doc.methods.find((method) => method.name === "daemon/update/status");
+  assert.equal(updateStatus?.result, undefined);
 });

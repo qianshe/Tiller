@@ -6,6 +6,7 @@ import { useConfiguredHelms } from "../../helm-connection/utils/configured-helms
 import { resolveTechnicalPanelPreferences } from "../../preferences/utils/helpers";
 import { formatResumeLabel } from "../utils/session-state";
 import { usePromptImages } from "../hooks/prompt-images";
+import { useReviewContext } from "../hooks/prompt-context";
 import {
   deriveHistoricalActivityFromTimeline,
   mergeHistoricalAndLiveToolCalls,
@@ -101,6 +102,13 @@ const {
   addPromptImageFiles,
   removePromptImage,
 } = usePromptImages({ activeSession });
+const reviewContext = useReviewContext();
+const draftContexts = reviewContext.draftContexts;
+const clearDraftContexts = reviewContext.clearDraftContexts;
+const addDraftContext = reviewContext.addDraftContext;
+const removeDraftContext = reviewContext.removeDraftContext;
+const commandRetentionNotice = reviewContext.commandRetentionNotice;
+const setCommandRetentionNotice = reviewContext.setCommandRetentionNotice;
 const activeConversationUpdateKey = useActiveConversationUpdateKey(
   activeSessionId,
   activeSessionMessages,
@@ -372,6 +380,12 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     handleMissionPromptPaste,
     addPromptImageFiles,
     removePromptImage,
+    draftContexts,
+    clearDraftContexts,
+    addDraftContext,
+    removeDraftContext,
+    commandRetentionNotice,
+    setCommandRetentionNotice,
     activeSessionMessages,
     activeConversationUpdateKey,
     draftProject,

@@ -21,7 +21,16 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
   const rawToolInput = resolveRawToolInput(source, update);
   const rawToolOutput = resolveRawToolOutput(source, update);
   const parsedToolInput = parseToolInput(rawToolInput);
-  const id = stringFrom(source.id ?? source.toolCallId ?? source.tool_call_id ?? source.callId ?? update.id) ?? `${sessionId}-tool-${Date.now()}`;
+  const id = stringFrom(
+    update.toolCallId ??
+      update.tool_call_id ??
+      update.callId ??
+      source.id ??
+      source.toolCallId ??
+      source.tool_call_id ??
+      source.callId ??
+      update.id,
+  ) ?? `${sessionId}-tool-${Date.now()}`;
   const commandId = stringFrom(source.commandId ?? source.command_id ?? source.terminalId ?? update.commandId);
   const toolName = extractToolName(source, update, parsedToolInput);
   const rawTitle = stringFrom(source.title ?? source.label ?? source.displayName ?? source.display_name ?? source.name ?? source.toolName ?? source.tool_name ?? source.tool ?? source.command ?? update.title ?? update.name);
@@ -36,7 +45,7 @@ export function extractToolCall(sessionId: string, updateType: string | undefine
     id,
     kind,
     title,
-    status: inferToolCallStatus(type, source.status ?? source.state ?? update.status ?? update.state),
+    status: inferToolCallStatus(type, update.status ?? source.status ?? update.state ?? source.state),
     ...(mcp ? { mcp } : {}),
     ...(commandId ? { commandId } : {}),
     ...(input ? { input } : {}),
@@ -224,7 +233,6 @@ function inferToolCallKind(
   if (/search|grep/u.test(raw)) return "search";
   if (/execute|terminal|command|shell|bash|exec/u.test(raw)) return "shell";
   if (/fetch/u.test(raw)) return "fetch";
-  if (/think/u.test(raw)) return "think";
   if (/\btodo/u.test(raw)) return "todo";
   if (structuredKind) return structuredKind;
   if (looksLikePathTitle(source.title)) return "read";
@@ -251,7 +259,8 @@ function resolveExplicitToolCallKind(source: any): AgentToolCall["kind"] | undef
     terminal: "shell",
     command: "shell",
     fetch: "fetch",
-    think: "think",
+    // ACP ToolKind is display metadata; assistant reasoning arrives via agent_thought updates.
+    think: "tool",
     todo: "todo",
     subagent: "subagent",
     tool: "tool",
@@ -355,7 +364,7 @@ function hasMeaningfulToolPayload(value: unknown) {
 
 const KIND_TITLES: Record<string, string> = {
   read: "Read", diagnostics: "Diagnostics", write: "Write", shell: "Shell", search: "Search",
-  fetch: "Fetch", skill: "Skill", think: "Thinking", todo: "Todo",
+  fetch: "Fetch", skill: "Skill", todo: "Todo",
 };
 
 function kindAsTitle(kind: AgentToolCall["kind"] | undefined): string | undefined {

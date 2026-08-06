@@ -164,6 +164,26 @@ test("chat pane renders approvals in a centered blocking overlay", () => {
           },
         ],
       },
+      sessionTimelineById: {
+        s1: [
+          {
+            id: "assistant-1-entry",
+            kind: "assistant_message",
+            chunks: [
+              {
+                id: "assistant-1-entry:content",
+                kind: "content",
+                text: "审批下方的会话正文",
+                timestamp: "2026-05-29T10:00:00.000Z",
+                sequence: 1,
+              },
+            ],
+            timestamp: "2026-05-29T10:00:00.000Z",
+            updatedAt: "2026-05-29T10:00:00.000Z",
+            sequence: 1,
+          },
+        ],
+      },
       pendingApprovals: [
         buildApproval("s1", "approval-1", "Run A", "审核 A"),
       ],

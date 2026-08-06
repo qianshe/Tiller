@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
@@ -116,6 +116,30 @@ test("config RPC rejects git status requests for another project's worktree", as
   assert.equal(result.message, "Working directory is not part of this project");
 });
 
+test(
+  "config RPC keeps project cwd authorization case-sensitive on case-sensitive filesystems",
+  { skip: process.platform === "win32" },
+  async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-cwd-case-"));
+    const configuredRepo = join(tempRoot, "Repo");
+    const foreignRepo = join(tempRoot, "repo");
+    const configPath = join(tempRoot, "config.json");
+    initRepo(configuredRepo);
+    initRepo(foreignRepo);
+    commitFile(configuredRepo, "README.md", "configured\n", "configured");
+    commitFile(foreignRepo, "README.md", "foreign\n", "foreign");
+    saveRepoProject(configPath, "p1", configuredRepo);
+
+    const result = await handleConfigRpcRequest("project/git/status", {
+      projectId: "p1",
+      cwd: foreignRepo.replace(/\\/g, "/"),
+    }, repoContext(configPath)) as { ok: boolean; message: string };
+
+    assert.equal(result.ok, false);
+    assert.equal(result.message, "Working directory is not part of this project");
+  },
+);
+
 test("config RPC rejects git commit requests for another project's worktree", async () => {
   const projects = [
     {
@@ -150,6 +174,39 @@ test("config RPC rejects git commit requests for another project's worktree", as
   assert.equal(result.message, "Working directory is not part of this project");
 });
 
+test("config RPC rejects git discard requests for another project's worktree", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/git/discard", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+    paths: ["file.ts"],
+  }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { ok: boolean; message: string };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Working directory is not part of this project");
+});
+
 test("config RPC rejects git graph requests for another project's worktree", async () => {
   const projects = [
     {
@@ -171,6 +228,39 @@ test("config RPC rejects git graph requests for another project's worktree", asy
   const result = await handleConfigRpcRequest("project/git/graph", {
     projectId: "p1",
     cwd: "D:/repo-two",
+  }, {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any) as { ok: boolean; message: string };
+
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Working directory is not part of this project");
+});
+
+test("config RPC rejects commit detail requests for another project's worktree", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+
+  const result = await handleConfigRpcRequest("project/git/commit_detail", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+    commitHash: "abc1234",
   }, {
     loadAvailableProjectsWithSemanticSummaries: async () => projects,
     loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
@@ -232,7 +322,303 @@ test("config RPC git status returns diff details for modified files", async () =
   const readme = result.files.find((file) => file.path === "README.md");
   assert.equal(readme?.additions, 1);
   assert.equal(readme?.deletions, 0);
-  assert.match(readme?.patch ?? "", /diff --git a\/README\.md b\/README\.md/);
+  // Status 只携带统计;patch 正文改由 project/git/file_diff 按需批量获取。
+  assert.equal(readme?.patch, undefined);
+
+  const diffResult = await handleConfigRpcRequest("project/git/file_diff", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+    paths: ["README.md"],
+  }, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) => items.find((project) => project.id === id),
+  } as any) as {
+    ok: boolean;
+    files: Array<{ path: string; additions: number; deletions: number; patch?: string }>;
+  };
+
+  assert.equal(diffResult.ok, true);
+  assert.equal(diffResult.files.length, 1);
+  assert.equal(diffResult.files[0]?.additions, 1);
+  assert.match(diffResult.files[0]?.patch ?? "", /diff --git a\/README\.md b\/README\.md/);
+  assert.match(diffResult.files[0]?.patch ?? "", /\+two/);
+});
+
+test("config RPC git status payload stays small for large diffs (patch bodies stay on demand)", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-status-payload-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(repoPath);
+  commitFile(repoPath, "big.txt", "seed\n", "init");
+  // 约 400KB 的文本变更:旧行为会把整个 patch 塞进 status 响应
+  const bigContent = Array.from({ length: 10_000 }, (_, i) => `line-${i}-${"x".repeat(30)}`).join("\n");
+  writeFileSync(join(repoPath, "big.txt"), `${bigContent}\n`, "utf8");
+  saveRepoProject(configPath, "p1", repoPath);
+  const cwd = repoPath.replace(/\\/g, "/");
+
+  const status = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(status.ok, true);
+  const big = status.files.find((file: { path: string }) => file.path === "big.txt");
+  assert.equal(big?.additions, 10_000);
+  // 载荷回归护栏:状态响应不得随 diff 体积膨胀(旧行为约 400KB+)
+  const statusBytes = JSON.stringify(status).length;
+  assert.ok(statusBytes < 10_000, `status payload should stay small, got ${statusBytes} bytes`);
+
+  // patch 正文仍可按需取得,且体积与变更相称
+  const diff = await handleConfigRpcRequest("project/git/file_diff", {
+    projectId: "p1",
+    cwd,
+    paths: ["big.txt"],
+  }, repoContext(configPath)) as any;
+  assert.equal(diff.ok, true);
+  assert.ok((diff.files[0]?.patch?.length ?? 0) > 300_000);
+});
+
+test("config RPC git file_diff covers untracked files and only the requested paths", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-file-diff-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(repoPath);
+  commitFile(repoPath, "README.md", "one\n", "init");
+  writeFileSync(join(repoPath, "README.md"), "one\ntwo\n", "utf8");
+  writeFileSync(join(repoPath, "new-note.txt"), "hello\nworld\n", "utf8");
+  saveRepoProject(configPath, "p1", repoPath);
+  const cwd = repoPath.replace(/\\/g, "/");
+
+  // Status 对未跟踪文件同样只给统计
+  const status = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd,
+  }, repoContext(configPath)) as any;
+  const note = status.files.find((file: { path: string }) => file.path === "new-note.txt");
+  assert.equal(note?.additions, 2);
+  assert.equal(note?.patch, undefined);
+
+  // file_diff 只返回请求的路径,未跟踪文件合成 added patch
+  const diff = await handleConfigRpcRequest("project/git/file_diff", {
+    projectId: "p1",
+    cwd,
+    paths: ["new-note.txt"],
+  }, repoContext(configPath)) as any;
+
+  assert.equal(diff.ok, true);
+  assert.equal(diff.files.length, 1);
+  assert.equal(diff.files[0]?.path, "new-note.txt");
+  assert.equal(diff.files[0]?.additions, 2);
+  assert.match(diff.files[0]?.patch ?? "", /\+hello/);
+});
+
+test("config RPC git status expands untracked directories and ignores empty directories", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-status-directories-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(repoPath);
+  commitFile(repoPath, "README.md", "one\n", "init");
+  mkdirSync(join(repoPath, "empty-dir"));
+  mkdirSync(join(repoPath, "nested-dir"));
+  writeFileSync(join(repoPath, "nested-dir", "note.txt"), "hello\n", "utf8");
+  saveRepoProject(configPath, "p1", repoPath);
+
+  const status = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+
+  assert.equal(status.ok, true);
+  assert.deepEqual(
+    status.files.map((file: { path: string }) => file.path.replace(/\\/g, "/")),
+    ["nested-dir/note.txt"],
+  );
+});
+
+test("config RPC git commit includes only selected paths and preserves unrelated staged changes", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-commit-selected-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "selected.txt"), "initial\n", "utf8");
+  writeFileSync(join(repoPath, "staged.txt"), "initial\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "selected.txt", "staged.txt"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "initial"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "staged.txt"), "staged change\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "staged.txt"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "selected.txt"), "selected change\n", "utf8");
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  const result = await handleConfigRpcRequest("project/git/commit", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+    message: "test：只提交选中文件",
+    paths: ["selected.txt"],
+  }, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) => items.find((project) => project.id === id),
+  } as any) as { ok: boolean };
+
+  assert.equal(result.ok, true);
+  const committedPaths = execFileSync(
+    "git",
+    ["-C", repoPath, "show", "--pretty=format:", "--name-only", "HEAD"],
+    { encoding: "utf8" },
+  ).trim().split(/\r?\n/u).filter(Boolean);
+  const stagedPaths = execFileSync(
+    "git",
+    ["-C", repoPath, "diff", "--cached", "--name-only"],
+    { encoding: "utf8" },
+  ).trim().split(/\r?\n/u).filter(Boolean);
+
+  assert.deepEqual(committedPaths, ["selected.txt"]);
+  assert.deepEqual(stagedPaths, ["staged.txt"]);
+});
+
+test("config RPC git commit restores the original index when commit fails", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-commit-index-rollback-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  initRepo(repoPath);
+  writeFileSync(join(repoPath, "selected.txt"), "initial\n", "utf8");
+  writeFileSync(join(repoPath, "staged.txt"), "initial\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "selected.txt", "staged.txt"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "initial"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "staged.txt"), "staged change\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "staged.txt"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "selected.txt"), "selected change\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "config", "user.name", ""], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", ""], { stdio: "ignore" });
+  saveRepoProject(configPath, "p1", repoPath);
+
+  const result = await handleConfigRpcRequest("project/git/commit", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+    message: "test：提交应失败",
+    paths: ["selected.txt"],
+  }, repoContext(configPath)) as { ok: boolean };
+
+  const stagedPaths = execFileSync(
+    "git",
+    ["-C", repoPath, "diff", "--cached", "--name-only"],
+    { encoding: "utf8" },
+  ).trim().split(/\r?\n/u).filter(Boolean);
+  assert.equal(result.ok, false);
+  assert.deepEqual(stagedPaths, ["staged.txt"]);
+});
+
+test("config RPC git discard restores selected paths and preserves other changes", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-discard-selected-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "discard.txt"), "initial\n", "utf8");
+  writeFileSync(join(repoPath, "keep.txt"), "initial\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "discard.txt", "keep.txt"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "initial"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "discard.txt"), "staged\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "discard.txt"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "discard.txt"), "worktree\n", "utf8");
+  writeFileSync(join(repoPath, "keep.txt"), "keep change\n", "utf8");
+  writeFileSync(join(repoPath, "untracked.txt"), "remove me\n", "utf8");
+  saveRepoProject(configPath, "p1", repoPath);
+
+  const result = await handleConfigRpcRequest("project/git/discard", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+    paths: ["discard.txt", "untracked.txt"],
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, true);
+  assert.equal(readFileSync(join(repoPath, "discard.txt"), "utf8").replace(/\r\n/gu, "\n"), "initial\n");
+  assert.equal(existsSync(join(repoPath, "untracked.txt")), false);
+  assert.deepEqual(result.files.map((file: { path: string }) => file.path), ["keep.txt"]);
+});
+
+test("config RPC git discard rejects requests without selected paths", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-discard-all-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "tracked.txt"), "initial\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "tracked.txt"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "initial"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "tracked.txt"), "changed\n", "utf8");
+  writeFileSync(join(repoPath, "untracked.txt"), "remove me\n", "utf8");
+  mkdirSync(join(repoPath, ".worktrees"), { recursive: true });
+  writeFileSync(join(repoPath, ".worktrees", "keep.txt"), "keep me\n", "utf8");
+  writeFileSync(join(repoPath, ".git", "info", "exclude"), ".worktrees/\n", "utf8");
+  saveRepoProject(configPath, "p1", repoPath);
+
+  const result = await handleConfigRpcRequest("project/git/discard", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+    all: true,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /selected path/i);
+  assert.equal(readFileSync(join(repoPath, "tracked.txt"), "utf8").replace(/\r\n/gu, "\n"), "changed\n");
+  assert.equal(existsSync(join(repoPath, "untracked.txt")), true);
+  assert.equal(existsSync(join(repoPath, ".worktrees", "keep.txt")), true);
+});
+
+test("config RPC git discard rejects managed worktree paths", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-discard-worktree-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  const managedFile = join(repoPath, ".worktrees", "feature", "keep.txt");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "tracked.txt"), "initial\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "tracked.txt"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "initial"], { stdio: "ignore" });
+  mkdirSync(dirname(managedFile), { recursive: true });
+  writeFileSync(managedFile, "keep me\n", "utf8");
+  saveRepoProject(configPath, "p1", repoPath);
+
+  const result = await handleConfigRpcRequest("project/git/discard", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+    paths: [".worktrees/feature/keep.txt"],
+  }, repoContext(configPath)) as { ok: boolean; message: string };
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /worktree/i);
+  assert.equal(existsSync(managedFile), true);
 });
 
 test("config RPC git graph binds refs only to decorated commits", async () => {
@@ -285,6 +671,180 @@ test("config RPC git graph binds refs only to decorated commits", async () => {
   assert.equal(headCommit?.refs.some((ref) => ref.name === "main" && ref.isCurrent), true);
   assert.equal(headCommit?.refs.some((ref) => ref.name === "v1.0.0" && ref.kind === "tag"), true);
   assert.equal(olderCommit?.refs.some((ref) => ref.name === "HEAD"), false);
+});
+
+test("config RPC git graph skips the payload when knownSignature still matches", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-graph-signature-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(repoPath);
+  commitFile(repoPath, "README.md", "one\n", "first");
+  saveRepoProject(configPath, "p1", repoPath);
+  const cwd = repoPath.replace(/\\/g, "/");
+
+  const first = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(first.ok, true);
+  assert.equal(typeof first.signature, "string");
+  assert.equal(first.commits.length, 1);
+
+  const unchanged = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd,
+    knownSignature: first.signature,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(unchanged.ok, true);
+  assert.equal(unchanged.unchanged, true);
+  assert.equal(unchanged.commits.length, 0);
+  assert.equal(unchanged.signature, first.signature);
+
+  // 新建分支不移动 HEAD,但 refs 变化必须使签名失效(例如 Fetch 后远端 ref 前移)。
+  execFileSync("git", ["-C", repoPath, "branch", "feature"], { stdio: "ignore" });
+
+  const afterRefChange = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd,
+    knownSignature: first.signature,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(afterRefChange.ok, true);
+  assert.notEqual(afterRefChange.unchanged, true);
+  assert.equal(afterRefChange.commits.length, 1);
+  assert.notEqual(afterRefChange.signature, first.signature);
+});
+
+test("config RPC git graph limits the initial history payload to 60 commits", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-graph-full-history-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  for (let index = 1; index <= 61; index += 1) {
+    execFileSync(
+      "git",
+      ["-C", repoPath, "commit", "--allow-empty", "-m", `commit ${index}`],
+      { stdio: "ignore" },
+    );
+  }
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  const result = await handleConfigRpcRequest("project/git/graph", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+  }, {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) => items.find((project) => project.id === id),
+  } as any) as {
+    ok: boolean;
+    commits: Array<{ subject: string }>;
+  };
+
+  assert.equal(result.ok, true);
+  assert.equal(result.commits.length, 60);
+  assert.equal(result.commits.at(-1)?.subject, "commit 2");
+});
+
+test("config RPC returns file patches for a selected commit", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-commit-detail-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "README.md"), "one\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "README.md"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "first"], { stdio: "ignore" });
+
+  writeFileSync(join(repoPath, "README.md"), "one\ntwo\n", "utf8");
+  writeFileSync(join(repoPath, "new.txt"), "new\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "."], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "second"], { stdio: "ignore" });
+  const commitHash = execFileSync("git", ["-C", repoPath, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+
+  execFileSync("git", ["-C", repoPath, "checkout", "-b", "feature"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "feature.txt"), "feature\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "feature.txt"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "feature"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "checkout", "main"], { stdio: "ignore" });
+  writeFileSync(join(repoPath, "main.txt"), "main\n", "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "main.txt"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", "main"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "merge", "--no-ff", "feature", "-m", "merge feature"], {
+    stdio: "ignore",
+  });
+  const mergeHash = execFileSync("git", ["-C", repoPath, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+
+  saveProjectYaml(
+    {
+      id: "p1",
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+
+  const context = {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) => items.find((project) => project.id === id),
+  } as any;
+  const result = await handleConfigRpcRequest("project/git/commit_detail", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+    commitHash,
+  }, context) as {
+    ok: boolean;
+    commitHash: string;
+    files: Array<{ path: string; status: string; additions: number; deletions: number; patch?: string }>;
+  };
+
+  assert.equal(result.ok, true);
+  assert.equal(result.commitHash, commitHash);
+  const readme = result.files.find((file) => file.path === "README.md");
+  const added = result.files.find((file) => file.path === "new.txt");
+  assert.equal(readme?.status, "modified");
+  assert.equal(readme?.additions, 1);
+  assert.match(readme?.patch ?? "", /\+two/);
+  assert.equal(added?.status, "added");
+  assert.equal(added?.additions, 1);
+
+  const mergeResult = await handleConfigRpcRequest("project/git/commit_detail", {
+    projectId: "p1",
+    cwd: repoPath.replace(/\\/g, "/"),
+    commitHash: mergeHash,
+  }, context) as { ok: boolean; files: Array<{ path: string; status: string }> };
+  assert.equal(mergeResult.ok, true);
+  assert.equal(mergeResult.files.some((file) => file.path === "feature.txt"), true);
 });
 
 test("config RPC list worktrees discovers external git worktrees", async () => {
@@ -341,6 +901,40 @@ test("config RPC list worktrees discovers external git worktrees", async () => {
   assert.equal(result.worktrees.some((worktree) => worktree.path === discoveredPath), true);
   assert.equal(savedProject.worktrees?.some((worktree) => worktree.path === discoveredPath), true);
   assert.equal(cachedWorktrees.some((worktree) => worktree.path === discoveredPath), true);
+});
+
+test("config RPC create worktree preserves the linked worktree kind after reload", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-create-worktree-kind-"));
+  const repoPath = join(tempRoot, "repo");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(repoPath);
+  commitFile(repoPath, "README.md", "one\n", "init");
+  execFileSync("git", ["-C", repoPath, "branch", "feature"], { stdio: "ignore" });
+  saveRepoProject(configPath, "p1", repoPath);
+
+  const baseContext = repoContext(configPath);
+  const result = await handleConfigRpcRequest("project/git/create_worktree", {
+    projectId: "p1",
+    branchName: "feature",
+  }, {
+    ...baseContext,
+    setProjects: () => undefined,
+    setWorktrees: () => undefined,
+  }) as { ok: boolean; selectedCwd?: string };
+
+  assert.equal(result.ok, true);
+  const savedProject = readProjectYaml("p1", configPath);
+  const savedWorktree = savedProject.worktrees?.find(
+    (worktree) => worktree.path === result.selectedCwd,
+  );
+  assert.equal(savedWorktree?.branch, "feature");
+  assert.equal(savedWorktree?.kind, "git-worktree");
+  const mainStatus = execFileSync(
+    "git",
+    ["-C", repoPath, "status", "--porcelain=v1"],
+    { encoding: "utf8" },
+  );
+  assert.equal(mainStatus.trim(), "");
 });
 
 test("config RPC list projects discovers external git worktrees", async () => {
@@ -877,4 +1471,410 @@ test("config RPC schedules explicit daemon shutdown", async () => {
     message: "Helm shutdown requested.",
   });
   assert.deepEqual(shutdownReasons, ["rpc"]);
+});
+
+function initRepo(repoPath: string) {
+  execFileSync("git", ["init", "--initial-branch", "main", repoPath], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.email", "tiller@example.test"], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "config", "user.name", "Tiller Test"], { stdio: "ignore" });
+}
+
+function commitFile(repoPath: string, name: string, content: string, msg: string) {
+  writeFileSync(join(repoPath, name), content, "utf8");
+  execFileSync("git", ["-C", repoPath, "add", "--", name], { stdio: "ignore" });
+  execFileSync("git", ["-C", repoPath, "commit", "-m", msg], { stdio: "ignore" });
+}
+
+function saveRepoProject(configPath: string, projectId: string, repoPath: string) {
+  saveProjectYaml(
+    {
+      id: projectId,
+      name: "Project",
+      helmId: "local",
+      path: repoPath.replace(/\\/g, "/"),
+      worktrees: [
+        { name: "main", path: repoPath.replace(/\\/g, "/"), branch: "main", kind: "root" },
+      ],
+    },
+    configPath,
+  );
+}
+
+function repoContext(configPath: string) {
+  return {
+    configPath,
+    loadAvailableProjectsWithSemanticSummaries: async () => [readProjectYaml("p1", configPath)],
+    loadAvailableWorktrees: () => readProjectYaml("p1", configPath).worktrees ?? [],
+    resolveProjectById: (id: string, items: any[]) =>
+      items.find((project) => project.id === id),
+  } as any;
+}
+
+function setupRemoteClone(tempRoot: string) {
+  const barePath = join(tempRoot, "remote.git");
+  const clonePath = join(tempRoot, "clone");
+  execFileSync("git", ["init", "--bare", "--initial-branch", "main", barePath], { stdio: "ignore" });
+  initRepo(clonePath);
+  commitFile(clonePath, "README.md", "one\n", "init");
+  execFileSync("git", ["-C", clonePath, "remote", "add", "origin", barePath], { stdio: "ignore" });
+  execFileSync("git", ["-C", clonePath, "push", "-u", "origin", "main"], { stdio: "ignore" });
+  return { barePath, clonePath };
+}
+
+function makeSecondClone(tempRoot: string, barePath: string) {
+  const otherClone = join(tempRoot, "other");
+  execFileSync("git", ["clone", "--branch", "main", barePath, otherClone], { stdio: "ignore" });
+  return otherClone;
+}
+
+test("config RPC git status reports upstream tracking state", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-track-"));
+  const configPath = join(tempRoot, "config.json");
+  const { clonePath } = setupRemoteClone(tempRoot);
+  commitFile(clonePath, "README.md", "two\n", "second");
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const result = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+    refreshRemote: true,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, true);
+  assert.equal(result.detached, false);
+  assert.equal(result.upstreamBranch, "origin/main");
+  assert.equal(result.ahead, 1);
+  assert.equal(result.behind, 0);
+  assert.equal(result.trackingStale, false);
+  assert.equal(result.pushTarget, "origin/main");
+});
+
+test("config RPC git status zeroes tracking on detached HEAD", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-detached-"));
+  const clonePath = join(tempRoot, "clone");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(clonePath);
+  commitFile(clonePath, "README.md", "one\n", "init");
+  execFileSync("git", ["-C", clonePath, "checkout", "--detach", "HEAD"], { stdio: "ignore" });
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const result = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, true);
+  assert.equal(result.detached, true);
+  assert.equal(result.upstreamBranch, undefined);
+  assert.equal(result.ahead, 0);
+  assert.equal(result.behind, 0);
+  assert.equal(result.trackingStale, false);
+  assert.match(result.branch ?? "", /^[0-9a-f]{7,40}$/);
+});
+
+test("config RPC git status reports stale tracking on fetch failure", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-stale-"));
+  const clonePath = join(tempRoot, "clone");
+  const configPath = join(tempRoot, "config.json");
+  const barePath = join(tempRoot, "remote.git");
+  execFileSync("git", ["init", "--bare", barePath], { stdio: "ignore" });
+  initRepo(clonePath);
+  commitFile(clonePath, "README.md", "one\n", "init");
+  execFileSync("git", ["-C", clonePath, "remote", "add", "origin", barePath], { stdio: "ignore" });
+  execFileSync("git", ["-C", clonePath, "push", "-u", "origin", "main"], { stdio: "ignore" });
+  // Now replace remote with a missing path to cause fetch failure.
+  execFileSync("git", ["-C", clonePath, "remote", "set-url", "origin", join(tempRoot, "missing.git")], { stdio: "ignore" });
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const result = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+    refreshRemote: true,
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, true);
+  assert.equal(result.trackingStale, true);
+  assert.ok(result.remoteRefreshError);
+  assert.equal(result.branch, "main");
+});
+
+test("config RPC git commit failure returns the current tracking snapshot", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-commit-failure-"));
+  const configPath = join(tempRoot, "config.json");
+  const { clonePath } = setupRemoteClone(tempRoot);
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const result = await handleConfigRpcRequest("project/git/commit", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+    message: "missing file",
+    paths: ["missing.txt"],
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, false);
+  assert.equal(result.branch, "main");
+  assert.equal(result.detached, false);
+  assert.equal(result.upstreamBranch, "origin/main");
+  assert.equal(result.pushTarget, "origin/main");
+  assert.equal(result.ahead, 0);
+  assert.equal(result.behind, 0);
+  assert.equal(result.commitHash, undefined);
+});
+
+test("config RPC git push pushes when upstream exists", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-push-upstream-"));
+  const configPath = join(tempRoot, "config.json");
+  const { barePath, clonePath } = setupRemoteClone(tempRoot);
+  commitFile(clonePath, "README.md", "two\n", "second");
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const result = await handleConfigRpcRequest("project/git/push", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, true);
+  assert.equal(result.upstreamBranch, "origin/main");
+  assert.equal(result.pushTarget, "origin/main");
+
+  const remoteLog = execFileSync("git", ["-C", barePath, "log", "--format=%s", "main"], { encoding: "utf8" });
+  assert.match(remoteLog, /second/);
+});
+
+test("config RPC git push publishes to origin when no upstream", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-push-publish-"));
+  const configPath = join(tempRoot, "config.json");
+  const barePath = join(tempRoot, "remote.git");
+  const clonePath = join(tempRoot, "clone");
+  execFileSync("git", ["init", "--bare", barePath], { stdio: "ignore" });
+  initRepo(clonePath);
+  commitFile(clonePath, "README.md", "one\n", "init");
+  execFileSync("git", ["-C", clonePath, "remote", "add", "origin", barePath], { stdio: "ignore" });
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const statusBefore = await handleConfigRpcRequest("project/git/status", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+  assert.equal(statusBefore.pushTarget, "origin/main");
+
+  const result = await handleConfigRpcRequest("project/git/push", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, true);
+  assert.equal(result.upstreamBranch, "origin/main");
+  assert.equal(result.pushTarget, "origin/main");
+
+  const remoteLog = execFileSync("git", ["-C", barePath, "log", "--format=%s", "main"], { encoding: "utf8" });
+  assert.match(remoteLog, /init/);
+});
+
+test("config RPC git push rejects when multiple remotes and no origin", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-push-multi-"));
+  const configPath = join(tempRoot, "config.json");
+  const bareA = join(tempRoot, "a.git");
+  const bareB = join(tempRoot, "b.git");
+  const clonePath = join(tempRoot, "clone");
+  execFileSync("git", ["init", "--bare", bareA], { stdio: "ignore" });
+  execFileSync("git", ["init", "--bare", bareB], { stdio: "ignore" });
+  initRepo(clonePath);
+  commitFile(clonePath, "README.md", "one\n", "init");
+  execFileSync("git", ["-C", clonePath, "remote", "add", "alpha", bareA], { stdio: "ignore" });
+  execFileSync("git", ["-C", clonePath, "remote", "add", "beta", bareB], { stdio: "ignore" });
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const result = await handleConfigRpcRequest("project/git/push", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, false);
+  assert.match(result.message ?? "", /origin|remote/i);
+});
+
+test("config RPC git pull rejects dirty worktree", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-pull-dirty-"));
+  const configPath = join(tempRoot, "config.json");
+  const { barePath, clonePath } = setupRemoteClone(tempRoot);
+  const otherClone = makeSecondClone(tempRoot, barePath);
+  commitFile(otherClone, "README.md", "two\n", "second");
+  execFileSync("git", ["-C", otherClone, "push", "origin", "main"], { stdio: "ignore" });
+  writeFileSync(join(clonePath, "README.md"), "dirty\n", "utf8");
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const result = await handleConfigRpcRequest("project/git/pull", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, false);
+  assert.match(result.message ?? "", /dirty|clean/i);
+});
+
+test("config RPC git pull fast-forwards behind commits", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-pull-ff-"));
+  const configPath = join(tempRoot, "config.json");
+  const { barePath, clonePath } = setupRemoteClone(tempRoot);
+  const otherClone = makeSecondClone(tempRoot, barePath);
+  commitFile(otherClone, "README.md", "two\n", "second");
+  execFileSync("git", ["-C", otherClone, "push", "origin", "main"], { stdio: "ignore" });
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const result = await handleConfigRpcRequest("project/git/pull", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, true);
+  assert.equal(result.behind, 0);
+});
+
+test("config RPC git pull rejects when no upstream", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-pull-noupstream-"));
+  const clonePath = join(tempRoot, "clone");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(clonePath);
+  commitFile(clonePath, "README.md", "one\n", "init");
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const result = await handleConfigRpcRequest("project/git/pull", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+
+  assert.equal(result.ok, false);
+  assert.match(result.message ?? "", /upstream/i);
+});
+
+test("config RPC rejects push and pull on detached HEAD", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-detached-push-"));
+  const clonePath = join(tempRoot, "clone");
+  const configPath = join(tempRoot, "config.json");
+  initRepo(clonePath);
+  commitFile(clonePath, "README.md", "one\n", "init");
+  execFileSync("git", ["-C", clonePath, "checkout", "--detach", "HEAD"], { stdio: "ignore" });
+  saveRepoProject(configPath, "p1", clonePath);
+
+  const push = await handleConfigRpcRequest("project/git/push", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+  assert.equal(push.ok, false);
+
+  const pull = await handleConfigRpcRequest("project/git/pull", {
+    projectId: "p1",
+    cwd: clonePath.replace(/\\/g, "/"),
+  }, repoContext(configPath)) as any;
+  assert.equal(pull.ok, false);
+});
+
+test("config RPC git push and pull reject foreign cwd", async () => {
+  const projects = [
+    {
+      id: "p1",
+      name: "Project One",
+      helmId: "local",
+      path: "D:/repo-one",
+      worktrees: [{ name: "main", path: "D:/repo-one", branch: "main", kind: "root" }],
+    },
+    {
+      id: "p2",
+      name: "Project Two",
+      helmId: "local",
+      path: "D:/repo-two",
+      worktrees: [{ name: "main", path: "D:/repo-two", branch: "main", kind: "root" }],
+    },
+  ];
+  const ctx = {
+    loadAvailableProjectsWithSemanticSummaries: async () => projects,
+    loadAvailableWorktrees: () => projects.flatMap((project) => project.worktrees),
+    resolveProjectById: (id: string, items: typeof projects) =>
+      items.find((project) => project.id === id),
+  } as any;
+
+  const push = await handleConfigRpcRequest("project/git/push", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+  }, ctx) as { ok: boolean; message: string };
+  assert.equal(push.ok, false);
+  assert.equal(push.message, "Working directory is not part of this project");
+
+  const pull = await handleConfigRpcRequest("project/git/pull", {
+    projectId: "p1",
+    cwd: "D:/repo-two",
+  }, ctx) as { ok: boolean; message: string };
+  assert.equal(pull.ok, false);
+  assert.equal(pull.message, "Working directory is not part of this project");
+});
+
+test("config RPC git status dedupes identical refresh requests but not across refreshRemote", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-dedupe-"));
+  const configPath = join(tempRoot, "config.json");
+  const { clonePath } = setupRemoteClone(tempRoot);
+  saveRepoProject(configPath, "p1", clonePath);
+  const ctx = repoContext(configPath);
+  const cwd = clonePath.replace(/\\/g, "/");
+
+  const a = handleConfigRpcRequest("project/git/status", { projectId: "p1", cwd, refreshRemote: true }, ctx);
+  const b = handleConfigRpcRequest("project/git/status", { projectId: "p1", cwd, refreshRemote: true }, ctx);
+  assert.equal(await a, await b);
+
+  const c = await handleConfigRpcRequest("project/git/status", { projectId: "p1", cwd, refreshRemote: false }, ctx) as any;
+  assert.equal(c.ok, true);
+});
+
+test("config RPC does not dedupe commit requests with different messages or paths", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-commit-dedupe-"));
+  const configPath = join(tempRoot, "config.json");
+  const { clonePath } = setupRemoteClone(tempRoot);
+  writeFileSync(join(clonePath, "a.txt"), "a\n", "utf8");
+  writeFileSync(join(clonePath, "b.txt"), "b\n", "utf8");
+  saveRepoProject(configPath, "p1", clonePath);
+  const ctx = repoContext(configPath);
+  const cwd = clonePath.replace(/\\/g, "/");
+
+  const [first, second] = await Promise.all([
+    handleConfigRpcRequest("project/git/commit", {
+      projectId: "p1",
+      cwd,
+      message: "commit a",
+      paths: ["a.txt"],
+    }, ctx) as Promise<any>,
+    handleConfigRpcRequest("project/git/commit", {
+      projectId: "p1",
+      cwd,
+      message: "commit b",
+      paths: ["b.txt"],
+    }, ctx) as Promise<any>,
+  ]);
+
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.notEqual(first.commitHash, second.commitHash);
+
+  const log = execFileSync("git", ["-C", clonePath, "log", "-2", "--format=%s"], { encoding: "utf8" });
+  assert.match(log, /commit a/);
+  assert.match(log, /commit b/);
+});
+
+test("config RPC serializes push and status against the same git root", async () => {
+  const tempRoot = mkdtempSync(join(tmpdir(), "tiller-git-queue-"));
+  const configPath = join(tempRoot, "config.json");
+  const { clonePath } = setupRemoteClone(tempRoot);
+  saveRepoProject(configPath, "p1", clonePath);
+  const ctx = repoContext(configPath);
+  const cwd = clonePath.replace(/\\/g, "/");
+
+  // Fire push and status concurrently; both must resolve without error.
+  // The per-git-root queue serializes them, so no concurrent ref writes occur.
+  const [pushResult, statusResult] = await Promise.all([
+    handleConfigRpcRequest("project/git/push", { projectId: "p1", cwd }, ctx) as Promise<any>,
+    handleConfigRpcRequest("project/git/status", { projectId: "p1", cwd, refreshRemote: false }, ctx) as Promise<any>,
+  ]);
+
+  assert.equal(pushResult.ok, true);
+  assert.equal(statusResult.ok, true);
+  // Both operations completed against the same repo root without rejecting.
 });

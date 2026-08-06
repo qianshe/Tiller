@@ -18,6 +18,13 @@ export async function handleApprovalRpcRequest(
   switch (method) {
     case "approval/list_pending":
       return listPendingApprovals(context);
+    case "approval/list":
+      return listApprovalHistory(
+        params as { limit?: number; before?: string },
+        context,
+      );
+    case "approval/clear_history":
+      return clearApprovalHistory(context);
     case "approval/respond":
       return respondApproval(
         params as { approvalRequestId: string; decision: PermissionDecision },
@@ -43,7 +50,30 @@ export function listPendingApprovals(context: HelmHandlerContext) {
     approvals: listCanonicalPendingApprovals(context).map((approval) => ({
       sessionId: approval.sessionId,
       request: approval.request,
+      status: approval.status,
+      createdAt: approval.createdAt ?? approval.updatedAt,
     })),
+  };
+}
+
+export function listApprovalHistory(
+  params: { limit?: number; before?: string },
+  context: HelmHandlerContext,
+) {
+  return context.sessionApprovalStateStore?.listHistory({
+    limit: params.limit,
+    before: params.before,
+  }) ?? { approvals: [], hasMore: false };
+}
+
+export function clearApprovalHistory(context: HelmHandlerContext) {
+  const removed = context.sessionApprovalStateStore?.clearProcessedHistory() ?? 0;
+  const history = context.sessionApprovalStateStore?.listHistory({ limit: 100 })
+    ?? { approvals: [], hasMore: false };
+  return {
+    ok: true,
+    removed,
+    ...history,
   };
 }
 
@@ -173,13 +203,21 @@ export async function respondApproval(
     { type: "pending-approval-count", count: remainingApprovalCount },
     prepared.resolvedSequence,
   );
+  const resolvedAt = new Date().toISOString();
+  const resolvedApproval: CanonicalApproval = {
+    ...approval,
+    status: "resolved",
+    decision: params.decision,
+    createdAt: approval.createdAt ?? approval.updatedAt,
+    updatedAt: resolvedAt,
+  };
   sessionApprovalStateStore.commit(
     approval.sessionId,
     {
       type: "resolved",
       approvalId: params.approvalRequestId,
       decision: params.decision,
-      updatedAt: new Date().toISOString(),
+      updatedAt: resolvedAt,
     },
     prepared.resolvedSequence,
     prepared.update,
@@ -216,6 +254,7 @@ export async function respondApproval(
     sessionId: approval.sessionId,
     approvalRequestId: params.approvalRequestId,
     decision: params.decision,
+    approval: resolvedApproval,
   });
   broadcastSessionUpdate(context, approval.sessionId, {
     kind: "live_state",

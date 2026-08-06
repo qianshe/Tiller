@@ -6,6 +6,9 @@ test("buildMissionPanelContext maps the new display tab state fields", () => {
   const panelPages = {
     selectedDisplayTabId: "graph",
     setSelectedDisplayTabId: () => undefined,
+    gitErrorTabOpen: true,
+    openGitErrorTab: () => undefined,
+    closeGitErrorTab: () => undefined,
     openedDiffFilePaths: ["apps/deck/src/app.tsx"],
     selectedDiffFilePath: "apps/deck/src/app.tsx",
     setSelectedDiffFilePath: () => undefined,
@@ -19,6 +22,9 @@ test("buildMissionPanelContext maps the new display tab state fields", () => {
 
   assert.equal(context.selectedMissionDisplayTabId, "graph");
   assert.equal(context.setSelectedMissionDisplayTabId, panelPages.setSelectedDisplayTabId);
+  assert.equal(context.missionGitErrorTabOpen, true);
+  assert.equal(context.openMissionGitErrorTab, panelPages.openGitErrorTab);
+  assert.equal(context.closeMissionGitErrorTab, panelPages.closeGitErrorTab);
   assert.equal("selectedMissionPanelPageId" in context, false);
   assert.equal("setSelectedMissionPanelPageId" in context, false);
 });

@@ -148,6 +148,8 @@ function createSessionApprovalStore(): SessionServicesOptions["sessionApprovalSt
     get: () => undefined,
     replace: (_sessionId, state) => state,
     commitUpdate: (_update, state) => state,
+    listHistory: () => ({ approvals: [], hasMore: false }),
+    clearProcessedHistory: () => 0,
     remove: () => undefined,
     close: () => undefined,
   };

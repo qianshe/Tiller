@@ -4,14 +4,14 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ActivityLogPanel } from "./activity-log-panel.js";
 
-test("activity log panel excludes thinking tool calls from tool activity", () => {
+test("activity log panel renders tools titled Thinking as tool activity", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogPanel, {
       sessionId: "session-1",
       sessionToolCalls: [
         {
           id: "think-1",
-          kind: "think",
+          kind: "tool",
           title: "Tab 替换边界探索",
           status: "completed",
           output: "内部探索内容",
@@ -38,9 +38,9 @@ test("activity log panel excludes thinking tool calls from tool activity", () =>
     }),
   );
 
-  assert.doesNotMatch(html, /Think/);
-  assert.doesNotMatch(html, /Tab 替换边界探索/);
-  assert.doesNotMatch(html, /内部探索内容/);
+  assert.match(html, /Tool/);
+  assert.match(html, /Tab 替换边界探索/);
+  assert.match(html, /内部探索内容/);
   assert.match(html, /Shell/);
   assert.match(html, /pnpm test/);
 });
@@ -80,14 +80,14 @@ test("activity log panel uses compact activity rows", () => {
   assert.doesNotMatch(html, /gap-3 p-3/);
 });
 
-test("activity log panel falls back to command chunks when tool calls only contain thinking", () => {
+test("activity log panel does not replace generic tools with command chunks", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogPanel, {
       sessionId: "session-1",
       sessionToolCalls: [
         {
           id: "think-1",
-          kind: "think",
+          kind: "tool",
           title: "分析执行边界",
           status: "completed",
           output: "内部 Thinking",
@@ -122,11 +122,11 @@ test("activity log panel falls back to command chunks when tool calls only conta
 
   assert.match(html, /Prompt/);
   assert.match(html, /执行测试/);
-  assert.match(html, /Shell/);
-  assert.match(html, /cmd-1/);
-  assert.match(html, /tool output/);
-  assert.doesNotMatch(html, /分析执行边界/);
-  assert.doesNotMatch(html, /内部 Thinking/);
+  assert.doesNotMatch(html, /Shell/);
+  assert.doesNotMatch(html, /cmd-1/);
+  assert.doesNotMatch(html, /tool output/);
+  assert.match(html, /分析执行边界/);
+  assert.match(html, /内部 Thinking/);
 });
 
 test("activity log panel shows real user prompts and tool activity but hides assistant messages", () => {

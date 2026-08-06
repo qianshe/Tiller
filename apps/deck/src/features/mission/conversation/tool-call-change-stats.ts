@@ -27,14 +27,19 @@ export function resolveToolCallChangeStats(
     return creationStats;
   }
 
+  const acpDiffStats = readAcpDiffContentStats(input, output);
+  if (acpDiffStats) {
+    return acpDiffStats;
+  }
+
   const codexApplyPatchStats = readCodexApplyPatchStats(input, output);
   if (codexApplyPatchStats) {
     return codexApplyPatchStats;
   }
 
   for (const source of [input, output]) {
-    const root = parseRecord(source);
-    if (!root) {
+    const root = parseJsonValue(source);
+    if (root === undefined) {
       continue;
     }
     for (const record of collectNestedRecords(root)) {
@@ -69,11 +74,12 @@ export function resolveToolCallDiff(
   }
 
   for (const source of [input, output]) {
-    const root = parseRecord(source);
-    if (!root) {
+    const root = parseJsonValue(source);
+    if (root === undefined) {
       continue;
     }
-    const rootPath = readFilePath(root);
+    const rootRecord = asRecord(root);
+    const rootPath = rootRecord ? readFilePath(rootRecord) : undefined;
     for (const record of collectNestedRecords(root)) {
       const patch = readPatch(record);
       if (patch) {
@@ -93,6 +99,36 @@ export function resolveToolCallDiff(
   }
 
   return readCreationDiff(input, output);
+}
+
+function readAcpDiffContentStats(
+  input: string,
+  output: string,
+): ToolCallChangeStats | undefined {
+  let additions = 0;
+  let deletions = 0;
+  let found = false;
+
+  for (const source of [input, output]) {
+    const root = parseJsonValue(source);
+    if (root === undefined) {
+      continue;
+    }
+    for (const record of collectNestedRecords(root)) {
+      if (record.type !== "diff") {
+        continue;
+      }
+      const stats = readReplacementStats(record);
+      if (!stats) {
+        continue;
+      }
+      additions += stats.additions;
+      deletions += stats.deletions;
+      found = true;
+    }
+  }
+
+  return found ? { additions, deletions } : undefined;
 }
 
 function readCodexApplyPatchStats(
@@ -228,24 +264,36 @@ function hasFileCreationEvidence(output: string) {
 }
 
 function parseRecord(value: string): Record<string, unknown> | undefined {
+  return asRecord(parseJsonValue(value));
+}
+
+function parseJsonValue(value: string): unknown | undefined {
   const trimmed = value.trim();
-  if (!trimmed.startsWith("{") || trimmed.length > MAX_STATS_SOURCE_CHARS) {
+  if (
+    (!trimmed.startsWith("{") && !trimmed.startsWith("[")) ||
+    trimmed.length > MAX_STATS_SOURCE_CHARS
+  ) {
     return undefined;
   }
   try {
-    return asRecord(JSON.parse(trimmed) as unknown);
+    return JSON.parse(trimmed) as unknown;
   } catch {
     return undefined;
   }
 }
 
-function collectNestedRecords(root: Record<string, unknown>) {
+function collectNestedRecords(root: unknown) {
   const records: Record<string, unknown>[] = [];
-  const queue: Record<string, unknown>[] = [root];
+  const queue: unknown[] = [root];
   while (queue.length > 0 && records.length < MAX_NESTED_RECORDS) {
-    const record = queue.shift();
+    const value = queue.shift();
+    if (Array.isArray(value)) {
+      queue.push(...value.slice(0, MAX_NESTED_RECORDS - records.length));
+      continue;
+    }
+    const record = asRecord(value);
     if (!record) {
-      break;
+      continue;
     }
     records.push(record);
     for (const value of Object.values(record)) {
@@ -276,7 +324,7 @@ function readPatchStats(
 }
 
 function readPatch(record: Record<string, unknown>) {
-  for (const key of ["patch", "diff", "hunk", "code_edit"]) {
+  for (const key of ["patch", "diff", "hunk", "code_edit", "unified_diff", "unifiedDiff"]) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) {
       return value;
@@ -332,9 +380,9 @@ function buildReplacementPatch(record: Record<string, unknown>) {
 }
 
 function readReplacementChange(record: Record<string, unknown>) {
-  const oldText = record.old_string ?? record.oldString;
-  const newText = record.new_string ?? record.newString;
-  if (typeof oldText !== "string" || typeof newText !== "string") {
+  const oldText = readTextSnapshot(record, ["old_string", "oldString", "old_text", "oldText"]);
+  const newText = readTextSnapshot(record, ["new_string", "newString", "new_text", "newText"]);
+  if (oldText === undefined || newText === undefined) {
     return undefined;
   }
 
@@ -359,6 +407,23 @@ function readReplacementChange(record: Record<string, unknown>) {
   }
 
   return { oldLines, newLines, prefix, suffix };
+}
+
+function readTextSnapshot(
+  record: Record<string, unknown>,
+  keys: string[],
+) {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) {
+      continue;
+    }
+    const value = record[key];
+    if (value === null) {
+      return "";
+    }
+    return typeof value === "string" ? value : undefined;
+  }
+  return undefined;
 }
 
 function readFilePath(record: Record<string, unknown>) {

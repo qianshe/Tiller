@@ -11,9 +11,11 @@ import {
   daemonProfileKey,
   dispatchWithTrace,
   resolveDefaultHelmEndpoint,
+  createHelmUpdateActions,
   type DeckRpcClient,
   useAppControllers,
   useHelmConnection,
+  useHelmUpdateLifecycle,
 } from "../../features/helm-connection";
 import {
   DEFAULT_ACTIVITY_PAGE_LIMIT,
@@ -35,7 +37,6 @@ import {
   useSessionTitles,
   useSlashCommands,
 } from "../../features/mission";
-import { ApprovalToastStackContainer } from "../../features/approvals";
 import { useCodeActions } from "../../features/pairing";
 import {
   useDeckPreferenceActions,
@@ -53,6 +54,7 @@ import {
   IS_EMBEDDED_HELM_DECK,
 } from "../../shared/config/deck-runtime";
 import { RadialMenu, type RadialMenuItem } from "../../shared/ui";
+import { RouteErrorBoundary, formatRouteCrashNotification } from "./route-error-boundary";
 import { UI_COPY, type Locale } from "../../shared/utils/copy";
 import { formatRelativeTime } from "../../shared/utils/format-time";
 import {
@@ -346,6 +348,24 @@ export function App() {
     return resolveLoggingTarget()?.client ?? null;
   }
 
+  const helmUpdateActions = createHelmUpdateActions({
+    runtime: {
+      primaryHelmKeyRef: runtimeState.primaryHelmKeyRef,
+      rpcClientRef: runtimeState.rpcClientRef,
+      helmRpcClientRefs: runtimeState.helmRpcClientRefs,
+    },
+    inventory: {
+      helmInventories: deckData.helmInventories,
+      applyHelmInventory: deckData.applyHelmInventory,
+    },
+    resolveCurrentHelmKey,
+    dispatch,
+    formatError: formatRpcError,
+  });
+  const helmUpdateKey = helmUpdateActions.resolveHelmKey();
+  const helmUpdateTarget = helmUpdateActions.resolveTarget();
+  const helmUpdateState = helmUpdateActions.getState();
+
   function resolveSyncedLoggingSettings() {
     for (const helmId of resolveCandidateHelmIds()) {
       const logging = deckData.helmInventories[helmId]?.logging;
@@ -565,6 +585,12 @@ export function App() {
     deckData.helmConnectionStates,
   ]);
 
+  useHelmUpdateLifecycle({
+    connection: helmConnection.connection,
+    helmKey: helmUpdateKey,
+    update: helmUpdateState,
+  });
+
   // 离开设置页面时清空 promptEnhancer 状态消息
   useEffect(() => {
     if (route.activeView === "settings") {
@@ -576,6 +602,21 @@ export function App() {
 
   const appShell = (
     <main className={shellClassName}>
+      <RouteErrorBoundary
+        onError={(error, componentStack) => {
+          deckData.addNotification({
+            kind: "error",
+            source: "deck-ui",
+            message: formatRouteCrashNotification(error.message, componentStack),
+            details: {
+              phase: "render",
+              errorName: error.name,
+              errorStack: error.stack,
+              componentStack,
+            },
+          });
+        }}
+      >
       <AppRoutes
         ctx={buildAppRouteContext({
           runtimeState,
@@ -613,8 +654,13 @@ export function App() {
           loggingConnectionKnownConnected,
           refreshLoggingSettings,
           saveLoggingLevel,
+          helmUpdateState,
+          helmUpdateClient: helmUpdateTarget?.client ?? null,
+          refreshHelmUpdate: helmUpdateActions.refresh,
+          startHelmUpdate: helmUpdateActions.start,
         })}
       />
+      </RouteErrorBoundary>
       <SessionCleanupConfirmDialog
         session={runtimeState.pendingSessionCleanup}
         resolveSessionTitle={titleActions.resolveDisplaySessionTitle}
@@ -623,11 +669,6 @@ export function App() {
           controllers.cleanupSession(sessionId);
           runtimeState.setPendingSessionCleanup(null);
         }}
-      />
-      <ApprovalToastStackContainer
-        onRespond={(approvalRequestId, decision) =>
-          controllers.respondToPermission(approvalRequestId, decision)
-        }
       />
       <RadialMenu
         activeView={route.activeView}

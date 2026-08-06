@@ -98,9 +98,9 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     timestamp,
     sequence: 3,
   } as AgentMessage;
-  const thinking = {
+  const earlyTool = {
     id: "think-seq-1",
-    kind: "think" as const,
+    kind: "tool" as const,
     title: "Thinking",
     status: "completed" as const,
     output: "先思考",
@@ -119,11 +119,11 @@ test("buildConversationTimeline preserves runtime event order when timestamps co
     sequence: 2,
   } as AgentToolCall;
 
-  const timeline = buildConversationTimeline([message], [], [toolCall, thinking]);
+  const timeline = buildConversationTimeline([message], [], [toolCall, earlyTool]);
 
   assert.deepEqual(
     timeline.map((item) => item.kind === "message" ? item.message.text : item.toolKind),
-    ["think", "shell", "具体回复"],
+    ["tool", "shell", "具体回复"],
   );
 });
 
@@ -216,6 +216,144 @@ test("groupToolCalls keeps the first arrival metadata for timeline placement", (
   assert.equal(grouped[0]?.status, "completed");
 });
 
+test("groupToolCalls keeps an identified subagent title over a stale task snapshot", () => {
+  const calls: AgentToolCall[] = [
+    {
+      id: "subagent-call",
+      commandId: "subagent:reused-task",
+      kind: "subagent",
+      title: "Sisyphus-Junior",
+      status: "running",
+      timestamp: "2026-04-28T10:00:01.000Z",
+      updatedAt: "2026-04-28T10:00:01.000Z",
+    },
+    {
+      id: "subagent-call",
+      commandId: "subagent:reused-task",
+      kind: "subagent",
+      title: "task",
+      status: "running",
+      timestamp: "2026-04-28T10:00:02.000Z",
+      updatedAt: "2026-04-28T10:00:02.000Z",
+    },
+  ];
+
+  assert.equal(groupToolCalls(calls)[0]?.title, "Sisyphus-Junior");
+});
+
+test("groupToolCalls keeps category over a completion agent snapshot", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "subagent-call",
+      commandId: "subagent:reused-task",
+      kind: "subagent",
+      title: "quick",
+      input: JSON.stringify({ category: "quick", prompt: "Run the check" }),
+      status: "running",
+      timestamp: "2026-04-28T10:00:01.000Z",
+      updatedAt: "2026-04-28T10:00:01.000Z",
+    },
+    {
+      id: "subagent-call",
+      commandId: "subagent:reused-task",
+      kind: "subagent",
+      title: "Sisyphus-Junior",
+      status: "completed",
+      output: "done",
+      timestamp: "2026-04-28T10:00:02.000Z",
+      updatedAt: "2026-04-28T10:00:02.000Z",
+    },
+  ]);
+
+  assert.equal(grouped[0]?.title, "quick");
+});
+
+test("groupToolCalls keeps reused subagent command ids in one card", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "subagent-call-1",
+      kind: "subagent",
+      title: "Agent One",
+      status: "completed",
+      commandId: "subagent:reused-task",
+      output: "first",
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.627Z",
+    },
+    {
+      id: "subagent-call-2",
+      kind: "subagent",
+      title: "Agent Two",
+      status: "running",
+      commandId: "subagent:reused-task",
+      output: "second",
+      timestamp: "2026-04-30T13:22:46.630Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+    {
+      id: "shell-call-1",
+      kind: "shell",
+      title: "Shell",
+      status: "running",
+      commandId: "same-command",
+      output: "A",
+      timestamp: "2026-04-30T13:22:46.633Z",
+      updatedAt: "2026-04-30T13:22:46.633Z",
+    },
+    {
+      id: "shell-call-2",
+      kind: "shell",
+      title: "Shell",
+      status: "completed",
+      commandId: "same-command",
+      output: "B",
+      timestamp: "2026-04-30T13:22:46.636Z",
+      updatedAt: "2026-04-30T13:22:46.636Z",
+    },
+  ]);
+
+  assert.equal(grouped.length, 2);
+  assert.deepEqual(grouped[0] && [grouped[0].id, grouped[0].text], [
+    "subagent-call-1",
+    "firstsecond",
+  ]);
+  assert.equal(grouped[1]?.id, "shell-call-1");
+  assert.equal(grouped[1]?.text, "AB");
+});
+
+test("groupToolCalls retains later subagent model metadata", () => {
+  const grouped = groupToolCalls([
+    {
+      id: "subagent-call",
+      kind: "subagent",
+      title: "task",
+      status: "running",
+      commandId: "subagent:task-42",
+      input: JSON.stringify({ prompt: "Inspect the repository" }),
+      timestamp: "2026-04-30T13:22:46.627Z",
+      updatedAt: "2026-04-30T13:22:46.627Z",
+    },
+    {
+      id: "subagent-call",
+      kind: "subagent",
+      title: "Sisyphus-Junior",
+      status: "completed",
+      commandId: "subagent:task-42",
+      input: JSON.stringify({
+        model: { modelID: "deepseek-v4-flash", variant: "low" },
+      }),
+      timestamp: "2026-04-30T13:22:46.630Z",
+      updatedAt: "2026-04-30T13:22:46.630Z",
+    },
+  ]);
+
+  assert.equal(grouped.length, 1);
+  assert.deepEqual(JSON.parse(grouped[0]?.input ?? "{}"), {
+    prompt: "Inspect the repository",
+    model: { modelID: "deepseek-v4-flash", variant: "low" },
+  });
+});
+
 test("commandChunkToToolCall provides a terminal fallback for legacy command output", () => {
   const chunk: CommandChunk = {
     id: "chunk-1",
@@ -294,20 +432,16 @@ test("mergeToolCallHistory appends output for existing tool calls", () => {
   assert.equal(merged[0]?.status, "completed");
 });
 
-test("mergeToolCallHistory deduplicates overlapping thinking snapshots for the same tool call", () => {
+test("mergeToolCallHistory treats tools titled Thinking like ordinary tools", () => {
   const merged = mergeToolCallHistory(
     [
       {
         id: "think-1",
-        kind: "think",
+        kind: "tool",
         title: "Thinking",
         status: "running",
         commandId: "think-1",
-        output: [
-          "Line 1",
-          "Line 2",
-          "Line 3",
-        ].join("\n"),
+        output: "A",
         timestamp: "2026-04-28T10:00:01.000Z",
         updatedAt: "2026-04-28T10:00:01.000Z",
       },
@@ -315,30 +449,18 @@ test("mergeToolCallHistory deduplicates overlapping thinking snapshots for the s
     [
       {
         id: "think-1",
-        kind: "think",
+        kind: "tool",
         title: "Thinking",
         status: "running",
         commandId: "think-1",
-        output: [
-          "Line 2",
-          "Line 3",
-          "Line 4",
-        ].join("\n"),
+        output: "B",
         timestamp: "2026-04-28T10:00:02.000Z",
         updatedAt: "2026-04-28T10:00:02.000Z",
       },
     ],
   );
 
-  assert.equal(
-    merged[0]?.output,
-    [
-      "Line 1",
-      "Line 2",
-      "Line 3",
-      "Line 4",
-    ].join("\n"),
-  );
+  assert.equal(merged[0]?.output, "AB");
 });
 
 test("mergeToolCallHistory replaces duplicate completed tool snapshots", () => {

@@ -129,15 +129,14 @@ test("runtime timeline events carry arrival order when timestamps collide", () =
   handleRuntimeEvent(
     "session-timeline-order",
     {
-      type: "tool-call",
-      toolCall: {
-        id: "session-timeline-order-msg-a:thinking",
-        kind: "think",
-        title: "Thinking",
-        status: "running",
-        output: "先思考",
+      type: "message",
+      message: {
+        id: "session-timeline-order-msg-a",
+        role: "assistant",
+        contentKind: "thought",
+        text: "先思考",
         timestamp,
-        updatedAt: timestamp,
+        streaming: false,
       },
     } satisfies SessionRuntimeEvent,
     context,
@@ -174,7 +173,7 @@ test("runtime timeline events carry arrival order when timestamps collide", () =
 
   assert.deepEqual(
     capture.sessionUpdates?.map((update) => update.sequence),
-    [1, 2, 3, 4],
+    [1, 2, 3],
   );
 });
 

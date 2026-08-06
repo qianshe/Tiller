@@ -61,7 +61,7 @@ export function resolveMissionActivityLoading({
 }) {
   if (!isSessionExecutionPending(status)) return null;
   const pendingToolActivity = resolvePendingToolActivity(
-    toolCalls.filter((toolCall) => toolCall.kind !== "think"),
+    toolCalls,
   );
   if (pendingToolActivity) return pendingToolActivity;
   if (pendingPermission) return null;

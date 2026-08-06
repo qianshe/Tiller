@@ -4,6 +4,7 @@ import type {
   SessionTimelineEntry,
   SessionUpdateRecord,
 } from "@tiller/shared";
+import { resolveSessionTimelineToolCallEntryId } from "@tiller/shared";
 import {
   applySessionRuntimeEventInPlace,
   buildSessionTimelineBatch,
@@ -55,7 +56,11 @@ export function createSessionTimelineWorker(
       if (changed) {
         pendingEntries.set(changed.id, changed);
       }
-      if (event.type === "tool-call" && event.toolCall.commandId) {
+      if (
+        event.type === "tool-call" &&
+        event.toolCall.kind !== "subagent" &&
+        event.toolCall.commandId
+      ) {
         prunePendingEntries(pendingEntries, mutationIndex.entryById);
       }
       if (update) {
@@ -86,7 +91,6 @@ export function createSessionTimelineWorker(
     },
   };
 }
-
 function resolveChangedTimelineEntry(
   index: ReturnType<typeof createSessionTimelineMutationIndex>,
   entries: SessionTimelineAggregate["entries"],
@@ -97,14 +101,14 @@ function resolveChangedTimelineEntry(
       return index.entryById.get(event.message.id) ??
         entries.find((entry) => entry.id === event.message.id);
     case "tool-call": {
-      const id = event.toolCall.kind === "think"
-        ? stripThinkingSuffix(event.toolCall.commandId ?? event.toolCall.id)
-        : `tool:${event.toolCall.id}`;
+      const id = resolveSessionTimelineToolCallEntryId(event.toolCall);
       const exact = index.entryById.get(id);
-      if (exact || !event.toolCall.commandId) {
+      if (exact) {
         return exact;
       }
-      return index.toolEntryByCommandId.get(event.toolCall.commandId);
+      return event.toolCall.commandId
+        ? index.toolEntryByCommandId.get(event.toolCall.commandId)
+        : undefined;
     }
     case "command-output":
       return entries[entries.length - 1];
@@ -127,8 +131,4 @@ function prunePendingEntries(
   for (const id of pendingEntries.keys()) {
     if (!retainedEntries.has(id)) pendingEntries.delete(id);
   }
-}
-
-function stripThinkingSuffix(value: string) {
-  return value.endsWith(":thinking") ? value.slice(0, -":thinking".length) : value;
 }

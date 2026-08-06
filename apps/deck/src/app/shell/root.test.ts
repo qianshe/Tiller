@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const rootSource = readFileSync(join(currentDir, "root.tsx"), "utf8");
 
-test("app shell keeps approval toast overlay but does not mount global approval panel", () => {
-  assert.match(rootSource, /ApprovalToastStackContainer/);
+test("app shell keeps global approval overlays unmounted", () => {
+  assert.doesNotMatch(rootSource, /ApprovalToastStackContainer/);
   assert.doesNotMatch(rootSource, /GlobalApprovalPanelContainer/);
 });
 

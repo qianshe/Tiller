@@ -5,6 +5,7 @@ import {
 } from "../../../shared/ui";
 import {
   type FormEvent as ReactFormEvent,
+  type ChangeEvent as ReactChangeEvent,
   type ClipboardEvent as ReactClipboardEvent,
   type Dispatch,
   type FormEvent,
@@ -18,6 +19,7 @@ import type {
   AcpAgentProvider,
   AgentPromptImageContent,
   AvailableCommand,
+  MissionPromptContextItem,
   ProjectSummary,
   SessionConfigOption,
   SessionReasoningEffort,
@@ -36,6 +38,10 @@ import { ComposerAttachments } from "./attachments";
 import { MissionStatusBar } from "./mission-status-bar";
 import { SlashCommandPopup } from "./slash-command-popup";
 import { ContextUsageIndicator } from "./context-usage-indicator";
+import {
+  indentTypedMarkdownListMarker,
+  insertMarkdownLineBreak,
+} from "./list-continuation";
 type MissionComposerProps = {
   activeSession: SessionSummary | null;
   contextSession?: SessionSummary | null;
@@ -126,6 +132,11 @@ type MissionComposerProps = {
   cancelSession: (sessionId: string) => void;
   onOpenModelPicker?: () => void;
   canSend: boolean;
+  reviewContext?: {
+    draftContexts: MissionPromptContextItem[];
+    commandRetentionNotice: string | null;
+    removeDraftContext: (id: string) => void;
+  };
 };
 
 export function insertTextAtSelection(
@@ -217,6 +228,7 @@ export function MissionComposer({
   cancelSession,
   onOpenModelPicker,
   canSend,
+  reviewContext,
 }: MissionComposerProps) {
   const [toolsOpen, setToolsOpen] = useState(false);
   const [contextPicker, setContextPicker] = useState<"project" | "worktree" | null>("worktree");
@@ -277,11 +289,10 @@ export function MissionComposer({
     ? "mission-send-prompt-button h-[var(--control-h-sm)] px-2.5 text-action font-medium"
     : "mission-send-prompt-button h-ctl-md px-3 text-action font-medium";
   const syncPromptLineBreak = (target: HTMLTextAreaElement) => {
-    const { nextValue, nextCaret } = insertTextAtSelection(
+    const { nextValue, nextCaret } = insertMarkdownLineBreak(
       target.value,
       target.selectionStart,
       target.selectionEnd,
-      "\n",
     );
     setPrompt(nextValue);
     if (typeof window !== "undefined") {
@@ -292,16 +303,17 @@ export function MissionComposer({
   };
   const handleComposerPromptKeyDown = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (
-      isMobile &&
       !slashPopupOpen &&
       event.key === "Enter" &&
-      !event.shiftKey &&
       !event.altKey &&
       !event.ctrlKey &&
       !event.metaKey &&
-      !event.nativeEvent.isComposing
+      !event.nativeEvent.isComposing &&
+      (isMobile || event.shiftKey)
     ) {
-      skipNextMobileLineBreakInputRef.current = true;
+      if (isMobile) {
+        skipNextMobileLineBreakInputRef.current = true;
+      }
       event.preventDefault();
       syncPromptLineBreak(event.currentTarget);
       return;
@@ -323,6 +335,24 @@ export function MissionComposer({
         }
         syncPromptLineBreak(event.currentTarget);
       }
+    }
+  };
+  const handleComposerPromptChange = (event: ReactChangeEvent<HTMLTextAreaElement>) => {
+    const target = event.currentTarget;
+    const isComposing = (event.nativeEvent as InputEvent).isComposing;
+    const indentation = isComposing
+      ? null
+      : indentTypedMarkdownListMarker(target.value, target.selectionStart, target.selectionEnd);
+    if (!indentation) {
+      setPrompt(target.value);
+      return;
+    }
+
+    setPrompt(indentation.nextValue);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        missionPromptRef.current?.setSelectionRange(indentation.nextCaret, indentation.nextCaret);
+      });
     }
   };
   const toggleContextPicker = (picker: "project" | "worktree") => {
@@ -463,13 +493,19 @@ export function MissionComposer({
           <ComposerAttachments
             promptImages={promptImages}
             removePromptImage={removePromptImage}
+            reviewContext={reviewContext}
           />
+          {reviewContext?.commandRetentionNotice ? (
+            <p className="mission-composer-notice px-1 text-2xs text-muted-foreground">
+              {reviewContext.commandRetentionNotice}
+            </p>
+          ) : null}
           <Textarea
             id="mission-prompt-input"
             name="missionPrompt"
             ref={missionPromptRef}
             value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
+            onChange={handleComposerPromptChange}
             onKeyDown={handleComposerPromptKeyDown}
             onBeforeInput={handleComposerPromptBeforeInput}
             onPaste={handleMissionPromptPaste}

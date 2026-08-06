@@ -49,7 +49,7 @@ test("Codex prompt observer keeps spawn and wait as independent operations", () 
     toolCall: {
       id: "call-spawn",
       kind: "subagent",
-      title: "Subagent",
+      title: "Inspect the adapter and return CHILD_OK",
       status: "running",
       commandId: "call-spawn",
       input: JSON.stringify({
@@ -58,7 +58,7 @@ test("Codex prompt observer keeps spawn and wait as independent operations", () 
       }),
       subagentOperation: {
         action: "spawn",
-        targets: [{ id: "call-spawn", label: "Subagent" }],
+      targets: [{ id: "call-spawn", label: "Inspect the adapter and return CHILD_OK" }],
       },
       timestamp: "2026-07-14T11:17:27.959Z",
       updatedAt: "2026-07-14T11:17:27.959Z",
@@ -90,7 +90,7 @@ test("Codex prompt observer keeps spawn and wait as independent operations", () 
       id: "call-spawn",
       commandId: "call-spawn",
       kind: "subagent",
-      title: "Sagan",
+      title: "Inspect the adapter and return CHILD_OK",
       status: "completed",
       input: JSON.stringify({
         message: "Inspect the adapter and return CHILD_OK",
@@ -99,7 +99,7 @@ test("Codex prompt observer keeps spawn and wait as independent operations", () 
       output: JSON.stringify({ agent_id: "agent-1", nickname: "Sagan" }),
       subagentOperation: {
         action: "spawn",
-        targets: [{ id: "agent-1", label: "Sagan" }],
+      targets: [{ id: "agent-1", label: "Inspect the adapter and return CHILD_OK" }],
       },
       timestamp: "2026-07-14T11:17:27.959Z",
       updatedAt: "2026-07-14T11:17:53.962Z",
@@ -111,7 +111,7 @@ test("Codex prompt observer keeps spawn and wait as independent operations", () 
       id: "call-wait",
       commandId: "call-wait",
       kind: "subagent",
-      title: "Sagan",
+      title: "Inspect the adapter and return CHILD_OK",
       status: "completed",
       input: JSON.stringify({
         targets: ["agent-1"],
@@ -120,7 +120,7 @@ test("Codex prompt observer keeps spawn and wait as independent operations", () 
       output: "CHILD_OK",
       subagentOperation: {
         action: "wait",
-        targets: [{ id: "agent-1", label: "Sagan" }],
+      targets: [{ id: "agent-1", label: "Inspect the adapter and return CHILD_OK" }],
       },
       timestamp: "2026-07-14T11:17:27.959Z",
       updatedAt: "2026-07-14T11:17:53.962Z",
@@ -154,8 +154,8 @@ test("Codex prompt observer baselines history and keeps concurrent launches inde
         ]
       : []),
     [
-      ["spawn-a", "alpha", "running", "spawn"],
-      ["spawn-b", "beta", "running", "spawn"],
+      ["spawn-a", "purpose A", "running", "spawn"],
+      ["spawn-b", "purpose B", "running", "spawn"],
     ],
   );
 });
@@ -190,13 +190,101 @@ test("Codex prompt observer restores spawn identity before a later close operati
       id: "call-close",
       commandId: "call-close",
       kind: "subagent",
-      title: "Cicero",
+      title: "Inspect the adapter",
       status: "completed",
       input: JSON.stringify({ target: "old-agent" }),
       output: JSON.stringify({ previous_status: { completed: "Inspection complete" } }),
       subagentOperation: {
         action: "close",
-        targets: [{ id: "old-agent", label: "Cicero" }],
+        targets: [{ id: "old-agent", label: "Inspect the adapter" }],
+      },
+      timestamp: "2026-07-14T11:17:27.959Z",
+      updatedAt: "2026-07-14T11:17:53.962Z",
+    },
+  }]);
+});
+
+test("Codex prompt observer keeps app-server ids targets linked to the launched subagent", () => {
+  let snapshot: AgentToolCall[] = [
+    call(
+      "call-spawn",
+      "spawn_agent",
+      "completed",
+      { message: "Inspect package.json" },
+      { agent_id: "child-thread-uuid", nickname: "Package reader" },
+    ),
+  ];
+  const observer = createCodexPromptToolCallObserver(() => snapshot);
+  observer.begin(context);
+
+  snapshot = [
+    ...snapshot,
+    call(
+      "call-wait",
+      "wait_agent",
+      "completed",
+      { ids: ["child-thread-uuid"], timeout_ms: 30_000 },
+      { status: { "child-thread-uuid": { completed: "PACKAGE_OK" } } },
+    ),
+  ];
+
+  assert.deepEqual(observer.poll(context), [{
+    type: "tool-call",
+    toolCall: {
+      id: "call-wait",
+      commandId: "call-wait",
+      kind: "subagent",
+      title: "Inspect package.json",
+      status: "completed",
+      input: JSON.stringify({ ids: ["child-thread-uuid"], timeout_ms: 30_000 }),
+      output: "PACKAGE_OK",
+      subagentOperation: {
+        action: "wait",
+        targets: [{ id: "child-thread-uuid", label: "Inspect package.json" }],
+      },
+      timestamp: "2026-07-14T11:17:27.959Z",
+      updatedAt: "2026-07-14T11:17:53.962Z",
+    },
+  }]);
+});
+
+test("Codex prompt observer extracts object-shaped wait targets", () => {
+  let snapshot: AgentToolCall[] = [
+    call(
+      "call-spawn-object-target",
+      "spawn_agent",
+      "completed",
+      { message: "Inspect package.json" },
+      { agent_id: "child-thread-object", nickname: "Package reader" },
+    ),
+  ];
+  const observer = createCodexPromptToolCallObserver(() => snapshot);
+  observer.begin(context);
+
+  snapshot = [
+    ...snapshot,
+    call(
+      "call-wait-object-target",
+      "wait_agent",
+      "completed",
+      { ids: [{ id: "child-thread-object" }] },
+      { status: { "child-thread-object": { completed: "PACKAGE_OK" } } },
+    ),
+  ];
+
+  assert.deepEqual(observer.poll(context), [{
+    type: "tool-call",
+    toolCall: {
+      id: "call-wait-object-target",
+      commandId: "call-wait-object-target",
+      kind: "subagent",
+      title: "Inspect package.json",
+      status: "completed",
+      input: JSON.stringify({ ids: [{ id: "child-thread-object" }] }),
+      output: "PACKAGE_OK",
+      subagentOperation: {
+        action: "wait",
+        targets: [{ id: "child-thread-object", label: "Inspect package.json" }],
       },
       timestamp: "2026-07-14T11:17:27.959Z",
       updatedAt: "2026-07-14T11:17:53.962Z",

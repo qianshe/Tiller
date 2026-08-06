@@ -11,7 +11,7 @@
     "test": "tsx --test src/**/*.test.ts"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^0.21.0",
+    "@agentclientprotocol/sdk": "^1.3.0",
     "@tiller/shared": "workspace:*"
   },
   "devDependencies": {

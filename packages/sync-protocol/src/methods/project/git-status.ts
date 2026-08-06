@@ -6,6 +6,7 @@ export const method = "project/git/status" as const;
 export const ParamsSchema = z.object({
   projectId: z.string(),
   cwd: z.string().optional(),
+  refreshRemote: z.boolean().optional(),
 });
 
 export const GitStatusFileSchema = z.object({
@@ -18,18 +19,38 @@ export const GitStatusFileSchema = z.object({
   patch: z.string().optional(),
 });
 
-export const ResultSchema = z.object({
+/**
+ * Shared Git status snapshot reused by status / commit / push / pull results.
+ * All fields live at the top level so inventory reducers can share one helper
+ * without unwrapping a nested `status` object.
+ */
+export const GitStatusSnapshotSchema = z.object({
+  branch: z.string(),
+  detached: z.boolean(),
+  upstreamBranch: z.string().optional(), // full `remote/branch`
+  ahead: z.number(),
+  behind: z.number(),
+  pushTarget: z.string().optional(), // `<remote>/<branch>` or undefined
+  trackingStale: z.boolean(),
+  remoteRefreshError: z.string().optional(),
+  clean: z.boolean(),
+  files: z.array(GitStatusFileSchema),
+});
+
+export const GitOperationEnvelopeSchema = z.object({
   ok: z.boolean(),
   projectId: z.string(),
   cwd: z.string(),
-  branch: z.string(),
-  clean: z.boolean(),
-  files: z.array(GitStatusFileSchema),
   message: z.string(),
 });
 
+export const ResultSchema = GitOperationEnvelopeSchema.extend(
+  GitStatusSnapshotSchema.shape,
+);
+
 export type Params = z.infer<typeof ParamsSchema>;
 export type GitStatusFile = z.infer<typeof GitStatusFileSchema>;
+export type GitStatusSnapshot = z.infer<typeof GitStatusSnapshotSchema>;
 export type Result = z.infer<typeof ResultSchema>;
 
 export const descriptor = requestDescriptor({

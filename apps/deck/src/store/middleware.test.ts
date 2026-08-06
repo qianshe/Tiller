@@ -92,6 +92,7 @@ test("deck persistence includes compact chat workbench state", () => {
     dismissedCompletedSessionPlanKeys: {
       s1: "2026-06-02T00:00:00.000Z:复核 Markdown 渲染:completed",
     },
+    approvalHistory: [{ id: "approval-1" }],
   } as never);
 
   assert.deepEqual(partial.openChatSessionIds, ["s1", "s2"]);
@@ -103,6 +104,7 @@ test("deck persistence includes compact chat workbench state", () => {
     agentId: null,
   });
   assert.equal("sessionPlans" in partial, false);
+  assert.equal("approvalHistory" in partial, false);
   assert.deepEqual(partial.dismissedCompletedSessionPlanKeys, {
     s1: "2026-06-02T00:00:00.000Z:复核 Markdown 渲染:completed",
   });

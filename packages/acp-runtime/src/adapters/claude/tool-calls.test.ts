@@ -38,6 +38,19 @@ test("normalizeClaudeToolCall classifies task payloads with subagent_type as sub
   assert.equal(normalized.kind, "subagent");
 });
 
+test("normalizeClaudeToolCall classifies a Claude Task call before input arrives", () => {
+  const normalized = normalizeClaudeToolCall(
+    baseToolCall({ title: "读取并简单回复" }),
+    {
+      toolCall: {
+        toolName: "Task",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+});
+
 test("normalizeClaudeToolCall extracts a foreground subagent final reply", () => {
   const prompt = "Inspect the repository";
   const finalReply = "The repository is implementing nested Subagent conversations.";
@@ -323,6 +336,66 @@ test("normalizeClaudeToolCall classifies completed TaskOutput results from outpu
   assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.commandId, "subagent:internal-agent");
   assert.equal(normalized.output, "subagent reply");
+});
+
+test("stateful Claude normalizer merges metadata-only TaskOutput across tool ids", () => {
+  const normalizer = createClaudeToolCallNormalizer();
+  const sessionId = "session-claude-metadata-task-output";
+  const launch = normalizer.normalize(
+    baseToolCall({
+      id: "toolu-agent-metadata",
+      title: "Agent",
+      input: JSON.stringify({
+        description: "Read package metadata",
+        prompt: "Read package.json",
+        subagent_type: "Explore",
+        run_in_background: true,
+      }),
+      output: "Async agent launched successfully.\nagentId: child-metadata",
+    }),
+    {
+      sessionUpdate: "tool_call",
+      toolCallId: "toolu-agent-metadata",
+      rawInput: {
+        description: "Read package metadata",
+        prompt: "Read package.json",
+        subagent_type: "Explore",
+        run_in_background: true,
+      },
+      rawOutput: "Async agent launched successfully.\nagentId: child-metadata",
+    },
+    sessionId,
+  );
+  const result = normalizer.normalize(
+    baseToolCall({
+      id: "toolu-task-output-metadata",
+      title: "Tool call toolu-task-output-metadata",
+      status: "completed",
+      output: JSON.stringify({
+        retrieval_status: "success",
+        task: { task_id: "child-metadata", output: "name=tiller" },
+      }),
+    }),
+    {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "toolu-task-output-metadata",
+      rawOutput: {
+        retrieval_status: "success",
+        task: { task_id: "child-metadata", output: "name=tiller" },
+      },
+      _meta: { claudeCode: { toolName: "TaskOutput" } },
+    },
+    sessionId,
+  );
+
+  assert.ok(launch);
+  assert.ok(result);
+  assert.equal(launch.kind, "subagent");
+  assert.equal(result.kind, "subagent");
+  assert.equal(result.id, launch.id);
+  assert.equal(result.commandId, "subagent:child-metadata");
+  assert.equal(result.status, "completed");
+  assert.equal(result.output, "name=tiller");
 });
 
 test("Claude lifecycle normalization keeps one background subagent entity through SendMessage and TaskOutput", () => {

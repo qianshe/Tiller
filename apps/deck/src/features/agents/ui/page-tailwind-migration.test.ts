@@ -67,6 +67,9 @@ test("helm inventory tabs share the inventory table UI", () => {
   assert.match(trustedDevices, /<InventoryTable/);
   assert.match(helmDetail, /<InventoryTable/);
   assert.doesNotMatch(helmDetail, /<article key=\{worktree\.path\}/);
+  const worktreesTab = helmDetail.indexOf('{ id: "worktrees", label: `工作区');
+  const devicesTab = helmDetail.indexOf('{ id: "devices", label: `可信设备');
+  assert.ok(worktreesTab >= 0 && devicesTab >= 0 && worktreesTab < devicesTab);
 });
 
 test("agents feature no longer depends on feature CSS class hooks", () => {

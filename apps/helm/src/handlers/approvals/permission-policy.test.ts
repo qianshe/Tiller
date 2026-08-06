@@ -67,6 +67,23 @@ test("approval policy prefers deny over allow", () => {
   assert.equal(resolveApprovalPolicyDecision(policy, request, context), "deny");
 });
 
+test("approval policy exposes matching confirm rules", () => {
+  const policy: ApprovalPolicy = {
+    rules: [
+      {
+        id: "confirm-rule",
+        action: "confirm",
+        label: "Confirm MCP",
+        commandPattern: "^MCP",
+        createdAt: "2026-05-16T00:00:00.000Z",
+        updatedAt: "2026-05-16T00:00:00.000Z",
+      },
+    ],
+  };
+
+  assert.equal(resolveApprovalPolicyDecision(policy, request, context), "confirm");
+});
+
 test("approval policy ignores invalid regex rules", () => {
   const policy: ApprovalPolicy = {
     rules: [

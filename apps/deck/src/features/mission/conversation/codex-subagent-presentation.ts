@@ -19,18 +19,12 @@ export function resolveCodexSubagentPresentation(
   if (!operation) {
     return null;
   }
-  const targetLabel = formatTargetLabel(operation.targets);
-  const actionLabel = operation.action === "spawn"
-    ? "创建 Subagent"
-    : operation.action === "wait"
-      ? "等待 Subagent"
-      : "关闭 Subagent";
   const previousStatus = operation.action === "close"
     ? resolvePreviousStatus(item.text)
     : null;
   return {
-    label: targetLabel ? `${actionLabel} · ${targetLabel}` : actionLabel,
-    summary: previousStatus ? `关闭前${previousStatus.label}` : "",
+    label: resolveSubagentTitle(item),
+    summary: resolveSubagentSummary(item, previousStatus),
     text: operation.action === "spawn"
       ? formatSpawnContent(item)
       : operation.action === "wait"
@@ -38,6 +32,39 @@ export function resolveCodexSubagentPresentation(
         : formatCloseContent(item, previousStatus),
     statusBadge: resolveOperationStatusBadge(item),
   };
+}
+
+function resolveSubagentTitle(item: ConversationToolCallItem) {
+  const role = item.subagentRole?.trim();
+  if (role) {
+    return formatCodexSubagentRole(role);
+  }
+  return "Subagent";
+}
+
+function formatCodexSubagentRole(role: string) {
+  const normalized = role.toLowerCase();
+  if (normalized === "explorer") return "Explore";
+  if (normalized === "worker") return "Worker";
+  if (normalized === "default") return "Default";
+  return role;
+}
+
+function resolveSubagentSummary(
+  item: ConversationToolCallItem,
+  previousStatus: { label: string; detail?: string } | null,
+) {
+  const input = parseRecord(item.input);
+  const prompt = firstString(input?.message, input?.prompt, input?.description);
+  if (prompt) {
+    return compactSubagentSummary(prompt);
+  }
+  return previousStatus ? `关闭前${previousStatus.label}` : "";
+}
+
+function compactSubagentSummary(value: string) {
+  const firstLine = value.split(/\r?\n/u).map((line) => line.trim()).find(Boolean) ?? value;
+  return firstLine.replace(/\s+/gu, " ").trim();
 }
 
 function resolveOperationStatusBadge(item: ConversationToolCallItem): CodexSubagentStatusBadge {
@@ -68,7 +95,7 @@ function resolveOperationStatusBadge(item: ConversationToolCallItem): CodexSubag
   }
   return {
     className: "bg-success/10 text-success",
-    label: action === "spawn" ? "已创建" : action === "wait" ? "已返回" : "已关闭",
+    label: action === "spawn" ? "已创建" : action === "wait" ? "已完成" : "已关闭",
   };
 }
 
@@ -121,13 +148,6 @@ function formatCloseContent(
     previousStatus ? `关闭前状态：${previousStatus.label}` : "",
     previousStatus?.detail ? `关闭前回复：${previousStatus.detail}` : "",
   ].filter(Boolean).join("\n\n") || "Subagent 已关闭";
-}
-
-function formatTargetLabel(targets: NonNullable<ConversationToolCallItem["subagentOperation"]>["targets"]) {
-  if (targets.length === 1) {
-    return targets[0]?.label ?? targets[0]?.id ?? "";
-  }
-  return targets.length > 1 ? `${targets.length} 个` : "";
 }
 
 function formatTargetDetails(item: ConversationToolCallItem) {

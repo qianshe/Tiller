@@ -2,6 +2,7 @@ import { readFileSync, statSync } from "node:fs";
 import type { AgentToolCall } from "@tiller/shared";
 import type { SessionRuntimeEvent } from "../../runtime-types";
 import type { AcpPromptObservationContext } from "../types";
+import { resolveCodexSubagentTitle } from "./tool-calls";
 import {
   fingerprintPromptToolCall,
   safelyReadPromptToolCalls,
@@ -158,7 +159,7 @@ function projectCodexSubagentToolCall(
     return { id, ...(launch ? { label: launch.title } : {}) };
   });
   const title = targets.length === 1
-    ? targets[0]?.label ?? targets[0]?.id ?? "Subagent"
+    ? targets[0]?.label ?? "Subagent"
     : targets.length > 1
       ? `${targets.length} 个 Subagent`
       : "Subagent";
@@ -200,13 +201,14 @@ function rememberCodexSubagentLaunch(
   const input = parseRecord(toolCall.input);
   const output = parseRecord(toolCall.output);
   const existing = state.launchesByCallId.get(toolCall.id);
-  const title = firstString(
-    input?.task_name,
-    input?.taskName,
-    output?.nickname,
-    output?.name,
-    existing?.title,
-  ) ?? "Subagent";
+  const title = resolveCodexSubagentTitle(
+    input,
+    firstString(
+      output?.nickname,
+      output?.name,
+      existing?.title,
+    ),
+  );
   const launch: CodexSubagentLaunch = existing ?? {
     id: toolCall.id,
     title,
@@ -227,6 +229,15 @@ function collectCodexSubagentTargets(input: Record<string, unknown> | null) {
     firstString(input?.target, input?.agent_id, input?.agentId),
     ...(Array.isArray(input?.targets)
       ? input.targets.map((target) => firstString(target))
+      : []),
+    ...(Array.isArray(input?.receiverThreadIds)
+      ? input.receiverThreadIds.map((target) => firstString(target))
+      : []),
+    ...(Array.isArray(input?.receiver_thread_ids)
+      ? input.receiver_thread_ids.map((target) => firstString(target))
+      : []),
+    ...(Array.isArray(input?.ids)
+      ? input.ids.map((target) => firstString(target))
       : []),
   ].filter((target): target is string => Boolean(target));
   return [...new Set(targets)];
@@ -277,10 +288,23 @@ function recordFrom(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function firstString(...values: unknown[]) {
+function firstString(...values: unknown[]): string | undefined {
   for (const value of values) {
     if (typeof value === "string" && value.trim()) {
       return value.trim();
+    }
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      const record = value as Record<string, unknown>;
+      const nested: string | undefined = firstString(
+        record.id,
+        record.agent_id,
+        record.agentId,
+        record.thread_id,
+        record.threadId,
+      );
+      if (nested) {
+        return nested;
+      }
     }
   }
   return undefined;

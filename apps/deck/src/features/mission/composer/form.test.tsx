@@ -308,3 +308,28 @@ test("composer renders context usage indicator at row tail", () => {
     "context usage indicator should render after the session title hint",
   );
 });
+
+test("composer collapses review contexts beside image chips and shows the retention notice", () => {
+  const html = renderToStaticMarkup(createElement(MissionComposer, baseProps({
+    reviewContext: {
+      draftContexts: [{
+        id: "ctx-1",
+        kind: "diff",
+        label: "panel.tsx:44-46",
+        comment: "这里需要 review",
+        excerpt: "+ new line",
+        source: { kind: "diff", filePath: "panel.tsx", startLine: 44, endLine: 46 },
+      }],
+      commandRetentionNotice: "已仅发送命令，评论上下文仍保留。",
+      removeDraftContext: () => undefined,
+    },
+    promptImages: [{ type: "image", mimeType: "image/png", data: "AAA", name: "screen.png" }],
+  })));
+
+  assert.match(html, /待发送图片/);
+  assert.match(html, /待发送评论上下文/);
+  assert.match(html, /aria-label="评论 1，展开查看"/u);
+  assert.doesNotMatch(html, /panel\.tsx:44-46/);
+  assert.match(html, /已仅发送命令/);
+  assert.match(html, /mission-composer-notice/);
+});

@@ -28,16 +28,15 @@ test("subagent detail service builds a logical timeline with prompt, thinking, t
     updatedAt: "2026-07-22T00:00:00.000Z",
   });
   service.handleEvent("session-1", "root-1", {
-    type: "tool-call",
+    type: "message",
     origin: { scope: "subagent", parentToolCallId: "root-1" },
-    toolCall: {
-      id: "reply-1:thinking",
-      kind: "think",
-      title: "Thinking",
-      status: "running",
-      output: "I should inspect the files",
+    message: {
+      id: "reply-1",
+      role: "assistant",
+      contentKind: "thought",
+      text: "I should inspect the files",
       timestamp: "2026-07-22T00:00:01.000Z",
-      updatedAt: "2026-07-22T00:00:01.000Z",
+      streaming: false,
     },
   });
   service.handleEvent("session-1", "root-1", {
@@ -227,6 +226,46 @@ test("subagent detail service adds the completed root result when no child reply
   service.dispose();
 });
 
+test("subagent detail service replaces a persisted root fallback with a delayed child reply", () => {
+  const { store } = createMemoryStore();
+  const service = createSessionSubagentDetailService({
+    store,
+    publish: () => undefined,
+    flushWindowMs: 60_000,
+  });
+  const root = {
+    id: "root-1",
+    kind: "subagent" as const,
+    title: "Inspect files",
+    status: "completed" as const,
+    input: JSON.stringify({ prompt: "Inspect the repository" }),
+    output: "The root fallback reply",
+    timestamp: "2026-07-22T00:00:00.000Z",
+    updatedAt: "2026-07-22T00:00:01.000Z",
+  };
+
+  service.registerRoot("session-1", root);
+  service.handleEvent("session-1", "root-1", {
+    type: "message",
+    origin: { scope: "subagent", parentToolCallId: "root-1" },
+    message: {
+      id: "late-reply",
+      role: "assistant",
+      text: "The delayed child reply",
+      timestamp: "2026-07-22T00:00:02.000Z",
+      streaming: false,
+    },
+  });
+
+  const replies = service.getDetail("session-1", "root-1").entries
+    .filter((entry) => entry.kind === "assistant_message")
+    .flatMap((entry) => entry.chunks)
+    .filter((chunk) => chunk.kind === "content")
+    .map((chunk) => chunk.text);
+  assert.deepEqual(replies, ["The delayed child reply"]);
+  service.dispose();
+});
+
 test("subagent detail service does not duplicate a real child reply with the root result", () => {
   const { store } = createMemoryStore();
   const service = createSessionSubagentDetailService({
@@ -269,6 +308,206 @@ test("subagent detail service does not duplicate a real child reply with the roo
     .filter((chunk) => chunk.kind === "content")
     .map((chunk) => chunk.text);
   assert.deepEqual(replies, ["The real child reply"]);
+  service.dispose();
+});
+
+test("subagent detail service appends reused task invocations to one detail", () => {
+  const { store } = createMemoryStore();
+  const service = createSessionSubagentDetailService({
+    store,
+    publish: () => undefined,
+    flushWindowMs: 60_000,
+  });
+  const root = (id: string, prompt: string, status: "running" | "completed") => ({
+    id,
+    commandId: "subagent:reused-task",
+    kind: "subagent" as const,
+    title: "Sisyphus-Junior",
+    status,
+    input: JSON.stringify({ prompt }),
+    timestamp: "2026-07-22T00:00:00.000Z",
+    updatedAt: "2026-07-22T00:00:01.000Z",
+  });
+  const event = (rootId: string, id: string, title: string, status: "running" | "completed") => ({
+    type: "tool-call" as const,
+    origin: { scope: "subagent" as const, parentToolCallId: rootId },
+    toolCall: {
+      id,
+      commandId: `${title.toLowerCase()}-command`,
+      kind: "shell" as const,
+      title,
+      status,
+      timestamp: "2026-07-22T00:00:01.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    },
+  });
+
+  service.registerRoot("session-1", root("root-1", "first prompt", "running"));
+  service.handleEvent("session-1", "root-1", event("root-1", "nested-one", "Agent One", "completed"));
+  service.handleEvent("session-1", "root-1", {
+    type: "message",
+    origin: { scope: "subagent", parentToolCallId: "root-1" },
+    message: {
+      id: "reply",
+      role: "assistant",
+      text: "first output",
+      timestamp: "2026-07-22T00:00:02.000Z",
+      streaming: false,
+    },
+  });
+  service.registerRoot("session-1", root("root-1", "first prompt", "completed"));
+
+  service.registerRoot("session-1", root("root-2", "second prompt", "running"));
+  service.handleEvent("session-1", "root-2", event("root-2", "nested-two", "Agent Two", "completed"));
+  service.handleEvent("session-1", "root-2", {
+    type: "message",
+    origin: { scope: "subagent", parentToolCallId: "root-2" },
+    message: {
+      id: "reply",
+      role: "assistant",
+      text: "second output",
+      timestamp: "2026-07-22T00:00:04.000Z",
+      streaming: false,
+    },
+  });
+  service.registerRoot("session-1", root("root-2", "second prompt", "completed"));
+
+  // A delayed update from the first invocation must stay in the shared detail
+  // without being merged into the second invocation's tool entry.
+  service.handleEvent("session-1", "root-1", event("root-1", "nested-one", "Agent One", "completed"));
+
+  const detail = service.getDetail("session-1", "subagent:reused-task");
+  const nestedCalls = detail.entries.filter((entry) => entry.kind === "tool_call");
+  assert.deepEqual(
+    nestedCalls.map((entry) => entry.kind === "tool_call" ? entry.toolCall.title : ""),
+    ["Agent One", "Agent Two"],
+  );
+  assert.deepEqual(
+    detail.entries
+      .filter((entry) => entry.kind === "user_message")
+      .map((entry) => entry.kind === "user_message" ? entry.message.text : ""),
+    ["first prompt", "second prompt"],
+  );
+  assert.deepEqual(
+    detail.entries
+      .filter((entry) => entry.kind === "assistant_message")
+      .flatMap((entry) => entry.kind === "assistant_message"
+        ? entry.chunks.filter((chunk) => chunk.kind === "content").map((chunk) => chunk.text)
+        : []),
+    ["first output", "second output"],
+  );
+  assert.equal(detail.parentToolCallId, "subagent:reused-task");
+  service.dispose();
+});
+
+test("subagent detail service restores invocation namespaces after a restart", () => {
+  const { store } = createMemoryStore();
+  const createService = () => createSessionSubagentDetailService({
+    store,
+    publish: () => undefined,
+    flushWindowMs: 60_000,
+  });
+  const root = (id: string, prompt: string, status: "running" | "completed") => ({
+    id,
+    commandId: "subagent:reused-task",
+    kind: "subagent" as const,
+    title: "quick",
+    status,
+    input: JSON.stringify({ prompt }),
+    timestamp: "2026-07-22T00:00:00.000Z",
+    updatedAt: "2026-07-22T00:00:01.000Z",
+  });
+  const child = (rootId: string, output: string, status: "running" | "completed") => ({
+    type: "tool-call" as const,
+    origin: { scope: "subagent" as const, parentToolCallId: rootId },
+    toolCall: {
+      id: "reused-child-id",
+      commandId: "reused-child-command",
+      kind: "shell" as const,
+      title: "Run check",
+      status,
+      output,
+      timestamp: "2026-07-22T00:00:01.000Z",
+      updatedAt: "2026-07-22T00:00:01.000Z",
+    },
+  });
+
+  const service = createService();
+  service.registerRoot("session-1", root("root-1", "first prompt", "completed"));
+  service.handleEvent("session-1", "root-1", child("root-1", "first output", "completed"));
+  service.registerRoot("session-1", root("root-2", "second prompt", "running"));
+  service.handleEvent("session-1", "root-2", child("root-2", "second output", "completed"));
+  service.dispose();
+
+  const restarted = createService();
+  restarted.registerRoot("session-1", root("root-2", "second prompt", "running"));
+  restarted.handleEvent("session-1", "root-2", child("root-2", "second output updated", "completed"));
+
+  const detail = restarted.getDetail("session-1", "subagent:reused-task");
+  const toolCalls = detail.entries.filter((entry) => entry.kind === "tool_call");
+  assert.deepEqual(
+    toolCalls.map((entry) => entry.kind === "tool_call" ? entry.toolCall.output : undefined),
+    ["first output", "second output updated"],
+  );
+  restarted.dispose();
+});
+
+test("subagent detail service migrates a late task id into the shared detail", () => {
+  const { store, details } = createMemoryStore();
+  const service = createSessionSubagentDetailService({
+    store,
+    publish: () => undefined,
+    flushWindowMs: 60_000,
+  });
+
+  service.registerRoot("session-1", {
+    id: "root-1",
+    kind: "subagent",
+    title: "task",
+    status: "running",
+    input: JSON.stringify({ prompt: "first prompt" }),
+    timestamp: "2026-07-22T00:00:00.000Z",
+    updatedAt: "2026-07-22T00:00:00.000Z",
+  });
+  service.registerRoot("session-1", {
+    id: "root-1",
+    commandId: "subagent:reused-task",
+    kind: "subagent",
+    title: "Sisyphus-Junior",
+    status: "completed",
+    input: JSON.stringify({ prompt: "first prompt" }),
+    output: "first output",
+    timestamp: "2026-07-22T00:00:00.000Z",
+    updatedAt: "2026-07-22T00:00:01.000Z",
+  });
+  service.registerRoot("session-1", {
+    id: "root-2",
+    commandId: "subagent:reused-task",
+    kind: "subagent",
+    title: "Sisyphus-Junior",
+    status: "completed",
+    input: JSON.stringify({ prompt: "second prompt" }),
+    output: "second output",
+    timestamp: "2026-07-22T00:00:02.000Z",
+    updatedAt: "2026-07-22T00:00:03.000Z",
+  });
+
+  const detail = service.getDetail("session-1", "subagent:reused-task");
+  assert.deepEqual(
+    detail.entries
+      .filter((entry) => entry.kind === "user_message")
+      .map((entry) => entry.kind === "user_message" ? entry.message.text : ""),
+    ["first prompt", "second prompt"],
+  );
+  assert.deepEqual(
+    detail.entries
+      .filter((entry) => entry.kind === "assistant_message")
+      .flatMap((entry) => entry.kind === "assistant_message"
+        ? entry.chunks.filter((chunk) => chunk.kind === "content").map((chunk) => chunk.text)
+        : []),
+    ["first output", "second output"],
+  );
+  assert.equal(details.has("session-1\0subagent:reused-task"), true);
   service.dispose();
 });
 

@@ -124,6 +124,12 @@ export function renderMissionRoute(source: MissionRouteSource) {
     slashWrapperRef,
     removePromptImage,
     imagePasteNotice,
+    draftContexts,
+    clearDraftContexts,
+    addDraftContext,
+    removeDraftContext,
+    commandRetentionNotice,
+    setCommandRetentionNotice,
     missionPromptRef,
     setPrompt,
     handleMissionPromptKeyDown,
@@ -174,6 +180,9 @@ export function renderMissionRoute(source: MissionRouteSource) {
     setActivityVisibleCounts,
     loadOlderActivities,
     setSelectedMissionDisplayTabId,
+    missionGitErrorTabOpen,
+    openMissionGitErrorTab,
+    closeMissionGitErrorTab,
     openDiffDetail,
     toggleMissionDiffDirectory,
     collapsedMissionDiffDirectories,
@@ -184,6 +193,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
     setOpenChatSessionIds,
     focusedChatWindowId,
     setFocusedChatWindowId,
+    navigateToView,
   } = source;
   return (
     <MissionWorktree
@@ -199,6 +209,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       setOpenChatSessionIds={setOpenChatSessionIds}
       focusedChatWindowId={focusedChatWindowId}
       setFocusedChatWindowId={setFocusedChatWindowId}
+      navigateToView={navigateToView}
       selectedProjectId={selectedProjectId}
       selectedCwd={selectedCwd}
       selectedAgentId={selectedAgentId}
@@ -312,6 +323,12 @@ export function renderMissionRoute(source: MissionRouteSource) {
       slashWrapperRef={slashWrapperRef}
       removePromptImage={removePromptImage}
       imagePasteNotice={imagePasteNotice}
+      draftContexts={draftContexts}
+      clearDraftContexts={clearDraftContexts}
+      addDraftContext={addDraftContext}
+      removeDraftContext={removeDraftContext}
+      commandRetentionNotice={commandRetentionNotice}
+      setCommandRetentionNotice={setCommandRetentionNotice}
       missionPromptRef={missionPromptRef}
       setPrompt={setPrompt}
       handleMissionPromptKeyDown={handleMissionPromptKeyDown}
@@ -362,6 +379,9 @@ export function renderMissionRoute(source: MissionRouteSource) {
       setActivityVisibleCounts={setActivityVisibleCounts}
       loadOlderActivities={loadOlderActivities}
       setSelectedMissionDisplayTabId={setSelectedMissionDisplayTabId}
+      missionGitErrorTabOpen={missionGitErrorTabOpen}
+      openMissionGitErrorTab={openMissionGitErrorTab}
+      closeMissionGitErrorTab={closeMissionGitErrorTab}
       openDiffDetail={openDiffDetail}
       toggleMissionDiffDirectory={toggleMissionDiffDirectory}
       collapsedMissionDiffDirectories={collapsedMissionDiffDirectories}

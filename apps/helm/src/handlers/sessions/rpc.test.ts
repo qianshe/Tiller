@@ -137,13 +137,13 @@ test("legacy evidence remains lazy and outside the canonical timeline response b
   assert.equal(evidencePageCalls, 1);
 });
 
-test("session/get_artifacts leaves stale running thinking untouched during ordinary reads", async () => {
+test("session/get_artifacts leaves stale running tools untouched during ordinary reads", async () => {
   const sessionId = "session-thinking-history";
   let toolCalls: AgentToolCall[] = [
     {
       id: "think-1",
       commandId: "think-1",
-      kind: "think" as const,
+      kind: "tool" as const,
       title: "Thinking",
       status: "running" as const,
       output: "persisted thinking",
@@ -1253,7 +1253,7 @@ test.skip("session/list_timeline preserves persisted timeline order and content"
             {
               id: "assistant-1:thinking",
               commandId: "assistant-1:thinking",
-              kind: "think" as const,
+              kind: "tool" as const,
               title: "Thinking",
               status: "completed" as const,
               output: "reasoning",

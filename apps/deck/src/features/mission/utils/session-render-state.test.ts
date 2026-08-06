@@ -145,12 +145,12 @@ test("mission activity loading prioritizes pending tool activity", () => {
   assert.equal(loading?.status, "waiting_for_permission");
 });
 
-test("mission activity loading keeps the header running while thinking is visible", () => {
+test("mission activity loading treats a tool titled Thinking as pending tool activity", () => {
   const thinking = {
     ...toolCall("running"),
     id: "think-1",
     commandId: undefined,
-    kind: "think",
+    kind: "tool",
     title: "Thinking",
   } as AgentToolCall;
   const loading = resolveMissionActivityLoading({
@@ -160,7 +160,7 @@ test("mission activity loading keeps the header running while thinking is visibl
     pendingPermission: null,
   });
 
-  assert.deepEqual(loading, { title: "ACP 正在运行", status: "running" });
+  assert.deepEqual(loading, { title: "Thinking", status: "running" });
 });
 
 test("mission activity loading ignores stale pending tools after session ends", () => {

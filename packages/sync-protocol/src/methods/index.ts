@@ -12,7 +12,12 @@ import * as projectGitListBranches from "./project/git-list-branches";
 import * as projectGitCreateWorktree from "./project/git-create-worktree";
 import * as projectGitStatus from "./project/git-status";
 import * as projectGitCommit from "./project/git-commit";
+import * as projectGitDiscard from "./project/git-discard";
+import * as projectGitPush from "./project/git-push";
+import * as projectGitPull from "./project/git-pull";
 import * as projectGitGraph from "./project/git-graph";
+import * as projectGitCommitDetail from "./project/git-commit-detail";
+import * as projectGitFileDiff from "./project/git-file-diff";
 import * as projectSave from "./project/save";
 import * as projectDelete from "./project/delete";
 import * as agentList from "./agent/list";
@@ -44,6 +49,8 @@ import * as sessionCleanup from "./session/cleanup";
 import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
 import * as approvalListPending from "./approval/list-pending";
+import * as approvalList from "./approval/list";
+import * as approvalClearHistory from "./approval/clear-history";
 import * as approvalRespond from "./approval/respond";
 import * as approvalCreated from "./approval/created";
 import * as approvalResolved from "./approval/resolved";
@@ -52,6 +59,9 @@ import * as deviceRevoke from "./device/revoke";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
 import * as daemonShutdown from "./daemon/shutdown";
+import * as daemonUpdateCheck from "./daemon/update-check";
+import * as daemonUpdateStart from "./daemon/update-start";
+import * as daemonUpdateStatus from "./daemon/update-status";
 import * as sessionRename from "./session/rename";
 import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
@@ -75,7 +85,12 @@ const METHOD_DESCRIPTORS = {
   [projectGitCreateWorktree.method]: projectGitCreateWorktree.descriptor,
   [projectGitStatus.method]: projectGitStatus.descriptor,
   [projectGitCommit.method]: projectGitCommit.descriptor,
+  [projectGitDiscard.method]: projectGitDiscard.descriptor,
+  [projectGitPush.method]: projectGitPush.descriptor,
+  [projectGitPull.method]: projectGitPull.descriptor,
   [projectGitGraph.method]: projectGitGraph.descriptor,
+  [projectGitCommitDetail.method]: projectGitCommitDetail.descriptor,
+  [projectGitFileDiff.method]: projectGitFileDiff.descriptor,
   [projectSave.method]: projectSave.descriptor,
   [projectDelete.method]: projectDelete.descriptor,
   [agentList.method]: agentList.descriptor,
@@ -108,6 +123,8 @@ const METHOD_DESCRIPTORS = {
   [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [approvalListPending.method]: approvalListPending.descriptor,
+  [approvalList.method]: approvalList.descriptor,
+  [approvalClearHistory.method]: approvalClearHistory.descriptor,
   [approvalRespond.method]: approvalRespond.descriptor,
   [approvalCreated.method]: approvalCreated.descriptor,
   [approvalResolved.method]: approvalResolved.descriptor,
@@ -116,6 +133,9 @@ const METHOD_DESCRIPTORS = {
   [devicePair.method]: devicePair.descriptor,
   [deviceAuthenticate.method]: deviceAuthenticate.descriptor,
   [daemonShutdown.method]: daemonShutdown.descriptor,
+  [daemonUpdateCheck.method]: daemonUpdateCheck.descriptor,
+  [daemonUpdateStart.method]: daemonUpdateStart.descriptor,
+  [daemonUpdateStatus.method]: daemonUpdateStatus.descriptor,
   [sessionCancel.method]: sessionCancel.descriptor,
   [sessionUpdate.method]: sessionUpdate.descriptor,
   [errorRaised.method]: errorRaised.descriptor,
@@ -140,7 +160,12 @@ export const CLIENT_REQUEST_METHODS = [
   projectGitCreateWorktree.method,
   projectGitStatus.method,
   projectGitCommit.method,
+  projectGitDiscard.method,
+  projectGitPush.method,
+  projectGitPull.method,
   projectGitGraph.method,
+  projectGitCommitDetail.method,
+  projectGitFileDiff.method,
   projectSave.method,
   projectDelete.method,
   agentList.method,
@@ -173,12 +198,16 @@ export const CLIENT_REQUEST_METHODS = [
   permissionListPending.method,
   permissionRespond.method,
   approvalListPending.method,
+  approvalList.method,
+  approvalClearHistory.method,
   approvalRespond.method,
   deviceList.method,
   deviceRevoke.method,
   devicePair.method,
   deviceAuthenticate.method,
   daemonShutdown.method,
+  daemonUpdateCheck.method,
+  daemonUpdateStart.method,
 ] as const;
 
 export const CLIENT_NOTIFICATION_METHODS = [sessionCancel.method] as const;
@@ -189,6 +218,7 @@ export const SERVER_NOTIFICATION_METHODS = [
   notificationRaised.method,
   approvalCreated.method,
   approvalResolved.method,
+  daemonUpdateStatus.method,
 ] as const;
 
 export type ClientRequestMethod = (typeof CLIENT_REQUEST_METHODS)[number];

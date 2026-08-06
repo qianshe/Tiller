@@ -2,10 +2,13 @@ import { mergeStreamingText, type AgentMessage } from "@tiller/shared";
 
 export type LiveMessageBuffer = ReturnType<typeof createLiveMessageBuffer>;
 
+type PendingStreamMode = Exclude<AgentMessage["streamMode"], undefined>;
+
 export function createLiveMessageBuffer() {
   const messages = new Map<string, {
     fullMessage: AgentMessage;
     pendingText: string;
+    pendingStreamMode: PendingStreamMode;
   }>();
 
   function append(sessionId: string, message: AgentMessage): AgentMessage {
@@ -14,6 +17,7 @@ export function createLiveMessageBuffer() {
       messages.set(sessionId, {
         fullMessage: message,
         pendingText: message.text,
+        pendingStreamMode: message.streamMode === "snapshot" ? "snapshot" : "delta",
       });
       return message;
     }
@@ -23,22 +27,23 @@ export function createLiveMessageBuffer() {
       message.text,
       message.streamMode,
     );
-    const pendingText = resolvePendingDelta(
-      current.fullMessage.text,
+    const pending = resolvePendingUpdate({
+      current,
+      incomingText: message.text,
       mergedText,
-      message.text,
-    );
+      streamMode: message.streamMode,
+    });
     const next = {
       ...message,
+      streamMode: message.streamMode,
       text: mergedText,
       timestamp: message.timestamp,
       sequence: current.fullMessage.sequence ?? message.sequence,
     };
     messages.set(sessionId, {
       fullMessage: next,
-      pendingText: mergedText.startsWith(current.fullMessage.text)
-        ? current.pendingText + pendingText
-        : pendingText,
+      pendingText: pending.text,
+      pendingStreamMode: pending.streamMode,
     });
     return next;
   }
@@ -55,10 +60,12 @@ export function createLiveMessageBuffer() {
     const next = {
       ...current.fullMessage,
       text: current.pendingText,
+      streamMode: current.pendingStreamMode,
     };
     messages.set(sessionId, {
       fullMessage: current.fullMessage,
       pendingText: "",
+      pendingStreamMode: current.pendingStreamMode,
     });
     return next;
   }
@@ -89,21 +96,42 @@ export function createLiveMessageBuffer() {
     return mergeStreamingText(currentText, incomingText, streamMode ?? "auto") ?? currentText;
   }
 
-  function resolvePendingDelta(
-    currentText: string,
-    mergedText: string,
-    incomingText: string,
-  ) {
-    if (mergedText === currentText) {
-      return "";
+  function resolvePendingUpdate(input: {
+    current: {
+      fullMessage: AgentMessage;
+      pendingText: string;
+      pendingStreamMode: PendingStreamMode;
+    };
+    incomingText: string;
+    mergedText: string;
+    streamMode: AgentMessage["streamMode"];
+  }): { text: string; streamMode: PendingStreamMode } {
+    const currentText = input.current.fullMessage.text;
+    if (input.mergedText === currentText) {
+      return {
+        text: input.current.pendingText,
+        streamMode: input.current.pendingStreamMode,
+      };
     }
-    if (mergedText.startsWith(currentText)) {
-      return mergedText.slice(currentText.length);
+
+    const appendedText = input.mergedText.startsWith(currentText)
+      ? input.mergedText.slice(currentText.length)
+      : input.incomingText.startsWith(currentText)
+        ? input.incomingText.slice(currentText.length)
+        : null;
+    if (appendedText !== null) {
+      return {
+        text: input.current.pendingText + appendedText,
+        streamMode: input.current.pendingText
+          ? input.current.pendingStreamMode
+          : "delta",
+      };
     }
-    if (incomingText.startsWith(currentText)) {
-      return incomingText.slice(currentText.length);
-    }
-    return mergedText;
+
+    return {
+      text: input.mergedText,
+      streamMode: input.streamMode === "delta" ? "delta" : "snapshot",
+    };
   }
 
   return { append, peek, flushPending, pendingLength, finalize, remove, sessionIds };

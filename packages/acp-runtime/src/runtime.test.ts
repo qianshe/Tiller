@@ -446,6 +446,15 @@ test("Codex adapter appends model and reasoning config flags", () => {
   assert.deepEqual(launch.args, ["-c", 'model="gpt-5.4"', "-c", 'model="gpt-5.4-mini"', "-c", 'model_reasoning_effort="high"']);
 });
 
+test("Codex adapter passes the selected agent mode to the ACP process", () => {
+  const launch = resolveAcpLaunchConfig(
+    { id: "codex", name: "Codex", command: "codex-acp", args: [], transport: "stdio", protocol: "acp" },
+    { fallbackCwd: process.cwd(), sessionConfig: { agentMode: "agent-full-access" } },
+  );
+
+  assert.equal(launch.env.INITIAL_AGENT_MODE, "agent-full-access");
+});
+
 test("OpenCode adapter strips stale model flags and injects ACP port through launch config", () => {
   const launch = resolveAcpLaunchConfig(
     { id: "opencode", name: "OpenCode", command: "opencode", args: ["-m", "anthropic/claude-sonnet-4", "acp", "--pure"], transport: "stdio", protocol: "acp" },

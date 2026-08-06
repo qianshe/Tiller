@@ -3,7 +3,7 @@ import { Icon } from "./icon";
 
 export type DeckDensity = "compact" | "default" | "cozy";
 export type DeckViewportMode = "auto" | "mobile" | "tablet" | "desktop";
-export type DeckTweakTheme = "system" | "light" | "dark" | "tiller";
+export type DeckTweakTheme = "system" | "light" | "dark" | "harbor" | "voyage" | "chart";
 
 type TweaksPanelProps = {
   enabled?: boolean;
@@ -20,7 +20,9 @@ const THEMES: Array<{ value: DeckTweakTheme; label: string }> = [
   { value: "system", label: "sys" },
   { value: "light", label: "light" },
   { value: "dark", label: "dark" },
-  { value: "tiller", label: "tiller" },
+  { value: "harbor", label: "harbor" },
+  { value: "voyage", label: "voyage" },
+  { value: "chart", label: "chart" },
 ];
 
 const DENSITIES: Array<{ value: DeckDensity; label: string }> = [

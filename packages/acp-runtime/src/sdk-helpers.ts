@@ -4,6 +4,7 @@ import type {
   AgentPromptContent,
   PermissionDecision,
   PermissionRequest,
+  PermissionRequestCategory,
   PermissionRequestOption,
 } from "@tiller/shared";
 
@@ -85,6 +86,7 @@ export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id
   const rawInput = stringFrom(params.toolCall.rawInput);
   const command = [title, rawInput].filter(Boolean).join(" :: ") || "ACP permission request";
   const reason = [params.toolCall.kind, title].filter(Boolean).join(" · ") || "ACP agent requested permission.";
+  const category = resolvePermissionRequestCategory(params);
 
   return {
     id,
@@ -97,9 +99,30 @@ export function mapSdkPermissionRequest(params: acp.RequestPermissionRequest, id
       command,
       reason,
       cwd,
+      ...(category ? { category } : {}),
       ...(options.length ? { options } : {}),
     },
   };
+}
+
+function resolvePermissionRequestCategory(
+  params: acp.RequestPermissionRequest,
+): PermissionRequestCategory | undefined {
+  const meta = params._meta as Record<string, unknown> | undefined;
+  if (meta?.is_mcp_tool_approval === true) {
+    return "external_action";
+  }
+  if (params.toolCall.kind === "edit") {
+    return "local_file_write";
+  }
+  if (params.toolCall.kind !== "execute") {
+    return undefined;
+  }
+  const rawInput = params.toolCall.rawInput;
+  return rawInput && typeof rawInput === "object" &&
+    typeof (rawInput as Record<string, unknown>).command === "string"
+    ? "local_command"
+    : undefined;
 }
 
 function resolvePermissionOptionDecision(

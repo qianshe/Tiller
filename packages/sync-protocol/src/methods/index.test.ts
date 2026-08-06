@@ -20,7 +20,12 @@ const expectedRequests = [
   "project/git/create_worktree",
   "project/git/status",
   "project/git/commit",
+  "project/git/discard",
+  "project/git/push",
+  "project/git/pull",
   "project/git/graph",
+  "project/git/commit_detail",
+  "project/git/file_diff",
   "project/save",
   "project/delete",
   "agent/list",
@@ -53,12 +58,16 @@ const expectedRequests = [
   "permission/list_pending",
   "permission/respond",
   "approval/list_pending",
+  "approval/list",
+  "approval/clear_history",
   "approval/respond",
   "device/list",
   "device/revoke",
   "device/pair",
   "device/authenticate",
   "daemon/shutdown",
+  "daemon/update/check",
+  "daemon/update/start",
 ];
 
 test("METHODS contains every request and notification method", () => {
@@ -72,6 +81,7 @@ test("METHODS contains every request and notification method", () => {
   assert.equal(METHODS["notification/raised"].kind, "notification");
   assert.equal(METHODS["approval/created"].kind, "notification");
   assert.equal(METHODS["approval/resolved"].kind, "notification");
+  assert.equal(METHODS["daemon/update/status"].kind, "notification");
 });
 
 test("method name lists are exhaustive and stable", () => {
@@ -79,6 +89,6 @@ test("method name lists are exhaustive and stable", () => {
   assert.deepEqual([...CLIENT_NOTIFICATION_METHODS], ["session/cancel"]);
   assert.deepEqual(
     [...SERVER_NOTIFICATION_METHODS],
-    ["session/update", "error/raised", "notification/raised", "approval/created", "approval/resolved"],
+    ["session/update", "error/raised", "notification/raised", "approval/created", "approval/resolved", "daemon/update/status"],
   );
 });

@@ -8,6 +8,7 @@ import type {
 import {
   appendMessageToSessionTimeline,
   appendToolCallToSessionTimeline,
+  resolveSessionTimelineToolCallEntryId,
   sortAssistantTimelineChunks,
   sortSessionTimelineEntries,
   isTranscriptEventEntry,
@@ -407,10 +408,6 @@ function upsertSessionTimelineToolCall(
   return findToolCallTimelineEntry(next, toolCall);
 }
 
-function stripThinkingSuffix(value: string) {
-  return value.endsWith(":thinking") ? value.slice(0, -":thinking".length) : null;
-}
-
 function findMessageTimelineEntry(entries: SessionTimelineEntry[], message: AgentMessage) {
   if (message.role !== "assistant") {
     const kind = message.role === "system" ? "system_message" : "user_message";
@@ -442,22 +439,8 @@ function findMessageTimelineEntry(entries: SessionTimelineEntry[], message: Agen
 }
 
 function findToolCallTimelineEntry(entries: SessionTimelineEntry[], toolCall: AgentToolCall) {
-  if (toolCall.kind !== "think") {
-    const entryId = `tool:${toolCall.id}`;
-    return entries.find((entry) => entry.kind === "tool_call" && entry.id === entryId);
-  }
-
-  const sourceId = toolCall.commandId ?? toolCall.id;
-  const assistantEntryId = stripThinkingSuffix(sourceId) ?? stripThinkingSuffix(toolCall.id) ?? sourceId;
-  return entries.find((entry) =>
-    entry.kind === "assistant_message" &&
-    entry.chunks.some((chunk) =>
-      chunk.kind === "thinking" && matchesTimelineChunkId(chunk.id, toolCall.id)
-    )
-  ) ?? entries.find((entry) =>
-    entry.kind === "assistant_message" &&
-    (entry.id === assistantEntryId || entry.id.startsWith(`${assistantEntryId}#p`))
-  );
+  const entryId = resolveSessionTimelineToolCallEntryId(toolCall);
+  return entries.find((entry) => entry.kind === "tool_call" && entry.id === entryId);
 }
 
 function matchesTimelineChunkId(chunkId: string, baseId: string) {

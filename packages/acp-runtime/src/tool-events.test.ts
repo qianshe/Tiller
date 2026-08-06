@@ -18,3 +18,25 @@ test("extractToolCall keeps git diff commands classified as shell", () => {
     assert.equal(toolCall?.kind, "shell", command);
   }
 });
+
+test("extractToolCall never classifies tool updates as Thinking", () => {
+  for (const update of [
+    {
+      toolCallId: "call-explicit-think",
+      title: "Internal planning",
+      kind: "think",
+      status: "completed",
+      rawOutput: "Inspect the repository first",
+    },
+    {
+      toolCallId: "call-thinking-title",
+      title: "Thinking",
+      status: "completed",
+      rawOutput: "Inspect the repository first",
+    },
+  ]) {
+    const toolCall = extractToolCall("session-tool-thinking", "tool_call_update", update);
+
+    assert.equal(toolCall?.kind, "tool", update.toolCallId);
+  }
+});

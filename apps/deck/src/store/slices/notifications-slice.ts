@@ -2,6 +2,20 @@ import type { StateCreator } from "zustand";
 
 export type DeckNotificationKind = "error" | "warning" | "info";
 
+export type DeckNotificationDetails = {
+  phase?: string;
+  helmKey?: string;
+  method?: string;
+  sessionId?: string;
+  kind?: string;
+  updateKind?: string;
+  updateId?: string;
+  errorName?: string;
+  errorCode?: string;
+  errorStack?: string;
+  componentStack?: string;
+};
+
 export type DeckNotification = {
   id: string;
   kind: DeckNotificationKind;
@@ -9,6 +23,7 @@ export type DeckNotification = {
   source: string;
   code?: string;
   sessionId?: string;
+  details?: DeckNotificationDetails;
   createdAt: string;
 };
 
@@ -19,6 +34,19 @@ export type DeckNotificationInput = Omit<DeckNotification, "id" | "createdAt" | 
 
 export const MAX_DECK_NOTIFICATIONS = 50;
 const DUPLICATE_NOTIFICATION_WINDOW_MS = 5_000;
+const NOTIFICATION_DETAIL_KEYS: Array<keyof DeckNotificationDetails> = [
+  "phase",
+  "helmKey",
+  "method",
+  "sessionId",
+  "kind",
+  "updateKind",
+  "updateId",
+  "errorName",
+  "errorCode",
+  "errorStack",
+  "componentStack",
+];
 
 export type NotificationsSlice = {
   notifications: DeckNotification[];
@@ -36,10 +64,30 @@ function createNotificationId() {
 function optionalNotificationContext(input: DeckNotificationInput) {
   const code = input.code?.trim();
   const sessionId = input.sessionId?.trim();
+  const details = normalizeNotificationDetails(input.details);
   return {
     ...(code ? { code } : {}),
     ...(sessionId ? { sessionId } : {}),
+    ...(details ? { details } : {}),
   };
+}
+
+function normalizeNotificationDetails(value: unknown): DeckNotificationDetails | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const details = {} as DeckNotificationDetails;
+  for (const key of NOTIFICATION_DETAIL_KEYS) {
+    const item = value[key];
+    if (typeof item === "string" && item.trim()) {
+      details[key] = item;
+    }
+  }
+  return Object.keys(details).length > 0 ? details : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set) => ({
@@ -72,6 +120,9 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set) 
           message,
           source,
           code: context.code ?? existing.code,
+          ...(context.details
+            ? { details: { ...existing.details, ...context.details } }
+            : {}),
           createdAt: existing.createdAt,
         };
         return {

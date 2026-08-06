@@ -1,4 +1,5 @@
 import type {
+  ApprovalHistoryPage,
   CanonicalApprovalState,
   CanonicalSessionState,
   SessionUpdateRecord,
@@ -7,6 +8,7 @@ import type { SessionApprovalStore } from "@tiller/persistence";
 import {
   applyApprovalEvent,
   createApprovalState,
+  resolveApprovalHistoryRecord,
   type CanonicalApprovalEvent,
 } from "./approval-reducer";
 
@@ -19,6 +21,8 @@ export type SessionApprovalStateStore = {
     update: SessionUpdateRecord,
     sessionState: CanonicalSessionState,
   ): CanonicalApprovalState;
+  listHistory(options?: { limit?: number; before?: string }): ApprovalHistoryPage;
+  clearProcessedHistory(): number;
   remove(sessionId: string): void;
 };
 
@@ -40,10 +44,18 @@ export function createSessionApprovalStateStore(
   return {
     get,
     commit(sessionId, event, sequence, update, sessionState) {
-      const next = applyApprovalEvent(get(sessionId), event, sequence);
-      persistence.commitUpdate(update, next, sessionState);
+      const current = get(sessionId);
+      const historyRecord = resolveApprovalHistoryRecord(current, event);
+      const next = applyApprovalEvent(current, event, sequence);
+      persistence.commitUpdate(update, next, sessionState, historyRecord);
       cache.set(sessionId, next);
       return next;
+    },
+    listHistory(options) {
+      return persistence.listHistory(options);
+    },
+    clearProcessedHistory() {
+      return persistence.clearProcessedHistory();
     },
     remove(sessionId) {
       cache.delete(sessionId);

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AgentToolCall } from "@tiller/shared";
-import { normalizeCodexToolCall } from "./tool-calls.js";
+import {
+  normalizeCodexToolCall,
+  resolveCodexSubagentRole,
+  resolveCodexSubagentTitle,
+} from "./tool-calls.js";
 
 function baseToolCall(overrides: Partial<AgentToolCall> = {}): AgentToolCall {
   return {
@@ -14,6 +18,14 @@ function baseToolCall(overrides: Partial<AgentToolCall> = {}): AgentToolCall {
     ...overrides,
   };
 }
+
+test("resolveCodexSubagentTitle keeps the first-line prompt summary for responsive rendering", () => {
+  const title = resolveCodexSubagentTitle({
+    prompt: "Inspect the adapter and return CHILD_OK with the complete test output and a concise summary.\nIgnore this second line.",
+  });
+
+  assert.equal(title, "Inspect the adapter and return CHILD_OK with the complete test output and a concise summary.");
+});
 
 test("normalizeCodexToolCall classifies wrapped MCP payloads from update metadata", () => {
   const normalized = normalizeCodexToolCall(
@@ -58,13 +70,48 @@ test("normalizeCodexToolCall classifies wrapped multi-agent payloads from update
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "spawn_agent");
+  assert.equal(normalized.title, "Inspect tool normalization");
   assert.equal(normalized.commandId, "call_codextest");
   assert.equal(normalized.status, "running");
   assert.deepEqual(normalized.subagentOperation, {
     action: "spawn",
     targets: [{ id: "call_codextest" }],
   });
+});
+
+test("normalizeCodexToolCall preserves the explicit Codex subagent role", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({ title: "spawn_agent" }),
+    {
+      rawInput: {
+        namespace: "multi_agent_v1",
+        name: "spawn_agent",
+        arguments: {
+          message: "Inspect the adapter",
+          agent_type: "explorer",
+          fork_context: true,
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.subagentRole, "explorer");
+});
+
+test("resolveCodexSubagentRole accepts role aliases and nested metadata", () => {
+  assert.equal(resolveCodexSubagentRole({ agentRole: "worker" }), "worker");
+  assert.equal(
+    resolveCodexSubagentRole({ metadata: { new_agent_role: "default" } }),
+    "default",
+  );
+  assert.equal(
+    normalizeCodexToolCall(
+      baseToolCall({ title: "Run report" }),
+      { rawInput: { agent_type: "explorer", command: "rg report" } },
+    ).subagentRole,
+    undefined,
+  );
 });
 
 test("normalizeCodexToolCall waits for a complete web query before using it as the title", () => {
@@ -106,6 +153,75 @@ test("normalizeCodexToolCall keeps a streaming shell command out of the title", 
 
   assert.equal(normalized.kind, "shell");
   assert.equal(normalized.title, "Shell");
+});
+
+test("normalizeCodexToolCall derives Codex write titles from ACP diff content", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      kind: "write",
+      title: "Editing files",
+      status: "completed",
+    }),
+    {
+      sessionUpdate: "tool_call",
+      content: [
+        {
+          type: "diff",
+          path: "D:\\repo\\apps\\deck\\src\\first.tsx",
+          oldText: "old",
+          newText: "new",
+        },
+        {
+          type: "diff",
+          path: "D:\\repo\\packages\\shared\\src\\second.ts",
+          oldText: null,
+          newText: "new",
+        },
+      ],
+    },
+  );
+
+  assert.equal(normalized.kind, "write");
+  assert.equal(normalized.title, "apps\\deck\\src\\first.tsx (+1 more)");
+});
+
+test("normalizeCodexToolCall derives legacy Codex write titles from rawInput changes", () => {
+  const input = JSON.stringify({
+    call_id: "call-write",
+    changes: {
+      "apps/deck/src/example.tsx": {
+        type: "update",
+        unified_diff: "@@ -1 +1 @@",
+      },
+    },
+  });
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      kind: "write",
+      title: "Editing files",
+      input,
+    }),
+    {},
+  );
+
+  assert.equal(normalized.title, "apps/deck/src/example.tsx");
+  assert.equal(normalized.input, input);
+});
+
+test("normalizeCodexToolCall does not treat unrelated changes as a write", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({ title: "Update settings" }),
+    {
+      rawInput: {
+        changes: {
+          theme: { from: "light", to: "dark" },
+        },
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "tool");
+  assert.equal(normalized.title, "Update settings");
 });
 
 test("normalizeCodexToolCall prioritizes Codex skill commands over an incidental MCP descriptor", () => {
@@ -190,12 +306,12 @@ test("normalizeCodexToolCall classifies completed multi-agent payloads from outp
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent: inspect_tools");
+  assert.equal(normalized.title, "Inspect tool normalization");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
     action: "spawn",
-    targets: [{ id: "inspect_tools", label: "inspect_tools" }],
+    targets: [{ id: "call_codex_test", label: "inspect_tools" }],
   });
 });
 
@@ -214,12 +330,12 @@ test("normalizeCodexToolCall keeps a completed spawn as a completed operation", 
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent: Cicero");
+  assert.equal(normalized.title, "Reply once");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
     action: "spawn",
-    targets: [{ id: "Cicero", label: "Cicero" }],
+    targets: [{ id: "call_codex_test", label: "Cicero" }],
   });
 });
 
@@ -238,12 +354,12 @@ test("normalizeCodexToolCall keeps wait_agent as an independent operation", () =
   );
 
   assert.equal(normalized.kind, "subagent");
-  assert.equal(normalized.title, "Subagent: Cicero");
+  assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
     action: "wait",
-    targets: [{ id: "Cicero", label: "Cicero" }],
+    targets: [{ id: "Cicero" }],
   });
 });
 
@@ -263,10 +379,156 @@ test("normalizeCodexToolCall keeps close_agent completion distinct from cancella
   );
 
   assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Subagent");
   assert.equal(normalized.commandId, normalized.id);
   assert.equal(normalized.status, "completed");
   assert.deepEqual(normalized.subagentOperation, {
     action: "close",
-    targets: [{ id: "Cicero", label: "Cicero" }],
+    targets: [{ id: "Cicero" }],
   });
+});
+
+test("normalizeCodexToolCall uses sparse lifecycle titles to preserve completed operations", () => {
+  for (const title of ["spawn_agent", "wait_agent", "close_agent"] as const) {
+    const normalized = normalizeCodexToolCall(
+      baseToolCall({
+        id: `call_sparse_${title}`,
+        title,
+        status: "completed",
+      }),
+      {},
+    );
+
+    assert.equal(normalized.kind, "subagent");
+    assert.equal(normalized.title, "Subagent");
+    assert.equal(normalized.status, "completed");
+    assert.deepEqual(normalized.subagentOperation, {
+      action: title === "spawn_agent" ? "spawn" : title === "wait_agent" ? "wait" : "close",
+      targets: title === "spawn_agent"
+        ? [{ id: `call_sparse_${title}` }]
+        : [],
+    });
+  }
+});
+
+test("normalizeCodexToolCall recognizes ACP subAgentActivity lifecycle updates", () => {
+  const rawInput = {
+    agentThreadId: "thread-weather",
+    agentPath: "/root/weather_research",
+    activityKind: "started",
+  };
+  const running = normalizeCodexToolCall(
+    baseToolCall({
+      id: "activity-start",
+      title: "Start subagent weather_research",
+      status: "running",
+    }),
+    {
+      sessionUpdate: "tool_call",
+      toolCallId: "activity-start",
+      rawInput,
+      _meta: {
+        codex: {
+          subagent: {
+            threadId: "thread-weather",
+            path: "/root/weather_research",
+            activity: "started",
+          },
+        },
+      },
+    },
+  );
+  const completed = normalizeCodexToolCall(
+    baseToolCall({
+      id: "activity-start",
+      title: "Start subagent weather_research",
+      status: "completed",
+    }),
+    {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "activity-start",
+      rawInput,
+    },
+  );
+
+  for (const normalized of [running, completed]) {
+    assert.equal(normalized.kind, "subagent");
+    assert.equal(normalized.title, "Subagent");
+    assert.equal(normalized.commandId, "subagent:thread-weather");
+    assert.deepEqual(normalized.subagentOperation, {
+      action: "spawn",
+      targets: [{ id: "thread-weather", label: "weather_research" }],
+    });
+  }
+  assert.equal(running.status, "running");
+  assert.equal(completed.status, "completed");
+});
+
+test("normalizeCodexToolCall keeps ACP subAgentActivity interactions terminal", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      id: "activity-interacted",
+      title: "Interact with subagent weather_research",
+      status: "completed",
+    }),
+    {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "activity-interacted",
+      rawInput: {
+        agentThreadId: "thread-weather",
+        agentPath: "/root/weather_research",
+        activityKind: "interacted",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Subagent");
+  assert.equal(normalized.commandId, "subagent:thread-weather");
+  assert.equal(normalized.status, "completed");
+  assert.equal(normalized.subagentOperation, undefined);
+});
+
+test("normalizeCodexToolCall maps ACP subAgentActivity interruptions to close", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      id: "activity-interrupted",
+      title: "Interrupt subagent weather_research",
+      status: "completed",
+    }),
+    {
+      sessionUpdate: "tool_call",
+      toolCallId: "activity-interrupted",
+      rawInput: {
+        agentThreadId: "thread-weather",
+        agentPath: "/root/weather_research",
+        activityKind: "interrupted",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "subagent");
+  assert.equal(normalized.title, "Subagent");
+  assert.equal(normalized.status, "completed");
+  assert.deepEqual(normalized.subagentOperation, {
+    action: "close",
+    targets: [{ id: "thread-weather", label: "weather_research" }],
+  });
+});
+
+test("normalizeCodexToolCall does not infer subagents from activity words in ordinary input", () => {
+  const normalized = normalizeCodexToolCall(
+    baseToolCall({
+      title: "Run report",
+      status: "completed",
+    }),
+    {
+      rawInput: {
+        message: "The activityKind interacted with the report generator.",
+      },
+    },
+  );
+
+  assert.equal(normalized.kind, "tool");
+  assert.equal(normalized.title, "Run report");
 });

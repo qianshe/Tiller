@@ -14,10 +14,17 @@ export type CanonicalApproval = {
   status: ApprovalStatus;
   request: PermissionRequest;
   decision?: PermissionDecision;
+  createdAt?: string;
   updatedAt: string;
 };
 
 export type CanonicalApprovalState = {
   sequence: number;
   active: Record<string, CanonicalApproval>;
+};
+
+export type ApprovalHistoryPage = {
+  approvals: CanonicalApproval[];
+  nextCursor?: string;
+  hasMore: boolean;
 };

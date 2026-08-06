@@ -23,3 +23,8 @@ test("route content uses typed route context bridge", () => {
   assert.doesNotMatch(routeContentSource, /ctx\s*}: \{ ctx: any \}/);
   assert.doesNotMatch(routeContentSource, /source }: \{ source: any \}/);
 });
+
+test("agents route forwards the requested initial tab", () => {
+  assert.match(routeContentSource, /agentsInitialTab,/);
+  assert.match(routeContentSource, /initialTab=\{agentsInitialTab\}/);
+});

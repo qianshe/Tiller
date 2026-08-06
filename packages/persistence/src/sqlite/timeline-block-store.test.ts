@@ -151,6 +151,56 @@ test("timeline block store updates an existing entry without duplicating or movi
   });
 });
 
+test("timeline stores keep a reused subagent at one persisted position", () => {
+  const first = toolCall({
+    id: "subagent-first-call",
+    commandId: "subagent:reused-task",
+    kind: "subagent",
+    title: "Subagent",
+    status: "completed",
+    sequence: 1,
+  });
+  const second = toolCall({
+    id: "subagent-second-call",
+    commandId: "subagent:reused-task",
+    kind: "subagent",
+    title: "Subagent",
+    status: "running",
+    sequence: 2,
+  });
+
+  withStore(({ store }) => {
+    store.upsertToolCall("session-1", first);
+    store.upsertToolCall("session-1", second);
+
+    const entries = store.list("session-1");
+    assert.deepEqual(entries.map((entry) => entry.id), ["tool:subagent:reused-task"]);
+    assert.equal(entries[0]?.kind, "tool_call");
+    assert.equal(
+      entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
+      "running",
+    );
+  });
+
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-row-reused-subagent-"));
+  const rowStore = createSqliteSessionTimelineStore(join(tempDir, "rows.sqlite")) as InternalTimelineRowStore;
+  try {
+    rowStore.upsertToolCall("session-1", first);
+    rowStore.upsertToolCall("session-1", second);
+
+    const entries = rowStore.list("session-1");
+    assert.deepEqual(entries.map((entry) => entry.id), ["tool:subagent:reused-task"]);
+    assert.equal(entries[0]?.kind, "tool_call");
+    assert.equal(
+      entries[0]?.kind === "tool_call" ? entries[0].toolCall.status : undefined,
+      "running",
+    );
+  } finally {
+    rowStore.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("timeline block store paginates newest-first across block boundaries", () => {
   withStore(({ store }) => {
     for (let index = 0; index < 5; index += 1) {
@@ -377,26 +427,30 @@ test("timeline block store list preserves compaction-only transcript order", () 
   });
 });
 
-test("timeline block store upsertToolCall merges thinking into an assistant entry", () => {
+test("timeline block store keeps legacy Thinking tools separate from assistant messages", () => {
   withStore(({ store }) => {
     store.upsertMessage("session-1", message({ id: "assistant-1", role: "assistant", text: "done", sequence: 2 }));
-    store.upsertToolCall("session-1", toolCall({
+    const legacyToolCall = {
+      ...toolCall({
       id: "assistant-1:thinking",
       commandId: "assistant-1:thinking",
-      kind: "think",
+      kind: "tool",
       output: "reasoning",
       status: "completed",
       title: "Thinking",
       sequence: 1,
-    }));
+      }),
+      kind: "think",
+    } as unknown as AgentToolCall;
+    store.upsertToolCall("session-1", legacyToolCall);
 
     const entries = store.list("session-1");
-    assert.equal(entries.length, 1);
-    assert.deepEqual(
-      entries[0]?.kind === "assistant_message"
-        ? entries[0].chunks.map((chunk) => chunk.kind)
-        : [],
-      ["thinking", "content"],
+    assert.equal(entries.length, 2);
+    assert.equal(entries.some((entry) => entry.kind === "assistant_message"), true);
+    const toolEntry = entries.find((entry) => entry.kind === "tool_call");
+    assert.equal(
+      toolEntry?.kind === "tool_call" ? toolEntry.toolCall.kind : undefined,
+      "tool",
     );
   });
 });

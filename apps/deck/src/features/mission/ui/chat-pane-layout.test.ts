@@ -17,6 +17,15 @@ const sidebarProjectNodeSource = readFileSync(
 );
 const sessionRowSource = readFileSync(resolve(currentDir, "../navigation/session-row.tsx"), "utf8");
 const displayPanelSource = readFileSync(resolve(currentDir, "../display/panel.tsx"), "utf8");
+const displaySectionSource = readFileSync(resolve(currentDir, "../display/section.tsx"), "utf8");
+const promptSubmissionSource = readFileSync(
+  resolve(currentDir, "../orchestration/prompt-submission.ts"),
+  "utf8",
+);
+const sessionActionsSource = readFileSync(
+  resolve(currentDir, "../actions/session-actions.ts"),
+  "utf8",
+);
 const diffPanelSource = readFileSync(resolve(currentDir, "../display/diff-panel.tsx"), "utf8");
 const diffTreeSource = readFileSync(resolve(currentDir, "../display/diff-tree.tsx"), "utf8");
 const mobilePagerSource = readFileSync(resolve(currentDir, "../workspace/mobile-pager.tsx"), "utf8");
@@ -31,6 +40,11 @@ const chatWindowActionsSource = readFileSync(resolve(currentDir, "../workspace/c
 const runtimeOverviewActionsSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview-actions.ts"), "utf8");
 const runtimeOverviewSource = readFileSync(resolve(currentDir, "../workspace/runtime-overview.ts"), "utf8");
 const gitSyncSource = readFileSync(resolve(currentDir, "../workspace/git-sync.ts"), "utf8");
+const gitOperationsSource = readFileSync(resolve(currentDir, "../workspace/git-operations.ts"), "utf8");
+const inventoryEventsSource = readFileSync(
+  resolve(currentDir, "../../server-events/inventory-events.ts"),
+  "utf8",
+);
 const missionViewModelSource = readFileSync(
   resolve(currentDir, "../orchestration/mission-view-model.ts"),
   "utf8",
@@ -434,6 +448,9 @@ test("mission chat pane exposes the v6 session grid and more menu actions", () =
   assert.match(chatPaneSource, /application\/x-tiller-session-id/);
   assert.match(chatPaneSource, /dragOver \? "inset 0 0 0 2px var\(--primary\)" : "none"/);
   assert.match(chatPaneSource, /aria-label="新建任务"/);
+  assert.match(chatPaneSource, /aria-label="新建任务"[\s\S]*?<SquarePen size=\{12\} strokeWidth=\{1\.75\} \/>/);
+  assert.match(chatPaneComponentSource, /aria-label="新建任务"[\s\S]*?onClick=\{handleCreateTaskFromEmptyState\}/);
+  assert.match(chatPaneComponentSource, /canCreateTaskDirectly[\s\S]*?在当前项目中新建会话/);
   assert.match(chatPaneComponentSource, /aria-label="新建会话"/);
   assert.match(chatPaneComponentSource, /选择项目创建会话/);
   assert.match(chatPaneComponentSource, /projectOptions\.map\(\(project\) =>/);
@@ -695,8 +712,8 @@ test("mission compact chrome avoids wrapping and over-indentation", () => {
 });
 
 test("mission diff and inspector commit controls support full-row review", () => {
-  assert.match(diffTreeSource, /visibleLines = patch\.split/);
-  assert.match(diffTreeSource, /isDiffHeaderLine/);
+  assert.match(diffTreeSource, /parseDiffPatchLines|visibleLines = patch\.split/);
+  assert.match(diffTreeSource, /parseDiffPatchLines|isDiffHeaderLine/);
   assert.match(diffPanelSource, /selectedCommitDiffPaths/);
   assert.match(diffPanelSource, /onToggleCommitDiffDirectory/);
   assert.match(diffPanelSource, /collectDiffFilePaths/);
@@ -704,19 +721,23 @@ test("mission diff and inspector commit controls support full-row review", () =>
   assert.match(inspectorSource, /\[scrollbar-width:none\]/);
   assert.match(inspectorSource, /msOverflowStyle: \"none\"/);
   assert.match(shellStylesSource, /\.mission-inspector-diff\s*\{[^}]*scrollbar-width:\s*none;/s);
-  assert.match(inspectorSource, /生成描述/);
+  assert.match(inspectorSource, /生成提交描述/);
   assert.match(inspectorSource, /selectedDiffCount/);
   assert.match(inspectorSource, /取消全选/);
   assert.match(inspectorSource, /全选/);
-  assert.match(inspectorSource, /mission-inspector-commit-editor relative min-w-0 w-full/);
-  assert.match(inspectorSource, /mission-inspector-commit-submit absolute bottom-2 right-2/);
-  assert.match(shellStylesSource, /\.mission-responsive-mode \[data-mission-mobile-pane\] \.mission-inspector-commit-editor \.mission-inspector-commit-submit\s*\{[^}]*position:\s*absolute;/s);
-  assert.match(inspectorSource, /px-2 py-2 pb-10/);
+  assert.match(inspectorSource, /mission-inspector-commit-editor wb-pane-sunken grid min-w-0 w-full/);
+  assert.match(inspectorSource, /mission-inspector-commit-submit flex h-\[var\(--control-h-sm\)\]/);
+  assert.doesNotMatch(shellStylesSource, /\.mission-responsive-mode \[data-mission-mobile-pane\] \.mission-inspector-commit-editor \.mission-inspector-commit-submit/);
+  assert.match(inspectorSource, /border-0 bg-transparent px-1 py-0/);
   assert.doesNotMatch(inspectorSource, /pr-\[7\.5rem\]/);
   assert.doesNotMatch(inspectorSource, /grid grid-cols-\[minmax\(0,1fr\)_auto\] items-end gap-2 md:block/);
-  assert.match(inspectorSource, /mission-worktree-picker relative grid grid-cols-\[minmax\(0,1fr\)_auto_auto\] items-center gap-1/);
-  assert.match(inspectorSource, /min-h-\[96px\]/);
-  assert.match(inspectorSource, /h-7 min-w-\[108px\]/);
+  assert.match(inspectorSource, /mission-worktree-picker relative flex min-w-0 items-center gap-1/);
+  assert.match(inspectorSource, /aria-label=\{generating \? "正在生成提交描述" : "生成提交描述"\}/);
+  assert.match(inspectorSource, /aria-label="刷新 Git"/);
+  assert.doesNotMatch(inspectorSource, /grid grid-cols-4 gap-1/);
+  assert.match(inspectorSource, /min-h-\[48px\]/);
+  assert.match(inspectorSource, /h-\[var\(--control-h-sm\)\] min-w-\[88px\]/);
+  assert.match(inspectorSource, /<GitCommitHorizontal size=\{11\}/);
   assert.match(worktreeSource, /const toggleSelectAllCommitDiffs = \(\) =>/);
   assert.match(worktreeSource, /onToggleSelectAllDiffs=\{toggleSelectAllCommitDiffs\}/);
 });
@@ -759,7 +780,7 @@ test("mission display keeps v6 diff viewer chrome as the primary display surface
   assert.doesNotMatch(diffTreeSource, /mission-diff-patch[^\n]+rounded-b-md border-t border-border-ghost/);
   assert.doesNotMatch(displayPanelSource, /mission-logbook-page/);
   assert.match(inspectorSource, /刷新 Git/);
-  assert.match(inspectorSource, /查看提交历史/);
+  assert.match(inspectorSource, />\s*查看历史\s*<\/DropdownMenuItem>/);
 });
 
 test("mission graph panel shows a loading state while fetching commits", () => {
@@ -787,6 +808,13 @@ test("mission display pane mirrors the v6 viewer chrome", () => {
   assert.doesNotMatch(displayPanelSource, /MissionPanelHeader title="任务展示" bordered \/>/);
 });
 
+test("mobile display diff content keeps the desktop edge-to-edge viewer", () => {
+  assert.match(
+    shellStylesSource,
+    /\.mission-responsive-mode \.mission-pane-display \.mission-panel-content\s*\{[\s\S]*padding:\s*0;/,
+  );
+});
+
 test("mission inspector mirrors the v6 worktree chrome", () => {
   assert.match(inspectorSource, /wb-pane-head/);
   assert.match(inspectorSource, /工作区/);
@@ -800,9 +828,9 @@ test("mission inspector mirrors the v6 worktree chrome", () => {
   assert.match(inspectorSource, /onClose: \(\) => setPickerOpen\(false\)/);
   assert.match(inspectorSource, /document\.addEventListener\("pointerdown", handlePointerDown\)/);
   assert.match(inspectorSource, /!pickerRef\.current\?\.contains\(target\)/);
-  assert.match(inspectorSource, /rows=\{4\}/);
-  assert.match(inspectorSource, /min-h-\[96px\]/);
-  assert.match(inspectorSource, /mission-inspector-commit grid gap-2/);
+  assert.match(inspectorSource, /rows=\{2\}/);
+  assert.match(inspectorSource, /min-h-\[48px\]/);
+  assert.match(inspectorSource, /mission-inspector-commit grid gap-0\.5/);
   assert.doesNotMatch(inspectorSource, /DropdownMenuItem onSelect=\{onCollapse\}/);
   assert.doesNotMatch(inspectorSource, /aria-label="调试会话更新"/);
   assert.match(inspectorSource, /min-w-0 w-full flex-col/);
@@ -821,6 +849,12 @@ test("mission inspector worktree list is driven by the current project worktrees
   assert.match(worktreeSource, /filteredWorktrees\.length/);
   assert.doesNotMatch(worktreeSource, /rawWorktreeOptions\.filter\(isManagedWorktreeWorktree\)/);
   assert.match(worktreeListSource, /onClick=\{\(\) => \{\s*onSelectCwd\(worktree\.path\);\s*onClose\?\.\(\);\s*\}\}/s);
+  assert.doesNotMatch(worktreeSource, /"project\/git\/create_worktree"/);
+  assert.doesNotMatch(worktreeSource, /onCreateWorktree/);
+  assert.doesNotMatch(worktreeListSource, /filterAvailableWorktreeBranches|打开分支/);
+  assert.doesNotMatch(missionSelectionEffectsSource, /project\/git\/list_branches/);
+  assert.match(inspectorSource, /absolute left-0 right-0 bottom-\[calc\(100%\+4px\)\]/);
+  assert.doesNotMatch(inspectorSource, /absolute left-0 right-0 top-\[calc\(100%\+4px\)\]/);
   assert.doesNotMatch(worktreeListSource, /连接/);
 });
 
@@ -1148,18 +1182,21 @@ test("mission inspector git scope follows the explicitly selected worktree", () 
   assert.match(worktreeSource, /const selectedWorktreeSummaryItem = selectedCwd/);
   assert.match(worktreeSource, /gitStatusByWorktree\?\.\[selectedWorktreeSummaryItem\.path\]\?\.branch/);
   assert.match(worktreeSource, /selectedWorktreeSummaryItem\.branch/);
-  assert.match(
-    missionSelectionEffectsSource,
-    /const activeSessionGitProjectId = activeSession\s*\?\s*resolveSessionProjectId\(activeSession, projects\)\s*:\s*null;/,
-  );
-  assert.match(
-    missionSelectionEffectsSource,
-    /const effectiveGitProjectId = activeSessionGitProjectId \?\? selectedProjectId;/,
-  );
-  assert.match(
-    missionSelectionEffectsSource,
-    /const effectiveGitCwd = selectedCwd \?\? activeSession\?\.cwd;/,
-  );
+  // Git scope derivation lives solely in the workspace controller now; the
+  // selection-effects module no longer keeps its own (dead) copies.
+  assert.doesNotMatch(missionSelectionEffectsSource, /effectiveGitProjectId|effectiveGitCwd/);
+});
+
+test("mission comment context plan keeps the full prompt-context wiring chain", () => {
+  assert.match(promptSubmissionSource, /buildMissionPromptPayload|buildMissionPromptText/);
+  assert.match(promptSubmissionSource, /mode === "slash"|mode: "slash"/);
+  assert.match(promptSubmissionSource, /clearDraftContexts/);
+  assert.match(promptSubmissionSource, /setCommandRetentionNotice/);
+  assert.match(sessionActionsSource, /draftContexts/);
+  assert.match(displaySectionSource, /onAddDraftContext/);
+  assert.match(plainMessagesSource, /onAddDraftContext/);
+  assert.match(composerAttachmentsSource, /待发送评论上下文/);
+  assert.match(composerSource, /reviewContext/);
 });
 
 test("mission inspector header keeps primary actions visible on one line", () => {
@@ -1185,11 +1222,89 @@ test("mission inspector header keeps primary actions visible on one line", () =>
   );
 });
 
-test("mission commit refreshes git status and graph after success", () => {
-  assert.match(worktreeSource, /await dispatch\(rpcClientRef\.current, "project\/git\/commit"/);
-  assert.match(worktreeSource, /setSelectedCommitDiffPaths\(new Set\(\)\);/);
-  assert.match(worktreeSource, /void dispatch\(rpcClientRef\.current, "project\/git\/status"/);
-  assert.match(worktreeSource, /void dispatch\(rpcClientRef\.current, "project\/git\/graph"/);
+test("mission commit refreshes git graph after success and no longer auto-dispatches status", () => {
+  // Commit orchestration lives in git-operations runners.
+  assert.match(gitOperationsSource, /context\.dispatch\("project\/git\/commit"/);
+  assert.match(gitOperationsSource, /onCommitSuccess: \(\) => setSelectedCommitDiffPaths\(new Set\(\)\)/);
+  // Status dispatch after commit was removed (explicit refresh only).
+  // Failed commits return before clearing selection; graph refresh follows success only.
+  assert.match(gitOperationsSource, /if \(!result\?\.ok\) \{[\s\S]*return result;/);
+  assert.match(gitOperationsSource, /if \(hasGraph\) \{[\s\S]*context\.dispatch\("project\/git\/graph"/);
+  // Automatic status hydration on project/cwd change was removed.
+  assert.match(missionSelectionEffectsSource, /REMOVED: automatic git status hydration/);
+});
+
+test("mission inspector keeps Git actions inside a compact upward menu", () => {
+  assert.match(inspectorSource, /<DropdownMenuContent[\s\S]*align="end"[\s\S]*side="top"[\s\S]*sideOffset=\{6\}/);
+  assert.match(inspectorSource, /rounded-lg border border-border-ghost\/80 bg-surface-elevated/);
+  assert.match(inspectorSource, /shadow-\[0_14px_36px_rgb\(0_0_0\/0\.34\)\] ring-1 ring-white\/5/);
+  assert.match(inspectorSource, /rounded-md px-2 py-1 text-xs/);
+  assert.match(
+    inspectorSource,
+    />\s*查看历史\s*<\/DropdownMenuItem>[\s\S]*>\s*查看错误\s*<\/DropdownMenuItem>[\s\S]*<DropdownMenuSeparator \/>[\s\S]*Fetch[\s\S]*Pull[\s\S]*Push[\s\S]*<DropdownMenuSeparator \/>[\s\S]*>\s*丢弃选中改动\s*<\/DropdownMenuItem>/,
+  );
+  assert.match(inspectorSource, /onSelect=\{\(\) => void handleFetch\(\)\}/);
+  assert.match(inspectorSource, />\s*查看错误\s*<\/DropdownMenuItem>/);
+  assert.match(inspectorSource, /const pullDisabled = !onPull \|\| gitOperationBusy;/);
+  assert.match(inspectorSource, /const pushDisabled = !onPush \|\| gitOperationBusy;/);
+  assert.doesNotMatch(inspectorSource, /!status\.clean|!status\.upstreamBranch|!status\.pushTarget/);
+  assert.doesNotMatch(inspectorSource, /DropdownMenuItem disabled>Push/);
+  assert.doesNotMatch(inspectorSource, /DropdownMenuItem disabled>Pull/);
+  assert.doesNotMatch(inspectorSource, /gitSummaryParts|gitSummary|Git 未刷新|无 Git 状态|aria-live="polite"/);
+  assert.match(worktreeSource, /onFetch=\{handleFetch\}/);
+  assert.match(worktreeSource, /onOpenGitError=\{handleOpenGitError\}/);
+});
+
+test("mission inspector commit editor follows the compact composer layout", () => {
+  assert.match(inspectorSource, /mission-inspector-commit[^\n]+gap-0\.5[^\n]+px-2 py-1/);
+  assert.match(inspectorSource, /wb-focus-ring flex h-5/);
+  assert.match(inspectorSource, /title="选择 Worktree"/);
+  assert.equal((inspectorSource.match(/grid h-5 w-5 shrink-0 place-items-center rounded-none/g) ?? []).length, 3);
+  assert.match(inspectorSource, /mission-inspector-commit-editor[^\n]+wb-pane-sunken[^\n]+px-2 py-1\.5/);
+  assert.match(inspectorSource, /rows=\{2\}/);
+  assert.match(inspectorSource, /min-h-\[48px\][^\n]+border-0 bg-transparent px-1 py-0/);
+  assert.match(inspectorSource, /mission-inspector-commit-sidecar[^\n]+min-h-7[^\n]+justify-end/);
+  assert.doesNotMatch(inspectorSource, /min-h-\[96px\]|pb-10/);
+});
+
+test("mission diff patches load on demand instead of riding the status payload", () => {
+  // 打开的 diff 文件缺 patch 时按需批量拉取,并以 lastUpdated 指纹防重复请求
+  assert.match(gitOperationsSource, /"project\/git\/file_diff"/);
+  assert.match(worktreeSource, /handleFetchFileDiffs\(\[selectedMissionDiffFilePath\]\)/);
+  assert.match(worktreeSource, /requestedDiffPathsRef\.current\.get\(selectedMissionDiffFilePath\) === fingerprint/);
+  // 生成提交描述前补齐缺失 patch,直接消费返回值
+  assert.match(worktreeSource, /handleFetchFileDiffs\(missingPaths\)/);
+  // 结果事件把 patch 合并回 status 条目
+  assert.match(
+    inventoryEventsSource,
+    /case "project\/git\/file_diff":[\s\S]*applyGitFileDiffResult\(current, payload, payload\.cwd\)/,
+  );
+});
+
+test("mission Git actions notify success and refresh tracking after remote changes", () => {
+  assert.match(gitOperationsSource, /import \{ toast \} from "\.\.\/\.\.\/toast";/);
+  assert.match(gitOperationsSource, /notify\.success\("提交成功"\)/);
+  assert.match(gitOperationsSource, /notify\.success\("已丢弃选中改动"\)/);
+  // Fetch success only fires when the remote refresh actually succeeded.
+  assert.match(
+    gitOperationsSource,
+    /runGitRefresh\(context, \{ refreshRemote: true \}\)[\s\S]*resolveFetchOutcome\(result\)[\s\S]*notify\.success\("Fetch 成功"\)/,
+  );
+  // Push/Pull share one runner: dispatch → refresh → success/warning notification.
+  assert.match(
+    gitOperationsSource,
+    /if \(result\?\.ok\) \{[\s\S]*runGitRefresh\(context, \{ refreshRemote: false \}\)[\s\S]*notify\.success\(`\$\{op\.verb\} 成功`\)/,
+  );
+  assert.match(gitOperationsSource, /method: "project\/git\/push"/);
+  assert.match(gitOperationsSource, /method: "project\/git\/pull"/);
+});
+
+test("mission inspector only exposes confirmed selected Git discard", () => {
+  assert.match(inspectorSource, /GitDiscardConfirmDialog/);
+  assert.match(inspectorSource, />\s*丢弃选中改动\s*<\/DropdownMenuItem>/);
+  assert.doesNotMatch(inspectorSource, /丢弃全部改动/);
+  assert.match(gitOperationsSource, /context\.dispatch\("project\/git\/discard"/);
+  assert.match(worktreeSource, /onDiscard=\{handleDiscard\}/);
 });
 
 test("mission graph auto-load does not loop after a completed fetch", () => {

@@ -50,7 +50,7 @@ function resetStore() {
     approvalItemsById: {},
     pendingApprovalIds: [],
     pendingApprovalIdsBySession: {},
-    approvalToastQueue: [],
+    approvalHistory: [],
     trustedDevices: [],
     pairingFeedback: "",
   });
@@ -158,12 +158,12 @@ test("streaming assistant chunks do not update session summary state", () => {
   );
 });
 
-test("live thinking tool calls update the chat tool-call store immediately", () => {
+test("tools titled Thinking update the chat tool-call store immediately", () => {
   resetStore();
   const toolCallsRef: MutableRefObject<Record<string, AgentToolCall[]>> = { current: {} };
   const thinkingToolCall: AgentToolCall = {
     id: "think-live",
-    kind: "think",
+    kind: "tool",
     title: "Thinking",
     status: "running",
     output: "实时 Thinking",
@@ -387,11 +387,11 @@ test("timeline refresh clears a stale live running tool overlay", () => {
   );
 });
 
-test("assistant message chunks clear active live thinking from the chat store", () => {
+test("assistant message chunks do not clear tools titled Thinking from the chat store", () => {
   resetStore();
   const liveThinking: AgentToolCall = {
     id: "think-live",
-    kind: "think",
+    kind: "tool",
     title: "Thinking",
     status: "running",
     output: "实时 Thinking",
@@ -436,15 +436,15 @@ test("assistant message chunks clear active live thinking from the chat store", 
   );
 
   assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().toolCalls.s1, [completedTool]);
-  assert.deepEqual(toolCallsRef.current.s1, [completedTool]);
+  assert.deepEqual(useDeckStore.getState().toolCalls.s1, [liveThinking, completedTool]);
+  assert.deepEqual(toolCallsRef.current.s1, [liveThinking, completedTool]);
 });
 
-test("session artifact refresh prunes active live thinking that is absent from the payload", () => {
+test("session artifact refresh does not specially prune tools titled Thinking", () => {
   resetStore();
   const staleThinking: AgentToolCall = {
     id: "runtime-thinking:thinking",
-    kind: "think",
+    kind: "tool",
     title: "Thinking",
     status: "running",
     output: "旧实时 Thinking",
@@ -503,8 +503,8 @@ test("session artifact refresh prunes active live thinking that is absent from t
   );
 
   assert.equal(handled, true);
-  assert.deepEqual(useDeckStore.getState().toolCalls.s1, [authoritativeTool]);
-  assert.deepEqual(toolCallsRef.current.s1, [authoritativeTool]);
+  assert.deepEqual(useDeckStore.getState().toolCalls.s1, [staleThinking, authoritativeTool]);
+  assert.deepEqual(toolCallsRef.current.s1, [staleThinking, authoritativeTool]);
 });
 
 test("device RPC results sync trusted device inventory for the current helm", () => {

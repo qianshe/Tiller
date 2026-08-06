@@ -5,6 +5,7 @@ import type {
   ConnectionState,
   HelmInventoryBucket,
 } from "../../../store/facade";
+import { useDeckStore } from "../../../store";
 import { readTrustedDeviceCache } from "../../auth/beacon-cache";
 import {
   connectHelmSocket as connectHelmSocketImpl,
@@ -93,6 +94,25 @@ export function createSocketController(
       },
       setSessionHistoryState,
       sessionPageLimit: DEFAULT_SESSION_PAGE_LIMIT,
+      onUpdateCheckError: (error) => {
+        const helmKey = sourceHelmKey ?? primaryHelmKeyRef.current ?? daemonProfileKey(
+          daemonHost.trim() || DEFAULT_DAEMON_HOST,
+          daemonPort.trim() || DEFAULT_DAEMON_PORT,
+        );
+        const previous = useDeckStore.getState().helmInventories[helmKey]?.update;
+        applyHelmInventory(helmKey, {
+          update: {
+            ...(previous ?? {
+              currentVersion: "未知",
+              updateAvailable: false,
+              canUpdate: false,
+            }),
+            status: "failed",
+            checkStatus: "failed",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+      },
     });
   }
 

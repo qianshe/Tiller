@@ -23,6 +23,7 @@ import {
   selectAdjacentMissionMobilePane as resolveAdjacentMissionMobilePane,
 } from "./mobile-pane";
 import { useChatWindowActions } from "./chat-window-actions";
+import type { GitCommitDetailState, GitGraphState } from "../../../store/facade";
 import { MissionPage } from "./page";
 import {
   buildDraftPreparingMessage,
@@ -52,6 +53,7 @@ import {
 import { joinClassNames } from "../utils/session-render-state";
 import { shouldRefreshModelPickerOptions } from "../utils/model-picker-refresh";
 import { reconcileMissionDiffs, shouldPrimeGitGraphLoad } from "./git-sync";
+import { useGitOperations } from "./git-operations";
 
 export function MissionWorktree(props: any) {
   const {
@@ -171,12 +173,19 @@ export function MissionWorktree(props: any) {
     selectDraftWorktree,
     agentLocked,
     filteredAgents,
+    navigateToView,
     selectDraftAgent,
     createDraftSessionForAgent,
     submitPrompt,
     slashWrapperRef,
     removePromptImage,
     imagePasteNotice,
+    draftContexts,
+    clearDraftContexts,
+    addDraftContext,
+    removeDraftContext,
+    commandRetentionNotice,
+    setCommandRetentionNotice,
     missionPromptRef,
     setPrompt,
     handleMissionPromptKeyDown,
@@ -224,6 +233,9 @@ export function MissionWorktree(props: any) {
     setActivityVisibleCounts,
     loadOlderActivities,
     setSelectedMissionDisplayTabId,
+    missionGitErrorTabOpen,
+    openMissionGitErrorTab,
+    closeMissionGitErrorTab,
     openDiffDetail,
     toggleMissionDiffDirectory,
     collapsedMissionDiffDirectories,
@@ -243,7 +255,7 @@ export function MissionWorktree(props: any) {
   const sessionSubagentDetails = useDeckStore((state) => state.sessionSubagentDetails);
   const setSessionSubagentDetails = useDeckStore((state) => state.setSessionSubagentDetails);
   const subagentDetailGenerationsRef = useRef(new Map<string, number>());
-  const previousActiveSessionIdRef = useRef<string | null>(activeSessionId ?? null);
+  const pendingSubagentDetailRequestsRef = useRef(new Set<string>());
 
   const loadSubagentDetail = useCallback((sessionId: string, parentToolCallId: string) => {
     const client = rpcClientRef.current;
@@ -264,6 +276,10 @@ export function MissionWorktree(props: any) {
       }));
       return;
     }
+    if (pendingSubagentDetailRequestsRef.current.has(key)) {
+      return;
+    }
+    pendingSubagentDetailRequestsRef.current.add(key);
     const generation = (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1;
     subagentDetailGenerationsRef.current.set(key, generation);
     setSessionSubagentDetails((current) => ({
@@ -284,11 +300,12 @@ export function MissionWorktree(props: any) {
         if (subagentDetailGenerationsRef.current.get(key) !== generation) return;
         const snapshot = result as SessionSubagentDetail;
         setSessionSubagentDetails((current) => {
-          if (!current[key]) return current;
+          const buffered = current[key];
+          if (!buffered) return current;
           return {
             ...current,
             [key]: {
-              ...mergeSubagentDetailSnapshot(snapshot, current[key]),
+              ...mergeSubagentDetailSnapshot(snapshot, buffered),
               loading: false,
               failed: false,
             },
@@ -303,26 +320,17 @@ export function MissionWorktree(props: any) {
             ? { ...current, [key]: { ...existing, loading: false, failed: true } }
             : current;
         });
+      })
+      .finally(() => {
+        pendingSubagentDetailRequestsRef.current.delete(key);
       });
   }, [rpcClientRef, setSessionSubagentDetails]);
 
   const toggleSubagentDetail = useCallback((sessionId: string, parentToolCallId: string, open: boolean) => {
-    const key = `${sessionId}\0${parentToolCallId}`;
     if (open) {
       loadSubagentDetail(sessionId, parentToolCallId);
-      return;
     }
-    subagentDetailGenerationsRef.current.set(
-      key,
-      (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1,
-    );
-    setSessionSubagentDetails((current) => {
-      if (!current[key]) return current;
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
-  }, [loadSubagentDetail, setSessionSubagentDetails]);
+  }, [loadSubagentDetail]);
   const pendingLegacyEvidenceRequestsRef = useRef(new Set<string>());
   const loadSessionLegacyEvidence = useCallback((
     sessionId: string,
@@ -504,6 +512,9 @@ export function MissionWorktree(props: any) {
   const activeGitProjectId = activeSessionProjectId ?? selectedProjectId;
   const activeGitCwd = selectedCwd ?? activeSession?.cwd;
   const currentGitStatus = activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined;
+  const effectiveMissionDisplayTab = selectedMissionDisplayTabId === "git-error"
+    ? { id: "git-error", title: "Git 错误" }
+    : selectedMissionDisplayTab;
   const historicalDiffIncomplete = Boolean(
     activeSessionId && historicalDiffIncompleteBySession[activeSessionId],
   );
@@ -669,98 +680,92 @@ export function MissionWorktree(props: any) {
     });
   };
 
-  const handleCommit = useCallback(
-    async (message: string, paths: string[]) => {
-      if (!activeGitProjectId || !activeGitCwd || !rpcClientRef.current) {
-        return;
-      }
+  const {
+    handleRefreshGitStatus,
+    handleFetch,
+    handlePush,
+    handlePull,
+    handleCommit,
+    handleDiscard,
+    handleFetchFileDiffs,
+  } = useGitOperations({
+    activeGitProjectId,
+    activeGitCwd,
+    rpcClientRef,
+    dispatch,
+    gitGraphByWorktree,
+    setGitStatusByWorktree,
+    setGitGraphByWorktree,
+    setSelectedCommitDiffPaths,
+  });
 
-      try {
-        await dispatch(rpcClientRef.current, "project/git/commit", {
-          projectId: activeGitProjectId,
-          cwd: activeGitCwd,
-          message,
-          paths,
-        });
-        setSelectedCommitDiffPaths(new Set());
-        void dispatch(rpcClientRef.current, "project/git/status", {
-          projectId: activeGitProjectId,
-          cwd: activeGitCwd,
-        });
-        const currentGraph = gitGraphByWorktree[activeGitCwd];
-        if (currentGraph) {
-          void dispatch(rpcClientRef.current, "project/git/graph", {
-            projectId: activeGitProjectId,
-            cwd: activeGitCwd,
-          });
-        }
-      } catch (error) {
-        console.error("Commit failed:", error);
-      }
-    },
-    [activeGitProjectId, activeGitCwd, dispatch, gitGraphByWorktree],
-  );
+  // Status 快照只带统计;选中文件缺 patch 时按需批量拉取,状态刷新后指纹
+  // (lastUpdated)变化会重新请求,避免对同一快照重复请求。
+  const requestedDiffPathsRef = useRef<Map<string, string>>(new Map());
+  useEffect(() => {
+    if (!selectedMissionDiffFilePath || !currentGitStatus?.lastUpdated) {
+      return;
+    }
+    const selectedDiff = syncedMissionDiffs.find(
+      (diff) => diff.path === selectedMissionDiffFilePath,
+    );
+    const inGitStatus = currentGitStatus.files?.some(
+      (file: { path: string }) => file.path === selectedMissionDiffFilePath,
+    );
+    if (!selectedDiff || selectedDiff.patch || !inGitStatus) {
+      return;
+    }
+    const fingerprint = currentGitStatus.lastUpdated;
+    if (requestedDiffPathsRef.current.get(selectedMissionDiffFilePath) === fingerprint) {
+      return;
+    }
+    requestedDiffPathsRef.current.set(selectedMissionDiffFilePath, fingerprint);
+    void handleFetchFileDiffs([selectedMissionDiffFilePath]);
+  }, [
+    selectedMissionDiffFilePath,
+    syncedMissionDiffs,
+    currentGitStatus,
+    handleFetchFileDiffs,
+  ]);
 
   const handleGenerateDescription = useCallback(async (): Promise<string> => {
     if (!deckPreferences.promptEnhancer.llm.enabled) {
       throw new Error("LLM not configured in preferences");
     }
 
+    const selectedChanges = syncedMissionDiffs
+      .filter((diff) => selectedCommitDiffPaths.has(diff.path))
+      .map((diff) => ({
+        path: diff.path,
+        status: diff.status,
+        patch: diff.patch,
+      }));
+
+    // 补齐缺失的 patch:直接使用返回值,不等待 store 回流。
+    const missingPaths = selectedChanges
+      .filter((change) => !change.patch)
+      .map((change) => change.path);
+    if (missingPaths.length > 0) {
+      const fetched = await handleFetchFileDiffs(missingPaths);
+      const patchByPath = new Map(
+        (fetched.files ?? []).map((file) => [file.path.replace(/\\/g, "/"), file.patch] as const),
+      );
+      for (const change of selectedChanges) {
+        change.patch ??= patchByPath.get(change.path.replace(/\\/g, "/"));
+      }
+    }
+
     return await generateCommitDescription({
-      selectedChanges: syncedMissionDiffs
-        .filter((diff) => selectedCommitDiffPaths.has(diff.path))
-        .map((diff) => ({
-          path: diff.path,
-          status: diff.status,
-          patch: diff.patch,
-        })),
+      selectedChanges,
       llmConfig: deckPreferences.promptEnhancer.llm,
     });
   }, [
     deckPreferences.promptEnhancer.llm,
+    handleFetchFileDiffs,
     selectedCommitDiffPaths,
     syncedMissionDiffs,
   ]);
 
-  const handleRefreshGitStatus = useCallback(() => {
-    if (!activeGitProjectId || !activeGitCwd || !rpcClientRef.current) {
-      return;
-    }
-
-    // Set loading state before dispatch to prevent duplicate requests
-    const currentStatus = gitStatusByWorktree[activeGitCwd];
-    if (currentStatus) {
-      setGitStatusByWorktree((current: any) => ({
-        ...current,
-        [activeGitCwd]: {
-          ...currentStatus,
-          loading: true,
-        },
-      }));
-    }
-
-    const currentGraph = gitGraphByWorktree[activeGitCwd];
-    if (currentGraph) {
-      setGitGraphByWorktree((current: any) => ({
-        ...current,
-        [activeGitCwd]: {
-          ...currentGraph,
-          loading: true,
-        },
-      }));
-    }
-
-    void dispatch(rpcClientRef.current, "project/git/status", {
-      projectId: activeGitProjectId,
-      cwd: activeGitCwd,
-    });
-    if (currentGraph) {
-      void dispatch(rpcClientRef.current, "project/git/graph", {
-        projectId: activeGitProjectId,
-        cwd: activeGitCwd,
-      });
-    }
-  }, [activeGitProjectId, activeGitCwd, dispatch, gitStatusByWorktree, gitGraphByWorktree]);
   const handleOpenGraph = useCallback(() => {
     setSelectedMissionDisplayTabId("graph");
     setMissionDisplayCollapsed(false);
@@ -781,6 +786,7 @@ export function MissionWorktree(props: any) {
           projectId: activeGitProjectId,
           cwd: activeGitCwd,
           head: currentGraph?.head,
+          signature: currentGraph?.signature,
           commits: currentGraph?.commits ?? [],
           loading: true,
           message: "正在加载提交历史...",
@@ -790,8 +796,63 @@ export function MissionWorktree(props: any) {
     void dispatch(rpcClientRef.current, "project/git/graph", {
       projectId: activeGitProjectId,
       cwd: activeGitCwd,
+      ...(currentGraph?.signature ? { knownSignature: currentGraph.signature } : {}),
     });
   }, [activeGitProjectId, activeGitCwd, rpcClientRef, dispatch, gitGraphByWorktree, setSelectedMissionDisplayTabId, setMissionDisplayCollapsed, isMissionMobile, setSelectedMissionMobilePane]);
+
+  const handleOpenGitError = useCallback(() => {
+    openMissionGitErrorTab();
+    setMissionDisplayCollapsed(false);
+    if (isMissionMobile) {
+      setSelectedMissionMobilePane("display");
+    }
+  }, [isMissionMobile, openMissionGitErrorTab, setMissionDisplayCollapsed, setSelectedMissionMobilePane]);
+  const handleSelectGitCommit = useCallback((commitHash: string) => {
+    if (!activeGitProjectId || !activeGitCwd || !rpcClientRef.current) {
+      return;
+    }
+    const projectId = activeGitProjectId;
+    const cwd = activeGitCwd;
+    const currentDetail = gitGraphByWorktree[cwd]?.commitDetails?.[commitHash];
+    if (currentDetail?.loading || (currentDetail && !currentDetail.error)) {
+      return;
+    }
+    // Seed the graph entry when missing so detail state always has a home.
+    const patchCommitDetail = (
+      detail: Omit<GitCommitDetailState, "commitHash" | "files">,
+    ) => {
+      setGitGraphByWorktree?.((current: Record<string, GitGraphState>) => {
+        const graph: GitGraphState = current[cwd] ?? { projectId, cwd, commits: [] };
+        const files = graph.commitDetails?.[commitHash]?.files ?? [];
+        return {
+          ...current,
+          [cwd]: {
+            ...graph,
+            commitDetails: {
+              ...graph.commitDetails,
+              [commitHash]: { commitHash, files, ...detail },
+            },
+          },
+        };
+      });
+    };
+    patchCommitDetail({ loading: true, message: "正在加载提交详情..." });
+    void dispatch(rpcClientRef.current, "project/git/commit_detail", {
+      projectId,
+      cwd,
+      commitHash,
+    }).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : "提交详情加载失败";
+      patchCommitDetail({ loading: false, message, error: message });
+    });
+  }, [
+    activeGitCwd,
+    activeGitProjectId,
+    dispatch,
+    gitGraphByWorktree,
+    rpcClientRef,
+    setGitGraphByWorktree,
+  ]);
   const inspectorWorktreeCount = worktreeOptions.length || selectedSessionWorktreeItems.length;
   const inspectorWorktreeSummaryLabel = selectedWorktreeSummaryItem
     ? `${activeSessionProject?.name ?? draftProject?.name ?? "未命名项目"} / ${gitStatusByWorktree?.[selectedWorktreeSummaryItem.path]?.branch ?? selectedWorktreeSummaryItem.branch ?? selectedWorktreeSummaryItem.name ?? "未检测分支"}`
@@ -989,24 +1050,6 @@ export function MissionWorktree(props: any) {
   }));
   const helmConnected = pairingState === "paired";
   useEffect(() => {
-    const previousSessionId = previousActiveSessionIdRef.current;
-    const nextSessionId = activeSessionId ?? null;
-    previousActiveSessionIdRef.current = nextSessionId;
-    if (!previousSessionId || previousSessionId === nextSessionId) return;
-    const prefix = `${previousSessionId}\0`;
-    for (const key of subagentDetailGenerationsRef.current.keys()) {
-      if (key.startsWith(prefix)) {
-        subagentDetailGenerationsRef.current.set(
-          key,
-          (subagentDetailGenerationsRef.current.get(key) ?? 0) + 1,
-        );
-      }
-    }
-    setSessionSubagentDetails((current) => Object.fromEntries(
-      Object.entries(current).filter(([key]) => !key.startsWith(prefix)),
-    ));
-  }, [activeSessionId, setSessionSubagentDetails]);
-  useEffect(() => {
     if (!helmConnected) return;
     for (const detail of Object.values(useDeckStore.getState().sessionSubagentDetails)) {
       if (detail) loadSubagentDetail(detail.sessionId, detail.parentToolCallId);
@@ -1158,6 +1201,7 @@ export function MissionWorktree(props: any) {
           onLoadOlderMessages={loadOlderMessages}
           onLoadLegacyEvidence={loadSessionLegacyEvidence}
           onToggleExpandedMessage={toggleExpandedMessage}
+          onAddDraftContext={addDraftContext}
           subagentDetails={sessionSubagentDetails}
           onToggleSubagentDetail={toggleSubagentDetail}
           activityLoading={missionActivityLoading}
@@ -1171,6 +1215,9 @@ export function MissionWorktree(props: any) {
           showThinking={technicalPanels.showMissionThinking}
           canToggleDisplay={canToggleDisplay}
           projectOptions={workbenchProjectOptions}
+          hasAgents={agents.length > 0}
+          hasProjects={workbenchProjectOptions.length > 0}
+          onNavigateAgents={(tab) => navigateToView("agents", { agentsTab: tab })}
           onExpandSidebar={() => setMissionSidebarCollapsed(false)}
           onToggleDisplay={onToggleDisplay}
           onToggleInspector={onToggleInspector}
@@ -1273,6 +1320,11 @@ export function MissionWorktree(props: any) {
               cancelSession={cancelSession}
               onOpenModelPicker={handleOpenModelPicker}
               canSend={canSend}
+              reviewContext={{
+                draftContexts,
+                commandRetentionNotice,
+                removeDraftContext,
+              }}
             />
           ) : null}{" "}
         </MissionChatPane>{" "}
@@ -1293,7 +1345,7 @@ export function MissionWorktree(props: any) {
         <MissionDisplaySection
             style={missionDisplayPaneStyle}
             pages={missionDisplayTabs}
-            selectedPage={selectedMissionDisplayTab}
+            selectedPage={effectiveMissionDisplayTab}
             overviewItems={projectOverviewItems}
             runtimeOverviewItems={runtimeOverviewItems}
             currentModelSummary={`当前模型：${draftModelPickerLabel} · 推理：${resolveReasoningLabel(effectiveDraftReasoningEffort)}`}
@@ -1304,6 +1356,10 @@ export function MissionWorktree(props: any) {
             historicalDiffIncomplete={historicalDiffIncomplete}
             onReconnectRuntime={reconnectAcpRuntime}
             gitGraph={activeGitCwd ? gitGraphByWorktree[activeGitCwd] : undefined}
+            gitStatus={currentGitStatus}
+            gitErrorTabOpen={missionGitErrorTabOpen}
+            onSelectGitCommit={handleSelectGitCommit}
+            onCloseGitErrorTab={closeMissionGitErrorTab}
             onAddPage={() => {}}
             onSelectPage={setSelectedMissionDisplayTabId}
             onDragStart={() => {}}
@@ -1313,6 +1369,7 @@ export function MissionWorktree(props: any) {
             onDeletePage={() => {}}
             onOpenDiffDetail={openDiffDetail}
             onCloseDiffFile={closeMissionDiffFile}
+            onAddDraftContext={addDraftContext}
             onCollapse={onToggleDisplay}
         />{" "}
           </ResizablePanel>
@@ -1346,8 +1403,13 @@ export function MissionWorktree(props: any) {
           onCommit={handleCommit}
           onGenerateDescription={handleGenerateDescription}
           onOpenGraph={handleOpenGraph}
+          onOpenGitError={handleOpenGitError}
           onCollapse={onToggleInspector}
           onRefreshGitStatus={handleRefreshGitStatus}
+          onFetch={handleFetch}
+          onPush={handlePush}
+          onPull={handlePull}
+          onDiscard={handleDiscard}
           onToggleSelectAllDiffs={toggleSelectAllCommitDiffs}
           resizer={null}
         />{" "}

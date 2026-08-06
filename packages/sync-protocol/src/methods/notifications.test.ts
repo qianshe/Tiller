@@ -9,6 +9,7 @@ import * as errorRaised from "./error/raised";
 import * as notificationRaised from "./notification/raised";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
+import * as daemonUpdateStatus from "./daemon/update-status";
 
 test("session/prompt result has stopReason", () => {
   assert.equal(sessionPrompt.method, "session/prompt");
@@ -99,4 +100,18 @@ test("device/pair and device/authenticate carry the expected fields", () => {
   assert.equal(deviceAuthenticate.method, "device/authenticate");
   devicePair.ResultSchema.parse({ ok: true, message: "paired" });
   deviceAuthenticate.ResultSchema.parse({ ok: true, message: "ok" });
+});
+
+test("daemon/update status carries capability and progress fields", () => {
+  assert.equal(daemonUpdateStatus.method, "daemon/update/status");
+  assert.equal(daemonUpdateStatus.descriptor.kind, "notification");
+  daemonUpdateStatus.ParamsSchema.parse({
+    status: "available",
+    currentVersion: "1.0.0",
+    latestVersion: "1.1.0",
+    canUpdate: true,
+    checkStatus: "checked",
+    manualCommand: "npm install -g @qianshe/tiller@latest",
+    occurredAt: "2026-08-02T00:00:00.000Z",
+  });
 });

@@ -27,7 +27,7 @@ import {
   type SessionUpdateEnvelope,
 } from "./session-update";
 import { projectSessionMetadataEvent, projectSessionStatusEvent } from "./session-state-events";
-import { extractThinkingToolCall } from "./thinking-events";
+import { extractThinkingContent, type ThinkingContent } from "./thinking-events";
 import { extractToolCall, mapCommandChunkToToolCall } from "./tool-events";
 
 export {
@@ -51,10 +51,20 @@ export type SessionUpdateMappingOptions = {
 
 export type RuntimeEventOriginTracker = {
   commandOrigins: Map<string, RuntimeEventOrigin>;
+  /**
+   * commandId → parent subagent root tool-call id, used to backfill an origin
+   * for a provider (e.g. OpenCode) that emits child tool calls under the same
+   * commandId as the root subagent launch but exposes no parent metadata.
+   */
+  subagentCommandParents: Map<string, string>;
 };
 
+const trackedSubagentRootKeys = new WeakMap<RuntimeEventOriginTracker, Set<string>>();
+
 export function createRuntimeEventOriginTracker(): RuntimeEventOriginTracker {
-  return { commandOrigins: new Map() };
+  const tracker = { commandOrigins: new Map(), subagentCommandParents: new Map() };
+  trackedSubagentRootKeys.set(tracker, new Set());
+  return tracker;
 }
 
 export function clearRuntimeEventOriginTrackerSession(
@@ -64,6 +74,15 @@ export function clearRuntimeEventOriginTrackerSession(
   const prefix = `${sessionId}\0`;
   for (const key of tracker.commandOrigins.keys()) {
     if (key.startsWith(prefix)) tracker.commandOrigins.delete(key);
+  }
+  for (const key of tracker.subagentCommandParents.keys()) {
+    if (key.startsWith(prefix)) tracker.subagentCommandParents.delete(key);
+  }
+  const rootKeys = trackedSubagentRootKeys.get(tracker);
+  if (rootKeys) {
+    for (const key of rootKeys) {
+      if (key.startsWith(prefix)) rootKeys.delete(key);
+    }
   }
 }
 
@@ -124,9 +143,47 @@ function attachRuntimeEventOrigin(
     : event.type === "tool-call"
       ? [event.toolCall.commandId, event.toolCall.id].filter((value): value is string => Boolean(value))
       : [];
-  const effectiveOrigin = origin ?? commandIds
-    .map((commandId) => tracker?.commandOrigins.get(originTrackerKey(sessionId, commandId)))
-    .find((candidate): candidate is RuntimeEventOrigin => Boolean(candidate));
+  const isUnattributedSubagentRoot = event.type === "tool-call" &&
+    event.toolCall.kind === "subagent" &&
+    !origin &&
+    Boolean(event.toolCall.id);
+  const isTrackedSubagentRoot = tracker && event.type === "tool-call" &&
+    hasTrackedSubagentRoot(tracker, sessionId, event.toolCall.id);
+  const isSubagentRoot = isUnattributedSubagentRoot || isTrackedSubagentRoot;
+  const isNewSubagentRoot = isUnattributedSubagentRoot && !isTrackedSubagentRoot;
+  if (tracker && isNewSubagentRoot) {
+    // OpenCode reuses the logical task/session id for a later invocation. The
+    // latest root owns that task id, while per-tool origins remain available
+    // for delayed updates from older children.
+    rememberSubagentRoot(tracker, sessionId, event.toolCall.id);
+    for (const commandId of commandIds) {
+      tracker.commandOrigins.delete(originTrackerKey(sessionId, commandId));
+      tracker.subagentCommandParents.set(
+        originTrackerKey(sessionId, commandId),
+        event.toolCall.id,
+      );
+    }
+  }
+  const originLookupIds = event.type === "tool-call"
+    ? [event.toolCall.id, event.toolCall.commandId].filter(
+      (value, index, values): value is string => Boolean(value) && values.indexOf(value) === index,
+    )
+    : commandIds;
+  const cachedOrigin = !isSubagentRoot
+    ? originLookupIds
+        .map((commandId) => tracker?.commandOrigins.get(originTrackerKey(sessionId, commandId)))
+        .find((candidate): candidate is RuntimeEventOrigin => Boolean(candidate))
+    : undefined;
+  const reverseParent = !origin && !cachedOrigin && !isSubagentRoot && tracker
+    ? originLookupIds
+        .map((commandId) => tracker.subagentCommandParents.get(originTrackerKey(sessionId, commandId)))
+        .find((candidate): candidate is string =>
+          Boolean(candidate) &&
+          !(event.type === "tool-call" && candidate === event.toolCall.id)
+        )
+    : undefined;
+  const effectiveOrigin = origin ?? cachedOrigin ??
+    (reverseParent ? { scope: "subagent", parentToolCallId: reverseParent } : undefined);
   if (effectiveOrigin && tracker) {
     for (const commandId of commandIds) {
       tracker.commandOrigins.set(originTrackerKey(sessionId, commandId), effectiveOrigin);
@@ -155,6 +212,24 @@ function originTrackerKey(sessionId: string, commandId: string) {
   return `${sessionId}\0${commandId}`;
 }
 
+function hasTrackedSubagentRoot(
+  tracker: RuntimeEventOriginTracker,
+  sessionId: string,
+  toolCallId: string,
+) {
+  return trackedSubagentRootKeys.get(tracker)?.has(originTrackerKey(sessionId, toolCallId)) ?? false;
+}
+
+function rememberSubagentRoot(
+  tracker: RuntimeEventOriginTracker,
+  sessionId: string,
+  toolCallId: string,
+) {
+  const keys = trackedSubagentRootKeys.get(tracker) ?? new Set<string>();
+  keys.add(originTrackerKey(sessionId, toolCallId));
+  trackedSubagentRootKeys.set(tracker, keys);
+}
+
 function projectSessionUpdate(
   envelope: SessionUpdateEnvelope,
   options: SessionUpdateMappingOptions,
@@ -168,53 +243,68 @@ function projectSessionUpdate(
     text,
   };
 
-  const thinkingToolCall = extractThinkingToolCall(sessionId, updateType, update);
-  if (thinkingToolCall) {
-    return [{ type: "tool-call", toolCall: thinkingToolCall }];
+  const thinkingContent = extractThinkingContent(sessionId, updateType, update);
+  const finish = (events: SessionRuntimeEvent[]): SessionRuntimeEvent[] =>
+    thinkingContent
+      ? [{
+          type: "message",
+          message: {
+            id: thinkingContent.id,
+            role: "assistant" as const,
+            contentKind: "thought" as const,
+            text: thinkingContent.text,
+            timestamp: thinkingContent.timestamp,
+            streaming: thinkingContent.streaming,
+            streamMode: thinkingContent.streamMode,
+          },
+        }, ...events]
+      : events;
+  if (thinkingContent && isStandaloneThoughtUpdate(updateType)) {
+    return finish([]);
   }
 
   if (isMessageChunkUpdateType(updateType)) {
     const adapterEvent = mapAdapterMessageUpdate(options.provider, adapterContext);
     if (isSuppressed(adapterEvent)) {
-      return [];
+      return finish([]);
     }
     if (adapterEvent) {
-      return [adapterEvent];
+      return finish([adapterEvent]);
     }
   }
   const compactionEvent = projectCompactionEvent(sessionId, updateType, update, text);
   if (compactionEvent) {
-    return [compactionEvent];
+    return finish([compactionEvent]);
   }
   if (isMessageChunkUpdateType(updateType)) {
     const messageEvent = projectMessageEvent(sessionId, updateType, update, text);
     if (messageEvent) {
-      return [messageEvent];
+      return finish([messageEvent]);
     }
   }
 
   const plan = extractAgentPlan(updateType, update);
   if (plan) {
-    return [{ type: "plan-update", plan }];
+    return finish([{ type: "plan-update", plan }]);
   }
 
   const configOptions = extractSessionConfigOptions(update);
   if (configOptions.length && updateType === "config_option_update") {
-    return [{
+    return finish([{
       type: "config-options",
       state: resolveSessionConfigState(configOptions),
       options: configOptions,
-    }];
+    }]);
   }
 
   const availableCommands = extractAvailableCommands(updateType, update);
   if (availableCommands) {
-    return [{ type: "available-commands", commands: availableCommands }];
+    return finish([{ type: "available-commands", commands: availableCommands }]);
   }
 
   const metadataEvent = projectSessionMetadataEvent(updateType, update);
   if (metadataEvent) {
-    return [metadataEvent];
+    return finish([metadataEvent]);
   }
 
   const explicitToolCall = extractToolCall(sessionId, updateType, update);
@@ -222,50 +312,59 @@ function projectSessionUpdate(
     ? mapAdapterToolCallUpdate(options.provider, adapterContext)
     : null;
   if (isSuppressed(adapterToolEvent)) {
-    return [];
+    return finish([]);
+  }
+  if (adapterToolEvent?.type === "compaction") {
+    return finish([adapterToolEvent]);
   }
   if (explicitToolCall) {
     const toolCalls = recognizeProviderToolCalls(options, sessionId, explicitToolCall, update);
     if (!toolCalls.length) {
-      return adapterToolEvent ? [adapterToolEvent] : [];
+      return finish(adapterToolEvent ? [adapterToolEvent] : []);
     }
-    return [
+    return finish([
       ...toolCalls.map((toolCall): SessionRuntimeEvent => ({ type: "tool-call", toolCall })),
       ...(adapterToolEvent ? [adapterToolEvent] : []),
-    ];
+    ]);
   }
   if (adapterToolEvent) {
-    return [adapterToolEvent];
+    return finish([adapterToolEvent]);
   }
 
   const permissionRequest = extractPermissionRequest(sessionId, updateType, update);
   if (permissionRequest) {
-    return [{ type: "permission-request", request: permissionRequest }];
+    return finish([{ type: "permission-request", request: permissionRequest }]);
   }
 
   const commandChunk = extractCommandChunk(sessionId, updateType, update);
   if (commandChunk) {
-    return [
+    return finish([
       { type: "tool-call", toolCall: mapCommandChunkToToolCall(commandChunk) },
       { type: "command-output", chunk: commandChunk },
-    ];
+    ]);
   }
 
   const diffFiles = extractDiffFiles(updateType, update);
   if (diffFiles) {
-    return [{ type: "diff-update", files: diffFiles }];
+    return finish([{ type: "diff-update", files: diffFiles }]);
   }
 
   const statusEvent = projectSessionStatusEvent(updateType, update);
   if (statusEvent) {
-    return [statusEvent];
+    return finish([statusEvent]);
   }
 
   const adapterUnknownEvent = mapAdapterUnknownUpdate(options.provider, adapterContext);
   if (isSuppressed(adapterUnknownEvent)) {
-    return [];
+    return finish([]);
   }
-  return adapterUnknownEvent ? [adapterUnknownEvent] : [];
+  return finish(adapterUnknownEvent ? [adapterUnknownEvent] : []);
+}
+
+function isStandaloneThoughtUpdate(updateType: string | undefined) {
+  return updateType === "agent_thought_chunk" ||
+    updateType === "agent_thought" ||
+    updateType === "agent_thought_complete";
 }
 
 function recognizeProviderToolCalls(

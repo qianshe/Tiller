@@ -5,6 +5,7 @@ import type {
   AgentMessage,
   AgentPlan,
   AgentToolCall,
+  CanonicalApproval,
   CommandChunk,
   FileDiffSummary,
   PermissionRequest,
@@ -80,6 +81,7 @@ export function useDeckData(missionVisualFixture: any) {
     string,
     DeckApprovalItem
   >;
+  const approvalHistory = useDeckStore((state) => state.approvalHistory) as CanonicalApproval[];
   const storedPendingApprovalIdsBySession = useDeckStore(
     (state) => state.pendingApprovalIdsBySession,
   );
@@ -223,6 +225,7 @@ export function useDeckData(missionVisualFixture: any) {
     setMessageHistoryState,
     permissionRequests,
     approvalItemsById,
+    approvalHistory,
     pendingApprovalIdsBySession,
     outputs,
     setOutputs,

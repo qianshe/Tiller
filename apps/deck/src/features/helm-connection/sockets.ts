@@ -19,8 +19,13 @@ import type {
 import { useDeckStore } from "../../store";
 import { daemonProfileKey, type DaemonProfile } from "./daemon-profiles";
 import { createHelmWebSocketUrl, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
-import { DeckRpcClient } from "./rpc-client";
+import {
+  DeckRpcClient,
+  describeRpcError,
+  getRpcErrorDiagnostics,
+} from "./rpc-client";
 import type { DispatchToHelm } from "./request-dispatch";
+import { readHelmUpdateIntent } from "./update-intent";
 
 type StoreUpdater<T> = T | ((current: T) => T);
 type StoreSetter<T> = (updater: StoreUpdater<T>) => void;
@@ -104,12 +109,34 @@ function createRpcClient(socket: WebSocket, helmKey: string, handlers: RpcHandle
     socket,
     (method, params) => handlers.handleRpcNotification(method, params, helmKey),
     (error) => {
+      const description = describeRpcError(error);
+      const rpcDiagnostics = getRpcErrorDiagnostics(error);
+      const details = {
+        ...rpcDiagnostics,
+        phase: rpcDiagnostics?.phase ?? "rpc-client",
+        helmKey,
+        errorName: rpcDiagnostics?.errorName ?? description.name,
+        ...(description.code === undefined
+          ? {}
+          : { errorCode: String(description.code) }),
+        ...(rpcDiagnostics?.errorStack || description.stack
+          ? { errorStack: rpcDiagnostics?.errorStack ?? description.stack }
+          : {}),
+      };
+      console.error("[Tiller][rpc-error]", {
+        helmKey,
+        error: description,
+        details,
+      });
       handlers.handleRpcNotification(
         "notification/raised",
         {
           kind: "error",
           source: "rpc",
-          message: error instanceof Error ? error.message : String(error),
+          sessionId: details.sessionId,
+          code: details.errorCode,
+          message: description.message,
+          details,
         },
         helmKey,
       );
@@ -335,7 +362,11 @@ export function connectToDaemon(
       rpcClientRef.current = null;
     }
     lastFilesScopeKeyRef.current = null;
-    setConnectFeedback(copy.connectFeedbackIdle);
+    setConnectFeedback(
+      readHelmUpdateIntent(helmKey)
+        ? "Helm 正在更新并重启，等待自动重连..."
+        : copy.connectFeedbackIdle,
+    );
     if (context.pairingState !== "paired") {
       setPairingState("idle");
     }
@@ -346,7 +377,11 @@ export function connectToDaemon(
       return;
     }
     setConnection("disconnected");
-    setConnectFeedback(`连接 ${wsUrl} 失败`);
+    setConnectFeedback(
+      readHelmUpdateIntent(helmKey)
+        ? "Helm 正在更新并重启，等待自动重连..."
+        : `连接 ${wsUrl} 失败`,
+    );
     if (!options?.auto) {
       setPairingState("idle");
     }

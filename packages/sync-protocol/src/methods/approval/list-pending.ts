@@ -9,6 +9,8 @@ export const ResultSchema = z.object({
   approvals: z.array(z.object({
     sessionId: z.string(),
     request: typedUnknown<PermissionRequest>(),
+    status: z.enum(["pending", "resolving"]).optional(),
+    createdAt: z.string().optional(),
   })),
 });
 export type Params = z.infer<typeof ParamsSchema>;

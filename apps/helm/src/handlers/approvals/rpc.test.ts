@@ -99,8 +99,64 @@ test("approval/list_pending returns all pending approvals", async () => {
   );
 
   assert.deepEqual(result, {
-    approvals: [{ sessionId: "s1", request: baseRequest }],
+    approvals: [{
+      sessionId: "s1",
+      request: baseRequest,
+      status: "pending",
+      createdAt: "2026-07-12T00:00:00.000Z",
+    }],
   });
+});
+
+test("approval/list returns persisted lifecycle records", async () => {
+  const context = createContextWithApproval();
+  const history = {
+    ...context.sessionApprovalStateStore.get("s1").active["approval-1"],
+    status: "resolved",
+    decision: "allow",
+    createdAt: "2026-07-12T00:00:00.000Z",
+    updatedAt: "2026-07-12T00:01:00.000Z",
+  };
+  context.sessionApprovalStateStore.listHistory = (options: unknown) => {
+    assert.deepEqual(options, { limit: 25, before: undefined });
+    return { approvals: [history], hasMore: false };
+  };
+
+  const result = await handleApprovalRpcRequest(
+    "approval/list",
+    { limit: 25 },
+    context,
+  );
+
+  assert.deepEqual(result, { approvals: [history], hasMore: false });
+});
+
+test("approval/clear_history removes only processed records through the canonical store", async () => {
+  const context = createContextWithApproval();
+  let calls = 0;
+  const pending = context.sessionApprovalStateStore.get("s1").active["approval-1"];
+  context.sessionApprovalStateStore.clearProcessedHistory = () => {
+    calls += 1;
+    return 3;
+  };
+  context.sessionApprovalStateStore.listHistory = (options: unknown) => {
+    assert.deepEqual(options, { limit: 100 });
+    return { approvals: [pending], hasMore: false };
+  };
+
+  const result = await handleApprovalRpcRequest(
+    "approval/clear_history",
+    {},
+    context,
+  );
+
+  assert.deepEqual(result, {
+    ok: true,
+    removed: 3,
+    approvals: [pending],
+    hasMore: false,
+  });
+  assert.equal(calls, 1);
 });
 
 test("approval/respond rejects missing or already-resolved request", async () => {

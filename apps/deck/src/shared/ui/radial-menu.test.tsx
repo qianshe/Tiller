@@ -5,7 +5,11 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { RadialMenu, type RadialMenuItem } from "./radial-menu";
+import {
+  isWithinRadialMenu,
+  RadialMenu,
+  type RadialMenuItem,
+} from "./radial-menu";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const source = readFileSync(resolve(currentDir, "radial-menu.tsx"), "utf8");
@@ -71,6 +75,28 @@ test("RadialMenu has keyboard navigation hooks", () => {
   assert.match(source, /Home/);
   assert.match(source, /Escape/);
   assert.match(source, /triggerRef\.current\?\.focus\(\)/);
+});
+
+test("RadialMenu expands when the pointer enters the radial hover zone", () => {
+  assert.match(source, /data-radial-hover-zone/);
+  assert.match(source, /onPointerEnter=\{onHoverPointerEnter\}/);
+  assert.match(source, /event\.pointerType === \"mouse\"/);
+  assert.match(source, /width: hoverZoneSize,\n\s+height: hoverZoneSize/);
+  assert.match(source, /borderRadius: \"50%\"/);
+});
+
+test("RadialMenu treats non-element pointer targets as outside", () => {
+  assert.equal(isWithinRadialMenu({} as unknown as EventTarget), false);
+  assert.equal(
+    isWithinRadialMenu({ closest: "not-a-function" } as unknown as EventTarget),
+    false,
+  );
+  assert.equal(
+    isWithinRadialMenu({
+      closest: (selector: string) => selector === "[data-radial]" ? {} : null,
+    } as unknown as EventTarget),
+    true,
+  );
 });
 
 test("RadialMenu has no dependency on v6 mock data", () => {

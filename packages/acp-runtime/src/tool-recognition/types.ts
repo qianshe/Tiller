@@ -18,6 +18,7 @@ export type ToolEvidence = {
   title?: string;
   status?: AgentToolCall["status"];
   mcp?: AgentToolCallMcp;
+  subagentRole?: AgentToolCall["subagentRole"];
   commandId?: string;
   input?: string;
   output?: string;
@@ -30,6 +31,12 @@ export type ToolEvidence = {
     entityIds: string[];
     background: boolean;
     terminal: boolean;
+    terminalStatus?: Extract<AgentToolCall["status"], "completed" | "failed" | "cancelled">;
+    /** Keep the provider notification visible as its own tool while also
+     * applying this evidence to an already tracked subagent entity. */
+    lifecycleOnly?: boolean;
+    /** Do not create an orphan subagent when the launch was not observed. */
+    existingOnly?: boolean;
   };
 };
 

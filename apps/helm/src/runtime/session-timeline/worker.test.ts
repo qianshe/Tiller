@@ -65,7 +65,7 @@ test("timeline worker publishes only changed canonical entities", () => {
   assert.deepEqual(batch?.entries.map((entry) => entry.id), ["tool:tool-1"]);
 });
 
-test("timeline worker publishes lifecycle updates under the launched command entity", () => {
+test("timeline worker publishes lifecycle updates under the same subagent tool entity", () => {
   const worker = createSessionTimelineWorker({ sessionId: "session-1" });
   worker.enqueue({
     type: "tool-call",
@@ -80,12 +80,12 @@ test("timeline worker publishes lifecycle updates under the launched command ent
       sequence: 1,
     },
   });
-  assert.equal(worker.flush()[0]?.batch.entries[0]?.id, "tool:launch-call");
+  assert.equal(worker.flush()[0]?.batch.entries[0]?.id, "tool:subagent:agent-1");
 
   worker.enqueue({
     type: "tool-call",
     toolCall: {
-      id: "result-call",
+      id: "launch-call",
       commandId: "subagent:agent-1",
       kind: "subagent",
       title: "Subagent",
@@ -99,13 +99,71 @@ test("timeline worker publishes lifecycle updates under the launched command ent
 
   const batch = worker.flush()[0]?.batch;
   assert.equal(batch?.entries.length, 1);
-  assert.equal(batch?.entries[0]?.id, "tool:launch-call");
+  assert.equal(batch?.entries[0]?.id, "tool:subagent:agent-1");
   assert.equal(
     batch?.entries[0]?.kind === "tool_call"
       ? batch.entries[0].toolCall.output
       : undefined,
     "done",
   );
+});
+
+test("timeline worker merges reused subagent command ids into one entity", () => {
+  const worker = createSessionTimelineWorker({ sessionId: "session-1" });
+
+  for (const [id, sequence] of [["first-call", 1], ["second-call", 2]] as const) {
+    worker.enqueue({
+      type: "tool-call",
+      toolCall: {
+        id,
+        commandId: "subagent:reused-task",
+        kind: "subagent",
+        title: id,
+        status: "running",
+        timestamp: `2026-07-11T16:10:0${sequence}.000Z`,
+        updatedAt: `2026-07-11T16:10:0${sequence}.000Z`,
+        sequence,
+      },
+    });
+  }
+
+  const batch = worker.flush()[0]?.batch;
+  assert.deepEqual(batch?.entries.map((entry) => entry.id), ["tool:subagent:reused-task"]);
+});
+
+test("timeline worker keeps a reused subagent running after the prior call was flushed", () => {
+  const worker = createSessionTimelineWorker({ sessionId: "session-1" });
+  const base = {
+    commandId: "subagent:reused-task",
+    kind: "subagent" as const,
+    title: "Subagent",
+    timestamp: "2026-07-11T16:10:00.000Z",
+    updatedAt: "2026-07-11T16:10:00.000Z",
+  };
+
+  worker.enqueue({
+    type: "tool-call",
+    toolCall: { ...base, id: "first-call", status: "completed", sequence: 1 },
+  });
+  assert.equal(worker.flush()[0]?.batch.entries.length, 1);
+
+  worker.enqueue({
+    type: "tool-call",
+    toolCall: {
+      ...base,
+      id: "second-call",
+      status: "running",
+      sequence: 2,
+      timestamp: "2026-07-11T16:10:01.000Z",
+      updatedAt: "2026-07-11T16:10:01.000Z",
+    },
+  });
+
+  const batch = worker.flush()[0]?.batch;
+  assert.deepEqual(batch?.entries.map((entry) => entry.id), ["tool:subagent:reused-task"]);
+  const entry = batch?.entries[0];
+  assert.equal(entry?.kind, "tool_call");
+  assert.equal(entry?.kind === "tool_call" ? entry.toolCall.status : undefined, "running");
 });
 
 test("timeline worker releases terminal history after a large flushed session", () => {

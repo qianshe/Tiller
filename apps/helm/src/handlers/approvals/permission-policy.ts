@@ -12,14 +12,16 @@ export type ApprovalPolicyContext = {
   worktreePath?: string;
 };
 
+export type ApprovalPolicyResolution = PermissionDecision | "confirm" | null;
+
 export function resolveApprovalPolicyDecision(
   policy: ApprovalPolicy,
   request: PermissionRequest,
   context: ApprovalPolicyContext,
-): PermissionDecision | null {
+): ApprovalPolicyResolution {
   const matches = policy.rules.filter((rule) => ruleMatches(rule, request, context));
   if (matches.some((rule) => rule.action === "deny")) return "deny";
-  if (matches.some((rule) => rule.action === "confirm")) return null;
+  if (matches.some((rule) => rule.action === "confirm")) return "confirm";
   if (matches.some((rule) => rule.action === "allow")) return "allow";
   return null;
 }

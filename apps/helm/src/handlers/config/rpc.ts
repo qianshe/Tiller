@@ -11,6 +11,7 @@ import {
 } from "./agent-rpc";
 import { listHelms, saveHelm, shutdownDaemon } from "./helm-rpc";
 import { getLoggingSettings, saveLoggingSettings } from "./logging-rpc";
+import { checkDaemonUpdate, startDaemonUpdate } from "./update-rpc";
 import {
   createBranch,
   deleteProject,
@@ -22,7 +23,12 @@ import {
   saveProject,
   getGitStatus,
   commitGitChanges,
+  discardGitChanges,
+  pushGitChanges,
+  pullGitChanges,
   getGitGraph,
+  getGitCommitDetail,
+  getGitFileDiffs,
 } from "./project-rpc";
 
 export async function handleConfigRpcRequest(
@@ -33,6 +39,10 @@ export async function handleConfigRpcRequest(
   switch (method) {
     case "daemon/shutdown":
       return shutdownDaemon(context);
+    case "daemon/update/check":
+      return checkDaemonUpdate(params as { force?: boolean }, context);
+    case "daemon/update/start":
+      return startDaemonUpdate(context);
     case "helm/list":
       return listHelms(context);
     case "helm/save":
@@ -58,14 +68,39 @@ export async function handleConfigRpcRequest(
     case "project/git/create_worktree":
       return createBranch(params as { projectId: string; branchName: string }, context);
     case "project/git/status":
-      return getGitStatus(params as { projectId: string; cwd?: string }, context);
+      return getGitStatus(
+        params as { projectId: string; cwd?: string; refreshRemote?: boolean },
+        context,
+      );
     case "project/git/commit":
       return commitGitChanges(
         params as { projectId: string; cwd: string; message: string; paths: string[] },
         context,
       );
+    case "project/git/discard":
+      return discardGitChanges(
+        params as { projectId: string; cwd: string; paths: string[] },
+        context,
+      );
+    case "project/git/push":
+      return pushGitChanges(params as { projectId: string; cwd: string }, context);
+    case "project/git/pull":
+      return pullGitChanges(params as { projectId: string; cwd: string }, context);
     case "project/git/graph":
-      return getGitGraph(params as { projectId: string; cwd?: string }, context);
+      return getGitGraph(
+        params as { projectId: string; cwd?: string; knownSignature?: string },
+        context,
+      );
+    case "project/git/commit_detail":
+      return getGitCommitDetail(
+        params as { projectId: string; cwd: string; commitHash: string },
+        context,
+      );
+    case "project/git/file_diff":
+      return getGitFileDiffs(
+        params as { projectId: string; cwd: string; paths: string[] },
+        context,
+      );
     case "agent/list":
       return listAgents(context);
     case "agent/save":

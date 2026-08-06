@@ -12,7 +12,6 @@ export function resolveToolCallIconName(label: string): TillerIconName {
   if (label === "Todo") return "check";
   if (label === "Subagent") return "message";
   if (label === "Built-in") return "panel";
-  if (label === "Think") return "activity";
   return "inspect";
 }
 

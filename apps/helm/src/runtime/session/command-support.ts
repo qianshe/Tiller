@@ -1,9 +1,7 @@
 import type { AvailableCommand } from "@tiller/shared";
+import { parseSlashCommandName } from "@tiller/shared";
 
-export function parseSlashCommandName(text: string) {
-  const match = /^\s*\/(\S+)/u.exec(text);
-  return match?.[1]?.replace(/^\/+/, "") ?? null;
-}
+export { parseSlashCommandName };
 
 export function availableCommandInvocations(command: AvailableCommand) {
   const name = command.name.replace(/^\/+/, "");

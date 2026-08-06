@@ -47,11 +47,13 @@ pnpm --filter @tiller/deck dev
 2. 选择一个 ACP Agent。
 3. 等待 draft runtime ready。
 4. 检查模型、reasoning、可用 slash command 是否显示。
+5. 在无活动 runtime 的可恢复会话中修改模型或配置，随后恢复会话。
 
 期望：
 
 - Draft 卡片显示准备创建会话。
 - 模型 picker 不应丢失当前已选模型。
+- 离线选择应在下一次 ACP 恢复后应用；只有 ACP 回读确认全部生效后才清除待应用配置。
 - slash command 列表应和 Helm/ACP 上报一致。
 
 常见问题：

@@ -157,6 +157,19 @@ const OPEN_CODE_16_HEADING_COMPACTION_SUMMARY = [
   "- packages/acp-runtime/src/adapters/opencode/compaction-events.ts",
 ].join("\n");
 
+const OPEN_CODE_LEGACY_COMPACTION_SUMMARY = [
+  "Done. Here is the updated summary.",
+  "",
+  "1. User Requests (As-Is)",
+  "- Follow the verification plan and preserve the current task context.",
+  "",
+  "2. Final Goal",
+  "- Complete the requested repository change without losing prior work.",
+  "",
+  "3. Work Completed",
+  "- Updated the relevant runtime and adapter code.",
+].join("\n");
+
 test("expandOpenCodeRuntimeEvent recognizes a 16-heading compaction variant", () => {
   const event = {
     type: "message",
@@ -177,6 +190,30 @@ test("expandOpenCodeRuntimeEvent recognizes a 16-heading compaction variant", ()
       messageId: "msg-opencode-16-heading",
       timestamp: "2026-07-20T14:01:13.159Z",
       summaryText: OPEN_CODE_16_HEADING_COMPACTION_SUMMARY,
+    },
+  ]);
+});
+
+test("expandOpenCodeRuntimeEvent recognizes the legacy numbered compaction summary", () => {
+  const event = {
+    type: "message",
+    message: {
+      id: "msg-opencode-legacy-compaction",
+      role: "assistant",
+      text: OPEN_CODE_LEGACY_COMPACTION_SUMMARY,
+      timestamp: "2026-07-20T14:01:13.159Z",
+      streaming: false,
+    },
+  } satisfies SessionRuntimeEvent;
+
+  assert.deepEqual(expandOpenCodeRuntimeEvent(event), [
+    {
+      type: "compaction",
+      phase: "completed",
+      source: "provider",
+      messageId: "msg-opencode-legacy-compaction",
+      timestamp: "2026-07-20T14:01:13.159Z",
+      summaryText: OPEN_CODE_LEGACY_COMPACTION_SUMMARY,
     },
   ]);
 });
