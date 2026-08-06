@@ -1,4 +1,9 @@
-import type { AcpAgentProvider, SessionResumeInfo, SessionSummary, WorktreeSummary } from "@tiller/shared";
+import type {
+  AcpAgentProvider,
+  SessionResumeInfo,
+  SessionSummary,
+  WorktreeSummary,
+} from "@tiller/shared";
 import { resolveProviderById } from "@tiller/agent-registry";
 import type { AcpProtocolLoggingOptions, SessionRuntimeEvent } from "@tiller/acp-runtime";
 import type { NotificationRaisedParams } from "@tiller/sync-protocol";
@@ -7,6 +12,7 @@ import type { SessionRecord } from "./services";
 import type { HelmRuntimeHandle, ProviderLifecyclePort } from "../provider-lifecycle";
 import { buildSessionResumeInfo, markSessionResumeUnavailable } from "../resume-info";
 import {
+  isReasoningConfigOption,
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "./config-options";
@@ -16,23 +22,54 @@ import { createSessionBootstrapEvents } from "./event/bootstrap";
 type PendingConfig = NonNullable<StoredSessionRuntimeDescriptor["pendingConfig"]>;
 type RuntimeConfigureResult = Awaited<ReturnType<HelmRuntimeHandle["configure"]>>;
 
-function hasCategoryConfig(config: PendingConfig): boolean {
-  return config.agentMode !== undefined ||
-    config.model !== undefined ||
-    config.reasoningEffort !== undefined;
+function hasAdvertisedConfigValue(
+  option: RuntimeConfigureResult["options"][number] | undefined,
+  value: string | boolean,
+) {
+  const choices = option?.options ?? [];
+  return choices.length > 0 && choices.some((choice) => choice.value === value);
 }
 
-function categoryConfigWasApplied(
-  config: PendingConfig,
+function isUnavailableReasoningEffort(value: string, result: RuntimeConfigureResult) {
+  const option = result.options.find((candidate) => isReasoningConfigOption(candidate));
+  const choices = option?.options ?? [];
+  return choices.length > 0 && !hasAdvertisedConfigValue(option, value);
+}
+
+function isUnavailableReasoningConfigOption(
+  configId: string,
+  value: string | boolean,
   result: RuntimeConfigureResult,
-): boolean {
+) {
+  if (typeof value !== "string") {
+    return false;
+  }
+  const option = result.options.find((candidate) => candidate.id === configId);
+  return Boolean(
+    option &&
+    isReasoningConfigOption(option) &&
+    (option.options?.length ?? 0) > 0 &&
+    !hasAdvertisedConfigValue(option, value),
+  );
+}
+
+function hasCategoryConfig(config: PendingConfig): boolean {
+  return (
+    config.agentMode !== undefined ||
+    config.model !== undefined ||
+    config.reasoningEffort !== undefined
+  );
+}
+
+function categoryConfigWasApplied(config: PendingConfig, result: RuntimeConfigureResult): boolean {
   const appliedModel = result.state.model ?? result.modelState?.currentModelId;
-  return (config.agentMode === undefined || result.state.agentMode === config.agentMode) &&
+  return (
+    (config.agentMode === undefined || result.state.agentMode === config.agentMode) &&
     (config.model === undefined || appliedModel === config.model) &&
-    (
-      config.reasoningEffort === undefined ||
-      result.state.reasoningEffort === config.reasoningEffort
-    );
+    (config.reasoningEffort === undefined ||
+      result.state.reasoningEffort === config.reasoningEffort ||
+      isUnavailableReasoningEffort(config.reasoningEffort, result))
+  );
 }
 
 function directConfigWasApplied(
@@ -41,9 +78,8 @@ function directConfigWasApplied(
   result: RuntimeConfigureResult,
 ): boolean {
   const appliedOption = result.options.find((option) => option.id === configId);
-  const appliedValue = appliedOption?.currentValue ??
-    appliedOption?.selectedValue ??
-    appliedOption?.value;
+  const appliedValue =
+    appliedOption?.currentValue ?? appliedOption?.selectedValue ?? appliedOption?.value;
   return appliedValue === value;
 }
 
@@ -62,9 +98,20 @@ async function applyPendingRuntimeConfig(
       throw new Error("Saved session config could not be applied after ACP restore.");
     }
   }
+  if (!result && (config.configOptions?.length ?? 0) > 0) {
+    // Read the restored ACP options before applying direct values so stale
+    // reasoning settings can be skipped without sending a rejected request.
+    result = await runtime.configure({});
+  }
   for (const option of config.configOptions ?? []) {
+    if (result && isUnavailableReasoningConfigOption(option.configId, option.value, result)) {
+      continue;
+    }
     result = await runtime.configure(option);
-    if (!directConfigWasApplied(option.configId, option.value, result)) {
+    if (
+      !directConfigWasApplied(option.configId, option.value, result) &&
+      !isUnavailableReasoningConfigOption(option.configId, option.value, result)
+    ) {
       throw new Error("Saved session config could not be applied after ACP restore.");
     }
   }
@@ -89,7 +136,9 @@ type SessionResumeServiceOptions = {
     get(sessionId: string): SessionSummary | undefined;
     upsert(summary: SessionSummary): void;
   };
-  sessionRuntimeStore: { get(sessionId: string): StoredSessionRuntimeDescriptor | null | undefined };
+  sessionRuntimeStore: {
+    get(sessionId: string): StoredSessionRuntimeDescriptor | null | undefined;
+  };
   providerLifecycle: ProviderLifecyclePort;
   getAgents(): AcpAgentProvider[];
   getProjects(): Array<{ id: string; path?: string }>;
@@ -103,11 +152,15 @@ type SessionResumeServiceOptions = {
     pendingConfig?: StoredSessionRuntimeDescriptor["pendingConfig"] | null,
   ): void;
   handleRuntimeEvent(sessionId: string, event: SessionRuntimeEvent): void;
-  logConnectionLifecycle(event: Parameters<ProviderLifecyclePort["createRuntime"]>[0] extends { onConnectionLifecycleEvent?: infer Handler }
-    ? Handler extends (event: infer Event) => void
-      ? Event
-      : never
-    : never): void;
+  logConnectionLifecycle(
+    event: Parameters<ProviderLifecyclePort["createRuntime"]>[0] extends {
+      onConnectionLifecycleEvent?: infer Handler;
+    }
+      ? Handler extends (event: infer Event) => void
+        ? Event
+        : never
+      : never,
+  ): void;
   logger?: Pick<TillerLogger, "debug" | "error">;
   logInfo(message: string): void;
   logError(message: string): void;
@@ -153,12 +206,9 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
     const runtimeDescriptor = options.sessionRuntimeStore.get(sessionId);
     const agent = activeRecord?.agent ?? resolveProviderById(summary.agentId, options.getAgents());
     const worktree = activeRecord?.worktree ?? options.resolveStoredSessionWorktree(summary);
-    const resume = activeRecord && resumeOptions.forceReloadActive
-      ? buildSessionResumeInfo(
-          summary,
-          agent,
-          undefined,
-          {
+    const resume =
+      activeRecord && resumeOptions.forceReloadActive
+        ? buildSessionResumeInfo(summary, agent, undefined, {
             ...(runtimeDescriptor ?? {}),
             sessionId,
             providerId: summary.agentId,
@@ -166,9 +216,8 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
             capabilities: activeRecord.runtime.sessionCapabilities,
             lastSeenAt: summary.updatedAt,
             state: "resumeable",
-          },
-        )
-      : options.buildResumeInfo(summary, agent);
+          })
+        : options.buildResumeInfo(summary, agent);
     const unavailableReason = resolveResumeUnavailableReason({
       agent,
       worktree,
@@ -249,7 +298,12 @@ export function createSessionResumeService(options: SessionResumeServiceOptions)
         status: "idle",
         updatedAt: new Date().toISOString(),
       });
-      options.sessions.set(sessionId, { summary: restoredSummary, agent: restoreAgent, worktree: restoreWorktree, runtime });
+      options.sessions.set(sessionId, {
+        summary: restoredSummary,
+        agent: restoreAgent,
+        worktree: restoreWorktree,
+        runtime,
+      });
       options.sessionStore.upsert(restoredSummary);
       options.persistRuntimeDescriptor(
         restoredSummary,

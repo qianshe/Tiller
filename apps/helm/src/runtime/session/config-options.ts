@@ -5,13 +5,20 @@ import type {
 } from "@tiller/shared";
 
 const REASONING_CONFIG_CATEGORIES = new Set([
+  "effort",
   "reasoning",
   "reasoning_effort",
   "thought_level",
 ]);
 
 function configOptionCategory(option: SessionConfigOption) {
-  return option.category?.toLowerCase() ?? option.id.toLowerCase();
+  const category = option.category?.toLowerCase();
+  const id = option.id.toLowerCase();
+  return category && REASONING_CONFIG_CATEGORIES.has(category)
+    ? category
+    : REASONING_CONFIG_CATEGORIES.has(id)
+      ? id
+      : (category ?? id);
 }
 
 function readConfigOptionValue(option: SessionConfigOption) {
@@ -22,15 +29,11 @@ export function isReasoningConfigOption(option: SessionConfigOption) {
   return REASONING_CONFIG_CATEGORIES.has(configOptionCategory(option));
 }
 
-export function configOptionsIncludeReasoning(
-  options: SessionConfigOption[] | undefined,
-) {
+export function configOptionsIncludeReasoning(options: SessionConfigOption[] | undefined) {
   return Boolean(options?.some((option) => isReasoningConfigOption(option)));
 }
 
-export function readModelFromConfigOptions(
-  options: SessionConfigOption[] | undefined,
-) {
+export function readModelFromConfigOptions(options: SessionConfigOption[] | undefined) {
   const option = options?.find((item) => configOptionCategory(item) === "model");
   const value = option ? readConfigOptionValue(option) : undefined;
   return typeof value === "string" ? value : undefined;
@@ -44,10 +47,7 @@ export function configOptionsMatchSelectedModel(
   return !selectedModel || !optionsModel || optionsModel === selectedModel;
 }
 
-function alignModelConfigOption(
-  option: SessionConfigOption,
-  selectedModel: string | undefined,
-) {
+function alignModelConfigOption(option: SessionConfigOption, selectedModel: string | undefined) {
   return selectedModel &&
     configOptionCategory(option) === "model" &&
     option.currentValue !== selectedModel
@@ -73,13 +73,14 @@ export function applyStoredConfigSelection(
   return options?.map((option) => {
     const category = configOptionCategory(option);
     const directValue = option.id === selection.configId ? selection.value : undefined;
-    const categoryValue = category === "mode"
-      ? selection.agentMode
-      : category === "model"
-        ? selection.model
-        : REASONING_CONFIG_CATEGORIES.has(category)
-          ? selection.reasoningEffort
-          : undefined;
+    const categoryValue =
+      category === "mode"
+        ? selection.agentMode
+        : category === "model"
+          ? selection.model
+          : REASONING_CONFIG_CATEGORIES.has(category)
+            ? selection.reasoningEffort
+            : undefined;
     const selectedValue = directValue ?? categoryValue;
     return selectedValue === undefined
       ? option

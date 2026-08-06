@@ -100,7 +100,12 @@ test("session restore discards ACP load replay without mutating local display hi
     },
     providerHistory: {
       hasHistoryContent: (history: { messages: unknown[] }) => history.messages.length > 0,
-      applyAuthoritativeProviderHistory: (_sessionId: string, _agent: AcpAgentProvider, _runtimeSessionId: string, history: any) => {
+      applyAuthoritativeProviderHistory: (
+        _sessionId: string,
+        _agent: AcpAgentProvider,
+        _runtimeSessionId: string,
+        history: any,
+      ) => {
         appliedSource = history.source;
         appliedMessages = history.messages;
       },
@@ -108,18 +113,19 @@ test("session restore discards ACP load replay without mutating local display hi
     } as any,
     getAgents: () => [agent],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
-    createHandlerContext: () => ({
-      sessionMessageStore: {
-        append: (_sessionId: string, message: AgentMessage) => {
-          storedMessages.push(message);
+    createHandlerContext: () =>
+      ({
+        sessionMessageStore: {
+          append: (_sessionId: string, message: AgentMessage) => {
+            storedMessages.push(message);
+          },
         },
-      },
-      sessionArtifactStore: {
-        appendOutput: () => undefined,
-        appendToolCall: () => undefined,
-        replaceDiffs: () => undefined,
-      },
-    } as any),
+        sessionArtifactStore: {
+          appendOutput: () => undefined,
+          appendToolCall: () => undefined,
+          replaceDiffs: () => undefined,
+        },
+      }) as any,
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
       mode: "same-provider",
@@ -226,14 +232,15 @@ test("session restore does not reimport replayed ACP plan", async () => {
     } as any,
     getAgents: () => [agent],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
-    createHandlerContext: () => ({
-      sessionMessageStore: { append: () => undefined },
-      sessionArtifactStore: {
-        appendOutput: () => undefined,
-        appendToolCall: () => undefined,
-        replaceDiffs: () => undefined,
-      },
-    } as any),
+    createHandlerContext: () =>
+      ({
+        sessionMessageStore: { append: () => undefined },
+        sessionArtifactStore: {
+          appendOutput: () => undefined,
+          appendToolCall: () => undefined,
+          replaceDiffs: () => undefined,
+        },
+      }) as any,
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
       mode: "same-provider",
@@ -322,14 +329,15 @@ test("session restore failure logs visible error details", async () => {
     } as any,
     getAgents: () => [agent],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
-    createHandlerContext: () => ({
-      sessionMessageStore: { append: () => undefined },
-      sessionArtifactStore: {
-        appendOutput: () => undefined,
-        appendToolCall: () => undefined,
-        replaceDiffs: () => undefined,
-      },
-    } as any),
+    createHandlerContext: () =>
+      ({
+        sessionMessageStore: { append: () => undefined },
+        sessionArtifactStore: {
+          appendOutput: () => undefined,
+          appendToolCall: () => undefined,
+          replaceDiffs: () => undefined,
+        },
+      }) as any,
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
       mode: "same-provider",
@@ -469,14 +477,15 @@ test("force reload active session releases old runtime before ACP load restore",
     } as any,
     getAgents: () => [agent],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
-    createHandlerContext: () => ({
-      sessionMessageStore: { append: () => undefined },
-      sessionArtifactStore: {
-        appendOutput: () => undefined,
-        appendToolCall: () => undefined,
-        replaceDiffs: () => undefined,
-      },
-    } as any),
+    createHandlerContext: () =>
+      ({
+        sessionMessageStore: { append: () => undefined },
+        sessionArtifactStore: {
+          appendOutput: () => undefined,
+          appendToolCall: () => undefined,
+          replaceDiffs: () => undefined,
+        },
+      }) as any,
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
       mode: "same-provider",
@@ -609,26 +618,27 @@ test("session restore ignores asynchronous ACP replay", async () => {
     } as any,
     getAgents: () => [agent],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
-    createHandlerContext: () => ({
-      sessionMessageStore: {
-        append: (_sessionId: string, message: AgentMessage) => {
-          storedMessages.push(message);
+    createHandlerContext: () =>
+      ({
+        sessionMessageStore: {
+          append: (_sessionId: string, message: AgentMessage) => {
+            storedMessages.push(message);
+          },
         },
-      },
-      sessionArtifactStore: {
-        appendOutput: () => undefined,
-        appendToolCall: (_sessionId: string, toolCall: AgentToolCall) => {
-          storedToolCalls.push(toolCall);
+        sessionArtifactStore: {
+          appendOutput: () => undefined,
+          appendToolCall: (_sessionId: string, toolCall: AgentToolCall) => {
+            storedToolCalls.push(toolCall);
+          },
+          replaceDiffs: () => undefined,
         },
-        replaceDiffs: () => undefined,
-      },
-      sessionTimelineStore: {
-        replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
-          storedTimeline = entries;
-          return entries;
+        sessionTimelineStore: {
+          replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+            storedTimeline = entries;
+            return entries;
+          },
         },
-      },
-    } as any),
+      }) as any,
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
       mode: "same-provider",
@@ -717,7 +727,8 @@ test("session restore preserves a trailing compacted boundary from the canonical
       phase: "completed",
       source: "heuristic",
       summaryMessageId: "compaction-summary",
-      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      summaryText:
+        "This session is being continued from a previous conversation that ran out of context.",
       detailsVisibility: "expandable",
       timestamp: "2026-06-18T14:05:25.193Z",
       updatedAt: "2026-06-18T14:05:25.193Z",
@@ -797,25 +808,26 @@ test("session restore preserves a trailing compacted boundary from the canonical
     } as any,
     getAgents: () => [agent],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
-    createHandlerContext: () => ({
-      sessionMessageStore: {
-        append: (_sessionId: string, message: AgentMessage) => {
-          persistedMessages = [...persistedMessages, message];
+    createHandlerContext: () =>
+      ({
+        sessionMessageStore: {
+          append: (_sessionId: string, message: AgentMessage) => {
+            persistedMessages = [...persistedMessages, message];
+          },
         },
-      },
-      sessionArtifactStore: {
-        appendOutput: () => undefined,
-        appendToolCall: () => undefined,
-        replaceDiffs: () => undefined,
-      },
-      sessionTimelineStore: {
-        list: () => persistedTimeline,
-        replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
-          persistedTimeline = entries;
-          return entries;
+        sessionArtifactStore: {
+          appendOutput: () => undefined,
+          appendToolCall: () => undefined,
+          replaceDiffs: () => undefined,
         },
-      },
-    } as any),
+        sessionTimelineStore: {
+          list: () => persistedTimeline,
+          replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+            persistedTimeline = entries;
+            return entries;
+          },
+        },
+      }) as any,
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
       mode: "same-provider",
@@ -841,19 +853,11 @@ test("session restore preserves a trailing compacted boundary from the canonical
   );
   assert.deepEqual(
     persistedTimeline.map((entry) => entry.id),
-    [
-      "older-user",
-      "anchor-user",
-      `compaction:${sessionId}:compaction-summary`,
-    ],
+    ["older-user", "anchor-user", `compaction:${sessionId}:compaction-summary`],
   );
   assert.deepEqual(
     persistedTimeline.map((entry) => entry.kind),
-    [
-      "user_message",
-      "user_message",
-      "context_compaction",
-    ],
+    ["user_message", "user_message", "context_compaction"],
   );
 });
 
@@ -919,7 +923,8 @@ test("session restore preserves markerless trailing compaction order", async () 
       phase: "completed",
       source: "heuristic",
       summaryMessageId: "runtime-summary",
-      summaryText: "This session is being continued from a previous conversation that ran out of context.",
+      summaryText:
+        "This session is being continued from a previous conversation that ran out of context.",
       detailsVisibility: "expandable",
       timestamp: "2026-06-18T17:22:48.093Z",
       updatedAt: "2026-06-18T17:22:48.093Z",
@@ -988,23 +993,24 @@ test("session restore preserves markerless trailing compaction order", async () 
     } as any,
     getAgents: () => [agent],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
-    createHandlerContext: () => ({
-      sessionMessageStore: {
-        append: () => undefined,
-      },
-      sessionArtifactStore: {
-        appendOutput: () => undefined,
-        appendToolCall: () => undefined,
-        replaceDiffs: () => undefined,
-      },
-      sessionTimelineStore: {
-        list: () => persistedTimeline,
-        replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
-          persistedTimeline = entries;
-          return entries;
+    createHandlerContext: () =>
+      ({
+        sessionMessageStore: {
+          append: () => undefined,
         },
-      },
-    } as any),
+        sessionArtifactStore: {
+          appendOutput: () => undefined,
+          appendToolCall: () => undefined,
+          replaceDiffs: () => undefined,
+        },
+        sessionTimelineStore: {
+          list: () => persistedTimeline,
+          replace: (_sessionId: string, entries: SessionTimelineEntry[]) => {
+            persistedTimeline = entries;
+            return entries;
+          },
+        },
+      }) as any,
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
       mode: "same-provider",
@@ -1061,16 +1067,18 @@ test("session restore prefers ACP-reported config over persisted values", async 
   const stored = { summary: undefined as SessionSummary | undefined };
   let createRuntimeInput: { sessionConfig?: unknown } | undefined;
   let configureCalls = 0;
-  const configOptions = [{
-    id: "thought_level",
-    name: "Reasoning",
-    category: "thought_level",
-    currentValue: "medium",
-    options: [
-      { value: "medium", label: "Medium" },
-      { value: "high", label: "High" },
-    ],
-  }];
+  const configOptions = [
+    {
+      id: "thought_level",
+      name: "Reasoning",
+      category: "thought_level",
+      currentValue: "medium",
+      options: [
+        { value: "medium", label: "Medium" },
+        { value: "high", label: "High" },
+      ],
+    },
+  ];
 
   const service = createSessionResumeService({
     sessions: new Map(),
@@ -1102,7 +1110,10 @@ test("session restore prefers ACP-reported config over persisted values", async 
           sessionConfigState: { model: "default", reasoningEffort: "medium" },
           sessionModelState: {
             currentModelId: "default",
-            options: [{ id: "default", name: "Default" }, { id: "opus", name: "Opus" }],
+            options: [
+              { id: "default", name: "Default" },
+              { id: "opus", name: "Opus" },
+            ],
           },
           sessionConfigOptions: configOptions,
           prompt: async () => undefined,
@@ -1119,22 +1130,25 @@ test("session restore prefers ACP-reported config over persisted values", async 
       applyAuthoritativeProviderHistory: () => undefined,
       refreshAuthoritativeSessionHistory: async () => undefined,
     } as any,
-    getAgents: () => [{
-      id: "claude-code",
-      name: "Claude Code",
-      command: "claude-code",
-      transport: "stdio",
-      protocol: "acp",
-    }],
-    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
-    createHandlerContext: () => ({
-      sessionMessageStore: { append: () => undefined },
-      sessionArtifactStore: {
-        appendOutput: () => undefined,
-        appendToolCall: () => undefined,
-        replaceDiffs: () => undefined,
+    getAgents: () => [
+      {
+        id: "claude-code",
+        name: "Claude Code",
+        command: "claude-code",
+        transport: "stdio",
+        protocol: "acp",
       },
-    } as any),
+    ],
+    getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+    createHandlerContext: () =>
+      ({
+        sessionMessageStore: { append: () => undefined },
+        sessionArtifactStore: {
+          appendOutput: () => undefined,
+          appendToolCall: () => undefined,
+          replaceDiffs: () => undefined,
+        },
+      }) as any,
     resolveStoredSessionWorktree: () => worktree,
     buildResumeInfo: () => ({
       mode: "same-process",
@@ -1168,6 +1182,111 @@ test("session restore prefers ACP-reported config over persisted values", async 
   assert.equal(stored.summary?.reasoningEffort, "medium");
 });
 
+test("session restore preflights direct reasoning config by id", async () => {
+  for (const category of [undefined, "provider_specific"]) {
+    const sessionId = `session-pending-direct-reasoning-${category ?? "missing"}`;
+    const summary: SessionSummary = {
+      id: sessionId,
+      title: "Pending direct reasoning config",
+      status: "idle",
+      projectId: "project-1",
+      projectName: "Tiller",
+      helmId: "helm-1",
+      agentId: "codex",
+      agentName: "Codex",
+      cwd: "D:/repo",
+      createdAt: "2026-07-27T00:00:00.000Z",
+      updatedAt: "2026-07-27T00:01:00.000Z",
+      messageCount: 0,
+      runtimeSessionId: "runtime-old",
+    };
+    const runtimeOptions = [
+      {
+        id: "effort",
+        ...(category ? { category } : {}),
+        currentValue: "high",
+        selectedValue: "high",
+        value: "high",
+        options: [{ value: "medium" }, { value: "high" }],
+      },
+    ];
+    const configureInputs: Array<Record<string, unknown>> = [];
+
+    const service = createSessionResumeService({
+      sessions: new Map(),
+      sessionStore: {
+        get: () => summary,
+        upsert: () => undefined,
+      },
+      sessionRuntimeStore: {
+        get: () => ({
+          sessionId,
+          providerId: "codex",
+          runtimeSessionId: "runtime-old",
+          capabilities: { sessionLoad: true },
+          lastSeenAt: summary.updatedAt,
+          state: "resumeable" as const,
+          pendingConfig: {
+            configOptions: [{ configId: "effort", value: "max" }],
+          },
+        }),
+      },
+      providerLifecycle: {
+        createRuntime: async () => ({
+          runtimeSessionId: "runtime-new",
+          sessionCapabilities: { sessionLoad: true },
+          sessionConfigState: { model: "fable", reasoningEffort: "high" },
+          sessionModelState: { currentModelId: "fable", options: [] },
+          sessionConfigOptions: runtimeOptions,
+          configure: async (input: Record<string, unknown>) => {
+            configureInputs.push(input);
+            if (Object.keys(input).length > 0) {
+              throw new Error("unavailable reasoning config must be skipped");
+            }
+            return {
+              runtimeApplied: false,
+              state: { model: "fable", reasoningEffort: "high" },
+              modelState: { currentModelId: "fable", options: [] },
+              options: runtimeOptions,
+            };
+          },
+          close: async () => undefined,
+        }),
+      },
+      getAgents: () => [
+        {
+          id: "codex",
+          name: "Codex",
+          command: "codex-acp",
+          transport: "stdio",
+          protocol: "acp",
+        },
+      ],
+      getProjects: () => [{ id: "project-1", path: "D:/repo" }],
+      resolveStoredSessionWorktree: () => ({ name: "main", path: "D:/repo" }),
+      buildResumeInfo: () => ({
+        mode: "same-provider",
+        state: "resume-available",
+        reason: "load",
+        checkedAt: "2026-07-27T00:00:00.000Z",
+        runtimeSessionId: "runtime-old",
+        restoreMethod: "session/load",
+      }),
+      hydrateSessionSummary: (next: SessionSummary) => next,
+      persistRuntimeDescriptor: () => undefined,
+      handleRuntimeEvent: () => undefined,
+      logConnectionLifecycle: () => undefined,
+      logInfo: () => undefined,
+      logError: () => undefined,
+    } as any);
+
+    const result = await service.startSessionResume(sessionId);
+
+    assert.equal(result.ok, true, category ?? "missing category");
+    assert.deepEqual(configureInputs, [{}], category ?? "missing category");
+  }
+});
+
 test("session restore applies config saved while the runtime was inactive", async () => {
   const sessionId = "session-pending-model";
   const summary: SessionSummary = {
@@ -1186,19 +1305,22 @@ test("session restore applies config saved while the runtime was inactive", asyn
     runtimeSessionId: "runtime-old",
     model: "opus",
     reasoningEffort: "high",
-    configOptions: [{
-      id: "model",
-      category: "model",
-      currentValue: "opus",
-      selectedValue: "opus",
-      value: "opus",
-      options: [{ value: "fable" }, { value: "opus" }],
-    }, {
-      id: "web-search",
-      currentValue: true,
-      selectedValue: true,
-      value: true,
-    }],
+    configOptions: [
+      {
+        id: "model",
+        category: "model",
+        currentValue: "opus",
+        selectedValue: "opus",
+        value: "opus",
+        options: [{ value: "fable" }, { value: "opus" }],
+      },
+      {
+        id: "web-search",
+        currentValue: true,
+        selectedValue: true,
+        value: true,
+      },
+    ],
   };
   const descriptor = {
     sessionId,
@@ -1209,8 +1331,11 @@ test("session restore applies config saved while the runtime was inactive", asyn
     state: "resumeable" as const,
     pendingConfig: {
       model: "opus",
-      reasoningEffort: "high" as const,
-      configOptions: [{ configId: "web-search", value: true }],
+      reasoningEffort: "xhigh",
+      configOptions: [
+        { configId: "web-search", value: true },
+        { configId: "effort", value: "max" },
+      ],
     },
   };
   const configureInputs: Array<Record<string, unknown>> = [];
@@ -1230,21 +1355,27 @@ test("session restore applies config saved while the runtime was inactive", asyn
         sessionConfigState: { model: "fable", reasoningEffort: "medium" },
         sessionModelState: {
           currentModelId: "fable",
-          options: [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }],
+          options: [
+            { id: "fable", name: "Fable" },
+            { id: "opus", name: "Opus" },
+          ],
         },
-        sessionConfigOptions: [{
-          id: "model",
-          category: "model",
-          currentValue: "fable",
-          selectedValue: "fable",
-          value: "fable",
-          options: [{ value: "fable" }, { value: "opus" }],
-        }, {
-          id: "web-search",
-          currentValue: false,
-          selectedValue: false,
-          value: false,
-        }],
+        sessionConfigOptions: [
+          {
+            id: "model",
+            category: "model",
+            currentValue: "fable",
+            selectedValue: "fable",
+            value: "fable",
+            options: [{ value: "fable" }, { value: "opus" }],
+          },
+          {
+            id: "web-search",
+            currentValue: false,
+            selectedValue: false,
+            value: false,
+          },
+        ],
         configure: async (input: Record<string, unknown>) => {
           configureInputs.push(input);
           return {
@@ -1252,21 +1383,35 @@ test("session restore applies config saved while the runtime was inactive", asyn
             state: { model: "opus", reasoningEffort: "high" },
             modelState: {
               currentModelId: "opus",
-              options: [{ id: "fable", name: "Fable" }, { id: "opus", name: "Opus" }],
+              options: [
+                { id: "fable", name: "Fable" },
+                { id: "opus", name: "Opus" },
+              ],
             },
-            options: [{
-              id: "model",
-              category: "model",
-              currentValue: "opus",
-              selectedValue: "opus",
-              value: "opus",
-              options: [{ value: "fable" }, { value: "opus" }],
-            }, {
-              id: "web-search",
-              currentValue: true,
-              selectedValue: true,
-              value: true,
-            }],
+            options: [
+              {
+                id: "model",
+                category: "model",
+                currentValue: "opus",
+                selectedValue: "opus",
+                value: "opus",
+                options: [{ value: "fable" }, { value: "opus" }],
+              },
+              {
+                id: "web-search",
+                currentValue: true,
+                selectedValue: true,
+                value: true,
+              },
+              {
+                id: "effort",
+                category: "reasoning_effort",
+                currentValue: "high",
+                selectedValue: "high",
+                value: "high",
+                options: [{ value: "medium" }, { value: "high" }],
+              },
+            ],
           };
         },
         prompt: async () => undefined,
@@ -1274,13 +1419,15 @@ test("session restore applies config saved while the runtime was inactive", asyn
         close: async () => undefined,
       }),
     },
-    getAgents: () => [{
-      id: "codex",
-      name: "Codex",
-      command: "codex-acp",
-      transport: "stdio",
-      protocol: "acp",
-    }],
+    getAgents: () => [
+      {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+    ],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
     resolveStoredSessionWorktree: () => ({ name: "main", path: "D:/repo" }),
     buildResumeInfo: () => ({
@@ -1310,9 +1457,13 @@ test("session restore applies config saved while the runtime was inactive", asyn
 
   assert.equal(result.ok, true);
   assert.equal(configureInputs[0]?.model, "opus");
-  assert.equal(configureInputs[0]?.reasoningEffort, "high");
+  assert.equal(configureInputs[0]?.reasoningEffort, "xhigh");
   assert.equal(configureInputs[1]?.configId, "web-search");
   assert.equal(configureInputs[1]?.value, true);
+  assert.equal(
+    configureInputs.some((input) => input.configId === "effort"),
+    false,
+  );
   assert.equal(result.session?.model, "opus");
   assert.equal(result.session?.configOptions?.[0]?.currentValue, "opus");
   assert.equal(result.session?.configOptions?.[1]?.currentValue, true);
@@ -1370,13 +1521,15 @@ test("session restore keeps pending config when ACP applies only part of it", as
         },
       }),
     },
-    getAgents: () => [{
-      id: "codex",
-      name: "Codex",
-      command: "codex-acp",
-      transport: "stdio",
-      protocol: "acp",
-    }],
+    getAgents: () => [
+      {
+        id: "codex",
+        name: "Codex",
+        command: "codex-acp",
+        transport: "stdio",
+        protocol: "acp",
+      },
+    ],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
     resolveStoredSessionWorktree: () => ({ name: "main", path: "D:/repo" }),
     buildResumeInfo: () => ({
@@ -1460,13 +1613,15 @@ test("session restore falls back to persisted config when ACP reports no current
         };
       },
     },
-    getAgents: () => [{
-      id: "claude-code",
-      name: "Claude Code",
-      command: "claude-code",
-      transport: "stdio",
-      protocol: "acp",
-    }],
+    getAgents: () => [
+      {
+        id: "claude-code",
+        name: "Claude Code",
+        command: "claude-code",
+        transport: "stdio",
+        protocol: "acp",
+      },
+    ],
     getProjects: () => [{ id: "project-1", path: "D:/repo" }],
     resolveStoredSessionWorktree: () => ({ name: "main", path: "D:/repo" }),
     buildResumeInfo: () => ({
