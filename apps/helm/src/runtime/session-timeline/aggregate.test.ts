@@ -289,6 +289,7 @@ test("buildSessionTimelineBatch emits thinking streaming updates even when the a
   assert.ok(batch);
   assert.equal(batch?.entries[0]?.kind, "assistant_message");
   if (batch?.entries[0]?.kind === "assistant_message") {
+    assert.equal(batch.entries[0].streaming, true);
     assert.equal(batch.entries[0].chunks[0]?.kind, "thinking");
     assert.equal(batch.entries[0].chunks[0]?.text, "Let me think");
   }

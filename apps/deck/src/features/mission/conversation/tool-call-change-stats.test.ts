@@ -215,6 +215,35 @@ test("resolveToolCallChangeStats counts a provider-confirmed file creation", () 
   });
 });
 
+test("resolveToolCallChangeStats recognizes an OpenCode Write file creation", () => {
+  const content = [
+    "# OpenCode test",
+    "",
+    "Created by Write.",
+  ].join("\n");
+  const input = JSON.stringify({
+    filePath: "docs/opencode-write-test.md",
+    content,
+  });
+  const output = JSON.stringify({
+    output: "Wrote file successfully.",
+    metadata: {
+      filepath: "D:/myProject/tools/Tiller/docs/opencode-write-test.md",
+      exists: false,
+      diagnostics: {},
+    },
+  });
+
+  assert.deepEqual(
+    resolveToolCallChangeStats("write", input, output),
+    { additions: 3, deletions: 0 },
+  );
+  assert.deepEqual(resolveToolCallDiff("write", input, output), {
+    path: "docs/opencode-write-test.md",
+    patch: "+# OpenCode test\n+\n+Created by Write.",
+  });
+});
+
 test("resolveToolCallChangeStats does not guess from cumulative state or non-write calls", () => {
   assert.equal(
     resolveToolCallChangeStats(

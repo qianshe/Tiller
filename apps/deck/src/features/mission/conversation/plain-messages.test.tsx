@@ -404,6 +404,131 @@ test("plain conversation appends live delta thinking chunks instead of replacing
   );
 });
 
+test("plain conversation does not re-append a canonical thought in the live overlay", () => {
+  const items = resolvePlainConversationDisplayItems({
+    displayMessages: [{
+      id: "assistant-1",
+      role: "assistant",
+      contentKind: "thought",
+      text: "首行内容\n后续内容",
+      timestamp: "2026-05-17T10:00:02.000Z",
+      sequence: 2,
+      streaming: true,
+      streamMode: "delta",
+    }],
+    timelineItems: [{
+      id: "assistant-1",
+      kind: "assistant_message",
+      chunks: [{
+        id: "assistant-1:thinking",
+        kind: "thinking",
+        text: "首行内容\n后续内容",
+        title: "Thinking",
+        status: "running",
+        streamMode: "delta",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 1,
+      }],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      sequence: 1,
+    }],
+    showThinking: true,
+    toolCalls: [],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(
+    items[0]?.kind === "thinking" ? items[0].thinking.text : undefined,
+    "首行内容\n后续内容",
+  );
+});
+
+test("plain conversation does not append a live thought delta already contained in canonical text", () => {
+  const canonicalText = "重要发现：1. git status\n引用情况（这些调研是否转化为实现）";
+  const items = resolvePlainConversationDisplayItems({
+    displayMessages: [{
+      id: "live-thought",
+      role: "assistant",
+      contentKind: "thought",
+      text: "重要发现：1. git status",
+      timestamp: "2026-05-17T10:00:02.000Z",
+      sequence: 2,
+      streaming: true,
+      streamMode: "delta",
+    }],
+    timelineItems: [{
+      id: "canonical-thought",
+      kind: "assistant_message",
+      chunks: [{
+        id: "canonical-thought:thinking",
+        kind: "thinking",
+        text: canonicalText,
+        title: "Thinking",
+        status: "running",
+        streamMode: "delta",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 1,
+      }],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      sequence: 1,
+    }],
+    showThinking: true,
+    toolCalls: [],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(
+    items[0]?.kind === "thinking" ? items[0].thinking.text : undefined,
+    canonicalText,
+  );
+});
+
+test("plain conversation does not append a live thought delta matching the canonical suffix", () => {
+  const canonicalText = "前置分析\n重要发现：1. git status";
+  const items = resolvePlainConversationDisplayItems({
+    displayMessages: [{
+      id: "live-thought",
+      role: "assistant",
+      contentKind: "thought",
+      text: "重要发现：1. git status",
+      timestamp: "2026-05-17T10:00:02.000Z",
+      sequence: 2,
+      streaming: true,
+      streamMode: "delta",
+    }],
+    timelineItems: [{
+      id: "canonical-thought",
+      kind: "assistant_message",
+      chunks: [{
+        id: "canonical-thought:thinking",
+        kind: "thinking",
+        text: canonicalText,
+        title: "Thinking",
+        status: "running",
+        streamMode: "delta",
+        timestamp: "2026-05-17T10:00:01.000Z",
+        updatedAt: "2026-05-17T10:00:01.000Z",
+        sequence: 1,
+      }],
+      timestamp: "2026-05-17T10:00:01.000Z",
+      updatedAt: "2026-05-17T10:00:01.000Z",
+      sequence: 1,
+    }],
+    showThinking: true,
+    toolCalls: [],
+  });
+
+  assert.equal(items.length, 1);
+  assert.equal(
+    items[0]?.kind === "thinking" ? items[0].thinking.text : undefined,
+    canonicalText,
+  );
+});
+
 test("plain messages preserves persisted timeline order during sequence resets", () => {
   const timelineItems: SessionTimelineEntry[] = [
     {

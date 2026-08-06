@@ -277,6 +277,10 @@ test("appendMessageToSessionTimeline preserves assistant thought messages as thi
   });
 
   assert.equal(entries[0]?.kind, "assistant_message");
+  assert.equal(
+    entries[0]?.kind === "assistant_message" ? entries[0].streaming : undefined,
+    true,
+  );
   assert.deepEqual(
     entries[0]?.kind === "assistant_message" ? entries[0].chunks[0] : undefined,
     {
@@ -289,6 +293,40 @@ test("appendMessageToSessionTimeline preserves assistant thought messages as thi
       updatedAt: at(1),
       sequence: 1,
     },
+  );
+});
+
+test("appendMessageToSessionTimeline clears streaming after a thinking chunk completes", () => {
+  const entries = appendMessageToSessionTimeline([], {
+    id: "thought-terminal-1",
+    role: "assistant",
+    contentKind: "thought",
+    text: "先分析，再完成",
+    timestamp: at(1),
+    sequence: 1,
+    streaming: true,
+  });
+
+  appendMessageToSessionTimeline(entries, {
+    id: "thought-terminal-1",
+    role: "assistant",
+    contentKind: "thought",
+    text: "先分析，再完成",
+    timestamp: at(2),
+    sequence: 2,
+    streaming: false,
+    streamMode: "snapshot",
+  });
+
+  assert.equal(
+    entries[0]?.kind === "assistant_message" ? entries[0].streaming : undefined,
+    false,
+  );
+  assert.equal(
+    entries[0]?.kind === "assistant_message" && entries[0].chunks[0]?.kind === "thinking"
+      ? entries[0].chunks[0].status
+      : undefined,
+    "completed",
   );
 });
 
