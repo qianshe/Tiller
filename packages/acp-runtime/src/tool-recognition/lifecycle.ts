@@ -526,6 +526,7 @@ function resolveOpenCodeSpawnEntity(
   // identity of this launch. Reuse the provider tool id for lifecycle updates;
   // a different launch must get a new entity even when its task id is reused.
   return resolveCompatibleSpawnAlias(session, toolCall, commandId) ??
+    (commandId || entityIds.length ? resolveOpenCodeInputEntity(session, toolCall) : undefined) ??
     resolveOnlyUnidentifiedSpawn(session, entityIds, toolCall);
 }
 
@@ -604,6 +605,10 @@ function resolveEntity(
     if (explicitEntity) {
       return explicitEntity;
     }
+    const inputEntity = resolveOpenCodeInputEntity(session, toolCall);
+    if (inputEntity) {
+      return inputEntity;
+    }
     if (session.running.size !== 1) {
       return undefined;
     }
@@ -636,6 +641,36 @@ function resolveEntity(
   return explicitAliases.length === 0 || !onlyRunning?.commandId
     ? onlyRunning
     : undefined;
+}
+
+function resolveOpenCodeInputEntity(
+  session: SessionLifecycle,
+  toolCall: AgentToolCall,
+): SubagentEntity | undefined {
+  const incomingInputs = resolveOpenCodeInputIdentities(toolCall.input);
+  if (incomingInputs.length === 0) {
+    return undefined;
+  }
+  const matches = [...session.running].filter((entity) => {
+    const entityInputs = resolveOpenCodeInputIdentities(entity.input);
+    return entityInputs.some((input) => incomingInputs.includes(input));
+  });
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
+function resolveOpenCodeInputIdentities(input: string | undefined): string[] {
+  const record = input ? parseJsonRecord(input) : null;
+  if (!record) {
+    return input?.trim() ? [normalizeOpenCodeInputIdentity(input)] : [];
+  }
+  return [record.prompt, record.description, record.message]
+    .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+    .map(normalizeOpenCodeInputIdentity)
+    .filter((value, index, values) => values.indexOf(value) === index);
+}
+
+function normalizeOpenCodeInputIdentity(input: string): string {
+  return input.replace(/\s+/gu, " ").trim();
 }
 
 function resolveByAliases(

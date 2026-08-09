@@ -675,6 +675,204 @@ test("a reused subagent task id keeps a running prior invocation separate", () =
   disposeToolRecognitionSession("opencode", sessionId);
 });
 
+test("concurrent OpenCode results with new provider ids reuse matching prompts", () => {
+  const sessionId = "recognition-opencode-concurrent-results";
+  const spawn = (id: string, prompt: string) =>
+    recognizeToolObservation(
+      createToolObservation({
+        providerId: "opencode",
+        sessionId,
+        toolCall: toolCall({
+          id,
+          title: "explore",
+          status: "running",
+          input: JSON.stringify({
+            category: "explore",
+            description: prompt,
+            run_in_background: true,
+          }),
+        }),
+      }),
+      subagentEvidence({
+        action: "spawn",
+        background: true,
+        title: "explore",
+      }),
+    ).toolCalls[0];
+
+  const first = spawn("first-root", "Find topic subscription setup");
+  const second = spawn("second-root", "Trace session status update flow");
+
+  const complete = (id: string, prompt: string, taskId: string) =>
+    recognizeToolObservation(
+      createToolObservation({
+        providerId: "opencode",
+        sessionId,
+        toolCall: toolCall({
+          id,
+          title: "explore",
+          status: "completed",
+          commandId: `subagent:${taskId}`,
+          input: JSON.stringify({
+            category: "explore",
+            prompt,
+          }),
+        }),
+      }),
+      subagentEvidence({
+        action: "result",
+        entityIds: [taskId],
+        terminal: true,
+        title: "explore",
+      }),
+    ).toolCalls[0];
+
+  const firstResult = complete(
+    "first-result",
+    "Find topic subscription setup",
+    "first-child",
+  );
+  const secondResult = complete(
+    "second-result",
+    "Trace session status update flow",
+    "second-child",
+  );
+
+  assert.equal(first?.id, "first-root");
+  assert.equal(second?.id, "second-root");
+  assert.equal(firstResult?.id, "first-root");
+  assert.equal(secondResult?.id, "second-root");
+  assert.equal(firstResult?.status, "completed");
+  assert.equal(secondResult?.status, "completed");
+  disposeToolRecognitionSession("opencode", sessionId);
+});
+
+test("concurrent OpenCode spawn updates with new provider ids reuse matching prompts", () => {
+  const sessionId = "recognition-opencode-concurrent-spawn-updates";
+  const spawn = (id: string, prompt: string) =>
+    recognizeToolObservation(
+      createToolObservation({
+        providerId: "opencode",
+        sessionId,
+        toolCall: toolCall({
+          id,
+          title: "explore",
+          status: "running",
+          input: JSON.stringify({
+            category: "explore",
+            description: prompt,
+            run_in_background: true,
+          }),
+        }),
+      }),
+      subagentEvidence({
+        action: "spawn",
+        background: true,
+        title: "explore",
+      }),
+    ).toolCalls[0];
+
+  const first = spawn("first-root", "Find topic subscription setup");
+  const second = spawn("second-root", "Trace session status update flow");
+
+  const update = (id: string, prompt: string, taskId: string) =>
+    recognizeToolObservation(
+      createToolObservation({
+        providerId: "opencode",
+        sessionId,
+        toolCall: toolCall({
+          id,
+          title: "explore",
+          status: "running",
+          commandId: `subagent:${taskId}`,
+          input: JSON.stringify({
+            category: "explore",
+            prompt,
+          }),
+        }),
+      }),
+      subagentEvidence({
+        action: "spawn",
+        entityIds: [taskId],
+        background: true,
+        title: "explore",
+      }),
+    ).toolCalls[0];
+
+  const firstUpdate = update(
+    "first-update",
+    "Find topic subscription setup",
+    "first-child",
+  );
+  const secondUpdate = update(
+    "second-update",
+    "Trace session status update flow",
+    "second-child",
+  );
+
+  assert.equal(first?.id, "first-root");
+  assert.equal(second?.id, "second-root");
+  assert.equal(firstUpdate?.id, "first-root");
+  assert.equal(secondUpdate?.id, "second-root");
+  assert.equal(firstUpdate?.status, "running");
+  assert.equal(secondUpdate?.status, "running");
+  disposeToolRecognitionSession("opencode", sessionId);
+});
+
+test("concurrent OpenCode results with the same prompt stay unmerged", () => {
+  const sessionId = "recognition-opencode-ambiguous-prompt-results";
+  const spawn = (id: string) =>
+    recognizeToolObservation(
+      createToolObservation({
+        providerId: "opencode",
+        sessionId,
+        toolCall: toolCall({
+          id,
+          title: "explore",
+          status: "running",
+          input: JSON.stringify({
+            category: "explore",
+            description: "Inspect the current implementation",
+            run_in_background: true,
+          }),
+        }),
+      }),
+      subagentEvidence({
+        action: "spawn",
+        background: true,
+        title: "explore",
+      }),
+    ).toolCalls[0];
+
+  spawn("first-root");
+  spawn("second-root");
+
+  const [result] = recognizeToolObservation(
+    createToolObservation({
+      providerId: "opencode",
+      sessionId,
+      toolCall: toolCall({
+        id: "result-call",
+        title: "explore",
+        status: "completed",
+        input: JSON.stringify({
+          category: "explore",
+          prompt: "Inspect the current implementation",
+        }),
+      }),
+    }),
+    subagentEvidence({
+      action: "result",
+      terminal: true,
+      title: "explore",
+    }),
+  ).toolCalls;
+
+  assert.equal(result?.id, "result-call");
+  assert.equal(result?.status, "completed");
+  disposeToolRecognitionSession("opencode", sessionId);
+});
+
 test("a background launch result with a different tool id reuses the only unidentified spawn", () => {
   const sessionId = "recognition-background-launch-result";
   const initial = createToolObservation({
