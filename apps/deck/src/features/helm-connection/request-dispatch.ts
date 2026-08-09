@@ -76,6 +76,11 @@ export async function requestInitialSync(
     setSessionHistoryState({ hasMore: false, loading: false });
     throw error;
   }
+  try {
+    await dispatch(client, "session/activity_summary", {});
+  } catch {
+    // Dashboard metrics are optional; keep the primary session inventory usable.
+  }
   await dispatch(client, "approval/list_pending", {});
   await dispatch(client, "approval/list", { limit: 100 });
   await dispatch(client, "device/list", {});

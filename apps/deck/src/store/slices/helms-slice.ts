@@ -4,6 +4,7 @@ import type {
   ProjectSummary,
   SessionStatus,
   SessionSummary,
+  SessionActivitySummary,
   TrustedDeviceSummary,
   WorktreeSummary,
 } from "@tiller/shared";
@@ -40,6 +41,7 @@ export type HelmInventoryBucket = {
   trustedDevices: TrustedDeviceSummary[];
   logging?: HelmLoggingSettings;
   update?: HelmUpdateState;
+  activitySummary?: SessionActivitySummary;
 };
 
 export type HelmListUpdater =

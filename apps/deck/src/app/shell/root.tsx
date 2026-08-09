@@ -187,7 +187,10 @@ export function App() {
     client: DeckRpcClient,
     method: string,
     params: unknown,
-    options?: { onResult?: (method: string, result: unknown) => void },
+    options?: {
+      onResult?: (method: string, result: unknown) => void;
+      sourceHelmKey?: string;
+    },
   ) {
     return dispatchWithTrace(
       client,
@@ -196,7 +199,7 @@ export function App() {
       helmConnection.setDebugTrace,
       (resultMethod, result) => {
         options?.onResult?.(resultMethod, result);
-        controllers.handleRpcResult?.(resultMethod, result);
+        controllers.handleRpcResult?.(resultMethod, result, options?.sourceHelmKey);
       },
     );
   }

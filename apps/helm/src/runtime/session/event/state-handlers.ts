@@ -62,11 +62,20 @@ export function handleRuntimeStatusEvent(
     status: event.status,
     messageChars: event.message?.length ?? 0,
   });
-  context.updateSessionSummary(sessionId, (current) => ({
+  const updated = context.updateSessionSummary(sessionId, (current) => ({
     ...current,
     status: event.status,
     updatedAt: new Date().toISOString(),
   }));
+  if (updated) {
+    // Status transitions are lifecycle events: broadcast them globally (not
+    // just to session-topic subscribers) so viewers that never open the
+    // session (e.g. the dashboard) stay in sync.
+    createSessionEventPublisher(context).sessionUpdate(sessionId, {
+      kind: "session_updated",
+      session: updated,
+    });
+  }
   if (event.status === "idle" || event.status === "error" || event.status === "cancelled") {
     context.sessionUpdateStore.compactTail(sessionId);
   }

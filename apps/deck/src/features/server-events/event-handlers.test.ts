@@ -45,6 +45,7 @@ function resetStore() {
     projects: [],
     worktrees: [],
     sessions: [],
+    activeSessionId: null,
     statuses: {},
     sessionTitles: {},
     openChatSessionIds: [],
@@ -74,6 +75,29 @@ function resetStore() {
     pairingFeedback: "",
   } as any);
 }
+
+test("session/activity_summary stores summary data in the source Helm inventory", () => {
+  resetStore();
+  const summary = {
+    generatedAt: "2026-08-09T12:34:56.000Z",
+    promptCount: 4,
+    recentToolCallCount: 7,
+    toolCallCount: 18,
+    activityTrend: [{ date: "2026-08-09", promptCount: 4, toolCallCount: 7 }],
+    activityTrendHourly: [{ date: "2026-08-09T12:00:00.000Z", promptCount: 4, toolCallCount: 7 }],
+  };
+
+  const handled = applySessionResult(
+    "session/activity_summary",
+    summary,
+    "helm-1",
+    true,
+    {} as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().helmInventories["helm-1"]?.activitySummary, summary);
+});
 
 test("session cleanup releases session-scoped caches without touching another session", () => {
   resetStore();
@@ -273,6 +297,27 @@ test("session creation results refresh ACP connection inventory when runtime is 
 
   assert.equal(handled, true);
   assert.deepEqual(dispatched, ["agent/connections"]);
+});
+
+test("remote session creation stays in the source Helm inventory", () => {
+  resetStore();
+
+  const handled = applySessionResult(
+    "session/new",
+    { session: { ...session("remote-session"), runtimeSessionId: "runtime-remote" } },
+    "helm-remote",
+    false,
+    createSessionEventContext(),
+  );
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.deepEqual(state.sessions, []);
+  assert.deepEqual(
+    state.helmInventories["helm-remote"]?.sessions.map((item) => item.id),
+    ["remote-session"],
+  );
+  assert.equal(state.activeSessionId, null);
 });
 
 test("session/list_timeline replaces the canonical timeline and applies live state", () => {
@@ -1139,7 +1184,7 @@ test("session live_state ignores an out-of-order canonical snapshot", () => {
   assert.equal(state.sessionLiveStateSequences["session-1"], 8);
 });
 
-test("session lifecycle updates cannot overwrite a canonical live snapshot", () => {
+test("session lifecycle updates keep canonical status over a stale live snapshot", () => {
   resetStore();
   useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
   const context = createSessionEventContext();
@@ -1164,9 +1209,30 @@ test("session lifecycle updates cannot overwrite a canonical live snapshot", () 
   }, context);
 
   const state = useDeckStore.getState();
-  assert.equal(state.statuses["session-1"], "waiting_for_permission");
-  assert.equal(state.sessions[0]?.status, "waiting_for_permission");
+  assert.equal(state.statuses["session-1"], "idle");
+  assert.equal(state.sessions[0]?.status, "idle");
   assert.equal(state.sessions[0]?.model, "gpt-5");
+});
+
+test("session_updated synchronizes the lifecycle status map", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "error" }],
+    statuses: { "session-1": "error" },
+  });
+
+  const handled = applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "session_updated",
+      session: { ...session("session-1"), status: "idle" },
+    },
+  }, createSessionEventContext());
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.equal(state.sessions[0]?.status, "idle");
+  assert.equal(state.statuses["session-1"], "idle");
 });
 
 test("session updates reject legacy transcript_event events", () => {

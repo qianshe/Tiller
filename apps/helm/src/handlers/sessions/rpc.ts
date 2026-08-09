@@ -38,6 +38,7 @@ import {
   subscribeSession,
   unsubscribeSession,
 } from "./session-query-rpc";
+import { getSessionActivitySummary } from "./activity-summary-rpc";
 import { cleanupActiveRuntime } from "./runtime-cleanup";
 
 export { resolveProjectSessionWorktree } from "./session-worktree";
@@ -50,6 +51,8 @@ export async function handleSessionRpcRequest(
   switch (method) {
     case "session/list":
       return listSessions(params as { limit?: number; before?: string }, context);
+    case "session/activity_summary":
+      return getSessionActivitySummary(context);
     case "session/subscribe":
       return subscribeSession(params as { sessionId: string }, context);
     case "session/unsubscribe":

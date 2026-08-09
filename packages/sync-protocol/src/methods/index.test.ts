@@ -39,6 +39,7 @@ const expectedRequests = [
   "session/draft",
   "session/discard_draft",
   "session/list",
+  "session/activity_summary",
   "session/list_timeline",
   "session/repair_timeline",
   "session/list_legacy_evidence",

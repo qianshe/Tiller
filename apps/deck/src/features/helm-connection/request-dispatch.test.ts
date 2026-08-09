@@ -191,11 +191,29 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "daemon/update/check", params: {} },
     { method: "logging/get", params: {} },
     { method: "session/list", params: { limit: 25 } },
+    { method: "session/activity_summary", params: {} },
     { method: "approval/list_pending", params: {} },
     { method: "approval/list", params: { limit: 100 } },
     { method: "device/list", params: {} },
   ]);
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);
+});
+
+test("requestInitialSync keeps inventory loading when activity summary is unsupported", async () => {
+  const methods: string[] = [];
+
+  await requestInitialSync({} as any, {
+    dispatch: async (_client, method) => {
+      methods.push(method);
+      if (method === "session/activity_summary") {
+        throw { code: -32601, message: "Unknown method" };
+      }
+    },
+    setSessionHistoryState: () => undefined,
+    sessionPageLimit: 25,
+  });
+
+  assert.equal(methods.at(-1), "device/list");
 });
 
 test("requestInitialSync ignores update checks only when an older Helm lacks the method", async () => {
@@ -256,6 +274,7 @@ test("requestInitialSync keeps loading inventory when logging settings fail", as
     "daemon/update/check",
     "logging/get",
     "session/list",
+    "session/activity_summary",
     "approval/list_pending",
     "approval/list",
     "device/list",

@@ -31,6 +31,7 @@ import * as sessionNew from "./session/new";
 import * as sessionDraft from "./session/draft";
 import * as sessionDiscardDraft from "./session/discard-draft";
 import * as sessionList from "./session/list";
+import * as sessionActivitySummary from "./session/activity-summary";
 import * as sessionListTimeline from "./session/list-timeline";
 import * as sessionRepairTimeline from "./session/repair-timeline";
 import * as sessionListLegacyEvidence from "./session/list-legacy-evidence";
@@ -104,6 +105,7 @@ const METHOD_DESCRIPTORS = {
   [sessionDraft.method]: sessionDraft.descriptor,
   [sessionDiscardDraft.method]: sessionDiscardDraft.descriptor,
   [sessionList.method]: sessionList.descriptor,
+  [sessionActivitySummary.method]: sessionActivitySummary.descriptor,
   [sessionListTimeline.method]: sessionListTimeline.descriptor,
   [sessionRepairTimeline.method]: sessionRepairTimeline.descriptor,
   [sessionListLegacyEvidence.method]: sessionListLegacyEvidence.descriptor,
@@ -179,6 +181,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionDraft.method,
   sessionDiscardDraft.method,
   sessionList.method,
+  sessionActivitySummary.method,
   sessionListTimeline.method,
   sessionRepairTimeline.method,
   sessionListLegacyEvidence.method,

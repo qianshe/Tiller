@@ -131,7 +131,12 @@ function clearResumeStartRequest(
   });
 }
 
-function applySessionCreated(payload: { session: SessionSummary }, context: SessionServerEventContext) {
+function applySessionCreated(
+  payload: { session: SessionSummary },
+  context: SessionServerEventContext,
+  sourceHelmKey: string,
+  sourceIsCurrentHelm: boolean,
+) {
   const {
     setSelectedProjectId,
     pendingPromptRef,
@@ -142,9 +147,25 @@ function applySessionCreated(payload: { session: SessionSummary }, context: Sess
     dispatch,
   } = context;
   const store = useDeckStore.getState();
-  const previousSession = store.sessions.find((session) => session.id === payload.session.id);
+  const previousSessions = sourceIsCurrentHelm
+    ? store.sessions
+    : store.helmInventories[sourceHelmKey]?.sessions ?? [];
+  const previousSession = previousSessions.find((session) => session.id === payload.session.id);
 
-  store.setSessions((current) => upsertSessionSummary(current, payload.session));
+  if (sourceIsCurrentHelm) {
+    store.setSessions((current) => upsertSessionSummary(current, payload.session));
+  } else {
+    const previousInventory = store.helmInventories[sourceHelmKey];
+    store.applyHelmInventory(sourceHelmKey, {
+      sessions: upsertSessionSummary(previousSessions, payload.session),
+      statuses: {
+        ...(previousInventory?.statuses ?? {}),
+        [payload.session.id]: payload.session.status,
+      },
+    });
+    return true;
+  }
+
   if ((payload.session.configOptions?.length ?? 0) > 0) {
     store.setSessionConfigOptions((current) => ({
       ...current,
@@ -223,10 +244,20 @@ export function applySessionResult(
 
   switch (method) {
     case "session/new":
-      return applySessionCreated(payload as { session: SessionSummary }, context);
+      return applySessionCreated(
+        payload as { session: SessionSummary },
+        context,
+        sourceHelmKey,
+        sourceIsCurrentHelm,
+      );
     case "session/prompt":
       if (payload.session) {
-        return applySessionCreated(payload as { session: SessionSummary }, context);
+        return applySessionCreated(
+          payload as { session: SessionSummary },
+          context,
+          sourceHelmKey,
+          sourceIsCurrentHelm,
+        );
       }
       return true;
     case "session/list": {
@@ -364,6 +395,11 @@ export function applySessionResult(
       }, toolCallsRef);
       return true;
     }
+    case "session/activity_summary":
+      store.applyHelmInventory(sourceHelmKey, {
+        activitySummary: payload as import("@tiller/shared").SessionActivitySummary,
+      });
+      return true;
     case "session/list_legacy_evidence": {
       const page = payload as LegacyEvidencePage;
       store.setSessionLegacyEvidence((current) => {
@@ -937,13 +973,23 @@ export function applySessionUpdate(
   switch (update.kind) {
     case "session_updated": {
       const previousSession = store.sessions.find((session) => session.id === sessionId);
-      const lifecycleSummary = mergeSessionLifecycleSummary(
-        update.session,
-        store.sessionLiveStates[sessionId],
-      );
+      const lifecycleSummary = {
+        ...mergeSessionLifecycleSummary(
+          update.session,
+          store.sessionLiveStates[sessionId],
+        ),
+        // The global lifecycle event is authoritative even when the last
+        // session-topic snapshot is older and still reports an active state.
+        status: update.session.status,
+        updatedAt: update.session.updatedAt,
+      };
       store.setSessions((current) =>
         upsertSessionSummary(current, lifecycleSummary),
       );
+      store.setStatuses((current) => ({
+        ...current,
+        [lifecycleSummary.id]: lifecycleSummary.status,
+      }));
       if (
         !store.sessionLiveStateSequences[sessionId] &&
         (lifecycleSummary.configOptions?.length ?? 0) > 0
