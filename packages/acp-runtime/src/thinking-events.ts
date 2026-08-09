@@ -1,4 +1,4 @@
-import { isToolCallUpdateType } from "./session-update";
+import { isToolOrTerminalUpdateType } from "./session-update";
 
 function timestamp() {
   return new Date().toISOString();
@@ -104,8 +104,7 @@ export function extractThinkingContent(
   updateType: string | undefined,
   update: any,
 ): ThinkingContent | null {
-  // 保留 isToolCallUpdateType 守卫，确保 tool_call_update 类型直接跳过
-  if (isToolCallUpdateType(updateType) || /command_output|terminal/iu.test(updateType ?? "")) {
+  if (isToolOrTerminalUpdateType(updateType)) {
     return null;
   }
   const acpThoughtText = isThoughtUpdateType(updateType)
