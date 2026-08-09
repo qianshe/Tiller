@@ -1,7 +1,11 @@
 import { MissionWorktree } from "../../features/mission";
 import type { MissionRouteSource } from "./route-context";
 
-export function renderMissionRoute(source: MissionRouteSource) {
+export function renderMissionRoute(
+  source: MissionRouteSource,
+  options: { embedded?: boolean; chatOnly?: boolean } = {},
+) {
+  const { embedded = false, chatOnly = false } = options;
   const {
     prompt,
     promptImages,
@@ -197,6 +201,8 @@ export function renderMissionRoute(source: MissionRouteSource) {
   } = source;
   return (
     <MissionWorktree
+      embedded={embedded}
+      chatOnly={chatOnly}
       prompt={prompt}
       promptImages={promptImages}
       rpcClientRef={rpcClientRef}

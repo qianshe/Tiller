@@ -662,12 +662,16 @@ export function App() {
   }, [deckTheme]);
 
   useEffect(() => {
-    if (route.activeView !== "settings") {
+    const settingsVisible =
+      route.activeView === "settings" ||
+      (route.activeView === "dashboard" && dashboardSection === "settings");
+    if (!settingsVisible) {
       return;
     }
     void refreshLoggingSettings();
   }, [
     route.activeView,
+    dashboardSection,
     helmConnection.connection,
     helmConnection.daemonHost,
     helmConnection.daemonPort,
@@ -683,12 +687,15 @@ export function App() {
 
   // 离开设置页面时清空 promptEnhancer 状态消息
   useEffect(() => {
-    if (route.activeView === "settings") {
+    const settingsVisible =
+      route.activeView === "settings" ||
+      (route.activeView === "dashboard" && dashboardSection === "settings");
+    if (settingsVisible) {
       return;
     }
     // 当从设置页面切换到其他页面时，清空状态消息
     promptEnhancerSettings.setStatus("");
-  }, [route.activeView, promptEnhancerSettings]);
+  }, [route.activeView, dashboardSection, promptEnhancerSettings]);
 
   const appShell = (
     <main className={shellClassName}>

@@ -11,6 +11,25 @@ type HelmCard = {
   isCurrent: boolean;
 };
 
+export type HelmInventoryCounts = {
+  agents: number;
+  projects: number;
+  worktrees: number;
+  sessions: number;
+};
+
+type HelmInventoryCountsInput = {
+  helmKey: string;
+  selectedHelmKey: string;
+  selectedCounts: Omit<HelmInventoryCounts, "sessions">;
+  inventory?: {
+    agents?: ReadonlyArray<unknown>;
+    projects?: ReadonlyArray<unknown>;
+    worktrees?: ReadonlyArray<unknown>;
+    sessions?: ReadonlyArray<unknown>;
+  };
+};
+
 export function dedupeHelmCards<T extends HelmCard>(items: T[]) {
   const seen = new Set<string>();
   return items.filter((item) => {
@@ -32,6 +51,24 @@ export function resolveHelmConnectionState(
     return connection;
   }
   return helmConnectionStates[helm.key] ?? "disconnected";
+}
+
+export function resolveHelmInventoryCounts({
+  helmKey,
+  selectedHelmKey,
+  selectedCounts,
+  inventory,
+}: HelmInventoryCountsInput): HelmInventoryCounts {
+  const sessions = inventory?.sessions?.length ?? 0;
+  if (helmKey === selectedHelmKey) {
+    return { ...selectedCounts, sessions };
+  }
+  return {
+    agents: inventory?.agents?.length ?? 0,
+    projects: inventory?.projects?.length ?? 0,
+    worktrees: inventory?.worktrees?.length ?? 0,
+    sessions,
+  };
 }
 
 export function createProjectId(projects: ProjectSummary[], projectName?: string) {

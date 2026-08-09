@@ -5,20 +5,23 @@
 ## Summary
 
 - CSS files: 12
-- Total lines: 1944
+- Total lines: 1970
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 759
-- Top-level selectors: 164
+- Lines: 785
+- Top-level selectors: 168
 - Hard-coded color tokens: 1
 
 Selectors:
 
 - `:root`
 - `.compact`
+- `.dashboard-mission-dialog .mission-chat-only .wb-pane-head`
+- `.dashboard-mission-dialog > button`
+- `.dashboard-mission-dialog > button:hover`
 - `.device-mono`
 - `.h-ctl-lg`
 - `.h-ctl-md`
@@ -107,6 +110,7 @@ Selectors:
 - `.muted`
 - `.shell.v6-radial-shell`
 - `.shell.v6-radial-shell .page-content`
+- `.shell.view-dashboard.v6-radial-shell .page-content`
 - `.shell.view-sessions`
 - `.shell.view-sessions .page-content`
 - `.shell.view-sessions.v6-radial-shell`

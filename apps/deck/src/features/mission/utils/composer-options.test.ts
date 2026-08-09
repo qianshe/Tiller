@@ -65,6 +65,24 @@ test("resolveDraftConfigOptions prefers active session options when present", ()
   );
 });
 
+test("resolveDraftConfigOptions uses the active session config when the cache is empty", () => {
+  const activeOptions = [{
+    id: "model",
+    category: "model",
+    options: [{ value: "cpa-claude/deepseek-v4-flash", label: "DeepSeek" }],
+    currentValue: "cpa-claude/deepseek-v4-flash",
+  }];
+  const active = {
+    ...session("session-active", "opencode"),
+    configOptions: activeOptions,
+  } satisfies SessionSummary;
+
+  assert.deepEqual(
+    resolveDraftConfigOptions(active, [active], {}),
+    activeOptions,
+  );
+});
+
 test("resolveCurrentAgentMode keeps current agent mode when no mode options are available", () => {
   assert.equal(
     resolveCurrentAgentMode("bypassPermissions", [

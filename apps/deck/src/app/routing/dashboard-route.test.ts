@@ -15,7 +15,11 @@ test("v6 dashboard is a first-class route and radial destination", () => {
   assert.match(routeContentSource, /features\/dashboard\/ui\/page/);
   assert.match(routeContentSource, /activeView === \"dashboard\"/);
   assert.match(routeContentSource, /sessionPlans/);
-  assert.match(routeContentSource, /onOpenSession=\{\(sessionId\) =>/);
+  assert.match(routeContentSource, /onOpenSession=\{openDashboardMission\}/);
+  assert.match(routeContentSource, /const openDashboardMission[\s\S]*setDashboardMissionSessionId\(sessionId\)/);
+  assert.match(routeContentSource, /dashboardSelectedSessionId/);
+  assert.match(routeContentSource, /setOpenChatSessionIds: ignoreDashboardMissionStateUpdate/);
+  assert.match(routeContentSource, /setFocusedChatWindowId: ignoreDashboardMissionStateUpdate/);
   assert.match(rootSource, /RadialMenu/);
   assert.match(rootSource, /id:\s*\"dashboard\"/);
   assert.match(rootSource, /enabled=\{route\.activeView !== "dashboard"\}/);

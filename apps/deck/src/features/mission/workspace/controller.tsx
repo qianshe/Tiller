@@ -57,6 +57,8 @@ import { useGitOperations } from "./git-operations";
 
 export function MissionWorktree(props: any) {
   const {
+    embedded = false,
+    chatOnly = false,
     prompt,
     promptImages,
     rpcClientRef,
@@ -921,7 +923,9 @@ export function MissionWorktree(props: any) {
     "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-canvas",
     !activeSession && "mission-draft-chat",
   ]);
-  const resolvedMissionMobilePane = selectedMissionMobilePane ?? ((activeSession || draftChatWindow) ? "chat" : "project");
+  const resolvedMissionMobilePane = chatOnly
+    ? "chat"
+    : selectedMissionMobilePane ?? ((activeSession || draftChatWindow) ? "chat" : "project");
   const currentMobilePaneIndex = MISSION_MOBILE_PANE_ORDER.indexOf(resolvedMissionMobilePane);
   useEffect(() => {
     const visiblePaths = new Set(syncedMissionDiffs.map((diff) => diff.path));
@@ -982,7 +986,9 @@ export function MissionWorktree(props: any) {
   const displayPaneCollapsed = effectiveDisplayCollapsed;
   const canToggleDisplay = true;
   const missionLayoutClassName = joinClassNames([
-    "wb-pane shadow-ambient chat-layout chat-layout-sidebar mission-responsive-mode mission-grid h-[calc(100vh-16px)] min-h-[640px] w-full overflow-hidden",
+    "wb-pane shadow-ambient chat-layout chat-layout-sidebar mission-responsive-mode mission-grid w-full overflow-hidden",
+    embedded ? "h-full min-h-0" : "h-[calc(100vh-16px)] min-h-[640px]",
+    chatOnly && "mission-chat-only",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
     effectiveSidebarCollapsed && "sidebar-collapsed",
     displayPaneCollapsed && "mission-display-collapsed",
@@ -1095,7 +1101,7 @@ export function MissionWorktree(props: any) {
         resizeTargetMinimumSize={{ fine: 4, coarse: 16 }}
       >
         {" "}
-        {isMissionMobile || !effectiveSidebarCollapsed ? (
+        {!chatOnly && (isMissionMobile || !effectiveSidebarCollapsed) ? (
           <ResizablePanel
             id="mission-sidebar"
             defaultSize="248px"
@@ -1144,7 +1150,7 @@ export function MissionWorktree(props: any) {
             />{" "}
           </ResizablePanel>
         ) : null}
-        {!isMissionMobile && !effectiveSidebarCollapsed ? (
+        {!chatOnly && !isMissionMobile && !effectiveSidebarCollapsed ? (
           <ResizableHandle
             className="mission-pane-resizer mission-pane-resizer-sidebar w-px bg-transparent hover:bg-primary-soft/20"
             aria-label="调整任务列表宽度"
@@ -1156,11 +1162,13 @@ export function MissionWorktree(props: any) {
           minSize="360px"
           className="h-full min-w-0"
         >
-        <MissionChatPane
-          className={chatPaneClassName}
-          style={missionChatPaneStyle}
-          isMissionMobile={isMissionMobile}
-          isPaneResizing={isMissionPaneResizing}
+          <MissionChatPane
+            className={chatPaneClassName}
+            style={missionChatPaneStyle}
+            isMissionMobile={isMissionMobile}
+            hideWorkspaceHeader={chatOnly}
+            hideSessionCloseAction={chatOnly}
+            isPaneResizing={isMissionPaneResizing}
           paneResizeVersion={missionPaneResizeVersion}
           chatMainRef={chatMainRef}
           onChatMainScroll={handleChatMainScroll}
@@ -1209,9 +1217,9 @@ export function MissionWorktree(props: any) {
           pendingApprovals={pendingApprovals}
           pendingToolTitle={pendingToolActivity?.title ?? null}
           showPermissionWorktree={technicalPanels.showPermissionWorktree}
-          displayCollapsed={displayPaneCollapsed}
-          inspectorCollapsed={effectiveInspectorCollapsed}
-          sidebarCollapsed={effectiveSidebarCollapsed}
+          displayCollapsed={chatOnly || displayPaneCollapsed}
+          inspectorCollapsed={chatOnly || effectiveInspectorCollapsed}
+          sidebarCollapsed={chatOnly ? false : effectiveSidebarCollapsed}
           showThinking={technicalPanels.showMissionThinking}
           canToggleDisplay={canToggleDisplay}
           projectOptions={workbenchProjectOptions}
@@ -1329,13 +1337,13 @@ export function MissionWorktree(props: any) {
           ) : null}{" "}
         </MissionChatPane>{" "}
         </ResizablePanel>
-        {!isMissionMobile && !displayPaneCollapsed ? (
+        {!chatOnly && !isMissionMobile && !displayPaneCollapsed ? (
           <ResizableHandle
             className="mission-pane-resizer mission-pane-resizer-display w-px bg-transparent hover:bg-primary-soft/20"
             aria-label="调整任务展示宽度"
           />
         ) : null}
-        {isMissionMobile || !displayPaneCollapsed ? (
+        {!chatOnly && (isMissionMobile || !displayPaneCollapsed) ? (
           <ResizablePanel
             id="mission-display"
             defaultSize="320px"
@@ -1374,13 +1382,13 @@ export function MissionWorktree(props: any) {
         />{" "}
           </ResizablePanel>
         ) : null}
-        {!isMissionMobile && !effectiveInspectorCollapsed ? (
+        {!chatOnly && !isMissionMobile && !effectiveInspectorCollapsed ? (
           <ResizableHandle
             className="mission-pane-resizer mission-pane-resizer-inspector w-px bg-transparent hover:bg-primary-soft/20"
             aria-label="调整检视器宽度"
           />
         ) : null}
-        {isMissionMobile || !effectiveInspectorCollapsed ? (
+        {!chatOnly && (isMissionMobile || !effectiveInspectorCollapsed) ? (
           <ResizablePanel
             id="mission-inspector"
             defaultSize="280px"
@@ -1415,7 +1423,7 @@ export function MissionWorktree(props: any) {
         />{" "}
           </ResizablePanel>
         ) : null}
-        {isMissionMobile ? (
+        {!chatOnly && isMissionMobile ? (
           <nav className="mission-mobile-edge-pager" aria-label="移动端左右翻页热区">
             <button
               type="button"
@@ -1434,10 +1442,12 @@ export function MissionWorktree(props: any) {
             />
           </nav>
         ) : null}
-        <MissionMobilePager
-          selectedPane={resolvedMissionMobilePane}
-          onSelectPane={setSelectedMissionMobilePane}
-        />
+        {!chatOnly ? (
+          <MissionMobilePager
+            selectedPane={resolvedMissionMobilePane}
+            onSelectPane={setSelectedMissionMobilePane}
+          />
+        ) : null}
       </ResizablePanelGroup>{" "}
     </MissionPage>
   );

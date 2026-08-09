@@ -97,7 +97,20 @@ test("MissionChatPane swaps the mobile close button for a create-session action 
   });
 
   assert.match(html, /aria-label="当前项目下新建会话"/u);
-  assert.match(html, /title="session 菜单"/u);
+  assert.match(html, /title="更多会话操作"/u);
+  assert.doesNotMatch(html, /title="关闭此 session"/u);
+});
+
+test("MissionChatPane can hide the card close action in the dashboard chat-only window", () => {
+  const session = buildSession();
+  const html = renderChatPane({
+    isMissionMobile: false,
+    hideSessionCloseAction: true,
+    activeSession: session,
+    openSessions: [session],
+    selectedSessionId: session.id,
+  });
+
   assert.doesNotMatch(html, /title="关闭此 session"/u);
 });
 
@@ -119,6 +132,22 @@ test("MissionChatPane does not render the onboarding card when sessions exist", 
   });
 
   assert.doesNotMatch(html, /工作台引导/u);
+});
+
+test("MissionChatPane can keep only the session surface without its workspace header", () => {
+  const session = buildSession();
+  const html = renderChatPane({
+    isMissionMobile: false,
+    hideWorkspaceHeader: true,
+    activeSession: session,
+    openSessions: [session],
+    selectedSessionId: session.id,
+  });
+
+  assert.doesNotMatch(html, />工作台</u);
+  assert.doesNotMatch(html, /title="更多"/u);
+  assert.match(html, /title="更多会话操作"/u);
+  assert.match(html, /移动端会话/u);
 });
 
 test("MissionChatPane keeps the mobile create-session button on a mobile empty state", () => {

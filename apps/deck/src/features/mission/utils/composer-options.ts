@@ -335,6 +335,10 @@ export function resolveDraftConfigOptions(
     if (activeOptions.length > 0) {
       return activeOptions;
     }
+    const embeddedOptions = activeSession.configOptions ?? [];
+    if (embeddedOptions.length > 0) {
+      return embeddedOptions;
+    }
     const cachedSession = sessions.find(
       (session) =>
         session.id !== activeSession.id &&

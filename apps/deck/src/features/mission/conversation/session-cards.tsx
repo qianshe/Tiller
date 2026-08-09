@@ -208,6 +208,7 @@ export function SessionCard({
   showThinking,
   onToggleThinking,
   showCreateTaskAction,
+  hideCloseAction = false,
   children,
 }: {
   session: SessionSummary;
@@ -231,6 +232,7 @@ export function SessionCard({
   showThinking?: boolean;
   onToggleThinking?: () => void;
   showCreateTaskAction?: boolean;
+  hideCloseAction?: boolean;
   children: ReactNode;
 }) {
   const statusTone = resolveSessionStatusTone(session.status);
@@ -397,10 +399,7 @@ export function SessionCard({
         >
           {formatProjectWorktreeLabel(session.projectName, session.worktreeName)}
         </span>
-        <div
-          className="flex shrink-0 items-center gap-1"
-          data-session-status-slot="true"
-        >
+        <div className="flex shrink-0 items-center gap-1" data-session-status-slot="true">
           {restoreNotice ? <SessionRestoreNotice notice={restoreNotice} /> : null}
           {toolLoading ? (
             <MissionToolLoadingTitle {...toolLoading} />
@@ -409,15 +408,24 @@ export function SessionCard({
           )}
         </div>
         <div className="min-w-0 flex-1" />
-        <StatusDot tone={statusTone} />
+        <div
+          className={cn(
+            "flex h-7 shrink-0 items-center gap-1",
+            hideCloseAction && "rounded-md border border-border-ghost bg-surface-sunken px-0.5 py-0.5",
+          )}
+          data-slot="session-card-actions"
+        >
+        {hideCloseAction ? null : <StatusDot tone={statusTone} />}
         <div ref={menuContainerRef} className="relative">
           <button
             type="button"
             className={cn(
               "grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-surface-sunken hover:text-foreground",
+              hideCloseAction && "h-6 w-6",
               cardMenuOpen && "bg-surface-sunken text-foreground",
             )}
-            title="session 菜单"
+            title="更多会话操作"
+            aria-label="更多会话操作"
             aria-haspopup="menu"
             aria-expanded={cardMenuOpen}
             onClick={(event) => {
@@ -467,15 +475,17 @@ export function SessionCard({
               >
                 清理会话
               </MenuItem>
-              <MenuItem
-                tone="destructive"
-                onClick={() => {
-                  onClose(session);
-                  setCardMenuOpen(false);
-                }}
-              >
-                关闭窗口
-              </MenuItem>
+              {!hideCloseAction ? (
+                <MenuItem
+                  tone="destructive"
+                  onClick={() => {
+                    onClose(session);
+                    setCardMenuOpen(false);
+                  }}
+                >
+                  关闭窗口
+                </MenuItem>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -491,7 +501,7 @@ export function SessionCard({
           >
             <Icon name="plus" size={11} />
           </button>
-        ) : (
+        ) : hideCloseAction ? null : (
           <button
             className="grid h-5 w-5 place-items-center rounded text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive"
             title="关闭此 session"
@@ -503,6 +513,7 @@ export function SessionCard({
             <Icon name="x" size={11} />
           </button>
         )}
+        </div>
       </div>
       <div className="relative min-h-0 flex-1" data-session-scroll-frame={session.id}>
         <div

@@ -527,7 +527,9 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /onSelectSessionView=\{selectChatSession\}/);
   assert.match(worktreeSource, /onCloseSessionView=\{closeChatSession\}/);
   assert.match(worktreeSource, /openSessions=/);
-  assert.match(worktreeSource, /sidebarCollapsed=\{effectiveSidebarCollapsed\}/);
+  assert.match(worktreeSource, /hideWorkspaceHeader=\{chatOnly\}/);
+  assert.match(worktreeSource, /hideSessionCloseAction=\{chatOnly\}/);
+  assert.match(worktreeSource, /sidebarCollapsed=\{chatOnly \? false : effectiveSidebarCollapsed\}/);
   assert.match(worktreeSource, /onExpandSidebar=\{\(\) => setMissionSidebarCollapsed\(false\)\}/);
   assert.match(worktreeSource, /onCollapse=\{onToggleDisplay\}/);
   assert.match(worktreeSource, /onCollapse=\{onToggleInspector\}/);
@@ -1023,7 +1025,7 @@ test("mission mobile session selection routes back to chat and keeps desktop thi
   assert.match(chatWindowActionsSource, /isMissionMobile/);
   assert.match(chatWindowActionsSource, /if \(isMissionMobile\) \{\s*setSelectedMissionMobilePane\("chat"\);\s*\}/s);
   assert.match(chatPaneComponentSource, /isMissionMobile: boolean;/);
-  assert.match(chatPaneComponentSource, /!isMissionMobile \? \(\s*<div className=\"wb-pane-head\"/s);
+  assert.match(chatPaneComponentSource, /!isMissionMobile && !hideWorkspaceHeader \? \(\s*<div className=\"wb-pane-head\"/s);
   assert.match(chatPaneComponentSource, /showThinkingToggle=\{isMissionMobile\}/);
   assert.match(chatPaneComponentSource, /onToggleThinking=\{onToggleThinking\}/);
   assert.match(workspaceChatCompositionSource, /return isMobile \? "输入消息" : draftPromptPlaceholder/);
@@ -1042,7 +1044,7 @@ test("mission worktree renders mobile pager and hides desktop resizers in mobile
   assert.match(worktreeSource, /isMissionMobile/);
   assert.match(worktreeSource, /!isMissionMobile && !effectiveSidebarCollapsed/);
   assert.match(worktreeSource, /<MissionDisplaySection/);
-  assert.match(worktreeSource, /isMissionMobile \|\| !displayPaneCollapsed \? \(/);
+  assert.match(worktreeSource, /!chatOnly && \(isMissionMobile \|\| !displayPaneCollapsed\) \?/);
   assert.match(worktreeSource, /!isMissionMobile && !effectiveInspectorCollapsed \? \(\s*<ResizableHandle[\s\S]*调整检视器宽度/s);
 });
 
@@ -1051,7 +1053,7 @@ test("mission mobile mode marks panes with identities and shows one selected pan
   assert.match(chatPaneSource, /data-mission-mobile-pane="chat"/);
   assert.match(displayPanelSource, /data-mission-mobile-pane="display"/);
   assert.match(inspectorSource, /data-mission-mobile-pane="inspector"/);
-  assert.match(worktreeSource, /resolvedMissionMobilePane = selectedMissionMobilePane \?\? \(\(activeSession \|\| draftChatWindow\) \? "chat" : "project"\)/);
+  assert.match(worktreeSource, /resolvedMissionMobilePane = chatOnly\s*\?\s*"chat"\s*:\s*selectedMissionMobilePane \?\? \(\(activeSession \|\| draftChatWindow\) \? "chat" : "project"\)/);
   assert.match(worktreeSource, /mission-responsive-mode/);
   assert.match(worktreeSource, /`mission-mobile-pane-\$\{resolvedMissionMobilePane\}`/);
   assert.match(worktreeSource, /selectedPane=\{resolvedMissionMobilePane\}/);
@@ -1164,7 +1166,7 @@ test("mission inspector diff rows stay compact on mobile", () => {
 
 test("mission worktree keeps the display pane independently toggleable", () => {
   assert.match(worktreeSource, /const displayPaneCollapsed = effectiveDisplayCollapsed;/);
-  assert.match(worktreeSource, /displayCollapsed=\{displayPaneCollapsed\}/);
+  assert.match(worktreeSource, /displayCollapsed=\{chatOnly \|\| displayPaneCollapsed\}/);
   assert.match(worktreeSource, /canToggleDisplay=\{canToggleDisplay\}/);
   assert.match(chatPaneComponentSource, /disabled=\{!canToggleDisplay\}/);
   assert.match(worktreeSource, /!isMissionMobile && !displayPaneCollapsed/);

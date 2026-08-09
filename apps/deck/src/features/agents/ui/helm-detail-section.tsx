@@ -187,15 +187,16 @@ export function HelmDetailSection({
   }
 
   return (
-    <section className="wb-pane flex h-full min-h-0 flex-col overflow-hidden">
+    <section className="wb-pane flex h-full min-h-0 w-full min-w-0 flex-1 flex-col overflow-hidden">
       <div className="wb-pane-head">
-        {isMobile && onBack && (
+        {onBack && (
           <Button
             variant="ghost"
             size="icon-sm"
             type="button"
             onClick={onBack}
-            title="返回"
+            aria-label="返回 Helm 列表"
+            title="返回 Helm 列表"
             className="-ml-1 mr-1"
           >
             <Icon name="chevronLeft" size={12} />
