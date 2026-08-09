@@ -6,7 +6,7 @@ import {
   buildDashboardViewModel,
   resolveDashboardApprovalDecision,
   resolveDashboardApprovalDecisions,
-} from "./dashboard-view-model";
+} from "./view-model";
 
 test("buildDashboardHourlyActivityTrend keeps 24 hourly buckets for the one-day view", () => {
   const points = buildDashboardHourlyActivityTrend(

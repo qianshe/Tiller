@@ -1,10 +1,10 @@
 import { useState, type CSSProperties } from "react";
 import type { ApprovalStatus, PermissionDecision } from "@tiller/shared";
-import { AgentIcon, Icon, StatusDot } from "../../../shared/ui";
-import { cn } from "../../../shared/utils/cn";
-import type { DashboardNotification } from "../orchestration/dashboard-view-model";
-import type { DashboardRecentActivitySummary } from "../types";
-import { DashboardNotificationList } from "./notification-list";
+import { AgentIcon, Icon, StatusDot } from "../../../../shared/ui";
+import { cn } from "../../../../shared/utils/cn";
+import type { DashboardNotification } from "../../orchestration/view-model";
+import type { DashboardRecentActivitySummary } from "../../types";
+import { DashboardNotificationList } from "../notification-list";
 
 export type DashboardActivityApproval = {
   id: string;

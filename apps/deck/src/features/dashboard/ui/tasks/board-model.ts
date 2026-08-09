@@ -1,4 +1,4 @@
-import type { DashboardActivitySession } from "./activity-stream";
+import type { DashboardActivitySession } from "../activity/stream";
 
 export type TaskBoardColumnId = "ready" | "running" | "attention" | "idle";
 

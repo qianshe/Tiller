@@ -10,16 +10,16 @@ import {
   DashboardNotificationList,
   formatNotificationReport,
 } from "./notification-list";
-import { DashboardActivityTrend, selectDashboardTrendPoints } from "./activity-trend";
+import { DashboardActivityTrend, selectDashboardTrendPoints } from "./activity/trend";
 import { DashboardPage } from "./page";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const pageSource = readFileSync(resolve(currentDir, "page.tsx"), "utf8");
-const activityStreamPath = resolve(currentDir, "activity-stream.tsx");
+const activityStreamPath = resolve(currentDir, "activity", "stream.tsx");
 const activityStreamSource = existsSync(activityStreamPath)
   ? readFileSync(activityStreamPath, "utf8")
   : "";
-const activityTrendPath = resolve(currentDir, "activity-trend.tsx");
+const activityTrendPath = resolve(currentDir, "activity", "trend.tsx");
 const activityTrendSource = existsSync(activityTrendPath)
   ? readFileSync(activityTrendPath, "utf8")
   : "";
@@ -202,7 +202,7 @@ test("DashboardPage renders the session list only once on the overview", () => {
 });
 
 test("DashboardPage uses the shadcn sidebar shell with an offcanvas collapse", () => {
-  const sidebarSource = readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8");
+  const sidebarSource = readFileSync(resolve(currentDir, "sidebar.tsx"), "utf8");
 
   assert.match(pageSource, /SidebarProvider/);
   assert.match(pageSource, /SidebarInset/);
@@ -232,7 +232,7 @@ test("DashboardPage exposes the shadcn-style project-aware quick create", () => 
     /DashboardQuickCreateDialog/,
   );
   assert.match(
-    readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8"),
+    readFileSync(resolve(currentDir, "sidebar.tsx"), "utf8"),
     /onOpenQuickCreate/,
   );
 });
@@ -458,7 +458,7 @@ test("DashboardPage keeps the embedded shell visible while config pages load", (
 
 test("DashboardPage exposes Mission mode below session search", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, commonProps));
-  const sidebarSource = readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8");
+  const sidebarSource = readFileSync(resolve(currentDir, "sidebar.tsx"), "utf8");
 
   assert.match(html, /Mission 模式/);
   assert.match(html, /搜索会话/);
@@ -477,7 +477,7 @@ test("DashboardPage exposes Mission mode below session search", () => {
 });
 
 test("DashboardPage exposes session search as a first-class action", () => {
-  const sidebarSource = readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8");
+  const sidebarSource = readFileSync(resolve(currentDir, "sidebar.tsx"), "utf8");
 
   assert.match(sidebarSource, /onSearchSessions/);
   assert.match(pageSource, /DashboardSessionSearchDialog/);
@@ -504,7 +504,7 @@ test("DashboardPage lets embedded pages fill the content shell", () => {
 test("DashboardPage exposes bounded desktop sidebar resizing", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, commonProps));
   const resizeHandle = html.match(/<div[^>]*data-slot="dashboard-sidebar-resize-handle"[^>]*>/)?.[0] ?? "";
-  const sidebarSource = readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8");
+  const sidebarSource = readFileSync(resolve(currentDir, "sidebar.tsx"), "utf8");
 
   assert.match(resizeHandle, /role="separator"/);
   assert.match(resizeHandle, /aria-valuemin="220"/);

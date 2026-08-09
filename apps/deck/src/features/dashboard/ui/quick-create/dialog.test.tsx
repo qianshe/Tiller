@@ -5,7 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
-const source = readFileSync(resolve(currentDir, "dashboard-quick-create-dialog.tsx"), "utf8");
+const source = readFileSync(resolve(currentDir, "dialog.tsx"), "utf8");
 
 test("quick create uses a modal with project-to-Helm-to-agent selection", () => {
   assert.match(source, /DialogTitle/);

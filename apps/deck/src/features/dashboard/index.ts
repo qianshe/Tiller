@@ -1,4 +1,4 @@
-export * from "./orchestration/dashboard-view-model";
-export * from "./orchestration/dashboard-quick-create";
-export * from "./orchestration/dashboard-task-creation";
+export * from "./orchestration/view-model";
+export * from "./orchestration/quick-create";
+export * from "./orchestration/task-creation";
 export * from "./types";

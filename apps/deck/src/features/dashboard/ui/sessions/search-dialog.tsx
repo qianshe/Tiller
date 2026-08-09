@@ -8,7 +8,7 @@ import {
   Icon,
   Input,
   StatusDot,
-} from "../../../shared/ui";
+} from "../../../../shared/ui";
 
 export type DashboardSessionSearchItem = {
   id: string;

@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { DashboardTaskWorkspace, isArchivableTask } from "./task-workspace";
-import { resolveTaskBoardColumn } from "./task-board-model";
+import { DashboardTaskWorkspace, isArchivableTask } from "./workspace";
+import { resolveTaskBoardColumn } from "./board-model";
 
-const workspaceSource = readFileSync(new URL("./task-workspace.tsx", import.meta.url), "utf8");
+const workspaceSource = readFileSync(new URL("./workspace.tsx", import.meta.url), "utf8");
 
 const sessions = [
   {

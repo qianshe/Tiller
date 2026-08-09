@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AcpAgentProvider, ProjectSummary, SessionSummary } from "@tiller/shared";
-import { buildDashboardQuickCreateProjects } from "./dashboard-quick-create.js";
+import { buildDashboardQuickCreateProjects } from "./quick-create.js";
 
 function agent(id: string, name = id): AcpAgentProvider {
   return {

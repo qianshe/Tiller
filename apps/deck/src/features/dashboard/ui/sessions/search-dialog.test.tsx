@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { filterDashboardSessions, type DashboardSessionSearchItem } from "./dashboard-session-search";
+import { filterDashboardSessions, type DashboardSessionSearchItem } from "./search-dialog";
 
 const sessions: DashboardSessionSearchItem[] = [
   { id: "s-1", title: "修复 ACP 流式渲染", projectName: "Tiller", agentName: "OpenCode" },

@@ -6,18 +6,18 @@ import {
   buildDashboardActivitySummary,
   type DashboardActivityApproval,
   type DashboardActivitySession,
-} from "./activity-stream";
-import { DashboardActivityTrend } from "./activity-trend";
+} from "./activity/stream";
+import { DashboardActivityTrend } from "./activity/trend";
 import {
   DashboardSidebar,
   DASHBOARD_SIDEBAR_DEFAULT_WIDTH,
   type DashboardNavigationActions,
-} from "./dashboard-sidebar";
+} from "./sidebar";
 import { DashboardNotificationList } from "./notification-list";
-import { DashboardSessionSearchDialog } from "./dashboard-session-search";
-import { DashboardQuickCreateDialog } from "./dashboard-quick-create-dialog";
-import { DashboardTaskWorkspace } from "./task-workspace";
-import type { DashboardNotification } from "../orchestration/dashboard-view-model";
+import { DashboardSessionSearchDialog } from "./sessions/search-dialog";
+import { DashboardQuickCreateDialog } from "./quick-create/dialog";
+import { DashboardTaskWorkspace } from "./tasks/workspace";
+import type { DashboardNotification } from "../orchestration/view-model";
 import type {
   DashboardActivityTrendPoint,
   DashboardQuickCreateProject,

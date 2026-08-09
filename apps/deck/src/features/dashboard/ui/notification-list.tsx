@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon, StatusDot } from "../../../shared/ui";
-import type { DashboardNotification } from "../orchestration/dashboard-view-model";
+import type { DashboardNotification } from "../orchestration/view-model";
 
 type DashboardNotificationListProps = {
   notifications: DashboardNotification[];

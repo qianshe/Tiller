@@ -3,7 +3,7 @@ import test from "node:test";
 import {
   DashboardTaskLaunchError,
   launchDashboardTask,
-} from "./dashboard-task-creation.js";
+} from "./task-creation.js";
 
 test("dashboard task creation sends the prompt after the session is created", async () => {
   const requests: Array<{ method: string; params: unknown }> = [];

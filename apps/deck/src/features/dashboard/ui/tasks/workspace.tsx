@@ -43,14 +43,14 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "../../../shared/ui";
-import { cn } from "../../../shared/utils/cn";
-import type { DashboardActivitySession } from "./activity-stream";
+} from "../../../../shared/ui";
+import { cn } from "../../../../shared/utils/cn";
+import type { DashboardActivitySession } from "../activity/stream";
 import {
   resolveTaskBoardColumn,
   TASK_BOARD_COLUMNS,
   type TaskBoardColumnId,
-} from "./task-board-model";
+} from "./board-model";
 
 type DashboardTaskWorkspaceProps = {
   sessions: DashboardActivitySession[];

@@ -19,11 +19,11 @@ import {
   TabsList,
   TabsTrigger,
   Textarea,
-} from "../../../shared/ui";
+} from "../../../../shared/ui";
 import type {
   DashboardQuickCreateProject,
   DashboardQuickCreateRequest,
-} from "../types";
+} from "../../types";
 
 type DashboardQuickCreateMode = "new" | "reuse";
 

@@ -14,11 +14,11 @@ import {
   TabsList,
   TabsTrigger,
   type ChartConfig,
-} from "../../../shared/ui";
+} from "../../../../shared/ui";
 import type {
   DashboardActivityTrendPoint,
   DashboardRecentActivitySummary,
-} from "../types";
+} from "../../types";
 
 type DashboardTrendRange = "30d" | "7d" | "1d";
 type DashboardTrendField = "promptCount" | "toolCallCount";

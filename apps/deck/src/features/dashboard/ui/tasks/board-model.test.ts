@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveTaskBoardColumn, TASK_BOARD_COLUMNS } from "./task-board-model";
+import { resolveTaskBoardColumn, TASK_BOARD_COLUMNS } from "./board-model";
 
 const baseSession = {
   id: "session-1",
