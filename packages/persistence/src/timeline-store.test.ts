@@ -398,6 +398,48 @@ test("sqlite timeline upsertToolCall preserves the first occurrence anchor and t
   }
 });
 
+test("sqlite timeline upsertToolCall keeps a flushed provider call when command identity arrives later", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
+  const dbPath = join(tempDir, "sessions.sqlite");
+  const store = createSqliteSessionTimelineStore(dbPath) as InternalSqliteTimelineStore;
+
+  try {
+    store.upsertToolCall("session-1", toolCall({
+      id: "opencode-task-call",
+      kind: "subagent",
+      status: "running",
+      title: "task",
+      sequence: 1,
+      timestamp: at(1),
+    }));
+    const updated = store.upsertToolCall("session-1", toolCall({
+      id: "opencode-task-call",
+      commandId: "subagent:ses_opencode_child",
+      kind: "subagent",
+      status: "completed",
+      title: "explore",
+      output: "done",
+      sequence: 2,
+      timestamp: at(2),
+      updatedAt: at(2),
+    }));
+
+    assert.equal(updated?.id, "tool:opencode-task-call");
+    const persisted = store.list("session-1");
+    assert.deepEqual(persisted.map((entry) => entry.id), ["tool:opencode-task-call"]);
+    const entry = persisted[0];
+    assert.equal(entry?.kind, "tool_call");
+    if (entry?.kind !== "tool_call") {
+      throw new Error("Expected tool_call entry");
+    }
+    assert.equal(entry.toolCall.commandId, "subagent:ses_opencode_child");
+    assert.equal(entry.toolCall.status, "completed");
+  } finally {
+    store.close();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
+});
+
 test("sqlite timeline store round-trips canonical output entries", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tiller-timeline-store-"));
   const dbPath = join(tempDir, "sessions.sqlite");

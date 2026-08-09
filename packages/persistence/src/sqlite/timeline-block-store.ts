@@ -465,12 +465,9 @@ export function createSqliteTimelineBlockStore(
       return entry ? upsertEntry(sessionId, entry) : undefined;
     },
     upsertToolCall(sessionId: string, toolCall: AgentToolCall) {
-      const entryId = resolveToolCallTimelineEntryId(toolCall);
-      const existing = index.getEntryLocation(sessionId, entryId)
-        ? readExistingEntry(sessionId, entryId)
-        : undefined;
+      const existing = readExistingToolCallEntry(sessionId, toolCall);
       const entries = appendToolCallToSessionTimeline(existing ? [existing] : [], toolCall);
-      const entry = entries.find((candidate) => candidate.id === entryId);
+      const entry = entries.find((candidate) => candidate.kind === "tool_call");
       return entry ? upsertEntry(sessionId, entry) : undefined;
     },
     replace(sessionId: string, entries: SessionTimelineEntry[]) {
@@ -511,6 +508,20 @@ export function createSqliteTimelineBlockStore(
     return block
       ? readBlockEntries(block).find((entry) => entry.id === entryId)?.payload
       : undefined;
+  }
+
+  function readExistingToolCallEntry(sessionId: string, toolCall: AgentToolCall) {
+    const entryIds = [
+      resolveToolCallTimelineEntryId(toolCall),
+      `tool:${toolCall.id}`,
+    ];
+    for (const entryId of entryIds) {
+      const entry = readExistingEntry(sessionId, entryId);
+      if (entry?.kind === "tool_call") {
+        return entry;
+      }
+    }
+    return undefined;
   }
 
   function ensureSessionTimelineMessageAnchors(sessionId: string) {

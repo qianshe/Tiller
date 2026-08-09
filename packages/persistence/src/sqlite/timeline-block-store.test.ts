@@ -201,6 +201,41 @@ test("timeline stores keep a reused subagent at one persisted position", () => {
   }
 });
 
+test("timeline block store keeps a flushed provider call when command identity arrives later", () => {
+  withStore(({ store }) => {
+    store.upsertToolCall("session-1", toolCall({
+      id: "opencode-task-call",
+      kind: "subagent",
+      status: "running",
+      title: "task",
+      sequence: 1,
+      timestamp: at(1),
+    }));
+    const updated = store.upsertToolCall("session-1", toolCall({
+      id: "opencode-task-call",
+      commandId: "subagent:ses_opencode_child",
+      kind: "subagent",
+      status: "completed",
+      title: "explore",
+      output: "done",
+      sequence: 2,
+      timestamp: at(2),
+      updatedAt: at(2),
+    }));
+
+    assert.equal(updated?.id, "tool:opencode-task-call");
+    const entries = store.list("session-1");
+    assert.deepEqual(entries.map((entry) => entry.id), ["tool:opencode-task-call"]);
+    const entry = entries[0];
+    assert.equal(entry?.kind, "tool_call");
+    if (entry?.kind !== "tool_call") {
+      throw new Error("Expected tool_call entry");
+    }
+    assert.equal(entry.toolCall.commandId, "subagent:ses_opencode_child");
+    assert.equal(entry.toolCall.status, "completed");
+  });
+});
+
 test("timeline block store paginates newest-first across block boundaries", () => {
   withStore(({ store }) => {
     for (let index = 0; index < 5; index += 1) {

@@ -108,6 +108,56 @@ test("timeline worker publishes lifecycle updates under the same subagent tool e
   );
 });
 
+test("timeline worker keeps a flushed subagent entry when command identity is learned", () => {
+  const worker = createSessionTimelineWorker({ sessionId: "session-1" });
+
+  worker.enqueue({
+    type: "tool-call",
+    toolCall: {
+      id: "opencode-task-call",
+      kind: "subagent",
+      title: "task",
+      status: "running",
+      timestamp: "2026-07-11T16:10:00.000Z",
+      updatedAt: "2026-07-11T16:10:00.000Z",
+      sequence: 1,
+    },
+  });
+  assert.deepEqual(worker.flush()[0]?.batch.entries.map((entry) => entry.id), [
+    "tool:opencode-task-call",
+  ]);
+
+  worker.enqueue({
+    type: "tool-call",
+    toolCall: {
+      id: "opencode-task-call",
+      commandId: "subagent:ses_opencode_child",
+      kind: "subagent",
+      title: "explore",
+      status: "completed",
+      output: "done",
+      timestamp: "2026-07-11T16:10:01.000Z",
+      updatedAt: "2026-07-11T16:10:01.000Z",
+      sequence: 2,
+    },
+  });
+
+  const batch = worker.flush()[0]?.batch;
+  assert.deepEqual(batch?.entries.map((entry) => entry.id), ["tool:opencode-task-call"]);
+  assert.equal(
+    batch?.entries[0]?.kind === "tool_call"
+      ? batch.entries[0].toolCall.status
+      : undefined,
+    "completed",
+  );
+  assert.equal(
+    batch?.entries[0]?.kind === "tool_call"
+      ? batch.entries[0].toolCall.commandId
+      : undefined,
+    "subagent:ses_opencode_child",
+  );
+});
+
 test("timeline worker merges reused subagent command ids into one entity", () => {
   const worker = createSessionTimelineWorker({ sessionId: "session-1" });
 

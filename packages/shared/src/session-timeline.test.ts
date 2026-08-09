@@ -1092,6 +1092,7 @@ test("appendToolCallToSessionTimeline merges updates by subagent tool-call id", 
   assert.equal(entries[0].toolCall.input, launchInput);
   assert.equal(entries[0].toolCall.output, "CLAUDE_BACKGROUND_CHILD_OK");
   assert.equal(entries[0].toolCall.status, "completed");
+  assert.equal(entries[0].id, "tool:subagent-launch");
   assert.equal(entries[0].sequence, 3);
 });
 

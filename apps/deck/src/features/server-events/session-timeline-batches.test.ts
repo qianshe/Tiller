@@ -114,6 +114,61 @@ test("batch upserts existing entries by id", () => {
   }
 });
 
+test("batch updates a temporary subagent entry when completion learns command identity", () => {
+  const running = applySessionTimelineBatch(createEmptyAppliedTimelineState(), {
+    replace: false,
+    deliverySequence: 1,
+    lastSequence: 1,
+    entries: [{
+      id: "tool:opencode-task-call",
+      kind: "tool_call",
+      toolCall: {
+        id: "opencode-task-call",
+        kind: "subagent",
+        title: "task",
+        status: "running",
+        timestamp: "2026-07-11T16:10:00.000Z",
+        updatedAt: "2026-07-11T16:10:00.000Z",
+        sequence: 1,
+      },
+      timestamp: "2026-07-11T16:10:00.000Z",
+      updatedAt: "2026-07-11T16:10:00.000Z",
+      sequence: 1,
+    }],
+  });
+  const completed = applySessionTimelineBatch(running, {
+    replace: false,
+    deliverySequence: 2,
+    lastSequence: 2,
+    entries: [{
+      id: "tool:opencode-task-call",
+      kind: "tool_call",
+      toolCall: {
+        id: "opencode-task-call",
+        commandId: "subagent:ses_opencode_child",
+        kind: "subagent",
+        title: "explore",
+        status: "completed",
+        output: "done",
+        timestamp: "2026-07-11T16:10:01.000Z",
+        updatedAt: "2026-07-11T16:10:01.000Z",
+        sequence: 2,
+      },
+      timestamp: "2026-07-11T16:10:01.000Z",
+      updatedAt: "2026-07-11T16:10:01.000Z",
+      sequence: 2,
+    }],
+  });
+
+  assert.deepEqual(completed.entries.map((entry) => entry.id), ["tool:opencode-task-call"]);
+  assert.equal(completed.entries[0]?.kind, "tool_call");
+  if (completed.entries[0]?.kind !== "tool_call") {
+    throw new Error("Expected tool_call entry");
+  }
+  assert.equal(completed.entries[0].toolCall.commandId, "subagent:ses_opencode_child");
+  assert.equal(completed.entries[0].toolCall.status, "completed");
+});
+
 test("canonical batches preserve notification order without timestamp sorting", () => {
   const next = applySessionTimelineBatch(createEmptyAppliedTimelineState(), {
     replace: false,

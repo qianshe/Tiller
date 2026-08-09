@@ -423,7 +423,6 @@ function upsertToolCallEntry(
     entries[existingIndex] as SessionTimelineToolCallEntry,
     entry,
   );
-  merged.id = resolveSessionTimelineToolCallEntryId(merged.toolCall);
   entries[existingIndex] = merged;
   collapseDuplicateToolCommandEntries(entries, existingIndex);
   return entries;
