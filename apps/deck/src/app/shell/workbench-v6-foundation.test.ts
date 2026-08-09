@@ -56,6 +56,22 @@ test("Workbench v6 shell no longer ships legacy top navigation", () => {
   assert.doesNotMatch(stylesCss, /\.admiral-/);
   assert.match(stylesCss, /\.shell\.v6-radial-shell \.page-content\s*\{[^}]*padding:\s*0;[^}]*gap:\s*0;/s);
   assert.match(stylesCss, /\.shell\.v6-radial-shell\s*\{[^}]*width:\s*100vw;/s);
+  assert.match(stylesCss, /\.shell\.v6-radial-shell\s*\{[^}]*max-width:\s*100%;/s);
+});
+
+test("Dashboard keeps the shell viewport fixed while its content region scrolls", () => {
+  assert.match(
+    stylesCss,
+    /\.shell\.view-dashboard\.v6-radial-shell \.page-content\s*\{[^}]*overflow:\s*hidden;/s,
+  );
+});
+
+test("Dashboard quick create launches the prompt instead of staging the Mission composer", () => {
+  const handlerSource = rootSource
+    .split("function openNewTaskFromDashboard")[1]
+    ?.split("const layoutContext")[0] ?? "";
+  assert.match(handlerSource, /launchDashboardTask/);
+  assert.doesNotMatch(handlerSource, /setDraftChatWindow|setPrompt\(/);
 });
 
 test("Workbench v6 shell does not mount the design-only tweaks panel", () => {

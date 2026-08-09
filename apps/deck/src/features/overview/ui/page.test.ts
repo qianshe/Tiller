@@ -18,7 +18,7 @@ test("overview page uses the starship landing hero treatment", () => {
   assert.match(pageSource, /把本地 AI Agent 代理/);
   assert.match(pageSource, /整理成一个指挥台/);
   assert.match(pageSource, /进入工作台/);
-  assert.match(pageSource, /查看 Dashboard/);
+  assert.match(pageSource, /查看控制台/);
   assert.match(pageSource, /onNavigate\("sessions"\)/);
   assert.match(pageSource, /onNavigate\("dashboard"\)/);
   assert.match(pageSource, /在线 HELM/);

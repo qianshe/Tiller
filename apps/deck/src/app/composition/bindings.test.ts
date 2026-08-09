@@ -1,6 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildMissionPanelContext } from "./bindings.js";
+import { buildAppRouteContext, buildMissionPanelContext } from "./bindings.js";
+
+test("buildAppRouteContext forwards Dashboard section state", () => {
+  const setDashboardSection = () => undefined;
+  const promptEnhancerSettings = {
+    busy: false,
+    status: "",
+    setStatus: () => undefined,
+    models: [],
+    modelFilter: "",
+    setModelFilter: () => undefined,
+    modelPickerOpen: false,
+    setModelPickerOpen: () => undefined,
+    updatePreference: () => undefined,
+    updateLlmPreference: () => undefined,
+    testSelectedModel: () => undefined,
+    refreshModels: () => undefined,
+    updateModelInput: () => undefined,
+    selectModel: () => undefined,
+  };
+
+  const context = buildAppRouteContext({
+    promptEnhancerSettings,
+    route: { activeView: "dashboard", navigateToView: () => undefined },
+    dashboardSection: "agents",
+    setDashboardSection,
+  });
+
+  assert.equal(context.dashboardSection, "agents");
+  assert.equal(context.setDashboardSection, setDashboardSection);
+});
 
 test("buildMissionPanelContext maps the new display tab state fields", () => {
   const panelPages = {

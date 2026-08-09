@@ -2,10 +2,175 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { PermissionRequestOption, SessionSummary } from "@tiller/shared";
 import {
+  buildDashboardHourlyActivityTrend,
   buildDashboardViewModel,
   resolveDashboardApprovalDecision,
   resolveDashboardApprovalDecisions,
 } from "./dashboard-view-model";
+
+test("buildDashboardHourlyActivityTrend keeps 24 hourly buckets for the one-day view", () => {
+  const points = buildDashboardHourlyActivityTrend(
+    {
+      "session-1": [
+        {
+          id: "prompt-1",
+          kind: "user_message",
+          message: {} as any,
+          timestamp: "2026-06-02T09:10:00.000Z",
+          updatedAt: "2026-06-02T09:10:00.000Z",
+        },
+        {
+          id: "prompt-2",
+          kind: "user_message",
+          message: {} as any,
+          timestamp: "2026-06-02T10:05:00.000Z",
+          updatedAt: "2026-06-02T10:05:00.000Z",
+        },
+      ],
+    },
+    {
+      "session-1": [
+        { id: "tool-1", timestamp: "2026-06-02T09:20:00.000Z" },
+        { id: "tool-2", timestamp: "2026-06-02T10:30:00.000Z" },
+      ],
+    },
+    Date.parse("2026-06-02T10:37:00.000Z"),
+  );
+
+  assert.equal(points.length, 24);
+  assert.deepEqual(points.at(-2), {
+    date: "2026-06-02T09:00:00.000Z",
+    promptCount: 1,
+    toolCallCount: 1,
+  });
+  assert.deepEqual(points.at(-1), {
+    date: "2026-06-02T10:00:00.000Z",
+    promptCount: 1,
+    toolCallCount: 1,
+  });
+});
+
+test("dashboard activity falls back to messages and canonical tool calls without double counting", () => {
+  const now = Date.parse("2026-06-02T10:37:00.000Z");
+  const model = buildDashboardViewModel({
+    connection: "connected",
+    daemonHost: "127.0.0.1",
+    daemonPort: "47631",
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "47631",
+    agents: [],
+    projects: [],
+    sessions: [],
+    messages: {
+      "session-1": [{
+        id: "prompt-1",
+        role: "user",
+        text: "继续",
+        timestamp: "2026-06-02T10:05:00.000Z",
+      } as any],
+    },
+    sessionTimeline: {
+      "session-1": [
+        {
+          id: "prompt-1",
+          kind: "user_message",
+          message: {} as any,
+          timestamp: "2026-06-02T10:05:00.000Z",
+          updatedAt: "2026-06-02T10:05:00.000Z",
+        },
+        {
+          id: "tool-1-entry",
+          kind: "tool_call",
+          toolCall: {
+            id: "tool-1",
+            timestamp: "2026-06-02T10:20:00.000Z",
+          },
+          timestamp: "2026-06-02T10:20:00.000Z",
+          updatedAt: "2026-06-02T10:20:00.000Z",
+        },
+      ] as any,
+    },
+    toolCalls: {
+      "session-1": [{ id: "tool-1", timestamp: "2026-06-02T10:20:00.000Z" }],
+    },
+    now,
+    approvalItemsById: {},
+    resolveDisplaySessionTitle: (session: SessionSummary) => session.title ?? session.id,
+  });
+
+  assert.equal(model.promptCount, 1);
+  assert.equal(model.toolCallCount, 1);
+  assert.equal(model.recentToolCallCount, 1);
+  assert.deepEqual(model.activityTrendHourly.at(-1), {
+    date: "2026-06-02T10:00:00.000Z",
+    promptCount: 1,
+    toolCallCount: 1,
+  });
+});
+
+test("dashboard activity uses the Helm summary before any session is opened", () => {
+  const model = buildDashboardViewModel({
+    connection: "connected",
+    daemonHost: "127.0.0.1",
+    daemonPort: "47631",
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "47631",
+    agents: [],
+    projects: [],
+    sessions: [],
+    messages: {},
+    sessionTimeline: {},
+    toolCalls: {},
+    now: Date.parse("2026-06-02T10:37:00.000Z"),
+    activitySummary: {
+      generatedAt: "2026-06-02T10:37:00.000Z",
+      promptCount: 4,
+      recentToolCallCount: 7,
+      toolCallCount: 18,
+      activityTrend: [{ date: "2026-06-02", promptCount: 4, toolCallCount: 7 }],
+      activityTrendHourly: [{ date: "2026-06-02T10:00:00.000Z", promptCount: 4, toolCallCount: 7 }],
+    },
+    approvalItemsById: {},
+    resolveDisplaySessionTitle: (session: SessionSummary) => session.title ?? session.id,
+  });
+
+  assert.equal(model.promptCount, 4);
+  assert.equal(model.recentToolCallCount, 7);
+  assert.equal(model.toolCallCount, 18);
+  assert.deepEqual(model.activityTrend, [
+    { date: "2026-06-02", promptCount: 4, toolCallCount: 7 },
+  ]);
+  assert.deepEqual(model.activityTrendHourly, [
+    { date: "2026-06-02T10:00:00.000Z", promptCount: 4, toolCallCount: 7 },
+  ]);
+});
+
+test("dashboard session selection is independent from mission window state", () => {
+  const sessions = [
+    { id: "dashboard-session", title: "Dashboard session" },
+    { id: "mission-session", title: "Mission session" },
+  ] as SessionSummary[];
+  const model = buildDashboardViewModel({
+    connection: "connected",
+    daemonHost: "127.0.0.1",
+    daemonPort: "47631",
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "47631",
+    agents: [],
+    projects: [],
+    sessions,
+    activeSessionId: "mission-session",
+    openChatSessionIds: ["mission-session"],
+    focusedChatWindowId: "session:mission-session",
+    selectedSessionId: "dashboard-session",
+    toolCalls: {},
+    approvalItemsById: {},
+    resolveDisplaySessionTitle: (session: SessionSummary) => session.title ?? session.id,
+  } as any);
+
+  assert.equal(model.sessions.find((session: { id: string }) => session.id === "dashboard-session")?.selected, true);
+  assert.equal(model.sessions.find((session: { id: string }) => session.id === "mission-session")?.selected, false);
+});
 
 test("resolveDashboardApprovalDecision prefers allow options", () => {
   const options: PermissionRequestOption[] = [
@@ -66,9 +231,7 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
     projects: [{ id: "tiller" }],
     sessions,
     statuses: { "session-1": "waiting_for_permission" },
-    activeSessionId: "session-1",
-    openChatSessionIds: ["session-1"],
-    focusedChatWindowId: "session:session-1",
+    selectedSessionId: "session-1",
     sessionPlans: {
       "session-1": {
         updatedAt: "2026-06-02T00:00:00.000Z",
@@ -78,7 +241,19 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
         ],
       },
     },
-    toolCalls: { "session-1": [{ id: "tool-1" }] },
+    toolCalls: {
+      "session-1": [{ id: "tool-1", timestamp: "2026-05-29T10:00:20.000Z" }],
+    },
+    sessionTimeline: {
+      "session-1": [{
+        id: "prompt-1",
+        kind: "user_message",
+        message: {} as any,
+        timestamp: "2026-05-29T10:00:10.000Z",
+        updatedAt: "2026-05-29T10:00:10.000Z",
+      }],
+    },
+    now: Date.parse("2026-06-02T00:00:00.000Z"),
     approvalItemsById: {
       "approval-1": {
         id: "approval-1",
@@ -142,6 +317,12 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
   assert.equal(model.activeSessionCount, 1);
   assert.equal(model.pendingApprovalCount, 1);
   assert.equal(model.toolCallCount, 1);
+  assert.equal(model.promptCount, 0);
+  assert.deepEqual(model.activityTrend.find((point) => point.date === "2026-05-29"), {
+    date: "2026-05-29",
+    promptCount: 1,
+    toolCallCount: 1,
+  });
   assert.equal(model.planSessionCount, 1);
   assert.equal(model.completedPlanSessionCount, 0);
   assert.equal(model.helms[0]?.endpoint, "127.0.0.1:47631");
@@ -165,6 +346,7 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
   assert.equal(model.sessions[0]?.selected, true);
   assert.equal(model.sessions[0]?.projectName, "Tiller");
   assert.equal(model.sessions[0]?.worktreeName, "main");
+  assert.equal(model.sessions[0]?.createdAt, "2026-05-29T10:00:00.000Z");
   assert.equal(model.notifications[0]?.message, "ACP connection closed");
   assert.equal(model.notifications[0]?.code, "ACP_PROMPT_FAILED");
   assert.equal(model.notifications[0]?.sessionName, "Review plan");

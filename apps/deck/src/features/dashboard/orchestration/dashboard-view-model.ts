@@ -1,14 +1,18 @@
 import type {
   AgentPlan,
+  AgentMessage,
   CanonicalApproval,
   HelmSummary,
   PermissionDecision,
   PermissionRequestOption,
   SessionStatus,
   SessionSummary,
+  SessionTimelineEntry,
+  SessionActivitySummary,
 } from "@tiller/shared";
 import { resolvePermissionCommandDisplay } from "../../mission/facade";
 import type { DeckNotificationDetails } from "../../../store";
+import type { DashboardActivityTrendPoint } from "../types";
 
 type DashboardInput = {
   connection: string;
@@ -22,11 +26,13 @@ type DashboardInput = {
   projects: unknown[];
   sessions: SessionSummary[];
   statuses?: Record<string, SessionStatus | undefined>;
-  activeSessionId?: string | null;
-  openChatSessionIds?: string[];
-  focusedChatWindowId?: string | null;
+  selectedSessionId?: string | null;
   sessionPlans?: Record<string, AgentPlan | undefined>;
   toolCalls: Record<string, unknown[]>;
+  messages?: Record<string, AgentMessage[]>;
+  sessionTimeline?: Record<string, SessionTimelineEntry[]>;
+  activitySummary?: SessionActivitySummary;
+  now?: number;
   approvalItemsById: Record<string, any>;
   approvalHistory?: CanonicalApproval[];
   notifications?: DashboardNotification[];
@@ -57,9 +63,250 @@ const DASHBOARD_APPROVAL_DECISIONS: PermissionDecision[] = [
   "allow_session",
   "allow_always",
 ];
+const DASHBOARD_DAY_MS = 24 * 60 * 60 * 1000;
+const DASHBOARD_HOUR_MS = 60 * 60 * 1000;
+const DASHBOARD_TREND_DAYS = 30;
+const DASHBOARD_TREND_HOURS = 24;
 
 function dashboardText(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function parseDashboardTimestamp(value: unknown): number | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function isRecentDashboardTimestamp(value: unknown, cutoff: number) {
+  const timestamp = parseDashboardTimestamp(value);
+  return timestamp !== null && timestamp >= cutoff;
+}
+
+type DashboardActivityEvent = {
+  kind: "prompt" | "tool";
+  timestamp: unknown;
+};
+
+function resolveDashboardActivityKey(sessionId: string, id: unknown) {
+  return typeof id === "string" && id.length > 0 ? `${sessionId}:${id}` : null;
+}
+
+function collectDashboardActivityEvents(
+  sessionTimeline: Record<string, SessionTimelineEntry[]> | undefined,
+  messages: Record<string, AgentMessage[]> | undefined,
+  toolCalls: Record<string, unknown[]>,
+): DashboardActivityEvent[] {
+  const events: DashboardActivityEvent[] = [];
+  const promptKeys = new Set<string>();
+  const toolKeys = new Set<string>();
+
+  for (const [sessionId, entries] of Object.entries(sessionTimeline ?? {})) {
+    for (const entry of entries) {
+      if (entry.kind === "user_message") {
+        const key = resolveDashboardActivityKey(sessionId, entry.id);
+        if (key) promptKeys.add(key);
+        events.push({ kind: "prompt", timestamp: entry.timestamp });
+      } else if (entry.kind === "tool_call") {
+        const key = resolveDashboardActivityKey(sessionId, entry.toolCall.id);
+        if (key) toolKeys.add(key);
+        events.push({ kind: "tool", timestamp: entry.toolCall.timestamp ?? entry.timestamp });
+      }
+    }
+  }
+
+  // Message and tool-call maps are live/open-session caches. Keep them as a
+  // fallback for sessions whose canonical timeline has not been hydrated yet.
+  for (const [sessionId, sessionMessages] of Object.entries(messages ?? {})) {
+    for (const message of sessionMessages) {
+      if (message.role !== "user") continue;
+      const key = resolveDashboardActivityKey(sessionId, message.id);
+      if (key && promptKeys.has(key)) continue;
+      if (key) promptKeys.add(key);
+      events.push({ kind: "prompt", timestamp: message.timestamp });
+    }
+  }
+
+  for (const [sessionId, sessionToolCalls] of Object.entries(toolCalls ?? {})) {
+    for (const call of sessionToolCalls) {
+      if (!call || typeof call !== "object") continue;
+      const typedCall = call as { id?: unknown; timestamp?: unknown };
+      const key = resolveDashboardActivityKey(sessionId, typedCall.id);
+      if (key && toolKeys.has(key)) continue;
+      if (key) toolKeys.add(key);
+      events.push({ kind: "tool", timestamp: typedCall.timestamp });
+    }
+  }
+
+  return events;
+}
+
+function countRecentDashboardActivity(
+  events: DashboardActivityEvent[],
+  kind: DashboardActivityEvent["kind"],
+  cutoff: number,
+) {
+  return events.filter(
+    (event) => event.kind === kind && isRecentDashboardTimestamp(event.timestamp, cutoff),
+  ).length;
+}
+
+function mergeDashboardActivityTrend(
+  points: DashboardActivityTrendPoint[],
+  events: DashboardActivityEvent[],
+  generatedAt: number,
+  now: number,
+  bucketMs: number,
+  formatDate: (timestampMs: number) => string,
+) {
+  const next = points.map((point) => ({ ...point }));
+  const pointsByDate = new Map(next.map((point) => [point.date, point]));
+  for (const event of events) {
+    const timestamp = parseDashboardTimestamp(event.timestamp);
+    if (timestamp === null || timestamp <= generatedAt || timestamp > now) continue;
+    const point = pointsByDate.get(formatDate(Math.floor(timestamp / bucketMs) * bucketMs));
+    if (!point) continue;
+    point[event.kind === "prompt" ? "promptCount" : "toolCallCount"] += 1;
+  }
+  return next;
+}
+
+function resolveDashboardActivityMetrics(
+  summary: SessionActivitySummary | undefined,
+  events: DashboardActivityEvent[],
+  now: number,
+) {
+  if (!summary) {
+    return {
+      promptCount: countRecentDashboardActivity(events, "prompt", now - DASHBOARD_DAY_MS),
+      recentToolCallCount: countRecentDashboardActivity(events, "tool", now - DASHBOARD_DAY_MS),
+      toolCallCount: events.filter((event) => event.kind === "tool").length,
+      activityTrend: buildDashboardBucketedActivityTrend(
+        events,
+        now,
+        DASHBOARD_DAY_MS,
+        DASHBOARD_TREND_DAYS,
+        (timestampMs) => new Date(timestampMs).toISOString().slice(0, 10),
+      ),
+      activityTrendHourly: buildDashboardBucketedActivityTrend(
+        events,
+        now,
+        DASHBOARD_HOUR_MS,
+        DASHBOARD_TREND_HOURS,
+        (timestampMs) => new Date(timestampMs).toISOString(),
+      ),
+    };
+  }
+
+  const generatedAt = parseDashboardTimestamp(summary.generatedAt);
+  const summaryEvents = generatedAt === null ? [] : events;
+  const recentCutoff = now - DASHBOARD_DAY_MS;
+  const deltaEvents = generatedAt === null
+    ? []
+    : summaryEvents.filter((event) => {
+      const timestamp = parseDashboardTimestamp(event.timestamp);
+      return timestamp !== null && timestamp > generatedAt && timestamp <= now;
+    });
+  const deltaRecentToolCalls = deltaEvents.filter(
+    (event) => event.kind === "tool" && isRecentDashboardTimestamp(event.timestamp, recentCutoff),
+  ).length;
+  return {
+    promptCount: summary.promptCount + deltaEvents.filter(
+      (event) => event.kind === "prompt" && isRecentDashboardTimestamp(event.timestamp, recentCutoff),
+    ).length,
+    recentToolCallCount: summary.recentToolCallCount + deltaRecentToolCalls,
+    toolCallCount: summary.toolCallCount + deltaEvents.filter((event) => event.kind === "tool").length,
+    activityTrend: mergeDashboardActivityTrend(
+      summary.activityTrend,
+      deltaEvents,
+      generatedAt ?? Number.POSITIVE_INFINITY,
+      now,
+      DASHBOARD_DAY_MS,
+      (timestampMs) => new Date(timestampMs).toISOString().slice(0, 10),
+    ),
+    activityTrendHourly: mergeDashboardActivityTrend(
+      summary.activityTrendHourly,
+      deltaEvents,
+      generatedAt ?? Number.POSITIVE_INFINITY,
+      now,
+      DASHBOARD_HOUR_MS,
+      (timestampMs) => new Date(timestampMs).toISOString(),
+    ),
+  };
+}
+
+function buildDashboardBucketedActivityTrend(
+  events: DashboardActivityEvent[],
+  now: number,
+  bucketMs: number,
+  bucketCount: number,
+  formatDate: (timestampMs: number) => string,
+): DashboardActivityTrendPoint[] {
+  const currentBucket = Math.floor(now / bucketMs) * bucketMs;
+  const startBucket = currentBucket - (bucketCount - 1) * bucketMs;
+  const points = Array.from({ length: bucketCount }, (_, index) => {
+    const bucketStart = startBucket + index * bucketMs;
+    return {
+      date: formatDate(bucketStart),
+      promptCount: 0,
+      toolCallCount: 0,
+    };
+  });
+  const pointsByBucket = new Map(
+    points.map((point, index) => [startBucket + index * bucketMs, point]),
+  );
+
+  function increment(timestamp: unknown, field: "promptCount" | "toolCallCount") {
+    const timestampMs = parseDashboardTimestamp(timestamp);
+    if (timestampMs === null || timestampMs > now) {
+      return;
+    }
+    const bucketStart = Math.floor(timestampMs / bucketMs) * bucketMs;
+    const point = pointsByBucket.get(bucketStart);
+    if (point) {
+      point[field] += 1;
+    }
+  }
+
+  for (const event of events) {
+    increment(event.timestamp, event.kind === "prompt" ? "promptCount" : "toolCallCount");
+  }
+
+  return points;
+}
+
+export function buildDashboardActivityTrend(
+  sessionTimeline: Record<string, SessionTimelineEntry[]> | undefined,
+  toolCalls: Record<string, unknown[]>,
+  now: number,
+  messages?: Record<string, AgentMessage[]>,
+): DashboardActivityTrendPoint[] {
+  const events = collectDashboardActivityEvents(sessionTimeline, messages, toolCalls);
+  return buildDashboardBucketedActivityTrend(
+    events,
+    now,
+    DASHBOARD_DAY_MS,
+    DASHBOARD_TREND_DAYS,
+    (timestampMs) => new Date(timestampMs).toISOString().slice(0, 10),
+  );
+}
+
+export function buildDashboardHourlyActivityTrend(
+  sessionTimeline: Record<string, SessionTimelineEntry[]> | undefined,
+  toolCalls: Record<string, unknown[]>,
+  now: number,
+  messages?: Record<string, AgentMessage[]>,
+): DashboardActivityTrendPoint[] {
+  const events = collectDashboardActivityEvents(sessionTimeline, messages, toolCalls);
+  return buildDashboardBucketedActivityTrend(
+    events,
+    now,
+    DASHBOARD_HOUR_MS,
+    DASHBOARD_TREND_HOURS,
+    (timestampMs) => new Date(timestampMs).toISOString(),
+  );
 }
 
 function summarizeDashboardPlan(plan: AgentPlan | undefined): DashboardPlanSummary | null {
@@ -73,23 +320,6 @@ function summarizeDashboardPlan(plan: AgentPlan | undefined): DashboardPlanSumma
     total,
     label: completed === total ? `${completed}/${total} 已完成` : `${completed}/${total} 进行中`,
   };
-}
-
-function resolveFocusedSessionId(focusedChatWindowId: string | null | undefined): string | null {
-  return focusedChatWindowId?.startsWith("session:")
-    ? focusedChatWindowId.slice("session:".length)
-    : null;
-}
-
-function resolveSelectedSessionIds(input: Pick<
-  DashboardInput,
-  "activeSessionId" | "focusedChatWindowId" | "openChatSessionIds"
->): Set<string> {
-  return new Set([
-    input.activeSessionId,
-    resolveFocusedSessionId(input.focusedChatWindowId),
-    ...(input.openChatSessionIds ?? []),
-  ].filter((id): id is string => typeof id === "string" && id.length > 0));
 }
 
 export function resolveDashboardApprovalDecision(
@@ -148,6 +378,7 @@ function buildDashboardApprovalRow(
 }
 
 export function buildDashboardViewModel(input: DashboardInput) {
+  const now = input.now ?? Date.now();
   const activeHelmLabel = input.activeHelm
     ? `${input.activeHelm.name ?? "Local Helm"} · ${input.activeHelm.host ?? input.defaultDaemonHost}:${input.activeHelm.port ?? input.defaultDaemonPort}`
     : `${input.daemonHost || input.defaultDaemonHost}:${input.daemonPort || input.defaultDaemonPort}`;
@@ -182,11 +413,13 @@ export function buildDashboardViewModel(input: DashboardInput) {
     };
   });
 
-  const toolCallCount = Object.values(input.toolCalls ?? {}).reduce(
-    (total, calls) => total + (Array.isArray(calls) ? calls.length : 0),
-    0,
+  const activityEvents = collectDashboardActivityEvents(
+    input.sessionTimeline,
+    input.messages,
+    input.toolCalls ?? {},
   );
-  const selectedSessionIds = resolveSelectedSessionIds(input);
+  const activityMetrics = resolveDashboardActivityMetrics(input.activitySummary, activityEvents, now);
+  const { toolCallCount, promptCount, recentToolCallCount } = activityMetrics;
   const sessions = input.sessions.map((session) => ({
     id: session.id,
     title: input.resolveDisplaySessionTitle(session),
@@ -194,8 +427,9 @@ export function buildDashboardViewModel(input: DashboardInput) {
     worktreeName: session.worktreeName,
     agentName: session.agentName,
     status: input.statuses?.[session.id] ?? session.status,
+    createdAt: session.createdAt,
     updatedAt: session.updatedAt,
-    selected: selectedSessionIds.has(session.id),
+    selected: session.id === input.selectedSessionId,
     planSummary: summarizeDashboardPlan(input.sessionPlans?.[session.id]) ?? undefined,
   }));
   const planSessionCount = sessions.filter((session) => session.planSummary).length;
@@ -214,6 +448,10 @@ export function buildDashboardViewModel(input: DashboardInput) {
     planSessionCount,
     completedPlanSessionCount,
     toolCallCount,
+    promptCount,
+    recentToolCallCount,
+    activityTrend: activityMetrics.activityTrend,
+    activityTrendHourly: activityMetrics.activityTrendHourly,
     sessions,
     helms,
     approvals,

@@ -18,5 +18,5 @@ test("v6 dashboard is a first-class route and radial destination", () => {
   assert.match(routeContentSource, /onOpenSession=\{\(sessionId\) =>/);
   assert.match(rootSource, /RadialMenu/);
   assert.match(rootSource, /id:\s*\"dashboard\"/);
-  assert.match(rootSource, /enabled=\{true\}/);
+  assert.match(rootSource, /enabled=\{route\.activeView !== "dashboard"\}/);
 });

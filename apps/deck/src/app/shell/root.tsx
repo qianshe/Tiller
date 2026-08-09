@@ -6,6 +6,12 @@ import {
   readAgentModelOptionsCache,
   useAppActions,
 } from "../../features/agents";
+import {
+  DashboardTaskLaunchError,
+  launchDashboardTask,
+  type DashboardQuickCreateRequest,
+  type DashboardSection,
+} from "../../features/dashboard";
 import { getOrCreateDeviceId } from "../../features/auth";
 import {
   daemonProfileKey,
@@ -83,7 +89,7 @@ type LocalLoggingSettings = {
 
 const V6_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: "overview", icon: "home", label: "首页" },
-  { id: "dashboard", icon: "board", label: "Dashboard" },
+  { id: "dashboard", icon: "board", label: "控制台" },
   { id: "sessions", icon: "mission", label: "工作台" },
   { id: "agents", icon: "fleet", label: "舰队" },
   { id: "settings", icon: "settings", label: "设置" },
@@ -238,6 +244,7 @@ export function App() {
   });
   const panelPages = usePanelPages();
   const route = useRouteView();
+  const [dashboardSection, setDashboardSection] = useState<DashboardSection>("overview");
   const [localLoggingSettings, setLocalLoggingSettings] = useState<LocalLoggingSettings | null>(null);
   const [loggingStatus, setLoggingStatus] = useState("");
 
@@ -424,6 +431,86 @@ export function App() {
     activeView: route.activeView,
     hasActiveConversation: Boolean(missionView.activeSession || deckData.draftChatWindow),
   });
+
+  function openNewTaskFromDashboard(request: DashboardQuickCreateRequest): boolean {
+    const currentHelmKey = daemonProfileKey(
+      helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
+      helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
+    );
+    const client = request.helmKey === currentHelmKey
+      ? runtimeState.rpcClientRef.current
+      : runtimeState.helmRpcClientRefs.current.get(request.helmKey);
+    if (!client || client.socket.readyState !== WebSocket.OPEN) {
+      deckData.addNotification({
+        kind: "warning",
+        source: "dashboard",
+        message: "任务未创建：目标 Helm 尚未连接。",
+        details: { helmKey: request.helmKey, phase: "dashboard-quick-create" },
+      });
+      return false;
+    }
+
+    const dispatchDashboardTask = (
+      method: "session/new" | "session/prompt",
+      params: Record<string, unknown>,
+    ) => dispatch(
+      client,
+      method,
+      params,
+      { sourceHelmKey: request.helmKey },
+    );
+
+    let launchTask: Promise<string>;
+    if (request.mode === "reuse") {
+      launchTask = launchDashboardTask({
+        sessionId: request.sessionId,
+        prompt: request.prompt,
+        dispatch: dispatchDashboardTask,
+      });
+    } else {
+      const targetProjects = request.helmKey === currentHelmKey
+        ? deckData.projects
+        : deckData.helmInventories[request.helmKey]?.projects ?? [];
+      const project = targetProjects.find((item) => item.id === request.projectId);
+      const cwd = request.cwd ?? project?.path ?? project?.worktrees?.[0]?.path ?? null;
+      if (!project || !cwd) {
+        deckData.addNotification({
+          kind: "warning",
+          source: "dashboard",
+          message: "任务未创建：项目没有可用工作区。",
+          details: { helmKey: request.helmKey, phase: "dashboard-quick-create" },
+        });
+        return false;
+      }
+      launchTask = launchDashboardTask({
+        projectId: project.id,
+        cwd,
+        agentId: request.agentId,
+        prompt: request.prompt,
+        dispatch: dispatchDashboardTask,
+      });
+    }
+
+    void launchTask.catch((error) => {
+      const launchError = error instanceof DashboardTaskLaunchError ? error : null;
+      const method = launchError?.phase ?? (request.mode === "reuse" ? "session/prompt" : "session/new");
+      const failure = launchError?.cause ?? error;
+      deckData.addNotification({
+        kind: "error",
+        source: "dashboard",
+        message: method === "session/prompt"
+          ? `任务 Prompt 发送失败：${formatRpcError(failure)}`
+          : `任务创建失败：${formatRpcError(failure)}`,
+        details: {
+          helmKey: request.helmKey,
+          method,
+          phase: "dashboard-quick-create",
+        },
+      });
+    });
+    return true;
+  }
+
   const layoutContext = buildAppLayoutContext(layout);
   const panelContext = buildMissionPanelContext(panelPages);
 
@@ -642,6 +729,8 @@ export function App() {
           codeActions,
           helmConnection,
           route,
+          dashboardSection,
+          setDashboardSection,
           activeProfileId,
           copy,
           agentLocked,
@@ -650,6 +739,7 @@ export function App() {
           toggleProjectFileDirectory,
           openDiffDetail,
           toggleExpandedMessage,
+          openNewTaskFromDashboard,
           renderMissionAgentIcon,
           loggingSettings: effectiveLoggingSettings,
           loggingStatus,
@@ -674,11 +764,11 @@ export function App() {
         }}
       />
       <RadialMenu
-        activeView={route.activeView}
-        items={V6_RADIAL_ITEMS}
-        onNavigate={route.navigateToView}
-        enabled={true}
-      />
+          activeView={route.activeView}
+          items={V6_RADIAL_ITEMS}
+          onNavigate={route.navigateToView}
+          enabled={route.activeView !== "dashboard"}
+        />
     </main>
   );
 

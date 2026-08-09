@@ -56,10 +56,43 @@ export {
 } from "./dropdown-menu";
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "./tooltip";
 export { Tabs, TabsList, TabsTrigger, TabsContent } from "./tabs";
+export {
+  Table,
+  TableHeader,
+  TableBody,
+  TableFooter,
+  TableHead,
+  TableRow,
+  TableCell,
+  TableCaption,
+} from "./table";
 export { ScrollArea, ScrollBar } from "./scroll-area";
 export { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "./resizable";
 export { Separator } from "./separator";
 export { Skeleton } from "./skeleton";
+export {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "./chart";
+export {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+} from "./sidebar";
 export { Icon, AgentIcon, StatusDot, type TillerIconName } from "./icon";
 export { RadialMenu, type RadialMenuItem } from "./radial-menu";
 export { TweaksPanel, type DeckDensity, type DeckViewportMode, type DeckTweakTheme } from "./tweaks-panel";

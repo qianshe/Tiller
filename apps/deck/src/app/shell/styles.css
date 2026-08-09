@@ -77,7 +77,7 @@ h3 {
 .shell.v6-radial-shell {
   width: 100vw;
   height: 100vh;
-  max-width: none;
+  max-width: 100%;
   min-height: 0;
   margin: 0;
   padding: 0;
@@ -97,6 +97,10 @@ h3 {
 }
 
 .shell.view-sessions.v6-radial-shell .page-content {
+  overflow: hidden;
+}
+
+.shell.view-dashboard.v6-radial-shell .page-content {
   overflow: hidden;
 }
 

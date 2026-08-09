@@ -3,6 +3,7 @@ import type { ApprovalStatus, PermissionDecision } from "@tiller/shared";
 import { AgentIcon, Icon, StatusDot } from "../../../shared/ui";
 import { cn } from "../../../shared/utils/cn";
 import type { DashboardNotification } from "../orchestration/dashboard-view-model";
+import type { DashboardRecentActivitySummary } from "../types";
 import { DashboardNotificationList } from "./notification-list";
 
 export type DashboardActivityApproval = {
@@ -28,6 +29,7 @@ export type DashboardActivitySession = {
   agentName?: string | null;
   status?: string;
   selected?: boolean;
+  createdAt?: string;
   updatedAt?: string;
   planSummary?: {
     completed: number;
@@ -66,8 +68,6 @@ type DashboardActivity = {
 type DashboardActivityStreamProps = {
   sessions: DashboardActivitySession[];
   approvals: DashboardActivityApproval[];
-  planSessionCount: number;
-  toolCallCount: number;
   notifications?: DashboardNotification[];
   onOpenSession?: (sessionId: string) => void;
   onClearNotifications?: () => void;
@@ -77,7 +77,7 @@ type DashboardActivityStreamProps = {
 
 type ActivityTab = "最近" | "权限" | "通知" | "7天前";
 
-const ACTIVITY_GRID_COLUMNS = "grid grid-cols-[88px_minmax(140px,1fr)_minmax(88px,0.85fr)_minmax(96px,0.85fr)_112px_var(--dashboard-activity-acp-width)] gap-2";
+const ACTIVITY_GRID_COLUMNS = "grid grid-cols-[76px_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,var(--dashboard-activity-acp-width))] gap-2";
 const ACTIVITY_SPARKLINE_HOURS = 24;
 const HOUR_MS = 60 * 60 * 1000;
 const ACTIVITY_RECENT_LIMIT = 15;
@@ -243,6 +243,18 @@ function buildActivitySparkline(activities: DashboardActivity[], now = Date.now(
   return points;
 }
 
+export function buildDashboardActivitySummary(
+  sessions: DashboardActivitySession[] = [],
+  approvals: DashboardActivityApproval[] = [],
+  now = Date.now(),
+): DashboardRecentActivitySummary {
+  const sparklinePoints = buildActivitySparkline(buildActivities(sessions, approvals), now);
+  return {
+    sparklinePoints,
+    recentActivityCount: sparklinePoints.reduce((total, value) => total + value, 0),
+  };
+}
+
 function sortActivitiesByRecency(activities: DashboardActivity[]) {
   return activities
     .map((activity, index) => ({ activity, index }))
@@ -267,8 +279,6 @@ function filterActivitiesByTab(activeTab: ActivityTab, activities: DashboardActi
 export function DashboardActivityStream({
   sessions,
   approvals,
-  planSessionCount,
-  toolCallCount,
   notifications = [],
   onOpenSession,
   onClearNotifications,
@@ -279,8 +289,6 @@ export function DashboardActivityStream({
   const rawActivities = buildActivities(sessions, approvals);
   const orderedActivities = sortActivitiesByRecency(rawActivities);
   const filteredActivities = filterActivitiesByTab(activeTab, orderedActivities);
-  const sparklinePoints = buildActivitySparkline(rawActivities);
-  const recentActivityCount = sparklinePoints.reduce((total, value) => total + value, 0);
   const processedApprovalCount = approvals.filter(
     (approval) => approval.status === "resolved" || approval.status === "expired",
   ).length;
@@ -290,7 +298,7 @@ export function DashboardActivityStream({
 
   if (isMobile) {
     return (
-      <section className="wb-pane">
+      <section className="wb-pane min-w-0 overflow-hidden">
         <div className="wb-pane-head min-h-9">
           <span className="wb-pane-head-title">活动流</span>
           <div className="flex-1" />
@@ -316,7 +324,7 @@ export function DashboardActivityStream({
                   <span className="min-w-0 flex-1 truncate text-section">{activity.title}</span>
                   <span className="font-mono text-meta tabular text-muted-foreground">{activity.statusLabel}</span>
                 </span>
-                <span className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                   <span className="truncate font-mono text-meta tabular text-muted-foreground">
                     {formatActivityField(activity.projectName)} · {formatActivityField(activity.worktreeName)}
                   </span>
@@ -332,11 +340,6 @@ export function DashboardActivityStream({
             </li>
           ))}
         </ul>
-        <div className="border-t border-border-ghost px-3 py-2.5 flex items-baseline gap-2">
-          <span className="font-mono text-meta text-muted-foreground uppercase tracking-wider">近24h</span>
-          <Sparkline points={sparklinePoints} />
-          <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{recentActivityCount} 活动</span>
-        </div>
       </section>
     );
   }
@@ -450,27 +453,6 @@ export function DashboardActivityStream({
           </li>
         ))}
       </ul>
-      <div className="flex items-baseline gap-2 border-t border-border-ghost px-3 py-2.5" hidden={activeTab === "通知"}>
-        <span className="font-mono text-meta uppercase tracking-wider text-muted-foreground">近24h</span>
-        <Sparkline points={sparklinePoints} />
-        <span className="font-mono text-meta tabular text-muted-foreground">{recentActivityCount} 活动</span>
-        <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{planSessionCount} plan · {toolCallCount} tool</span>
-      </div>
     </section>
-  );
-}
-
-function Sparkline({ points }: { points: number[] }) {
-  const max = Math.max(1, ...points);
-  return (
-    <svg width="180" height="20" viewBox={`0 0 ${points.length * 6} 20`} className="text-primary" aria-hidden="true">
-      {points.map((point, index) => {
-        const height = point === 0 ? 2 : Math.max(3, (point / max) * 18);
-        const opacity = point === 0 ? 0.2 : 0.45 + (point / max) * 0.55;
-        return (
-          <rect key={index} x={index * 6} y={20 - height} width="4" height={height} fill="currentColor" opacity={opacity} rx="1" />
-        );
-      })}
-    </svg>
   );
 }

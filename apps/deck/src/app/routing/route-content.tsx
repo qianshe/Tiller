@@ -1,6 +1,9 @@
 import { lazy, Suspense } from "react";
 import { useDeckStore } from "../../store";
-import { buildDashboardViewModel } from "../../features/dashboard";
+import {
+  buildDashboardQuickCreateProjects,
+  buildDashboardViewModel,
+} from "../../features/dashboard";
 import type { AppRouteContext, MissionRouteSource } from "./route-context";
 import {
   DEFAULT_DAEMON_HOST,
@@ -9,6 +12,7 @@ import {
 } from "../../shared/config/deck-runtime";
 import { useEffectiveViewport } from "../../features/preferences";
 import { clearProcessedApprovalHistory } from "../../features/approvals";
+import { daemonProfileKey } from "../../features/helm-connection/facade";
 
 const OverviewPage = lazy(() =>
   import("../../features/overview/ui/page").then((module) => ({
@@ -60,10 +64,9 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     projectFilesByScope,
     agents,
     sessions,
+    messages,
+    sessionTimeline,
     statuses,
-    activeSessionId,
-    openChatSessionIds,
-    focusedChatWindowId,
     sessionPlans,
     helms,
     notifications,
@@ -74,6 +77,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     navigateToView,
     respondToPermission,
     openSession,
+    openNewTaskFromDashboard,
     resolveDisplaySessionTitle,
     formatRelativeTime,
     socketRef,
@@ -157,6 +161,8 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     helmUpdateClient,
     refreshHelmUpdate,
     startHelmUpdate,
+    dashboardSection,
+    setDashboardSection,
   } = source;
 function renderOverview() {
   return (
@@ -183,6 +189,10 @@ function renderOverview() {
 }
 
 function renderDashboard() {
+  const currentHelmKey = daemonProfileKey(
+    daemonHost.trim() || DEFAULT_DAEMON_HOST,
+    daemonPort.trim() || DEFAULT_DAEMON_PORT,
+  );
   const dashboard = buildDashboardViewModel({
     connection,
     daemonHost,
@@ -194,27 +204,57 @@ function renderDashboard() {
     agents,
     projects,
     sessions,
+    messages,
+    sessionTimeline,
     statuses,
-    activeSessionId,
-    openChatSessionIds,
-    focusedChatWindowId,
     sessionPlans,
     toolCalls,
+    activitySummary: helmInventories[currentHelmKey]?.activitySummary,
     approvalItemsById,
     approvalHistory,
     notifications,
     resolveDisplaySessionTitle,
   });
+  const quickCreateProjects = buildDashboardQuickCreateProjects({
+    currentHelmKey,
+    currentHelm: activeHelm,
+    currentProjects: projects,
+    currentAgents: agents,
+    currentSessions: sessions,
+    currentStatuses: statuses,
+    daemonProfiles,
+    helmInventories,
+  });
+  const renameDashboardSession = (sessionId: string, title: string) => {
+    source.setSessionTitles?.((current: Record<string, string>) => ({
+      ...current,
+      [sessionId]: title,
+    }));
+    const client = source.rpcClientRef?.current;
+    if (!client || client.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    void dispatch(client, "session/rename", { sessionId, title });
+  };
+  const deleteDashboardSession = (sessionId: string) => {
+    source.controllers?.cleanupSession?.(sessionId);
+  };
 
   return (
     <DashboardPage
       isMobile={isMobile}
       {...dashboard}
-      onNavigateAgents={() => navigateToView("agents")}
+      activeSection={dashboardSection}
+      onSelectSection={setDashboardSection}
+      quickCreateProjects={quickCreateProjects}
+      onCreateTask={openNewTaskFromDashboard}
+      onOpenMission={() => navigateToView("sessions")}
       onOpenSession={(sessionId) => {
         openSession(sessionId);
         navigateToView("sessions");
       }}
+      onRenameSession={renameDashboardSession}
+      onDeleteSession={deleteDashboardSession}
       onRespondApproval={(approvalRequestId, decision) =>
         respondToPermission(approvalRequestId, decision)
       }

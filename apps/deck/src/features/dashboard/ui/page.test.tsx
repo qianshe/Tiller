@@ -10,6 +10,7 @@ import {
   DashboardNotificationList,
   formatNotificationReport,
 } from "./notification-list";
+import { DashboardActivityTrend, selectDashboardTrendPoints } from "./activity-trend";
 import { DashboardPage } from "./page";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -17,6 +18,10 @@ const pageSource = readFileSync(resolve(currentDir, "page.tsx"), "utf8");
 const activityStreamPath = resolve(currentDir, "activity-stream.tsx");
 const activityStreamSource = existsSync(activityStreamPath)
   ? readFileSync(activityStreamPath, "utf8")
+  : "";
+const activityTrendPath = resolve(currentDir, "activity-trend.tsx");
+const activityTrendSource = existsSync(activityTrendPath)
+  ? readFileSync(activityTrendPath, "utf8")
   : "";
 
 const commonProps = {
@@ -64,16 +69,17 @@ const commonProps = {
       createdAt: "2026-06-02T00:00:00.000Z",
     },
   ],
-  onNavigateAgents: () => undefined,
+  activeSection: "overview" as const,
+  onSelectSection: () => undefined,
 };
 
-test("DashboardPage renders the v6 KPI, activity, Helm matrix, and approvals layout", () => {
+test("DashboardPage renders the v6 KPI, activity, and approvals layout", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, commonProps));
 
   assert.match(html, /在线 Helm/);
   assert.match(html, /2 \/ 3/);
   assert.match(html, /活动流/);
-  assert.match(html, /Helm 矩阵/);
+  assert.doesNotMatch(html, /Helm 资源/);
   assert.match(html, /待审批/);
   assert.match(html, /通知/);
   assert.match(html, /计划/);
@@ -86,6 +92,149 @@ test("DashboardPage renders the v6 KPI, activity, Helm matrix, and approvals lay
   assert.match(html, /会话/);
   assert.match(html, /全局/);
   assert.doesNotMatch(html, /本日消息/);
+});
+
+test("DashboardPage renders runtime-backed dashboard metrics", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    promptCount: 12,
+    recentToolCallCount: 7,
+  }));
+
+  assert.match(html, /在线 Helm/);
+  assert.match(html, /活跃会话/);
+  assert.match(html, /近24h Prompt[\s\S]*12/);
+  assert.match(html, /工具调用[\s\S]*7/);
+  assert.match(html, /待审批/);
+  assert.match(html, /计划/);
+  assert.match(html, /1 个离线/);
+});
+
+test("DashboardPage renders the activity trend with shadcn-style range controls", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    activityTrend: [
+      { date: "2026-05-31", promptCount: 2, toolCallCount: 1 },
+      { date: "2026-06-01", promptCount: 3, toolCallCount: 4 },
+    ],
+  }));
+
+  assert.match(html, /dashboard-activity-trend/);
+  assert.match(html, /Prompt 与工具调用/);
+  assert.match(html, /近1个月/);
+  assert.match(html, /近1周/);
+  assert.match(html, /近1天/);
+  assert.match(html, /Prompt[\s\S]*>5<\/span>/);
+  assert.match(html, /工具调用[\s\S]*>5<\/span>/);
+  assert.match(html, /data-slot="dashboard-recent-prompt-count">0<\/strong>/);
+  assert.match(html, /data-slot="dashboard-recent-tool-count">23<\/strong>/);
+  assert.match(html, /data-slot="dashboard-trend-chart"/);
+  assert.match(html, /data-slot="dashboard-trend-legend"/);
+  assert.match(html, /data-slot="dashboard-trend-summary"/);
+  assert.ok(
+    html.indexOf('data-slot="dashboard-trend-summary"') <
+      html.indexOf('data-slot="dashboard-trend-chart"'),
+  );
+  assert.match(pageSource, /DashboardActivityTrend/);
+});
+
+test("one-day trend selects hourly points and keeps prompt/tool counts separate", () => {
+  const hourlyPoints = [
+    { date: "2026-06-02T09:00:00.000Z", promptCount: 2, toolCallCount: 1 },
+    { date: "2026-06-02T10:00:00.000Z", promptCount: 1, toolCallCount: 3 },
+  ];
+  assert.deepEqual(
+    selectDashboardTrendPoints(
+      [{ date: "2026-06-02", promptCount: 99, toolCallCount: 99 }],
+      hourlyPoints,
+      "1d",
+    ),
+    hourlyPoints,
+  );
+
+  const html = renderToStaticMarkup(createElement(DashboardActivityTrend, {
+    points: hourlyPoints,
+    activitySummary: { recentActivityCount: 4, sparklinePoints: [1, 2] },
+    recentPromptCount: 2,
+    recentToolCallCount: 4,
+  }));
+
+  assert.match(html, /data-slot="dashboard-recent-prompt-count"/);
+  assert.match(html, /data-slot="dashboard-recent-tool-count"/);
+  assert.doesNotMatch(html, /2 Prompt · 4 tool/);
+  assert.match(html, /h-\[240px\] min-h-\[240px\] w-full sm:h-\[280px\] sm:min-h-\[280px\]/);
+  assert.match(html, /data-slot="dashboard-trend-chart"/);
+  assert.match(activityTrendSource, /ChartContainer/);
+  assert.match(activityTrendSource, /AreaChart/);
+});
+
+test("activity trend reserves a visible canvas for both charts", () => {
+  const html = renderToStaticMarkup(createElement(DashboardActivityTrend, {
+    points: [{ date: "2026-06-02", promptCount: 2, toolCallCount: 1 }],
+  }));
+
+  const chart = html.match(/<div[^>]*data-slot="dashboard-trend-chart"[^>]*>/)?.[0] ?? "";
+  assert.match(chart, /min-h-\[280px\]/);
+  assert.match(html, /data-slot="dashboard-trend-chart"/);
+  assert.match(html, /data-slot="dashboard-trend-legend"/);
+  assert.match(html, /class="[^\"]*h-\[240px\][^\"]*min-h-\[240px\][^\"]*w-full/);
+});
+
+test("DashboardPage places recent activity summary inside the trend panel", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    activityTrend: [{ date: "2026-06-02", promptCount: 0, toolCallCount: 0 }],
+  }));
+
+  assert.match(html, /data-slot="dashboard-recent-activity-summary"/);
+  assert.match(html, /近24h/);
+  assert.match(pageSource, /buildDashboardActivitySummary/);
+  assert.match(pageSource, /activitySummary=\{activitySummary\}/);
+  assert.doesNotMatch(activityStreamSource, /data-slot="dashboard-recent-activity-summary"/);
+});
+
+test("DashboardPage renders the session list only once on the overview", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, commonProps));
+
+  assert.doesNotMatch(pageSource, /DashboardTaskList/);
+  assert.doesNotMatch(html, /dashboard-tasks-title/);
+  assert.equal((html.match(/<span class="min-w-0 truncate text-section">Plan review<\/span>/g) ?? []).length, 1);
+});
+
+test("DashboardPage uses the shadcn sidebar shell with an offcanvas collapse", () => {
+  const sidebarSource = readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8");
+
+  assert.match(pageSource, /SidebarProvider/);
+  assert.match(pageSource, /SidebarInset/);
+  assert.match(pageSource, /showSidebarTrigger/);
+  assert.match(sidebarSource, /collapsible="offcanvas"/);
+  assert.match(sidebarSource, /工作台/);
+  assert.match(sidebarSource, /配置/);
+  assert.doesNotMatch(sidebarSource, /本地工作区/);
+  assert.doesNotMatch(sidebarSource, /Local runtime/);
+  assert.doesNotMatch(sidebarSource, /当前 Helm/);
+  assert.equal((sidebarSource.match(/>Tiller</g) ?? []).length, 1);
+  assert.match(sidebarSource, /className="dashboard-sidebar"/);
+  assert.doesNotMatch(sidebarSource, /className="dashboard-sidebar relative"/);
+});
+
+test("DashboardPage exposes the shadcn-style project-aware quick create", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    quickCreateProjects: [{ id: "project-1", name: "Tiller" }],
+    onCreateTask: () => undefined,
+  }));
+
+  assert.match(html, /快速创建/);
+  assert.match(pageSource, /quickCreateProjects/);
+  assert.match(
+    pageSource,
+    /DashboardQuickCreateDialog/,
+  );
+  assert.match(
+    readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8"),
+    /onOpenQuickCreate/,
+  );
 });
 
 test("DashboardPage distinguishes compact activity row states", () => {
@@ -210,9 +359,162 @@ test("DashboardPage wires compact approval decisions to approval responses", () 
   assert.match(pageSource, /allow_always: "全局"/);
 });
 
-test("DashboardPage links session activities back to mission sessions", () => {
+test("DashboardPage keeps task activity actions inside the dashboard route", () => {
   assert.match(activityStreamSource, /onOpenSession\?\.\(activity\.sessionId\)/);
   assert.match(activityStreamSource, /disabled=\{!activity\.sessionId \|\| !onOpenSession\}/);
+});
+
+test("DashboardPage renders tasks without switching to Mission", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    activeSection: "tasks" as const,
+  }));
+
+  assert.doesNotMatch(html, /TILLER \/ TASKS/);
+  assert.doesNotMatch(html, /任务与运行状态/);
+  assert.match(html, /任务视图/);
+  assert.match(html, /面板/);
+  assert.match(html, /表格/);
+  assert.doesNotMatch(html, /甘特图/);
+});
+
+test("DashboardPage removes redundant overview title content", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, commonProps));
+
+  assert.doesNotMatch(html, /TILLER \/ CONTROL CENTER/);
+  assert.doesNotMatch(html, /集中查看任务、运行趋势与需要你处理的状态/);
+  assert.match(html, /dashboard-site-header/);
+  assert.match(html, />控制台</);
+});
+
+test("DashboardPage embeds Agent and settings inside the dashboard content", () => {
+  const agentsHtml = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    activeSection: "agents" as const,
+    embeddedContent: createElement("div", null, "Agents embedded"),
+  }));
+  const settingsHtml = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    activeSection: "settings" as const,
+    embeddedContent: createElement("div", null, "Settings embedded"),
+  }));
+
+  assert.match(agentsHtml, /data-dashboard-section="agents"/);
+  assert.match(agentsHtml, /Agents embedded/);
+  assert.match(settingsHtml, /data-dashboard-section="settings"/);
+  assert.match(settingsHtml, /Settings embedded/);
+});
+
+test("DashboardPage keeps the Agents breadcrumb header free of list actions", () => {
+  const agentsHtml = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    activeSection: "agents" as const,
+    embeddedContent: createElement("div", null, "Agents embedded"),
+  }));
+  const header = agentsHtml.match(/<header[^>]*dashboard-site-header[\s\S]*?<\/header>/)?.[0] ?? "";
+
+  assert.match(header, />Agents</);
+  assert.doesNotMatch(header, /添加 Helm/);
+  assert.doesNotMatch(header, /Helm 在线/);
+  assert.doesNotMatch(header, /新建任务/);
+});
+
+test("DashboardPage uses one breadcrumb header for every section", () => {
+  const renderHeader = (activeSection: "overview" | "tasks" | "agents" | "settings") => {
+    const html = renderToStaticMarkup(createElement(DashboardPage, {
+      ...commonProps,
+      activeSection,
+      quickCreateProjects: [{ id: "project-1", name: "Tiller" }],
+      onCreateTask: () => undefined,
+      embeddedContent: createElement("div", null, "Embedded"),
+    }));
+    return html.match(/<header[^>]*dashboard-site-header[\s\S]*?<\/header>/)?.[0] ?? "";
+  };
+
+  for (const section of ["overview", "tasks", "agents", "settings"] as const) {
+    const header = renderHeader(section);
+    assert.match(header, /Tiller/);
+    assert.match(header, /aria-label="切换侧栏"/);
+    assert.match(header, />控制台|>任务|>Agents|>设置/);
+  }
+
+  assert.doesNotMatch(renderHeader("overview"), /Helm 在线|新建任务/);
+  assert.doesNotMatch(renderHeader("tasks"), /Helm 在线|新建任务/);
+});
+
+test("DashboardPage keeps the embedded shell visible while config pages load", () => {
+  const settingsHtml = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    activeSection: "settings" as const,
+    embeddedContent: createElement("div", null, "Settings embedded"),
+  }));
+
+  assert.match(settingsHtml, /dashboard-site-header/);
+  assert.match(settingsHtml, /设置/);
+  assert.equal((settingsHtml.match(/aria-label="切换侧栏"/g) ?? []).length, 1);
+  assert.match(pageSource, /<Suspense fallback=\{<DashboardEmbeddedFallback section=\{section\} \/>\}>/);
+  assert.match(pageSource, /正在加载/);
+});
+
+test("DashboardPage exposes Mission mode below session search", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, commonProps));
+  const sidebarSource = readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8");
+
+  assert.match(html, /Mission 模式/);
+  assert.match(html, /搜索会话/);
+  assert.match(html, /自动化/);
+  assert.match(html, /Issues/);
+  assert.match(sidebarSource, /onOpenMission/);
+  assert.match(pageSource, /onOpenMission/);
+  assert.match(sidebarSource, /Mission 模式/);
+  assert.match(sidebarSource, /id: "overview", label: "控制台", icon: "dashboard"/);
+  assert.match(sidebarSource, /id: "tasks", label: "任务", icon: "listChecks"/);
+  assert.match(sidebarSource, /id: "agents", label: "Agents", icon: "users"/);
+  assert.match(sidebarSource, /<Icon name="mission" \/>/);
+  assert.match(sidebarSource, /id: "automations", label: "自动化", icon: "branch"/);
+  assert.match(sidebarSource, /id: "issues", label: "Issues", icon: "fileText"/);
+  assert.match(sidebarSource, /comingSoon/);
+});
+
+test("DashboardPage exposes session search as a first-class action", () => {
+  const sidebarSource = readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8");
+
+  assert.match(sidebarSource, /onSearchSessions/);
+  assert.match(pageSource, /DashboardSessionSearchDialog/);
+  assert.match(pageSource, /setSessionSearchOpen/);
+  assert.match(sidebarSource, /搜索会话/);
+  assert.match(sidebarSource, /快速创建[\s\S]*搜索会话[\s\S]*Mission 模式/);
+});
+
+test("DashboardPage lets embedded pages fill the content shell", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    activeSection: "settings" as const,
+    embeddedContent: createElement("div", null, "Settings embedded"),
+  }));
+
+  assert.match(html, /class="[^"]*dashboard-embedded-content[^"]*\bw-full\b/);
+  const dashboardContentTag = html.match(/<div[^>]*max-w-none[^>]*>/)?.[0] ?? "";
+  assert.match(dashboardContentTag, /\bw-full\b/);
+  assert.match(dashboardContentTag, /\bgap-0\b/);
+  assert.match(dashboardContentTag, /\bpx-0\b/);
+  assert.match(dashboardContentTag, /\bpy-0\b/);
+});
+
+test("DashboardPage exposes bounded desktop sidebar resizing", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, commonProps));
+  const resizeHandle = html.match(/<div[^>]*data-slot="dashboard-sidebar-resize-handle"[^>]*>/)?.[0] ?? "";
+  const sidebarSource = readFileSync(resolve(currentDir, "dashboard-sidebar.tsx"), "utf8");
+
+  assert.match(resizeHandle, /role="separator"/);
+  assert.match(resizeHandle, /aria-valuemin="220"/);
+  assert.match(resizeHandle, /aria-valuemax="360"/);
+  assert.match(resizeHandle, /aria-valuenow="288"/);
+  assert.match(sidebarSource, /onPointerDown/);
+  assert.match(sidebarSource, /ArrowLeft/);
+  assert.match(sidebarSource, /ArrowRight/);
+  assert.match(sidebarSource, /group-data-\[collapsible=offcanvas\]:hidden/);
+  assert.match(pageSource, /"--sidebar-width": `\$\{sidebarWidth\}px`/);
 });
 
 test("DashboardPage routes conversation notifications to a clickable table", () => {
@@ -294,9 +596,16 @@ test("DashboardPage keeps activity stream metadata visually plain", () => {
 test("DashboardPage keeps the ACP column content-sized and left-aligned", () => {
   assert.match(activityStreamSource, /resolveAcpColumnWidth/);
   assert.match(activityStreamSource, /var\(--dashboard-activity-acp-width\)/);
-  assert.match(activityStreamSource, /_112px_var\(--dashboard-activity-acp-width\)/);
+  assert.match(activityStreamSource, /minmax\(0,var\(--dashboard-activity-acp-width\)\)/);
+  assert.doesNotMatch(activityStreamSource, /minmax\((?:88|96|112|140)px/);
   assert.doesNotMatch(activityStreamSource, /minmax\(128px,1fr\)/);
   assert.doesNotMatch(activityStreamSource, /justify-self-end/);
+});
+
+test("DashboardPage confines desktop scrolling to the right content region", () => {
+  assert.match(pageSource, /SidebarProvider[\s\S]*className="dashboard-page h-full min-h-0 overflow-hidden"/);
+  assert.match(pageSource, /SidebarInset className="dashboard-sidebar-inset h-full min-h-0 overflow-hidden"/);
+  assert.match(pageSource, /overflow-y-auto overflow-x-hidden/);
 });
 
 test("DashboardPage keeps activity filters focused on recent, permissions, notifications, and old items", () => {
@@ -363,7 +672,7 @@ test("DashboardPage puts desktop notifications after the permission tab and keep
   const mobileHtml = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
 
   assert.match(desktopHtml, /最近[\s\S]*权限[\s\S]*通知[\s\S]*7天前/);
-  assert.match(mobileHtml, /待审批[\s\S]*通知[\s\S]*Helm 矩阵/);
+  assert.match(mobileHtml, /待审批[\s\S]*通知[\s\S]*活动流/);
   assert.match(mobileHtml, /ACP connection closed/);
   assert.match(mobileHtml, /ACP_PROMPT_FAILED/);
   assert.match(activityStreamSource, /notifications=\{notifications\}/);
@@ -410,9 +719,23 @@ test("DashboardPage mobile keeps v6 priority order", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
 
   assert.match(html, /grid grid-cols-2 gap-2 mb-3/);
-  assert.match(html, /待审批[\s\S]*Helm 矩阵[\s\S]*活动流/);
-  assert.match(html, /管理 ›/);
+  assert.match(html, /待审批[\s\S]*通知[\s\S]*活动流/);
+  assert.doesNotMatch(html, /2\/3 Helm 在线/);
   assert.match(html, /24h/);
+});
+
+test("DashboardPage keeps the mobile trend panel within the viewport", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
+
+  assert.match(html, /dashboard-activity-trend[^>]*min-w-0[^>]*w-full/);
+  assert.match(html, /dashboard-activity-trend[^>]*shrink-0/);
+  assert.match(pageSource, /<SidebarProvider/);
+  assert.match(pageSource, /<SidebarTrigger/);
+});
+
+test("DashboardPage uses the shadcn sidebar drawer on mobile", () => {
+  assert.doesNotMatch(pageSource, /if \(isMobile\) \{/);
+  assert.doesNotMatch(pageSource, /DashboardMobileNavigation/);
 });
 
 test("DashboardPage uses shared v6 pane primitives and no redesign mock imports", () => {
