@@ -176,6 +176,7 @@ export function MissionWorktree(props: any) {
     agentLocked,
     filteredAgents,
     navigateToView,
+    onCloseSessionView,
     selectDraftAgent,
     createDraftSessionForAgent,
     submitPrompt,
@@ -1167,7 +1168,7 @@ export function MissionWorktree(props: any) {
             style={missionChatPaneStyle}
             isMissionMobile={isMissionMobile}
             hideWorkspaceHeader={chatOnly}
-            hideSessionCloseAction={chatOnly}
+            hideSessionCloseAction={chatOnly && !onCloseSessionView}
             isPaneResizing={isMissionPaneResizing}
           paneResizeVersion={missionPaneResizeVersion}
           chatMainRef={chatMainRef}
@@ -1234,7 +1235,7 @@ export function MissionWorktree(props: any) {
           onFocusSession={openChatSession}
           onSelectSessionView={selectChatSession}
           onRenameSession={regenerateSessionTitle}
-            onCloseSessionView={closeChatSession}
+            onCloseSessionView={onCloseSessionView ?? closeChatSession}
             onClearSession={setPendingSessionCleanup}
             onDismissCompletedSessionPlan={dismissCompletedSessionPlan}
           onRespondToPermission={respondToPermission}

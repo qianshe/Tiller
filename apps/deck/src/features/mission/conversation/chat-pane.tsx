@@ -975,7 +975,7 @@ export function MissionChatPane({
                   onRespondToPermission={handleRespondToPermission}
                   showThinkingToggle={isMissionMobile}
                   onToggleThinking={onToggleThinking}
-                  showCreateTaskAction={isMissionMobile}
+                  showCreateTaskAction={isMissionMobile && !hideWorkspaceHeader}
                   hideSessionCloseAction={hideSessionCloseAction}
                   onCreateTask={onCreateTask}
                 />

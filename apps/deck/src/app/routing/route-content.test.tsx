@@ -54,7 +54,7 @@ test("dashboard session actions open an embedded Mission dialog", () => {
   );
   assert.match(routeContentSource, /embedded\?: boolean;\s*chatOnly\?: boolean/);
   assert.match(routeContentSource, /className="dashboard-mission-dialog/);
-  assert.match(shellStylesSource, /\.dashboard-mission-dialog > button/);
-  assert.match(shellStylesSource, /\.dashboard-mission-dialog > button \{[\s\S]*top: 0;/);
-  assert.match(shellStylesSource, /dashboard-mission-dialog \.mission-chat-only \.wb-pane-head/);
+  assert.match(routeContentSource, /\[&>button\]:hidden/);
+  assert.match(routeContentSource, /onCloseSessionView: \(\) => setDashboardMissionSessionId\(null\)/);
+  assert.doesNotMatch(shellStylesSource, /\.dashboard-mission-dialog > button/);
 });

@@ -86,6 +86,7 @@ export function renderMissionRoute(
     regeneratingIds,
     formatRelativeTime,
     setPendingSessionCleanup,
+    onCloseSessionView,
     sessionHistoryState,
     toggleMissionProjectNode,
     startMissionPaneResize,
@@ -216,6 +217,7 @@ export function renderMissionRoute(
       focusedChatWindowId={focusedChatWindowId}
       setFocusedChatWindowId={setFocusedChatWindowId}
       navigateToView={navigateToView}
+      onCloseSessionView={onCloseSessionView}
       selectedProjectId={selectedProjectId}
       selectedCwd={selectedCwd}
       selectedAgentId={selectedAgentId}

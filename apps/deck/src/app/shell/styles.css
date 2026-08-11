@@ -267,28 +267,6 @@ body[data-density="cozy"] {
   color: var(--foreground);
 }
 
-.dashboard-mission-dialog > button {
-  top: 0;
-  right: 8px;
-  z-index: 20;
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  border-radius: var(--radius-sm);
-  background: var(--surface-sunken);
-  box-shadow: inset 0 0 0 1px var(--border-ghost);
-  opacity: 1;
-}
-
-.dashboard-mission-dialog > button:hover {
-  background: var(--surface-emphasis);
-}
-
-.dashboard-mission-dialog .mission-chat-only .wb-pane-head {
-  padding-right: 48px;
-}
-
 .wb-focus-ring:focus-visible {
   outline: var(--ring-width) solid var(--ring);
   outline-offset: -2px;

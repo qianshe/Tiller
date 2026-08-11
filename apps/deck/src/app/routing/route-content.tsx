@@ -1,6 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { useDeckStore } from "../../store";
 import {
+  buildDashboardQuickCreateHelms,
   buildDashboardQuickCreateProjects,
   buildDashboardViewModel,
 } from "../../features/dashboard";
@@ -82,6 +83,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     projectFilesByScope,
     agents,
     sessions,
+    preparations,
     messages,
     sessionTimeline,
     statuses,
@@ -229,6 +231,7 @@ function renderDashboard() {
     daemonHost.trim() || DEFAULT_DAEMON_HOST,
     daemonPort.trim() || DEFAULT_DAEMON_PORT,
   );
+  const dashboardPreparations = helmInventories[currentHelmKey]?.preparations ?? preparations ?? [];
   const dashboard = buildDashboardViewModel({
     connection,
     daemonHost,
@@ -240,6 +243,7 @@ function renderDashboard() {
     agents,
     projects,
     sessions,
+    preparations: dashboardPreparations,
     messages,
     sessionTimeline,
     statuses,
@@ -252,7 +256,7 @@ function renderDashboard() {
     notifications,
     resolveDisplaySessionTitle,
   });
-  const quickCreateProjects = buildDashboardQuickCreateProjects({
+  const quickCreateInput = {
     currentHelmKey,
     currentHelm: activeHelm,
     currentProjects: projects,
@@ -261,19 +265,39 @@ function renderDashboard() {
     currentStatuses: statuses,
     daemonProfiles,
     helmInventories,
-  });
+  };
+  const quickCreateHelms = buildDashboardQuickCreateHelms(quickCreateInput);
+  const quickCreateProjects = buildDashboardQuickCreateProjects(quickCreateInput);
   const renameDashboardSession = (sessionId: string, title: string) => {
+    const preparation = dashboardPreparations.find((item: any) => item.id === sessionId);
+    const client = source.rpcClientRef?.current;
+    if (preparation && client?.socket.readyState === WebSocket.OPEN) {
+      void dispatch(client, "conversation/save", {
+        id: preparation.id,
+        revision: preparation.revision,
+        title,
+      });
+      return;
+    }
     source.setSessionTitles?.((current: Record<string, string>) => ({
       ...current,
       [sessionId]: title,
     }));
-    const client = source.rpcClientRef?.current;
     if (!client || client.socket.readyState !== WebSocket.OPEN) {
       return;
     }
     void dispatch(client, "session/rename", { sessionId, title });
   };
   const deleteDashboardSession = (sessionId: string) => {
+    const preparation = dashboardPreparations.find((item: any) => item.id === sessionId);
+    const client = source.rpcClientRef?.current;
+    if (preparation && client?.socket.readyState === WebSocket.OPEN) {
+      void dispatch(client, "conversation/delete", {
+        id: preparation.id,
+        revision: preparation.revision,
+      });
+      return;
+    }
     source.controllers?.cleanupSession?.(sessionId);
   };
 
@@ -281,6 +305,7 @@ function renderDashboard() {
     <DashboardPage
       isMobile={isMobile}
       {...dashboard}
+      preparations={dashboard.preparations}
       activeSection={dashboardSection}
       onSelectSection={setDashboardSection}
       embeddedContent={
@@ -290,6 +315,7 @@ function renderDashboard() {
             ? renderSettings("dashboard")
             : null
       }
+      quickCreateHelms={quickCreateHelms}
       quickCreateProjects={quickCreateProjects}
       onCreateTask={openNewTaskFromDashboard}
       onOpenMission={() => navigateToView("sessions")}
@@ -345,6 +371,7 @@ function renderDashboardMissionDialog() {
     setFocusedChatWindowId: ignoreDashboardMissionStateUpdate,
     setActiveSessionId: ignoreDashboardMissionStateUpdate,
     openSession: ignoreDashboardMissionStateUpdate,
+    onCloseSessionView: () => setDashboardMissionSessionId(null),
   };
 
   return (
@@ -357,7 +384,7 @@ function renderDashboardMissionDialog() {
       }}
     >
       <DialogContent
-        className="dashboard-mission-dialog h-[calc(100vh_-_1rem)] w-[calc(100vw_-_1rem)] max-w-[1200px] gap-0 overflow-hidden p-0 sm:h-[min(800px,calc(100vh_-_2rem))] sm:w-[min(1200px,calc(100vw_-_2rem))]"
+        className="dashboard-mission-dialog h-[calc(100vh_-_1rem)] w-[calc(100vw_-_1rem)] max-w-[1200px] gap-0 overflow-hidden p-0 [&>button]:hidden sm:h-[min(800px,calc(100vh_-_2rem))] sm:w-[min(1200px,calc(100vw_-_2rem))]"
         data-slot="dashboard-mission-dialog"
       >
         <DialogHeader className="sr-only">

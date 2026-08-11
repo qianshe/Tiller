@@ -458,7 +458,7 @@ test("mission chat pane exposes the v6 session grid and more menu actions", () =
   assert.match(chatPaneComponentSource, /展示栏/);
   assert.match(chatPaneComponentSource, /Inspector 面板/);
   assert.match(chatPaneComponentSource, />\s*Thinking\s*<\/MenuItem>/);
-  assert.match(chatPaneSource, /showCreateTaskAction=\{isMissionMobile\}/);
+  assert.match(chatPaneSource, /showCreateTaskAction=\{isMissionMobile && !hideWorkspaceHeader\}/);
   assert.match(chatPaneSource, /title="当前项目下新建会话"/);
   assert.doesNotMatch(chatPaneComponentSource, />\s*重命名\s*<\/MenuItem>/);
   assert.doesNotMatch(chatPaneComponentSource, />\s*生成摘要\s*<\/MenuItem>/);
@@ -525,10 +525,10 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /highlightedSessionId=\{focusedRealSessionId \?\? activeSessionId\}/);
   assert.match(worktreeSource, /onFocusSession=\{openChatSession\}/);
   assert.match(worktreeSource, /onSelectSessionView=\{selectChatSession\}/);
-  assert.match(worktreeSource, /onCloseSessionView=\{closeChatSession\}/);
+  assert.match(worktreeSource, /onCloseSessionView=\{onCloseSessionView \?\? closeChatSession\}/);
   assert.match(worktreeSource, /openSessions=/);
   assert.match(worktreeSource, /hideWorkspaceHeader=\{chatOnly\}/);
-  assert.match(worktreeSource, /hideSessionCloseAction=\{chatOnly\}/);
+  assert.match(worktreeSource, /hideSessionCloseAction=\{chatOnly && !onCloseSessionView\}/);
   assert.match(worktreeSource, /sidebarCollapsed=\{chatOnly \? false : effectiveSidebarCollapsed\}/);
   assert.match(worktreeSource, /onExpandSidebar=\{\(\) => setMissionSidebarCollapsed\(false\)\}/);
   assert.match(worktreeSource, /onCollapse=\{onToggleDisplay\}/);
