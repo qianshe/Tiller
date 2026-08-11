@@ -36,6 +36,28 @@ function deckState(title: string | undefined): DeckStore {
   } as unknown as DeckStore;
 }
 
+test("projectSessionLiveStateSnapshot does not overwrite lifecycle status", () => {
+  const projection = projectSessionLiveStateSnapshot(
+    {
+      ...deckState("任务"),
+      sessions: [{ ...session("任务"), status: "idle" }],
+      statuses: { "session-1": "idle" },
+    } as DeckStore,
+    "session-1",
+    {
+      sequence: 2,
+      status: {
+        runtimeStatus: "running",
+        effectiveStatus: "running",
+        pendingApprovalCount: 0,
+      },
+    },
+  );
+
+  assert.equal(projection.patch?.statuses, undefined);
+  assert.equal(projection.patch?.sessions, undefined);
+});
+
 test("projectSessionLiveStateSnapshot does not overwrite a saved session title", () => {
   const projection = projectSessionLiveStateSnapshot(
     deckState("发布计划"),

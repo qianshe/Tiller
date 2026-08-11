@@ -1,6 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkResume, resumeSession } from "./session-query-rpc.js";
+import { checkResume, listSessions, resumeSession } from "./session-query-rpc.js";
+import {
+  createTestContext,
+  type TestContextCapture,
+} from "../../runtime/session/event/test-support.js";
+
+test("session list returns the persisted canonical live status over a stale summary", () => {
+  const result = listSessions({}, {
+    sessionStore: {
+      list: () => [{
+        id: "s1",
+        createdAt: "2026-07-06T00:00:00.000Z",
+        updatedAt: "2026-07-06T00:00:01.000Z",
+        status: "idle",
+      }],
+    },
+    readSessionLiveState: () => ({
+      sequence: 7,
+      status: {
+        runtimeStatus: "running",
+        effectiveStatus: "running",
+        pendingApprovalCount: 0,
+      },
+    }),
+    logDebug: () => undefined,
+  } as any);
+
+  assert.equal(result.sessions[0]?.status, "running");
+});
 
 test("resumeSession broadcasts refreshed session_updated from the resume result payload", async () => {
   const notifications: Array<{ method: string; params: any }> = [];
@@ -77,6 +105,40 @@ test("resumeSession broadcasts refreshed session_updated from the resume result 
       },
     },
   ]);
+});
+
+test("resumeSession persists and globally broadcasts restore failures", async () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext([], capture, "s1", { status: "running" });
+  context.startSessionResume = async () => ({
+    ok: false,
+    resume: {
+      mode: "reconnect",
+      state: "resume-unavailable",
+      reason: "ACP restore failed",
+      checkedAt: "2026-08-10T00:00:00.000Z",
+      restoreMethod: "session/load",
+    },
+    message: "ACP restore failed",
+  });
+  const result = await resumeSession(
+    { sessionId: "s1" },
+    context,
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(capture.summaryUpdates?.at(-1)?.status, "error");
+  const lifecycleUpdate = (capture.broadcasts
+    .find((item: any) => item.method === "session/update") as any)?.params?.update;
+  assert.equal(lifecycleUpdate?.kind, "session_updated");
+  assert.equal(lifecycleUpdate?.session.id, "s1");
+  assert.equal(lifecycleUpdate?.session.status, "error");
+  assert.equal(lifecycleUpdate?.session.lastMessagePreview, "ACP restore failed");
 });
 
 test("legacy evidence sessions are display-only and never resume ACP", async () => {

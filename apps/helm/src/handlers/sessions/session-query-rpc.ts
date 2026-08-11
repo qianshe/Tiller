@@ -1,6 +1,8 @@
 import { broadcastInfoRaised, broadcastSessionUpdate } from "../../rpc/notifications";
-import type { FileDiffSummary, SessionResumeInfo } from "@tiller/shared";
+import type { FileDiffSummary, SessionResumeInfo, SessionSummary } from "@tiller/shared";
 import { materializeDiffPayloads } from "../../runtime/session/diff-payload";
+import { publishCanonicalSessionStateEvent } from "../../runtime/events";
+import { updateSessionSummaryAndBroadcast } from "../../runtime/session/event/publisher";
 import type { HelmHandlerContext } from "../context";
 import { pageSessionSummaries } from "./session-list-page";
 
@@ -44,7 +46,12 @@ function formatLogFields(fields: Record<string, unknown>) {
 }
 
 export function listSessions(params: { limit?: number; before?: string }, context: HelmHandlerContext) {
-  const sessions = context.sessionStore.list();
+  const sessions = context.sessionStore.list().map((summary: SessionSummary) => {
+    const liveStatus = context.readSessionLiveState?.(summary.id)?.status?.effectiveStatus;
+    return typeof liveStatus === "string"
+      ? { ...summary, status: liveStatus }
+      : summary;
+  });
   const page = pageSessionSummaries(sessions, {
     limit: params.limit,
     before: params.before,
@@ -277,6 +284,18 @@ export async function resumeSession(params: { sessionId: string }, context: Helm
         session: result.session,
       });
     }
+  } else {
+    updateSessionSummaryAndBroadcast(context, params.sessionId, (current) => ({
+      ...current,
+      status: "error",
+      updatedAt: new Date().toISOString(),
+      lastMessagePreview: result.message.slice(0, 160),
+    }));
+    publishCanonicalSessionStateEvent(
+      params.sessionId,
+      { type: "status", status: "error", message: result.message },
+      context,
+    );
   }
   return {
     sessionId: params.sessionId,

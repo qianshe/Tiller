@@ -8,6 +8,7 @@ import {
   applyCanonicalSessionStateEvent,
   createCanonicalSessionState,
 } from "../../runtime/session/event/state-reducer";
+import { updateSessionSummaryAndBroadcast } from "../../runtime/session/event/publisher";
 import type { HelmHandlerContext } from "../context";
 
 export async function handleApprovalRpcRequest(
@@ -244,7 +245,7 @@ export async function respondApproval(
   context.approvalIndex.delete(params.approvalRequestId);
   context.permissionIndex.delete(params.approvalRequestId);
 
-  context.updateSessionSummary(approval.sessionId, (current) => ({
+  updateSessionSummaryAndBroadcast(context, approval.sessionId, (current) => ({
     ...current,
     status: canonicalSnapshot?.status.effectiveStatus ?? "running",
     updatedAt: new Date().toISOString(),

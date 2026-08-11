@@ -1,12 +1,28 @@
 import type { HelmHandlerContext } from "../../../handlers/context";
 import { broadcastErrorRaised, broadcastSessionUpdate } from "../../../rpc/notifications";
 import { emitHelmPromptTrace } from "../../prompt-trace";
+import type { SessionSummary } from "@tiller/shared";
 import type { SessionRealtimeUpdate } from "../update-contracts";
 
 export type SessionEventPublisher = {
   sessionUpdate(sessionId: string, update: SessionRealtimeUpdate): void;
   errorRaised(input: { sessionId?: string; code?: string; message: string; source?: string }): void;
 };
+
+export function updateSessionSummaryAndBroadcast(
+  context: HelmHandlerContext,
+  sessionId: string,
+  mutate: (summary: SessionSummary) => SessionSummary,
+) {
+  const updated = context.updateSessionSummary(sessionId, mutate);
+  if (updated) {
+    createSessionEventPublisher(context).sessionUpdate(sessionId, {
+      kind: "session_updated",
+      session: updated,
+    });
+  }
+  return updated;
+}
 
 export function createSessionEventPublisher(context: HelmHandlerContext): SessionEventPublisher {
   return {

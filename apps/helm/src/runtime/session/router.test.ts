@@ -414,6 +414,9 @@ test("sendPromptToSession routes local user prompts through canonical timeline b
   );
   await flushPromises();
 
+  const liveState = context.sessionLiveStateStore?.get("session-1");
+  assert.equal(liveState?.status.runtimeStatus, "running");
+  assert.equal(liveState?.status.effectiveStatus, "running");
   assert.equal(canonicalBatches.length, 1);
   assert.deepEqual(
     canonicalBatches[0]?.entries.map((entry) => entry.kind),

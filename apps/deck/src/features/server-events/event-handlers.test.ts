@@ -1024,7 +1024,10 @@ test("session live_state snapshots replace plan and prompt queue", () => {
 
 test("session live_state projects the full canonical snapshot", () => {
   resetStore();
-  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "starting" }],
+    statuses: { "session-1": "starting" },
+  });
 
   const handled = applySessionUpdate(
     {
@@ -1061,8 +1064,8 @@ test("session live_state projects the full canonical snapshot", () => {
 
   const state = useDeckStore.getState();
   assert.equal(handled, true);
-  assert.equal(state.statuses["session-1"], "waiting_for_permission");
-  assert.equal(state.sessions[0]?.status, "waiting_for_permission");
+  assert.equal(state.statuses["session-1"], "starting");
+  assert.equal(state.sessions[0]?.status, "starting");
   assert.equal(state.sessions[0]?.model, "gpt-5");
   assert.equal(state.sessions[0]?.agentMode, "plan");
   assert.equal(state.sessions[0]?.reasoningEffort, "high");
@@ -1146,7 +1149,10 @@ test("sequenced live_state applies one atomic Deck store update", () => {
 
 test("session live_state ignores an out-of-order canonical snapshot", () => {
   resetStore();
-  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "starting" }],
+    statuses: { "session-1": "starting" },
+  });
   const context = createSessionEventContext();
 
   applySessionUpdate({
@@ -1179,7 +1185,7 @@ test("session live_state ignores an out-of-order canonical snapshot", () => {
   }, context);
 
   const state = useDeckStore.getState();
-  assert.equal(state.statuses["session-1"], "running");
+  assert.equal(state.statuses["session-1"], "starting");
   assert.equal(state.sessions[0]?.model, "gpt-5");
   assert.equal(state.sessionLiveStateSequences["session-1"], 8);
 });
@@ -1212,6 +1218,41 @@ test("session lifecycle updates keep canonical status over a stale live snapshot
   assert.equal(state.statuses["session-1"], "idle");
   assert.equal(state.sessions[0]?.status, "idle");
   assert.equal(state.sessions[0]?.model, "gpt-5");
+});
+
+test("a stale live_state cannot overwrite a later global idle lifecycle update", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "running" }],
+    statuses: { "session-1": "running" },
+  });
+  const context = createSessionEventContext();
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "session_updated",
+      session: { ...session("session-1"), status: "idle" },
+    },
+  }, context);
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 9,
+        status: { runtimeStatus: "running", effectiveStatus: "running", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [] },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, context);
+
+  const state = useDeckStore.getState();
+  assert.equal(state.statuses["session-1"], "idle");
+  assert.equal(state.sessions[0]?.status, "idle");
 });
 
 test("session_updated synchronizes the lifecycle status map", () => {

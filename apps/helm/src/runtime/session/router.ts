@@ -18,7 +18,10 @@ import {
   applyUserPromptToSummary,
   type StoredSessionRuntimeDescriptor,
 } from "../../sessions/facade";
-import { createSessionEventPublisher } from "./event/publisher";
+import {
+  createSessionEventPublisher,
+  updateSessionSummaryAndBroadcast,
+} from "./event/publisher";
 import {
   allocateLiveEventSequence,
   flushLiveAssistantMessage,
@@ -163,7 +166,7 @@ function broadcastPromptFailure(
   sessionId: string,
   message: string,
 ) {
-  context.updateSessionSummary(sessionId, (current) => ({
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
     ...current,
     status: "error",
     updatedAt: new Date().toISOString(),
@@ -297,15 +300,10 @@ async function appendUserPromptMessage(
     flushScheduler: context.sessionTimelineFlushScheduler,
     context,
   }, prepared.resolvedSequence, prepared.update);
-  const updated = context.updateSessionSummary(sessionId, (current) =>
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) =>
     applyDispatchingUserPromptToSummary(current, storedUserMessage.text, storedUserMessage.timestamp),
   );
-  if (updated) {
-    createSessionEventPublisher(context).sessionUpdate(sessionId, {
-      kind: "session_updated",
-      session: updated,
-    });
-  }
+  publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "running" }, context);
 }
 
 function assertCanonicalTimelinePipeline(
@@ -650,7 +648,7 @@ export async function cancelSessionRuntime(
     // Helm 重启后持久化摘要可能仍停留在活跃状态,但内存 runtime 已不存在;
     // 对这类会话取消是幂等操作:修正过期状态即可,不是错误。
     if (ACTIVE_SESSION_STATUSES.has(persisted.status)) {
-      context.updateSessionSummary(sessionId, (current) => ({
+      updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
         ...current,
         status: "cancelled",
         updatedAt: new Date().toISOString(),

@@ -5,7 +5,10 @@ import type {
 } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import { resolveApprovalPolicyDecision } from "../handlers/approvals/permission-policy";
-import { createSessionEventPublisher } from "./session/event/publisher";
+import {
+  createSessionEventPublisher,
+  updateSessionSummaryAndBroadcast,
+} from "./session/event/publisher";
 import {
   applyCanonicalSessionStateEvent,
   createCanonicalSessionState,
@@ -166,7 +169,7 @@ export function handleRuntimePermissionRequest(
     return;
   }
   context.approvalIndex.set(input.request.id, approvalRecord);
-  context.updateSessionSummary(input.sessionId, (current) => ({
+  updateSessionSummaryAndBroadcast(context, input.sessionId, (current) => ({
     ...current,
     status: "waiting_for_permission",
     updatedAt: new Date().toISOString(),

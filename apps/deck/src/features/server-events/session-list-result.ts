@@ -63,7 +63,6 @@ export function mergeSessionLifecycleSummary(
   const liveTitle = resolveLiveSessionTitle(summary, snapshot);
   return {
     ...summary,
-    ...(snapshot.status ? { status: snapshot.status.effectiveStatus } : {}),
     ...(initializedConfig
       ? {
           agentMode: initializedConfig.agentMode ?? summary.agentMode,

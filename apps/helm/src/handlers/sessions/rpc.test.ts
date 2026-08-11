@@ -2274,11 +2274,12 @@ test("session/prompt broadcasts synchronous prompt failures to connected decks",
   assert.deepEqual(
     broadcasts.map((item) => [item.method, item.params?.sessionId, item.params?.update?.kind ?? item.params?.message]),
     [
+      ["session/update", sessionId, "session_updated"],
       ["notification/raised", sessionId, "/unknown command is not supported by ACP agent. Available commands: /review"],
       ["session/update", sessionId, "live_state"],
     ],
   );
-  assert.equal((broadcasts[1]?.params?.update as any)?.snapshot?.status?.effectiveStatus, "error");
+  assert.equal((broadcasts[2]?.params?.update as any)?.snapshot?.status?.effectiveStatus, "error");
 });
 
 test("session/prompt does not repeat an already-notified restore failure", async () => {

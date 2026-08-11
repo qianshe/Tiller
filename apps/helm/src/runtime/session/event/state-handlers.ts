@@ -18,7 +18,10 @@ import {
   prepareRuntimeSessionUpdate,
 } from "./canonical";
 import { flushLiveAssistantMessage } from "./message-stream";
-import { createSessionEventPublisher } from "./publisher";
+import {
+  createSessionEventPublisher,
+  updateSessionSummaryAndBroadcast,
+} from "./publisher";
 import {
   logRuntimeDebug,
   logRuntimeError,
@@ -62,20 +65,11 @@ export function handleRuntimeStatusEvent(
     status: event.status,
     messageChars: event.message?.length ?? 0,
   });
-  const updated = context.updateSessionSummary(sessionId, (current) => ({
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
     ...current,
     status: event.status,
     updatedAt: new Date().toISOString(),
   }));
-  if (updated) {
-    // Status transitions are lifecycle events: broadcast them globally (not
-    // just to session-topic subscribers) so viewers that never open the
-    // session (e.g. the dashboard) stay in sync.
-    createSessionEventPublisher(context).sessionUpdate(sessionId, {
-      kind: "session_updated",
-      session: updated,
-    });
-  }
   if (event.status === "idle" || event.status === "error" || event.status === "cancelled") {
     context.sessionUpdateStore.compactTail(sessionId);
   }
@@ -255,7 +249,12 @@ export function handleRuntimeErrorEvent(
     code: event.code ?? "UNKNOWN",
     messageChars: event.message.length,
   });
-  context.updateSessionSummary(sessionId, (current) => ({
+  commitCanonicalStateEvent(sessionId, {
+    type: "status",
+    status: "error",
+    message: event.message,
+  }, context);
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
     ...current,
     status: "error",
     updatedAt: new Date().toISOString(),
