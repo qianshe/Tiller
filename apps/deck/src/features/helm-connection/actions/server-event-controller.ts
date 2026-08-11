@@ -23,7 +23,9 @@ import {
   applyDeviceResult,
   applyErrorRaised,
   applyNotificationRaised,
+  applyConversationListResult,
   applyInventoryResult,
+  applyConversationUpdate,
   applySessionResult,
   applySessionUpdate,
   applyPromptTraceEvent,
@@ -199,6 +201,7 @@ export function createServerEventController(source: any, helpers: any) {
     const current = sourceIsCurrent(sourceHelmKey);
 
     if (applyDeviceResult(method, result, sourceHelmKey, deviceContext())) return;
+    if (applyConversationListResult(method, result, sourceHelmKey)) return;
     if (applyInventoryResult(method, result, sourceHelmKey, current, inventoryContext())) return;
     applySessionResult(method, result, sourceHelmKey, current, sessionContext());
   }
@@ -240,6 +243,10 @@ export function createServerEventController(source: any, helpers: any) {
       if (handled) {
         applyPromptTraceEvent(createDeckSessionUpdateTraceEvent(sessionUpdateParams, "deck.session_update.applied"));
       }
+      return;
+    }
+    if (method === "conversation/update") {
+      applyConversationUpdate(sourceHelmKey, params as any);
       return;
     }
     if (method === "error/raised") {

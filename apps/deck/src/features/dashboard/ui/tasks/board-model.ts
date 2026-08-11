@@ -18,8 +18,14 @@ export const TASK_BOARD_COLUMNS: readonly TaskBoardColumnDefinition[] = [
 ];
 
 export function resolveTaskBoardColumn(
-  session: Pick<DashboardActivitySession, "agentName" | "status">,
+  session: Pick<
+    DashboardActivitySession,
+    "preparationId" | "status" | "agentId" | "agentName" | "runtimeSessionId"
+  >,
 ): TaskBoardColumnId {
+  if (session.preparationId) {
+    return "ready";
+  }
   const status = session.status ?? "";
 
   if (status === "starting" || status === "running") {
@@ -28,11 +34,8 @@ export function resolveTaskBoardColumn(
   if (status === "waiting_for_permission" || status === "error" || status === "cancelled") {
     return "attention";
   }
-  if (!session.agentName && (status === "idle" || status === "completed" || status === "")) {
-    return "ready";
-  }
   if (status === "idle" || status === "completed") {
     return "idle";
   }
-  return "ready";
+  return "idle";
 }

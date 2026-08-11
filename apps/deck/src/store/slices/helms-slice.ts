@@ -1,5 +1,6 @@
 import type {
   AcpAgentProvider,
+  ConversationPreparation,
   HelmSummary,
   ProjectSummary,
   SessionStatus,
@@ -42,6 +43,7 @@ export type HelmInventoryBucket = {
   logging?: HelmLoggingSettings;
   update?: HelmUpdateState;
   activitySummary?: SessionActivitySummary;
+  preparations?: ConversationPreparation[];
 };
 
 export type HelmListUpdater =
@@ -68,6 +70,7 @@ const emptyInventoryBucket: HelmInventoryBucket = {
   sessions: [],
   statuses: {},
   trustedDevices: [],
+  preparations: [],
 };
 
 export const createHelmsSlice: StateCreator<HelmsSlice> = (set) => ({

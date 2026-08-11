@@ -12,7 +12,6 @@ import {
   SelectContent,
   SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
   Tabs,
@@ -21,7 +20,9 @@ import {
   Textarea,
 } from "../../../../shared/ui";
 import type {
+  DashboardQuickCreateHelm,
   DashboardQuickCreateProject,
+  DashboardQuickCreatePreset,
   DashboardQuickCreateRequest,
 } from "../../types";
 
@@ -31,89 +32,96 @@ function projectOptionValue(project: DashboardQuickCreateProject): string {
   return project.key ?? project.id;
 }
 
-type QuickCreateProjectGroup = {
-  key: string;
-  helmName: string;
-  helmEndpoint: string;
-  projects: DashboardQuickCreateProject[];
-};
-
-function resolveProjectGroups(projects: DashboardQuickCreateProject[]): QuickCreateProjectGroup[] {
-  const groups = new Map<string, QuickCreateProjectGroup>();
-
-  for (const project of projects) {
-    const key = project.helmKey ?? project.helmEndpoint ?? project.helmName ?? "unknown-helm";
-    const group = groups.get(key);
-    if (group) {
-      group.projects.push(project);
-      continue;
-    }
-    groups.set(key, {
-      key,
-      helmName: project.helmName ?? "未命名 Helm",
-      helmEndpoint: project.helmEndpoint ?? project.helmKey ?? "未知地址",
-      projects: [project],
-    });
-  }
-
-  return Array.from(groups.values());
-}
+const LATER_PROJECT_VALUE = "__tiller_later__";
+const LATER_AGENT_VALUE = "__tiller_agent_later__";
 
 export type DashboardQuickCreateDialogProps = {
   open: boolean;
+  helms: DashboardQuickCreateHelm[];
   projects: DashboardQuickCreateProject[];
+  preset?: DashboardQuickCreatePreset | null;
   onOpenChange: (open: boolean) => void;
   onCreateTask: (request: DashboardQuickCreateRequest) => boolean | void;
 };
 
 export function DashboardQuickCreateDialog({
   open,
+  helms,
   projects,
+  preset = null,
   onOpenChange,
   onCreateTask,
 }: DashboardQuickCreateDialogProps) {
   const [prompt, setPrompt] = useState("");
   const [mode, setMode] = useState<DashboardQuickCreateMode>("new");
   const [selectedProjectKey, setSelectedProjectKey] = useState("");
+  const [selectedHelmKey, setSelectedHelmKey] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedIdleSessionId, setSelectedIdleSessionId] = useState("");
   const [submitError, setSubmitError] = useState("");
-  const selectedProject = useMemo(
-    () => projects.find((project) => projectOptionValue(project) === selectedProjectKey),
-    [projects, selectedProjectKey],
+  const selectedHelm = useMemo(
+    () => helms.find((helm) => helm.key === selectedHelmKey),
+    [helms, selectedHelmKey],
   );
-  const projectsByHelm = useMemo(() => resolveProjectGroups(projects), [projects]);
-  const agents = selectedProject?.agents ?? [];
+  const projectsForHelm = useMemo(
+    () => projects.filter((project) => project.helmKey === selectedHelmKey),
+    [projects, selectedHelmKey],
+  );
+  const selectedProject = useMemo(
+    () => projectsForHelm.find((project) => projectOptionValue(project) === selectedProjectKey),
+    [projectsForHelm, selectedProjectKey],
+  );
+  const agents = selectedHelm?.agents ?? [];
+  const selectedAgent = agents.find((agent) => agent.id === selectedAgentId);
   const idleSessions = selectedProject?.idleSessions ?? [];
   const selectedIdleSession = idleSessions.find(
     (session) => session.id === selectedIdleSessionId,
   );
+  const presetProjectKey = useMemo(() => {
+    if (!preset) {
+      return "";
+    }
+    const project = projects.find((item) =>
+      (preset.projectId ? item.projectId === preset.projectId : true) &&
+      (preset.helmKey ? item.helmKey === preset.helmKey : true) &&
+      (preset.cwd ? item.cwd === preset.cwd : true),
+    );
+    return project ? projectOptionValue(project) : "";
+  }, [preset, projects]);
+  const defaultHelmKey = preset?.helmKey ?? helms[0]?.key ?? "";
   const canSubmit = Boolean(
     prompt.trim() &&
-      selectedProject?.helmKey &&
-      selectedProject?.projectId &&
+      selectedHelmKey &&
       (mode === "new"
-        ? selectedAgentId && agents.some((agent) => agent.id === selectedAgentId)
-        : selectedIdleSession),
+        ? true
+        : selectedProject?.projectId && selectedIdleSession),
+  );
+
+  const isCompleteNewTask = Boolean(
+    selectedProject?.projectId &&
+    selectedProject.cwd &&
+    selectedAgent,
   );
 
   useEffect(() => {
     if (!open) {
       return;
     }
-    setPrompt("");
+    setPrompt(preset?.prompt?.trim() || preset?.title?.trim() || "");
     setMode("new");
-    setSelectedProjectKey("");
-    setSelectedAgentId("");
+    setSelectedProjectKey(presetProjectKey || LATER_PROJECT_VALUE);
+    setSelectedHelmKey(defaultHelmKey);
+    setSelectedAgentId(preset?.agentId ?? LATER_AGENT_VALUE);
     setSelectedIdleSessionId("");
     setSubmitError("");
-  }, [open]);
+  }, [defaultHelmKey, open, preset?.agentId, preset?.prompt, preset?.title, presetProjectKey]);
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
       setPrompt("");
       setMode("new");
       setSelectedProjectKey("");
+      setSelectedHelmKey("");
       setSelectedAgentId("");
       setSelectedIdleSessionId("");
       setSubmitError("");
@@ -123,28 +131,41 @@ export function DashboardQuickCreateDialog({
 
   const handleProjectChange = (projectKey: string) => {
     setSelectedProjectKey(projectKey);
-    setSelectedAgentId("");
+    setSelectedAgentId(LATER_AGENT_VALUE);
+    setSelectedIdleSessionId("");
+    setSubmitError("");
+  };
+
+  const handleHelmChange = (helmKey: string) => {
+    setSelectedHelmKey(helmKey);
+    setSelectedProjectKey(LATER_PROJECT_VALUE);
+    setSelectedAgentId(LATER_AGENT_VALUE);
     setSelectedIdleSessionId("");
     setSubmitError("");
   };
 
   const handleModeChange = (nextMode: string) => {
     setMode(nextMode as DashboardQuickCreateMode);
-    setSelectedAgentId("");
+    setSelectedAgentId(LATER_AGENT_VALUE);
     setSelectedIdleSessionId("");
     setSubmitError("");
   };
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!canSubmit || !selectedProject) {
+    if (!canSubmit) {
       return;
     }
+    const helmKey = selectedHelmKey;
+    if (!helmKey) return;
     const target = {
       prompt: prompt.trim(),
-      projectId: selectedProject.projectId ?? selectedProject.id,
-      helmKey: selectedProject.helmKey ?? "",
-      cwd: selectedProject.cwd ?? null,
+      ...(preset?.title?.trim() ? { title: preset.title.trim() } : {}),
+      helmKey,
+      projectId: selectedProject?.projectId ?? null,
+      cwd: selectedProject?.cwd ?? null,
+      ...(preset?.preparationId ? { preparationId: preset.preparationId } : {}),
+      ...(preset?.revision !== undefined ? { revision: preset.revision } : {}),
     };
     const accepted = mode === "reuse" && selectedIdleSession
       ? onCreateTask({
@@ -155,7 +176,7 @@ export function DashboardQuickCreateDialog({
       : onCreateTask({
           ...target,
           mode: "new",
-          agentId: selectedAgentId,
+          agentId: selectedAgent?.id ?? null,
         });
     if (accepted === false) {
       setSubmitError("任务未创建，请检查目标 Helm 连接和项目工作区。");
@@ -183,7 +204,11 @@ export function DashboardQuickCreateDialog({
               </DialogTitle>
             </div>
             <DialogDescription className="mt-1.5 text-meta text-muted-foreground">
-              选择项目后新建会话，或继续该工作区中已有的空闲会话。
+              {mode === "reuse"
+                ? "将在已有空闲会话中继续，并保留原有上下文。"
+                : isCompleteNewTask
+                  ? "将创建真实会话并发送首条内容。"
+                  : "只保存内容，不会启动 Agent。补齐项目、工作区和 Agent 后即可开始。"}
             </DialogDescription>
           </DialogHeader>
 
@@ -200,7 +225,7 @@ export function DashboardQuickCreateDialog({
               onChange={(event) => setPrompt(event.target.value)}
               placeholder="告诉 Agent 需要完成什么，例如：修复当前项目中的横向滚动问题"
               className="min-h-[220px] flex-1 resize-none border-0 bg-transparent p-0 text-[18px] leading-8 shadow-none placeholder:text-muted-foreground/70 focus-visible:ring-0"
-              autoFocus
+              autoFocus={!preset?.focusTarget}
             />
           </div>
 
@@ -230,7 +255,7 @@ export function DashboardQuickCreateDialog({
             </div>
 
             {submitError ||
-            (mode === "new" && selectedProject && agents.length === 0) ||
+            (mode === "new" && selectedHelm && agents.length === 0) ||
             (mode === "reuse" && selectedProject && idleSessions.length === 0) ? (
               <p
                 className={submitError ? "mb-2 text-meta text-destructive" : "mb-2 text-meta text-muted-foreground"}
@@ -243,14 +268,47 @@ export function DashboardQuickCreateDialog({
             ) : null}
 
             <div className="grid min-w-0 grid-cols-1 items-end gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(170px,0.8fr)_auto]">
+              <div className="grid min-w-0 gap-1.5" data-testid="dashboard-quick-create-runtime">
+                <Label className="text-meta font-medium text-muted-foreground" htmlFor="dashboard-quick-create-helm">
+                  运行节点
+                </Label>
+                <Select value={selectedHelmKey} onValueChange={handleHelmChange}>
+                  <SelectTrigger id="dashboard-quick-create-helm" className="h-10 min-w-0 bg-surface px-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <Icon name="server" size={13} />
+                      <SelectValue className="truncate" placeholder="选择 Helm">
+                        {selectedHelm ? <span className="truncate">{selectedHelm.name}</span> : null}
+                      </SelectValue>
+                    </div>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {helms.map((helm) => (
+                        <SelectItem key={helm.key} value={helm.key} textValue={`${helm.name} ${helm.endpoint}`}>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate font-medium">{helm.name}</span>
+                            <span className="truncate font-mono text-meta text-muted-foreground">{helm.endpoint}</span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="grid min-w-0 gap-1.5">
                 <Label className="text-meta font-medium text-muted-foreground" htmlFor="dashboard-quick-create-project">
                   项目
                 </Label>
-                <Select value={selectedProjectKey} onValueChange={handleProjectChange}>
+                <Select
+                  value={selectedProjectKey}
+                  onValueChange={handleProjectChange}
+                  disabled={!selectedHelm}
+                >
                   <SelectTrigger
                     id="dashboard-quick-create-project"
                     className="h-10 min-w-0 bg-surface px-3"
+                    autoFocus={preset?.focusTarget === "project"}
                   >
                     <div
                       data-slot="dashboard-quick-create-project-value"
@@ -259,7 +317,7 @@ export function DashboardQuickCreateDialog({
                       <Icon name="folder" size={13} />
                       <SelectValue
                         className="truncate"
-                        placeholder={projects.length ? "选择项目" : "暂无可用项目"}
+                        placeholder={projectsForHelm.length ? "选择项目" : "稍后选择项目"}
                       >
                         {selectedProject ? (
                           <span className="flex min-w-0 items-center gap-1.5">
@@ -273,35 +331,29 @@ export function DashboardQuickCreateDialog({
                     </div>
                   </SelectTrigger>
                   <SelectContent className="max-h-[360px] w-[min(460px,calc(100vw-2rem))]">
-                    {projectsByHelm.map((group) => (
-                      <SelectGroup key={group.key}>
-                        <SelectLabel className="sticky top-0 flex min-w-0 items-center gap-2 bg-surface-elevated py-2 text-meta text-muted-foreground">
-                          <Icon name="server" size={12} />
-                          <span className="truncate font-medium text-foreground">{group.helmName}</span>
-                          <span className="ml-auto truncate font-mono font-normal">{group.helmEndpoint}</span>
-                        </SelectLabel>
-                        {group.projects.map((project) => (
-                          <SelectItem
-                            key={projectOptionValue(project)}
-                            value={projectOptionValue(project)}
-                            textValue={`${project.name} ${project.branch}`}
-                            className="py-2.5 pr-3"
-                          >
-                            <span className="grid min-w-0 gap-0.5">
-                              <span className="flex min-w-0 items-center gap-1.5">
-                                <span className="truncate font-medium">{project.name}</span>
-                                <span className="shrink-0 font-mono text-meta text-muted-foreground">
-                                  / {project.branch}
-                                </span>
-                              </span>
-                              <span className="truncate font-mono text-meta text-muted-foreground">
-                                {project.cwd ?? project.id}
+                    <SelectGroup>
+                      <SelectItem value={LATER_PROJECT_VALUE}>稍后选择项目</SelectItem>
+                      {projectsForHelm.map((project) => (
+                        <SelectItem
+                          key={projectOptionValue(project)}
+                          value={projectOptionValue(project)}
+                          textValue={`${project.name} ${project.branch}`}
+                          className="py-2.5 pr-3"
+                        >
+                          <span className="grid min-w-0 gap-0.5">
+                            <span className="flex min-w-0 items-center gap-1.5">
+                              <span className="truncate font-medium">{project.name}</span>
+                              <span className="shrink-0 font-mono text-meta text-muted-foreground">
+                                / {project.branch}
                               </span>
                             </span>
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    ))}
+                            <span className="truncate font-mono text-meta text-muted-foreground">
+                              {project.cwd ?? project.id}
+                            </span>
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               </div>
@@ -314,11 +366,12 @@ export function DashboardQuickCreateDialog({
                   <Select
                     value={selectedAgentId}
                     onValueChange={setSelectedAgentId}
-                    disabled={!selectedProject || agents.length === 0}
+                    disabled={!selectedHelm || agents.length === 0}
                   >
                     <SelectTrigger
                       id="dashboard-quick-create-agent"
                       className="h-10 min-w-0 bg-surface px-3"
+                      autoFocus={preset?.focusTarget === "agent"}
                     >
                       <div
                         data-slot="dashboard-quick-create-agent-value"
@@ -328,8 +381,8 @@ export function DashboardQuickCreateDialog({
                         <SelectValue
                           className="truncate"
                           placeholder={
-                            !selectedProject
-                              ? "请先选择项目"
+                            !selectedHelm
+                              ? "请先选择 Helm"
                               : agents.length
                                 ? "选择 Agent"
                                 : "该 Helm 暂无 Agent"
@@ -339,6 +392,7 @@ export function DashboardQuickCreateDialog({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
+                        <SelectItem value={LATER_AGENT_VALUE}>稍后选择 Agent</SelectItem>
                         {agents.map((agent) => (
                           <SelectItem key={agent.id} value={agent.id}>
                             {agent.name}
@@ -407,24 +461,9 @@ export function DashboardQuickCreateDialog({
                 </div>
               )}
 
-              <div className="grid min-w-0 gap-1.5" data-testid="dashboard-quick-create-runtime">
-                <span className="text-meta font-medium text-muted-foreground">运行节点</span>
-                <div className="flex h-10 min-w-0 items-center gap-2 rounded-md border border-border-ghost bg-surface px-3">
-                  <span className="grid size-6 shrink-0 place-items-center rounded bg-surface-sunken text-muted-foreground">
-                    <Icon name="server" size={12} />
-                  </span>
-                  <span
-                    className="min-w-0 truncate text-section font-medium text-foreground"
-                    aria-live="polite"
-                  >
-                    {selectedProject ? selectedProject.helmName ?? "未命名 Helm" : "待选择"}
-                  </span>
-                </div>
-              </div>
-
               <Button className="h-10 shrink-0 px-4" type="submit" disabled={!canSubmit}>
                 <Icon name={mode === "reuse" ? "send" : "plus"} />
-                {mode === "reuse" ? "继续会话" : "创建任务"}
+                {mode === "reuse" ? "继续会话" : isCompleteNewTask ? "创建并开始会话" : "保存为准备"}
               </Button>
             </div>
           </div>

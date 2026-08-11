@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import type {
+  DashboardQuickCreateHelm,
   DashboardQuickCreateProject,
   DashboardSection,
 } from "../types";
@@ -24,6 +25,7 @@ export type DashboardNavigationActions = {
   onOpenMission?: () => void;
   onSearchSessions?: () => void;
   onOpenQuickCreate?: () => void;
+  quickCreateHelms?: DashboardQuickCreateHelm[];
   quickCreateProjects?: DashboardQuickCreateProject[];
 };
 
@@ -206,8 +208,8 @@ function DashboardNavigation({ actions }: { actions: DashboardNavigationActions 
 }
 
 function DashboardQuickCreate({ actions }: { actions: DashboardNavigationActions }) {
-  const projects = actions.quickCreateProjects ?? [];
-  const canCreateTask = projects.length > 0 && Boolean(actions.onOpenQuickCreate);
+  const helms = actions.quickCreateHelms ?? [];
+  const canCreateTask = helms.length > 0 && Boolean(actions.onOpenQuickCreate);
 
   return (
     <SidebarGroup className="pb-2">

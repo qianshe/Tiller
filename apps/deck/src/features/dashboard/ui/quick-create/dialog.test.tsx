@@ -11,11 +11,11 @@ test("quick create uses a modal with project-to-Helm-to-agent selection", () => 
   assert.match(source, /DialogTitle/);
   assert.match(source, /Textarea/);
   assert.match(source, /选择项目/);
-  assert.match(source, /selectedProject\.helmName/);
-  assert.match(source, /selectedProject\?\.agents/);
+  assert.match(source, /selectedHelm\.name/);
+  assert.match(source, /selectedHelm\?\.agents/);
   assert.match(source, /agentId/);
-  assert.match(source, /projectId: selectedProject\.projectId/);
-  assert.match(source, /helmKey: selectedProject\.helmKey/);
+  assert.match(source, /projectId: selectedProject\?\.projectId \?\? null/);
+  assert.match(source, /const helmKey = selectedHelmKey/);
 });
 
 test("quick create resets the agent when the project changes", () => {
@@ -27,22 +27,24 @@ test("quick create uses a prompt canvas with a compact target dock", () => {
   assert.match(source, /data-slot="dashboard-quick-create-prompt-canvas"/);
   assert.match(source, /data-slot="dashboard-quick-create-target-dock"/);
   assert.match(source, /告诉 Agent 需要完成什么/);
-  assert.match(source, /selectedProject\.helmName/);
+  assert.match(source, /selectedHelm\.name/);
   assert.match(source, /创建任务/);
   assert.doesNotMatch(source, />Prompt<\/Label>/);
 });
 
-test("quick create groups duplicate project names by their Helm", () => {
-  assert.match(source, /resolveProjectGroups/);
-  assert.match(source, /projectsByHelm\.map/);
-  assert.match(source, /SelectLabel/);
-  assert.match(source, /project\.helmEndpoint/);
+test("quick create scopes projects and agents through an explicit Helm selector", () => {
+  assert.match(source, /id="dashboard-quick-create-helm"/);
+  assert.match(source, /projects\.filter\(\(project\) => project\.helmKey === selectedHelmKey\)/);
+  assert.match(source, /helms\.map/);
+  assert.match(source, /稍后选择项目/);
+  assert.match(source, /稍后选择 Agent/);
+  assert.match(source, /agentId: selectedAgent\?\.id \?\? null/);
 });
 
 test("quick create keeps the selected runtime visible beside the target selectors", () => {
   assert.match(source, /data-testid="dashboard-quick-create-runtime"/);
-  assert.match(source, />运行节点<\/span>/);
-  assert.match(source, /selectedProject \? selectedProject\.helmName/);
+  assert.match(source, />\s*运行节点\s*<\/Label>/);
+  assert.match(source, /selectedHelm\.name/);
   assert.match(source, /max-w-4xl/);
   assert.match(source, /lg:grid-cols-\[minmax\(0,1\.2fr\)_minmax\(0,1fr\)_minmax\(170px,0\.8fr\)_auto\]/);
 });
@@ -95,4 +97,14 @@ test("quick create can switch between a new session and reusing an idle session"
   assert.match(source, /selectedProject\?\.idleSessions/);
   assert.match(source, /sessionId: selectedIdleSession\.id/);
   assert.match(source, /mode: "reuse"/);
+});
+
+test("quick create accepts a prepared task preset and source record", () => {
+  assert.match(source, /preset\?: DashboardQuickCreatePreset \| null\s*;/);
+  assert.match(source, /presetProjectKey/);
+  assert.match(source, /preset\?\.prompt\?\.trim\(\) \|\| preset\?\.title\?\.trim\(\)/);
+  assert.match(source, /preparationId: preset\.preparationId/);
+  assert.match(source, /title: preset\.title\.trim\(\)/);
+  assert.match(source, /autoFocus=\{preset\?\.focusTarget === "project"\}/);
+  assert.match(source, /autoFocus=\{preset\?\.focusTarget === "agent"\}/);
 });

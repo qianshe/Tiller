@@ -9,8 +9,10 @@ import type {
   SessionSummary,
   SessionTimelineEntry,
   SessionActivitySummary,
+  ConversationPreparation,
 } from "@tiller/shared";
 import { resolvePermissionCommandDisplay } from "../../mission/facade";
+import { daemonProfileKey } from "../../helm-connection/facade";
 import type { DeckNotificationDetails } from "../../../store";
 import type { DashboardActivityTrendPoint } from "../types";
 
@@ -25,6 +27,7 @@ type DashboardInput = {
   agents: unknown[];
   projects: unknown[];
   sessions: SessionSummary[];
+  preparations?: ConversationPreparation[];
   statuses?: Record<string, SessionStatus | undefined>;
   selectedSessionId?: string | null;
   sessionPlans?: Record<string, AgentPlan | undefined>;
@@ -423,14 +426,46 @@ export function buildDashboardViewModel(input: DashboardInput) {
   const sessions = input.sessions.map((session) => ({
     id: session.id,
     title: input.resolveDisplaySessionTitle(session),
+    projectId: session.projectId,
     projectName: session.projectName,
     worktreeName: session.worktreeName,
+    cwd: session.cwd,
+    helmId: session.helmId,
+    helmKey: daemonProfileKey(
+      input.activeHelm?.host ?? input.daemonHost,
+      String(input.activeHelm?.port ?? input.daemonPort),
+    ),
+    agentId: session.agentId,
     agentName: session.agentName,
+    runtimeSessionId: session.runtimeSessionId ?? session.resume?.runtimeSessionId,
+    lastMessagePreview: session.lastMessagePreview,
     status: input.statuses?.[session.id] ?? session.status,
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     selected: session.id === input.selectedSessionId,
     planSummary: summarizeDashboardPlan(input.sessionPlans?.[session.id]) ?? undefined,
+  }));
+  const preparations = (input.preparations ?? []).map((preparation) => ({
+    id: preparation.id,
+    preparationId: preparation.id,
+    title: preparation.title ?? preparation.content.slice(0, 80),
+    content: preparation.content,
+    projectId: preparation.projectId,
+    projectName: (input.projects as Array<{ id?: string; name?: string }>).find(
+      (project) => project.id === preparation.projectId,
+    )?.name,
+    cwd: preparation.cwd,
+    worktreeName: preparation.cwd?.split(/[\\/]/u).filter(Boolean).at(-1),
+    helmKey: daemonProfileKey(
+      input.activeHelm?.host ?? input.daemonHost,
+      String(input.activeHelm?.port ?? input.daemonPort),
+    ),
+    agentId: preparation.agentId,
+    agentName: preparation.agentId,
+    status: undefined,
+    createdAt: preparation.createdAt,
+    updatedAt: preparation.updatedAt,
+    revision: preparation.revision,
   }));
   const planSessionCount = sessions.filter((session) => session.planSummary).length;
   const completedPlanSessionCount = sessions.filter(
@@ -453,6 +488,7 @@ export function buildDashboardViewModel(input: DashboardInput) {
     activityTrend: activityMetrics.activityTrend,
     activityTrendHourly: activityMetrics.activityTrendHourly,
     sessions,
+    preparations,
     helms,
     approvals,
     approvalHistory,

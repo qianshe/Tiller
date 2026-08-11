@@ -56,6 +56,13 @@ export async function requestInitialSync(
   await dispatch(client, "agent/list", {});
   await dispatch(client, "agent/connections", {});
   try {
+    await dispatch(client, "conversation/list", {});
+  } catch (error) {
+    if (!isMethodNotFound(error)) {
+      throw error;
+    }
+  }
+  try {
     await dispatch(client, "daemon/update/check", {});
   } catch (error) {
     if (isMethodNotFound(error)) {

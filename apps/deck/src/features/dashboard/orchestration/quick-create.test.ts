@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { AcpAgentProvider, ProjectSummary, SessionSummary } from "@tiller/shared";
-import { buildDashboardQuickCreateProjects } from "./quick-create.js";
+import {
+  buildDashboardQuickCreateHelms,
+  buildDashboardQuickCreateProjects,
+} from "./quick-create.js";
 
 function agent(id: string, name = id): AcpAgentProvider {
   return {
@@ -52,6 +55,7 @@ function session(
     createdAt: "2026-08-01T00:00:00.000Z",
     updatedAt: "2026-08-02T00:00:00.000Z",
     messageCount: 2,
+    runtimeSessionId: `runtime-${id}`,
   };
 }
 
@@ -109,6 +113,25 @@ test("quick create includes an inventory Helm even when its saved profile is mis
   assert.equal(projects[0]?.helmKey, "10.0.0.9:47631");
   assert.equal(projects[0]?.helmName, "10.0.0.9:47631");
   assert.equal(projects[0]?.helmEndpoint, "10.0.0.9:47631");
+});
+
+test("quick create keeps a Helm selectable before it has any project", () => {
+  const input = {
+    currentHelmKey: "127.0.0.1:47631",
+    currentHelm: { name: "Local Helm", host: "127.0.0.1", port: 47631 },
+    currentProjects: [],
+    currentAgents: [agent("codex", "Codex")],
+    daemonProfiles: [],
+    helmInventories: {},
+  };
+
+  assert.deepEqual(buildDashboardQuickCreateProjects(input), []);
+  assert.deepEqual(buildDashboardQuickCreateHelms(input), [{
+    key: "127.0.0.1:47631",
+    name: "Local Helm",
+    endpoint: "127.0.0.1:47631",
+    agents: [{ id: "codex", name: "Codex" }],
+  }]);
 });
 
 test("quick create ignores malformed Helm summaries without dropping valid projects", () => {
@@ -201,6 +224,16 @@ test("quick create exposes only idle sessions from the selected Helm project and
     currentAgents: [agent("codex", "Codex")],
     currentSessions: [
       session("root-idle", "tiller", "local", "D:/tiller"),
+      {
+        ...session("prepared", "tiller", "local", "D:/tiller"),
+        agentId: "",
+        agentName: "",
+        runtimeSessionId: undefined,
+      },
+      {
+        ...session("history-only", "tiller", "local", "D:/tiller"),
+        runtimeSessionId: undefined,
+      },
       session("worktree-stale", "tiller", "local", "D:\\tiller\\.worktrees\\dashboard", "error"),
       session("worktree-running", "tiller", "local", "D:/tiller/.worktrees/dashboard", "running"),
       session("other-project", "other", "local", "D:/tiller/.worktrees/dashboard"),

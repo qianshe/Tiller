@@ -20,7 +20,9 @@ import { DashboardTaskWorkspace } from "./tasks/workspace";
 import type { DashboardNotification } from "../orchestration/view-model";
 import type {
   DashboardActivityTrendPoint,
+  DashboardQuickCreateHelm,
   DashboardQuickCreateProject,
+  DashboardQuickCreatePreset,
   DashboardQuickCreateRequest,
   DashboardRecentActivitySummary,
   DashboardSection,
@@ -80,8 +82,10 @@ export type DashboardPageProps = {
   onSelectSection?: (section: DashboardSection) => void;
   onOpenMission?: () => void;
   embeddedContent?: ReactNode;
+  quickCreateHelms?: DashboardQuickCreateHelm[];
   quickCreateProjects?: DashboardQuickCreateProject[];
   onCreateTask?: (request: DashboardQuickCreateRequest) => boolean | void;
+  preparations?: DashboardSession[];
   onOpenSession?: (sessionId: string) => void;
   onOpenSearchSession?: (sessionId: string) => void;
   onRenameSession?: (sessionId: string, title: string) => void;
@@ -339,12 +343,14 @@ export function DashboardPage({
   onSelectSection,
   onOpenMission,
   embeddedContent,
+  quickCreateHelms,
   quickCreateProjects,
   onCreateTask,
   onOpenSession,
   onOpenSearchSession,
   onRenameSession,
   onDeleteSession,
+  preparations = [],
   onRespondApproval,
   onClearNotifications,
   onClearApprovalHistory,
@@ -353,6 +359,7 @@ export function DashboardPage({
   const [internalSection, setInternalSection] = useState<DashboardSection>("overview");
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [quickCreatePreset, setQuickCreatePreset] = useState<DashboardQuickCreatePreset | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(DASHBOARD_SIDEBAR_DEFAULT_WIDTH);
   const selectedSection = activeSection ?? internalSection;
   const activitySummary: DashboardRecentActivitySummary = buildDashboardActivitySummary(
@@ -370,6 +377,24 @@ export function DashboardPage({
     }
     selectSection("tasks");
     return true;
+  };
+  const openQuickCreate = () => {
+    setQuickCreatePreset(null);
+    setQuickCreateOpen(true);
+  };
+  const configureReadySession = (session: DashboardSession) => {
+    setQuickCreatePreset({
+      projectId: session.projectId,
+      helmKey: session.helmKey,
+      cwd: session.cwd,
+      prompt: session.content ?? session.lastMessagePreview ?? session.title,
+      title: session.title,
+      preparationId: session.preparationId,
+      revision: session.revision,
+      agentId: session.agentId,
+      focusTarget: !session.projectId || !session.cwd ? "project" : !session.agentId ? "agent" : undefined,
+    });
+    setQuickCreateOpen(true);
   };
   const sectionTitle = resolveDashboardSectionTitle(selectedSection);
   const approvalRows = approvals;
@@ -428,14 +453,17 @@ export function DashboardPage({
     onSelectSection: selectSection,
     onOpenMission,
     onSearchSessions: () => setSessionSearchOpen(true),
-    onOpenQuickCreate: () => setQuickCreateOpen(true),
+    onOpenQuickCreate: openQuickCreate,
+    quickCreateHelms,
     quickCreateProjects,
   };
 
   const quickCreateDialog = (
     <DashboardQuickCreateDialog
       open={quickCreateOpen}
+      helms={quickCreateHelms ?? []}
       projects={quickCreateProjects ?? []}
+      preset={quickCreatePreset}
       onOpenChange={setQuickCreateOpen}
       onCreateTask={createTask}
     />
@@ -537,7 +565,9 @@ export function DashboardPage({
             ) : selectedSection === "tasks" ? (
               <DashboardTaskWorkspace
                 sessions={sessions}
+                preparations={preparations}
                 onOpenSession={onOpenSession}
+                onConfigureReadySession={configureReadySession}
                 onRenameSession={onRenameSession}
                 onDeleteSession={onDeleteSession}
               />

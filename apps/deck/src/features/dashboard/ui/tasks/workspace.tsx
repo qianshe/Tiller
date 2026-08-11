@@ -1,6 +1,4 @@
 import {
-  Archive,
-  ArchiveRestore,
   AlertTriangle,
   CircleDashed,
   ChevronRight,
@@ -13,7 +11,7 @@ import {
   Trash2,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useState, type DragEvent, type FormEvent, type ReactNode } from "react";
+import { useState, type DragEvent, type FormEvent, type ReactNode } from "react";
 import {
   Badge,
   Button,
@@ -54,52 +52,28 @@ import {
 
 type DashboardTaskWorkspaceProps = {
   sessions: DashboardActivitySession[];
+  preparations?: DashboardActivitySession[];
   onOpenSession?: (sessionId: string) => void;
+  onConfigureReadySession?: (session: DashboardActivitySession) => void;
   onRenameSession?: (sessionId: string, title: string) => void;
   onDeleteSession?: (sessionId: string) => void;
   defaultView?: "panel" | "table";
 };
 
 type TaskGroup = {
-  id: TaskBoardColumnId | "archived";
+  id: TaskBoardColumnId;
   label: string;
   tone: "primary" | "idle" | "active" | "danger";
   sessions: DashboardActivitySession[];
 };
 
-const ARCHIVED_TASKS_STORAGE_KEY = "tiller.dashboard.archived-tasks";
-
-function readArchivedTaskIds(): Set<string> {
-  if (typeof window === "undefined") {
-    return new Set();
-  }
-  try {
-    const value = JSON.parse(window.localStorage.getItem(ARCHIVED_TASKS_STORAGE_KEY) ?? "[]");
-    return Array.isArray(value)
-      ? new Set(value.filter((item): item is string => typeof item === "string"))
-      : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function writeArchivedTaskIds(ids: Set<string>) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    window.localStorage.setItem(ARCHIVED_TASKS_STORAGE_KEY, JSON.stringify([...ids]));
-  } catch {
-    // Browser storage is optional; the current session still keeps its local state.
-  }
-}
-
 function groupTaskSessions(
   sessions: DashboardActivitySession[],
+  preparations: DashboardActivitySession[] = [],
 ): TaskGroup[] {
   const groups: TaskGroup[] = TASK_BOARD_COLUMNS.map((column) => ({ ...column, sessions: [] }));
   const groupById = new Map(groups.map((group) => [group.id, group]));
-  sessions.forEach((session) => {
+  [...sessions, ...preparations].forEach((session) => {
     groupById.get(resolveTaskBoardColumn(session))?.sessions.push(session);
   });
   return groups;
@@ -111,20 +85,6 @@ const TASK_COLUMN_ICONS: Record<TaskBoardColumnId, LucideIcon> = {
   attention: AlertTriangle,
   idle: PauseCircle,
 };
-
-const ARCHIVED_TASK_GROUP: TaskGroup = {
-  id: "archived",
-  label: "已归档",
-  tone: "idle",
-  sessions: [],
-};
-
-export function isArchivableTask(
-  session: Pick<DashboardActivitySession, "agentName" | "status">,
-): boolean {
-  const column = resolveTaskBoardColumn(session);
-  return column === "idle" || column === "attention";
-}
 
 function resolveTaskStatus(session: DashboardActivitySession) {
   const column = resolveTaskBoardColumn(session);
@@ -166,19 +126,29 @@ function TaskOpenButton({
   children,
   className,
   onOpenSession,
+  onConfigureReadySession,
 }: {
   session: DashboardActivitySession;
   children: ReactNode;
   className?: string;
   onOpenSession?: (sessionId: string) => void;
+  onConfigureReadySession?: (session: DashboardActivitySession) => void;
 }) {
-  if (!onOpenSession) return <div className={className}>{children}</div>;
+  const isReady = resolveTaskBoardColumn(session) === "ready";
+  const onClick = isReady
+    ? onConfigureReadySession
+      ? () => onConfigureReadySession(session)
+      : undefined
+    : onOpenSession
+      ? () => onOpenSession(session.id)
+      : undefined;
+  if (!onClick) return <div className={className}>{children}</div>;
   return (
     <button
       type="button"
       className={className}
-      onClick={() => onOpenSession(session.id)}
-      aria-label={`打开任务 ${session.title}`}
+      onClick={onClick}
+      aria-label={isReady ? `配置并开始任务 ${session.title}` : `打开任务 ${session.title}`}
     >
       {children}
     </button>
@@ -187,73 +157,85 @@ function TaskOpenButton({
 
 function TaskPanelView({
   sessions,
-  archivedSessionIds,
-  onArchiveSession,
   onOpenSession,
+  onConfigureReadySession,
 }: {
   sessions: DashboardActivitySession[];
-  archivedSessionIds: Set<string>;
-  onArchiveSession: (sessionId: string) => void;
   onOpenSession?: (sessionId: string) => void;
+  onConfigureReadySession?: (session: DashboardActivitySession) => void;
 }) {
-  const [isArchiveDropTarget, setIsArchiveDropTarget] = useState(false);
-  const groups = [
-    ...groupTaskSessions(sessions.filter((session) => !archivedSessionIds.has(session.id))),
-    { ...ARCHIVED_TASK_GROUP, sessions: sessions.filter((session) => archivedSessionIds.has(session.id)) },
-  ];
+  const groups = groupTaskSessions(sessions);
+  const [dragOverRunning, setDragOverRunning] = useState(false);
 
-  function handleDragStart(event: DragEvent<HTMLLIElement>, sessionId: string) {
-    event.dataTransfer.setData("text/plain", sessionId);
-    event.dataTransfer.effectAllowed = "move";
+  function readDraggedSessionId(event: DragEvent<HTMLElement>) {
+    return (
+      event.dataTransfer.getData("application/x-tiller-ready-session") ||
+      event.dataTransfer.getData("text/plain")
+    );
   }
 
-  function handleArchiveDragOver(event: DragEvent<HTMLElement>, groupId: TaskGroup["id"]) {
-    if (groupId !== "archived") return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setIsArchiveDropTarget(true);
+  function isReadySessionDrag(event: DragEvent<HTMLElement>) {
+    return (
+      event.dataTransfer.types.includes("application/x-tiller-ready-session") ||
+      event.dataTransfer.types.includes("text/plain")
+    );
   }
 
-  function handleArchiveDrop(event: DragEvent<HTMLElement>, groupId: TaskGroup["id"]) {
-    if (groupId !== "archived") return;
-    event.preventDefault();
-    const sessionId = event.dataTransfer.getData("text/plain");
-    const session = sessions.find((item) => item.id === sessionId);
-    if (session && isArchivableTask(session)) {
-      onArchiveSession(sessionId);
+  function handleReadyDragStart(event: DragEvent<HTMLLIElement>, session: DashboardActivitySession) {
+    if (resolveTaskBoardColumn(session) !== "ready" || !onConfigureReadySession) {
+      event.preventDefault();
+      return;
     }
-    setIsArchiveDropTarget(false);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/x-tiller-ready-session", session.id);
+    event.dataTransfer.setData("text/plain", session.id);
   }
 
-  function handleArchiveDragLeave(event: DragEvent<HTMLElement>, groupId: TaskGroup["id"]) {
-    if (groupId !== "archived") return;
-    const relatedTarget = event.relatedTarget;
-    if (relatedTarget instanceof Node && event.currentTarget.contains(relatedTarget)) return;
-    setIsArchiveDropTarget(false);
-  }
-
-  function handleDragEnd() {
-    setIsArchiveDropTarget(false);
+  function handleRunningDrop(event: DragEvent<HTMLElement>) {
+    event.preventDefault();
+    setDragOverRunning(false);
+    const sessionId = readDraggedSessionId(event);
+    const session = sessions.find((item) => item.id === sessionId);
+    if (session && resolveTaskBoardColumn(session) === "ready") {
+      onConfigureReadySession?.(session);
+    }
   }
 
   return (
     <div className="max-w-full overflow-x-auto pb-1" data-task-view="panel">
-      <div className="grid min-w-[1120px] grid-cols-5 gap-3">
+      <div className="grid min-w-[900px] grid-cols-4 gap-3">
         {groups.map((group) => {
-          const ColumnIcon = group.id === "archived" ? Archive : TASK_COLUMN_ICONS[group.id];
-          const isArchiveGroup = group.id === "archived";
+          const ColumnIcon = TASK_COLUMN_ICONS[group.id];
           return (
             <section
               key={group.id}
               className={cn(
                 "wb-pane min-w-0 overflow-hidden",
-                isArchiveGroup && isArchiveDropTarget && "ring-2 ring-primary/50",
+                group.id === "running" && dragOverRunning && "ring-2 ring-primary/50",
               )}
               data-task-column={group.id}
+              data-task-drop-target={group.id === "running" ? "running" : undefined}
               aria-labelledby={`task-group-${group.id}`}
-              onDragOver={(event) => handleArchiveDragOver(event, group.id)}
-              onDrop={(event) => handleArchiveDrop(event, group.id)}
-              onDragLeave={(event) => handleArchiveDragLeave(event, group.id)}
+              onDragOver={
+                group.id === "running" && onConfigureReadySession
+                  ? (event) => {
+                      if (!isReadySessionDrag(event)) return;
+                      event.preventDefault();
+                      event.dataTransfer.dropEffect = "move";
+                      setDragOverRunning(true);
+                    }
+                  : undefined
+              }
+              onDragLeave={
+                group.id === "running" && onConfigureReadySession
+                  ? () => setDragOverRunning(false)
+                  : undefined
+              }
+              onDrop={
+                group.id === "running" && onConfigureReadySession
+                  ? handleRunningDrop
+                  : undefined
+              }
             >
               <div className="wb-pane-head min-h-10 px-3">
                 <StatusDot tone={group.tone} size={6} pulse={group.id === "running"} />
@@ -264,25 +246,25 @@ function TaskPanelView({
               {group.sessions.length > 0 ? (
                 <ul className="divide-y divide-border-ghost">
                   {group.sessions.map((session) => {
-                    const status = isArchiveGroup
-                      ? { ...resolveTaskStatus(session), label: "已归档", badge: "secondary" as const }
-                      : resolveTaskStatus(session);
-                    const canDragToArchive = isArchivableTask(session) && !isArchiveGroup;
+                    const status = resolveTaskStatus(session);
                     return (
                       <li
                         key={session.id}
-                        draggable={canDragToArchive}
-                        onDragStart={canDragToArchive
-                          ? (event) => handleDragStart(event, session.id)
-                          : undefined}
-                        onDragEnd={canDragToArchive ? handleDragEnd : undefined}
+                        draggable={
+                          resolveTaskBoardColumn(session) === "ready" &&
+                          Boolean(onConfigureReadySession)
+                        }
+                        data-task-draggable={
+                          resolveTaskBoardColumn(session) === "ready" ? "ready" : undefined
+                        }
+                        onDragStart={(event) => handleReadyDragStart(event, session)}
                       >
                         <TaskOpenButton
                           session={session}
                           onOpenSession={onOpenSession}
+                          onConfigureReadySession={onConfigureReadySession}
                           className={cn(
                             "grid w-full min-w-0 gap-2 px-3 py-3 text-left transition-colors hover:bg-surface-sunken",
-                            canDragToArchive && "cursor-grab active:cursor-grabbing",
                           )}
                         >
                           <span className="flex min-w-0 items-start gap-2">
@@ -297,7 +279,7 @@ function TaskPanelView({
                               {status.label}
                             </Badge>
                             <span className="ml-auto truncate font-mono text-meta text-muted-foreground">
-                              {session.agentName ?? "未分配"}
+                              {session.agentName ?? session.agentId ?? "未分配"}
                             </span>
                           </span>
                         </TaskOpenButton>
@@ -307,7 +289,7 @@ function TaskPanelView({
                 </ul>
               ) : (
                 <div className="px-3 py-6 text-center font-mono text-meta text-muted-foreground">
-                  {isArchiveGroup ? "拖动空闲或待处理任务到这里" : "暂无任务"}
+                  暂无任务
                 </div>
               )}
             </section>
@@ -320,15 +302,13 @@ function TaskPanelView({
 
 function TaskActionMenu({
   session,
-  archived,
+  onConfigureReady,
   onRename,
-  onToggleArchive,
   onDelete,
 }: {
   session: DashboardActivitySession;
-  archived: boolean;
+  onConfigureReady?: (session: DashboardActivitySession) => void;
   onRename: (session: DashboardActivitySession) => void;
-  onToggleArchive: (sessionId: string) => void;
   onDelete: (session: DashboardActivitySession) => void;
 }) {
   return (
@@ -346,17 +326,15 @@ function TaskActionMenu({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-36">
         <DropdownMenuLabel>任务操作</DropdownMenuLabel>
+        {resolveTaskBoardColumn(session) === "ready" && onConfigureReady ? (
+          <DropdownMenuItem onSelect={() => onConfigureReady(session)}>
+            <PlayCircle className="mr-2 size-3.5" aria-hidden="true" />
+            配置并开始
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem onSelect={() => onRename(session)}>
           <Pencil className="mr-2 size-3.5" aria-hidden="true" />
           重命名
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => onToggleArchive(session.id)}>
-          {archived ? (
-            <ArchiveRestore className="mr-2 size-3.5" aria-hidden="true" />
-          ) : (
-            <Archive className="mr-2 size-3.5" aria-hidden="true" />
-          )}
-          {archived ? "取消归档" : "归档"}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
@@ -373,21 +351,19 @@ function TaskActionMenu({
 
 function TaskTableView({
   sessions,
-  archivedSessionIds,
   selectedSessionIds,
   onOpenSession,
+  onConfigureReadySession,
   onRename,
-  onToggleArchive,
   onDelete,
   onToggleSession,
   onToggleAll,
 }: {
   sessions: DashboardActivitySession[];
-  archivedSessionIds: Set<string>;
   selectedSessionIds: Set<string>;
   onOpenSession?: (sessionId: string) => void;
+  onConfigureReadySession?: (session: DashboardActivitySession) => void;
   onRename: (session: DashboardActivitySession) => void;
-  onToggleArchive: (sessionId: string) => void;
   onDelete: (session: DashboardActivitySession) => void;
   onToggleSession: (sessionId: string, checked: boolean) => void;
   onToggleAll: (checked: boolean) => void;
@@ -418,10 +394,9 @@ function TaskTableView({
           </TableHeader>
           <TableBody className="[&_tr]:border-border-ghost/60">
             {sessions.length > 0 ? sessions.map((session) => {
-              const status = archivedSessionIds.has(session.id)
-                ? { ...resolveTaskStatus(session), label: "已归档", badge: "secondary" as const }
-                : resolveTaskStatus(session);
+              const status = resolveTaskStatus(session);
               const selected = selectedSessionIds.has(session.id);
+              const isReady = resolveTaskBoardColumn(session) === "ready";
               return (
                 <TableRow key={session.id} data-state={selected ? "selected" : undefined}>
                   <TableCell className="w-10 px-3 py-2.5">
@@ -437,8 +412,14 @@ function TaskTableView({
                         variant="ghost"
                         size="sm"
                         className="h-auto min-w-0 max-w-full justify-start px-0 py-0 text-left font-medium hover:bg-transparent"
-                        disabled={!onOpenSession}
-                        onClick={() => onOpenSession?.(session.id)}
+                        disabled={isReady ? !onConfigureReadySession : !onOpenSession}
+                        onClick={() => {
+                          if (isReady) {
+                            onConfigureReadySession?.(session);
+                          } else {
+                            onOpenSession?.(session.id);
+                          }
+                        }}
                       >
                         <span className="truncate">{session.title}</span>
                       </Button>
@@ -449,7 +430,7 @@ function TaskTableView({
                   </TableCell>
                   <TableCell className="px-3 py-2.5">
                     <span className={cn("text-meta", !session.agentName && "text-muted-foreground")}>
-                      {session.agentName ?? "未分配"}
+                      {session.agentName ?? session.agentId ?? "未分配"}
                     </span>
                   </TableCell>
                   <TableCell className="px-3 py-2.5 font-mono text-meta tabular text-muted-foreground">
@@ -464,9 +445,8 @@ function TaskTableView({
                   <TableCell className="sticky right-0 z-10 w-12 bg-surface/95 px-2 py-2.5 text-right">
                     <TaskActionMenu
                       session={session}
-                      archived={archivedSessionIds.has(session.id)}
+                      onConfigureReady={onConfigureReadySession}
                       onRename={onRename}
-                      onToggleArchive={onToggleArchive}
                       onDelete={onDelete}
                     />
                   </TableCell>
@@ -561,26 +541,22 @@ function TaskDeleteDialog({
 
 export function DashboardTaskWorkspace({
   sessions,
+  preparations = [],
   onOpenSession,
+  onConfigureReadySession,
   onRenameSession,
   onDeleteSession,
   defaultView = "panel",
 }: DashboardTaskWorkspaceProps) {
-  const [archivedSessionIds, setArchivedSessionIds] = useState<Set<string>>(readArchivedTaskIds);
+  const taskItems = [...sessions, ...preparations];
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
   const [renameSession, setRenameSession] = useState<DashboardActivitySession | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteSession, setDeleteSession] = useState<DashboardActivitySession | null>(null);
 
-  useEffect(() => {
-    writeArchivedTaskIds(archivedSessionIds);
-  }, [archivedSessionIds]);
-
-  const activeSessions = sessions.filter((session) => !archivedSessionIds.has(session.id));
-  const activeCount = activeSessions.filter((session) => resolveTaskBoardColumn(session) === "running").length;
-  const attentionCount = activeSessions.filter((session) => resolveTaskBoardColumn(session) === "attention").length;
-  const unassignedCount = activeSessions.filter((session) => !session.agentName).length;
-  const archivedCount = sessions.filter((session) => archivedSessionIds.has(session.id)).length;
+  const activeCount = sessions.filter((session) => resolveTaskBoardColumn(session) === "running").length;
+  const attentionCount = sessions.filter((session) => resolveTaskBoardColumn(session) === "attention").length;
+  const unassignedCount = preparations.length;
 
   function toggleSession(sessionId: string, checked: boolean) {
     setSelectedSessionIds((current) => {
@@ -615,28 +591,9 @@ export function DashboardTaskWorkspace({
     setRenameSession(null);
   }
 
-  function toggleArchive(sessionId: string) {
-    setArchivedSessionIds((current) => {
-      const next = new Set(current);
-      if (next.has(sessionId)) next.delete(sessionId);
-      else next.add(sessionId);
-      return next;
-    });
-    setSelectedSessionIds((current) => {
-      const next = new Set(current);
-      next.delete(sessionId);
-      return next;
-    });
-  }
-
   function confirmDelete() {
     if (!deleteSession) return;
     onDeleteSession?.(deleteSession.id);
-    setArchivedSessionIds((current) => {
-      const next = new Set(current);
-      next.delete(deleteSession.id);
-      return next;
-    });
     setSelectedSessionIds((current) => {
       const next = new Set(current);
       next.delete(deleteSession.id);
@@ -650,12 +607,11 @@ export function DashboardTaskWorkspace({
       <Tabs defaultValue={defaultView} className="min-h-0 min-w-0" aria-label="任务视图">
         <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-meta tabular text-muted-foreground">
-            <span>{sessions.length} 个任务</span>
+            <span>{taskItems.length} 个任务</span>
             <span aria-hidden="true">·</span>
             <span>{activeCount} 进行中</span>
             {attentionCount > 0 ? <><span aria-hidden="true">·</span><span>{attentionCount} 待处理</span></> : null}
             {unassignedCount > 0 ? <><span aria-hidden="true">·</span><span>{unassignedCount} 未分配</span></> : null}
-            {archivedCount > 0 ? <><span aria-hidden="true">·</span><span>{archivedCount} 已归档</span></> : null}
           </div>
           <div className="flex max-w-full flex-wrap items-center gap-2">
             <TabsList size="sm" aria-label="切换任务视图">
@@ -666,20 +622,18 @@ export function DashboardTaskWorkspace({
         </div>
         <TabsContent value="panel" className="mt-0">
           <TaskPanelView
-            sessions={sessions}
-            archivedSessionIds={archivedSessionIds}
-            onArchiveSession={toggleArchive}
+            sessions={taskItems}
             onOpenSession={onOpenSession}
+            onConfigureReadySession={onConfigureReadySession}
           />
         </TabsContent>
         <TabsContent value="table" className="mt-0">
           <TaskTableView
-            sessions={sessions}
-            archivedSessionIds={archivedSessionIds}
+            sessions={taskItems}
             selectedSessionIds={selectedSessionIds}
             onOpenSession={onOpenSession}
+            onConfigureReadySession={onConfigureReadySession}
             onRename={openRename}
-            onToggleArchive={toggleArchive}
             onDelete={setDeleteSession}
             onToggleSession={toggleSession}
             onToggleAll={toggleAll}

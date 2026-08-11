@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useDeckStore, type DeckNotification } from "../../store";
 import type {
   AcpAgentProvider,
+  ConversationPreparation,
   AgentMessage,
   AgentPlan,
   AgentToolCall,
@@ -192,6 +193,7 @@ export function useDeckData(missionVisualFixture: any) {
   const removeDaemonProfileFromStore = useDeckStore((state) => state.removeDaemonProfile);
   const selectedHelmKey = useDeckStore((state) => state.selectedHelmKey);
   const selectHelmKey = useDeckStore((state) => state.selectHelmKey);
+  const preparations = (helmInventories[selectedHelmKey ?? ""]?.preparations ?? []) as ConversationPreparation[];
 
   const trustedDevice = useDeckStore((state) => state.trustedDevice);
   const setTrustedDevice = useDeckStore((state) => state.setTrustedDevice);
@@ -281,6 +283,7 @@ export function useDeckData(missionVisualFixture: any) {
     removeDaemonProfileFromStore,
     selectedHelmKey,
     selectHelmKey,
+    preparations,
     trustedDevice,
     setTrustedDevice,
     trustedDevices,

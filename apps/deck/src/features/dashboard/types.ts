@@ -26,6 +26,13 @@ export type DashboardQuickCreateAgent = {
   name: string;
 };
 
+export type DashboardQuickCreateHelm = {
+  key: string;
+  name: string;
+  endpoint: string;
+  agents: DashboardQuickCreateAgent[];
+};
+
 export type DashboardQuickCreateIdleSession = {
   id: string;
   title: string;
@@ -54,18 +61,36 @@ export type DashboardQuickCreateProject = {
 
 type DashboardQuickCreateRequestBase = {
   prompt: string;
-  projectId: string;
+  /** Optional task title used when promoting a prepared dashboard record. */
+  title?: string;
+  projectId?: string | null;
   helmKey: string;
-  cwd: string | null;
+  cwd?: string | null;
+  agentId?: string | null;
+  /** Prepared dashboard record to remove after successful promotion. */
+  preparationId?: string;
+  revision?: number;
 };
 
 export type DashboardQuickCreateRequest = DashboardQuickCreateRequestBase & (
   | {
       mode: "new";
-      agentId: string;
+      agentId?: string | null;
     }
   | {
       mode: "reuse";
       sessionId: string;
-    }
+  }
 );
+
+export type DashboardQuickCreatePreset = {
+  projectId?: string | null;
+  helmKey?: string | null;
+  cwd?: string | null;
+  prompt?: string | null;
+  title?: string | null;
+  preparationId?: string | null;
+  revision?: number;
+  agentId?: string | null;
+  focusTarget?: "project" | "agent";
+};

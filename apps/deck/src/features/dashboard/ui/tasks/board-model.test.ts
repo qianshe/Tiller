@@ -5,7 +5,9 @@ import { resolveTaskBoardColumn, TASK_BOARD_COLUMNS } from "./board-model";
 const baseSession = {
   id: "session-1",
   title: "Task",
+  agentId: "codex",
   agentName: "Codex",
+  runtimeSessionId: "runtime-1",
 };
 
 test("task board separates runtime and attention states", () => {
@@ -27,10 +29,19 @@ test("idle and completed sessions share the idle column", () => {
   assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "completed" }), "idle");
 });
 
-test("unassigned inactive sessions are prepared work", () => {
+test("only explicit preparation records enter the ready column", () => {
   assert.equal(
-    resolveTaskBoardColumn({ ...baseSession, agentName: null, status: "idle" }),
-    "ready",
+    resolveTaskBoardColumn({ ...baseSession, agentId: null, agentName: null, status: "idle" }),
+    "idle",
   );
+  assert.equal(
+    resolveTaskBoardColumn({ ...baseSession, agentId: null, agentName: "旧 Agent 名称", status: "idle" }),
+    "idle",
+  );
+  assert.equal(
+    resolveTaskBoardColumn({ ...baseSession, runtimeSessionId: undefined, status: "idle" }),
+    "idle",
+  );
+  assert.equal(resolveTaskBoardColumn({ ...baseSession, preparationId: "preparation-1" }), "ready");
   assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "cancelled" }), "attention");
 });

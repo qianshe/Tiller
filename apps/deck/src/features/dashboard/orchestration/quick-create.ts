@@ -8,6 +8,7 @@ import type {
 import { daemonProfileKey } from "../../helm-connection/facade";
 import type {
   DashboardQuickCreateAgent,
+  DashboardQuickCreateHelm,
   DashboardQuickCreateProject,
 } from "../types";
 
@@ -136,7 +137,9 @@ function projectIdleSessions(
     .filter((session) =>
       session.projectId === project.id &&
       normalizePath(session.cwd) === normalizePath(target.path) &&
-      (source.statuses[session.id] ?? session.status) === "idle"
+      (source.statuses[session.id] ?? session.status) === "idle" &&
+      Boolean(session.agentId?.trim()) &&
+      Boolean((session.runtimeSessionId ?? session.resume?.runtimeSessionId)?.trim())
     )
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     .map((session) => ({
@@ -157,7 +160,7 @@ function addSource(
   }
 }
 
-export function buildDashboardQuickCreateProjects({
+function collectQuickCreateHelmSources({
   currentHelmKey,
   currentHelm,
   currentProjects,
@@ -166,7 +169,7 @@ export function buildDashboardQuickCreateProjects({
   currentStatuses = {},
   daemonProfiles,
   helmInventories,
-}: BuildDashboardQuickCreateProjectsInput): DashboardQuickCreateProject[] {
+}: BuildDashboardQuickCreateProjectsInput): QuickCreateHelmSource[] {
   const sources = new Map<string, QuickCreateHelmSource>();
   const normalizedCurrentHelmKey = currentHelm?.host && currentHelm.port != null
     ? daemonProfileKey(currentHelm.host, String(currentHelm.port))
@@ -219,7 +222,24 @@ export function buildDashboardQuickCreateProjects({
     });
   }
 
-  return Array.from(sources.values()).flatMap((source) => {
+  return Array.from(sources.values());
+}
+
+export function buildDashboardQuickCreateHelms(
+  input: BuildDashboardQuickCreateProjectsInput,
+): DashboardQuickCreateHelm[] {
+  return collectQuickCreateHelmSources(input).map((source) => ({
+    key: source.key,
+    name: source.name,
+    endpoint: source.endpoint,
+    agents: projectAgents(source.agents),
+  }));
+}
+
+export function buildDashboardQuickCreateProjects(
+  input: BuildDashboardQuickCreateProjectsInput,
+): DashboardQuickCreateProject[] {
+  return collectQuickCreateHelmSources(input).flatMap((source) => {
     const agents = projectAgents(source.agents);
     return source.projects.flatMap((project) =>
       projectWorktreeTargets(project).map((target) => ({

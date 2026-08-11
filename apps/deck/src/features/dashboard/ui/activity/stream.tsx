@@ -24,9 +24,16 @@ export type DashboardActivityApproval = {
 export type DashboardActivitySession = {
   id: string;
   title: string;
+  projectId?: string | null;
   projectName?: string | null;
   worktreeName?: string | null;
+  cwd?: string | null;
+  helmId?: string | null;
+  helmKey?: string | null;
+  agentId?: string | null;
   agentName?: string | null;
+  runtimeSessionId?: string | null;
+  lastMessagePreview?: string | null;
   status?: string;
   selected?: boolean;
   createdAt?: string;
@@ -36,6 +43,9 @@ export type DashboardActivitySession = {
     total: number;
     label: string;
   };
+  preparationId?: string;
+  content?: string;
+  revision?: number;
 };
 
 type DashboardActivity = {

@@ -451,7 +451,7 @@ export function App() {
     }
 
     const dispatchDashboardTask = (
-      method: "session/new" | "session/prompt",
+      method: "session/new" | "session/prompt" | "session/rename" | "conversation/save" | "conversation/start" | "conversation/delete",
       params: Record<string, unknown>,
     ) => dispatch(
       client,
@@ -459,6 +459,26 @@ export function App() {
       params,
       { sourceHelmKey: request.helmKey },
     );
+
+    if (request.mode === "new" && (!request.projectId || !request.cwd || !request.agentId)) {
+      void dispatchDashboardTask("conversation/save", {
+        ...(request.preparationId ? { id: request.preparationId } : {}),
+        ...(request.revision !== undefined ? { revision: request.revision } : {}),
+        content: request.prompt,
+        title: request.title,
+        projectId: request.projectId,
+        cwd: request.cwd,
+        agentId: request.agentId,
+      }).catch((error) => {
+        deckData.addNotification({
+          kind: "error",
+          source: "dashboard",
+          message: `准备记录保存失败：${formatRpcError(error)}`,
+          details: { helmKey: request.helmKey, phase: "conversation/save" },
+        });
+      });
+      return true;
+    }
 
     let launchTask: Promise<string>;
     if (request.mode === "reuse") {
@@ -468,39 +488,55 @@ export function App() {
         dispatch: dispatchDashboardTask,
       });
     } else {
-      const targetProjects = request.helmKey === currentHelmKey
-        ? deckData.projects
-        : deckData.helmInventories[request.helmKey]?.projects ?? [];
-      const project = targetProjects.find((item) => item.id === request.projectId);
-      const cwd = request.cwd ?? project?.path ?? project?.worktrees?.[0]?.path ?? null;
-      if (!project || !cwd) {
-        deckData.addNotification({
-          kind: "warning",
-          source: "dashboard",
-          message: "任务未创建：项目没有可用工作区。",
-          details: { helmKey: request.helmKey, phase: "dashboard-quick-create" },
-        });
-        return false;
-      }
-      launchTask = launchDashboardTask({
-        projectId: project.id,
-        cwd,
+      launchTask = dispatchDashboardTask("conversation/start", {
+        ...(request.preparationId ? { preparationId: request.preparationId } : {}),
+        ...(request.revision !== undefined ? { revision: request.revision } : {}),
+        content: request.prompt,
+        title: request.title,
+        projectId: request.projectId,
+        cwd: request.cwd,
         agentId: request.agentId,
-        prompt: request.prompt,
-        dispatch: dispatchDashboardTask,
+      }).then((result) => {
+        const response = result as {
+          session?: { id?: unknown };
+          titleUpdateFailed?: unknown;
+        } | null;
+        const sessionId = response?.session?.id;
+        if (typeof sessionId !== "string" || !sessionId) {
+          throw new Error("目标 Helm 没有返回会话 id。");
+        }
+        if (typeof response?.titleUpdateFailed === "string" && response.titleUpdateFailed) {
+          deckData.addNotification({
+            kind: "warning",
+            source: "dashboard",
+            message: `会话已创建，但标题更新失败：${response.titleUpdateFailed}`,
+            sessionId,
+            details: { helmKey: request.helmKey, phase: "conversation/start-title" },
+          });
+        }
+        return sessionId;
       });
     }
 
-    void launchTask.catch((error) => {
+    void launchTask.then(async (sessionId) => {
+      if (request.title?.trim() && request.mode === "reuse") {
+        await dispatchDashboardTask("session/rename", {
+          sessionId,
+          title: request.title.trim(),
+        });
+      }
+    }).catch((error) => {
       const launchError = error instanceof DashboardTaskLaunchError ? error : null;
-      const method = launchError?.phase ?? (request.mode === "reuse" ? "session/prompt" : "session/new");
+      const method = launchError?.phase ?? (request.mode === "reuse" ? "session/prompt" : "conversation/start");
       const failure = launchError?.cause ?? error;
       deckData.addNotification({
         kind: "error",
         source: "dashboard",
         message: method === "session/prompt"
           ? `任务 Prompt 发送失败：${formatRpcError(failure)}`
-          : `任务创建失败：${formatRpcError(failure)}`,
+          : request.preparationId
+            ? `准备任务启动失败：${formatRpcError(failure)}`
+            : `任务创建失败：${formatRpcError(failure)}`,
         details: {
           helmKey: request.helmKey,
           method,
