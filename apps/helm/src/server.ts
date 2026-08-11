@@ -120,6 +120,7 @@ const IS_PUBLISHED_RUNTIME = isPublishedRuntime(import.meta.url, TILLER_VERSION)
 
 const {
   sessionStore,
+  conversationPreparationStore,
   sessionMessageStore,
   sessionArtifactStore,
   sessionLegacyEvidenceStore,
@@ -257,6 +258,7 @@ const handlerSessionContextFactory = createHandlerSessionContextFactory({
   sessions,
   permissionIndex,
   sessionStore,
+  conversationPreparationStore,
   sessionMessageStore,
   sessionArtifactStore,
   sessionLegacyEvidenceStore,

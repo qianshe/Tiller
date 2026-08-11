@@ -68,6 +68,11 @@ import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
 import * as notificationRaised from "./notification/raised";
+import * as conversationList from "./conversation/list";
+import * as conversationSave from "./conversation/save";
+import * as conversationDelete from "./conversation/delete";
+import * as conversationStart from "./conversation/start";
+import * as conversationUpdate from "./conversation/update";
 
 type AnyDescriptor =
   | RequestDescriptor<string, z.ZodType, z.ZodType>
@@ -142,6 +147,11 @@ const METHOD_DESCRIPTORS = {
   [sessionUpdate.method]: sessionUpdate.descriptor,
   [errorRaised.method]: errorRaised.descriptor,
   [notificationRaised.method]: notificationRaised.descriptor,
+  [conversationList.method]: conversationList.descriptor,
+  [conversationSave.method]: conversationSave.descriptor,
+  [conversationDelete.method]: conversationDelete.descriptor,
+  [conversationStart.method]: conversationStart.descriptor,
+  [conversationUpdate.method]: conversationUpdate.descriptor,
 } as const;
 
 export const METHODS: typeof METHOD_DESCRIPTORS &
@@ -211,6 +221,10 @@ export const CLIENT_REQUEST_METHODS = [
   daemonShutdown.method,
   daemonUpdateCheck.method,
   daemonUpdateStart.method,
+  conversationList.method,
+  conversationSave.method,
+  conversationDelete.method,
+  conversationStart.method,
 ] as const;
 
 export const CLIENT_NOTIFICATION_METHODS = [sessionCancel.method] as const;
@@ -222,6 +236,7 @@ export const SERVER_NOTIFICATION_METHODS = [
   approvalCreated.method,
   approvalResolved.method,
   daemonUpdateStatus.method,
+  conversationUpdate.method,
 ] as const;
 
 export type ClientRequestMethod = (typeof CLIENT_REQUEST_METHODS)[number];

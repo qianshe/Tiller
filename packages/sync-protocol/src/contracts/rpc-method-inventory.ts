@@ -19,7 +19,8 @@ export type RpcMethodFamily =
   | "notification"
   | "permission"
   | "project"
-  | "session";
+  | "session"
+  | "conversation";
 
 export type RpcMethodInventoryItem = {
   method: MethodName;
@@ -70,5 +71,6 @@ function isRpcMethodFamily(value: string | undefined): value is RpcMethodFamily 
     value === "permission" ||
     value === "project" ||
     value === "session"
+    || value === "conversation"
   );
 }

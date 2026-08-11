@@ -32,6 +32,17 @@ export function openSessionDatabase(dbPath: string) {
       payload_json TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS conversation_preparations(
+      id TEXT PRIMARY KEY,
+      project_id TEXT,
+      cwd TEXT,
+      agent_id TEXT,
+      revision INTEGER NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS session_messages(
       session_id TEXT NOT NULL,
       id TEXT NOT NULL,
@@ -231,6 +242,7 @@ export function openSessionDatabase(dbPath: string) {
     );
 
     CREATE INDEX IF NOT EXISTS idx_session_summaries_updated_at ON session_summaries(updated_at);
+    CREATE INDEX IF NOT EXISTS idx_conversation_preparations_updated_at ON conversation_preparations(updated_at);
     CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
     CREATE INDEX IF NOT EXISTS idx_session_tool_calls_page ON session_tool_calls(session_id, updated_at, id);
     CREATE INDEX IF NOT EXISTS idx_session_timeline_entries_page ON session_timeline_entries(session_id, position, id);

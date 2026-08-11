@@ -9,6 +9,9 @@
   "scripts": {
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
+  "dependencies": {
+    "@tiller/shared": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "^6.0.3"
   }

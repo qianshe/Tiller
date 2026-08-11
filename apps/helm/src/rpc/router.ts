@@ -4,6 +4,7 @@ import { handleApprovalRpcRequest } from "../handlers/approvals/rpc";
 import { handleConfigRpcRequest } from "../handlers/config/rpc";
 import { handleDeviceRpcRequest } from "../handlers/devices-rpc";
 import { handleSessionRpcNotification, handleSessionRpcRequest } from "../handlers/sessions/rpc";
+import { handleConversationRpcRequest } from "../handlers/conversations/rpc";
 
 export async function handleHelmRpcRequest(
   method: string,
@@ -15,6 +16,7 @@ export async function handleHelmRpcRequest(
     (await handleApprovalRpcRequest(method, params, context)) ??
     (await handleConfigRpcRequest(method, params, context)) ??
     (await handleDeviceRpcRequest(method, params, context)) ??
+    (await handleConversationRpcRequest(method, params, context)) ??
     (await handleSessionRpcRequest(method, params, context));
   if (result === undefined) {
     throw rpcError(ErrorCode.MethodNotFound, `Unknown method: ${method}`);

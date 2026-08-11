@@ -236,6 +236,10 @@ importers:
         version: 6.0.3
 
   packages/domain-contracts:
+    dependencies:
+      '@tiller/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       typescript:
         specifier: ^6.0.3

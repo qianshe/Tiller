@@ -12,6 +12,7 @@ import {
   createSqliteSessionApprovalStore,
   createSqliteSessionUpdateStore,
   createSqliteSessionSubagentDetailStore,
+  createSqliteConversationPreparationStore,
   migrateJsonSessionDataToSqlite,
   type HelmSessionStores,
   type JsonSessionStorePaths,
@@ -29,6 +30,7 @@ import {
   type SessionTimelineStore,
   type SessionUpdateStore,
   type StoredSessionArtifacts,
+  type ConversationPreparationStore,
 } from "@tiller/persistence";
 import { createModeAwareSessionTimelineStore } from "./timeline-store-mode";
 
@@ -48,6 +50,7 @@ export type {
   SessionTimelineStore,
   SessionUpdateStore,
   StoredSessionArtifacts,
+  ConversationPreparationStore,
 };
 
 type StoreFactoryLogger = (message: string) => void;
@@ -106,5 +109,6 @@ export function createHelmSessionStores(
     sessionStateStore: createSqliteSessionStateStore(options.sqlitePath),
     sessionApprovalStore: createSqliteSessionApprovalStore(options.sqlitePath),
     sessionSubagentDetailStore: createSqliteSessionSubagentDetailStore(options.sqlitePath),
+    conversationPreparationStore: createSqliteConversationPreparationStore(options.sqlitePath),
   };
 }

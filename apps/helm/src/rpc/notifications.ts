@@ -15,6 +15,15 @@ export function broadcastSessionUpdate(
   context.broadcastNotification("session/update", params);
 }
 
+export function broadcastConversationUpdate(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  update:
+    | { kind: "preparation_updated"; preparation: unknown }
+    | { kind: "preparation_deleted"; preparationId: string },
+): void {
+  context.broadcastNotification("conversation/update", update);
+}
+
 export function broadcastErrorRaised(
   context: HelmHandlerContext,
   input: Omit<NotificationRaisedParams, "kind" | "source" | "occurredAt"> & {

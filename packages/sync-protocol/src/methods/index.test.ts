@@ -69,6 +69,10 @@ const expectedRequests = [
   "daemon/shutdown",
   "daemon/update/check",
   "daemon/update/start",
+  "conversation/list",
+  "conversation/save",
+  "conversation/delete",
+  "conversation/start",
 ];
 
 test("METHODS contains every request and notification method", () => {
@@ -90,6 +94,6 @@ test("method name lists are exhaustive and stable", () => {
   assert.deepEqual([...CLIENT_NOTIFICATION_METHODS], ["session/cancel"]);
   assert.deepEqual(
     [...SERVER_NOTIFICATION_METHODS],
-    ["session/update", "error/raised", "notification/raised", "approval/created", "approval/resolved", "daemon/update/status"],
+    ["session/update", "error/raised", "notification/raised", "approval/created", "approval/resolved", "daemon/update/status", "conversation/update"],
   );
 });
