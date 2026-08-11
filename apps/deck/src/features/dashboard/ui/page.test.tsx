@@ -388,7 +388,7 @@ test("DashboardPage removes redundant overview title content", () => {
   assert.doesNotMatch(html, /TILLER \/ CONTROL CENTER/);
   assert.doesNotMatch(html, /集中查看任务、运行趋势与需要你处理的状态/);
   assert.match(html, /dashboard-site-header/);
-  assert.match(html, />控制台</);
+  assert.match(html, />概览</);
 });
 
 test("DashboardPage embeds Agent and settings inside the dashboard content", () => {
@@ -439,7 +439,7 @@ test("DashboardPage uses one breadcrumb header for every section", () => {
     const header = renderHeader(section);
     assert.match(header, /Tiller/);
     assert.match(header, /aria-label="切换侧栏"/);
-    assert.match(header, />控制台|>任务|>Agents|>设置/);
+    assert.match(header, />概览|>任务|>Agents|>设置/);
   }
 
   assert.doesNotMatch(renderHeader("overview"), /Helm 在线|新建任务/);
@@ -471,7 +471,7 @@ test("DashboardPage exposes Mission mode below session search", () => {
   assert.match(sidebarSource, /onOpenMission/);
   assert.match(pageSource, /onOpenMission/);
   assert.match(sidebarSource, /Mission 模式/);
-  assert.match(sidebarSource, /id: "overview", label: "控制台", icon: "dashboard"/);
+  assert.match(sidebarSource, /id: "overview", label: "概览", icon: "dashboard"/);
   assert.match(sidebarSource, /id: "tasks", label: "任务", icon: "listChecks"/);
   assert.match(sidebarSource, /id: "agents", label: "Agents", icon: "users"/);
   assert.match(sidebarSource, /<Icon name="mission" \/>/);

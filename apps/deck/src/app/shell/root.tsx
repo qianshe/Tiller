@@ -90,7 +90,7 @@ type LocalLoggingSettings = {
 
 const V6_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: "overview", icon: "home", label: "首页" },
-  { id: "dashboard", icon: "board", label: "控制台" },
+  { id: "dashboard", icon: "board", label: "概览" },
   { id: "sessions", icon: "mission", label: "工作台" },
   { id: "agents", icon: "fleet", label: "舰队" },
   { id: "settings", icon: "settings", label: "设置" },

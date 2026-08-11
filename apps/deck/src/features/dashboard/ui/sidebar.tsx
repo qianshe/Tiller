@@ -151,7 +151,7 @@ function resolveNavigationGroups(): DashboardNavigationGroup[] {
     {
       label: "工作台",
       items: [
-        { id: "overview", label: "控制台", icon: "dashboard" },
+        { id: "overview", label: "概览", icon: "dashboard" },
         { id: "tasks", label: "任务", icon: "listChecks" },
         { id: "automations", label: "自动化", icon: "branch", comingSoon: true },
         { id: "issues", label: "Issues", icon: "fileText", comingSoon: true },

@@ -12,6 +12,8 @@ const rootSource = readFileSync(resolve(currentDir, "../shell/root.tsx"), "utf8"
 test("v6 dashboard is a first-class route and radial destination", () => {
   assert.match(routesSource, /\"dashboard\"/);
   assert.match(routesSource, /dashboard:\s*\"\/dashboard\"/);
+  assert.match(routesSource, /dashboard:\s*\"概览\"/);
+  assert.match(routesSource, /dashboard:\s*\"Dashboard\"/);
   assert.match(routeContentSource, /features\/dashboard\/ui\/page/);
   assert.match(routeContentSource, /activeView === \"dashboard\"/);
   assert.match(routeContentSource, /sessionPlans/);
@@ -22,5 +24,6 @@ test("v6 dashboard is a first-class route and radial destination", () => {
   assert.match(routeContentSource, /setFocusedChatWindowId: ignoreDashboardMissionStateUpdate/);
   assert.match(rootSource, /RadialMenu/);
   assert.match(rootSource, /id:\s*\"dashboard\"/);
+  assert.match(rootSource, /id:\s*\"dashboard\", icon:\s*\"board\", label:\s*\"概览\"/);
   assert.match(rootSource, /enabled=\{route\.activeView !== "dashboard"\}/);
 });

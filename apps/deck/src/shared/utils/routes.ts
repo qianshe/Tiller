@@ -5,14 +5,14 @@ export type AppView = "overview" | "dashboard" | "sessions" | "agents" | "settin
 export const NAV_LABELS: Record<DeckLanguage, Record<AppView, string>> = {
   "zh-CN": {
     overview: "总览",
-    dashboard: "控制台",
+    dashboard: "概览",
     sessions: "任务",
     agents: "舰队",
     settings: "设置",
   },
   "en-US": {
     overview: "Home",
-    dashboard: "Console",
+    dashboard: "Dashboard",
     sessions: "Workbench",
     agents: "Fleet",
     settings: "Settings",

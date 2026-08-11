@@ -317,7 +317,7 @@ function resolveDashboardSectionTitle(section: DashboardSection) {
     case "issues":
       return "Issues";
     default:
-      return "控制台";
+      return "概览";
   }
 }
 
