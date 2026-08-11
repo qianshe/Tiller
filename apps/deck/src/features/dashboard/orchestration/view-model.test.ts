@@ -432,3 +432,145 @@ test("buildDashboardViewModel aggregates ACP agents across connected Helms", () 
   assert.equal(model.runningAcpCount, 4);
   assert.equal(model.totalAcpCount, 4);
 });
+
+test("buildDashboardViewModel aggregates fleet session and activity metrics", () => {
+  const now = Date.parse("2026-06-02T10:37:00.000Z");
+  const localSessions = [
+    { id: "local-session", status: "running", title: "Local" },
+  ] as SessionSummary[];
+  const remoteSessions = [
+    { id: "remote-running", status: "running", title: "Remote running" },
+    { id: "remote-idle", status: "idle", title: "Remote idle" },
+  ] as SessionSummary[];
+  const model = buildDashboardViewModel({
+    connection: "connected",
+    daemonHost: "127.0.0.1",
+    daemonPort: "47631",
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "47631",
+    currentHelmKey: "127.0.0.1:47631",
+    helmConnectionStates: {
+      "127.0.0.1:47631": "connected",
+      "remote:47631": "connected",
+    },
+    configuredHelms: [
+      { id: "local", name: "Local", host: "127.0.0.1", port: 47631 },
+      { id: "remote", name: "Remote", host: "remote", port: 47631 },
+    ],
+    helmInventories: {
+      "127.0.0.1:47631": {
+        sessions: localSessions,
+        statuses: { "local-session": "running" },
+        activitySummary: {
+          generatedAt: "2026-06-02T10:37:00.000Z",
+          promptCount: 2,
+          recentToolCallCount: 3,
+          toolCallCount: 4,
+          activityTrend: [{ date: "2026-06-02", promptCount: 2, toolCallCount: 3 }],
+          activityTrendHourly: [{ date: "2026-06-02T10:00:00.000Z", promptCount: 2, toolCallCount: 3 }],
+        },
+      },
+      "remote:47631": {
+        sessions: remoteSessions,
+        statuses: {
+          "remote-running": "running",
+          "remote-idle": "idle",
+        },
+        activitySummary: {
+          generatedAt: "2026-06-02T10:37:00.000Z",
+          promptCount: 5,
+          recentToolCallCount: 7,
+          toolCallCount: 11,
+          activityTrend: [{ date: "2026-06-02", promptCount: 5, toolCallCount: 7 }],
+          activityTrendHourly: [{ date: "2026-06-02T10:00:00.000Z", promptCount: 5, toolCallCount: 7 }],
+        },
+      },
+    },
+    agents: [],
+    projects: [],
+    sessions: localSessions,
+    toolCalls: {},
+    activitySummary: undefined,
+    now,
+    approvalItemsById: {},
+    resolveDisplaySessionTitle: (session) => session.title ?? session.id,
+  });
+
+  assert.equal(model.onlineHelmCount, 2);
+  assert.equal(model.totalHelmCount, 2);
+  assert.equal(model.runningSessionCount, 2);
+  assert.equal(model.totalSessionCount, 3);
+  assert.equal(model.promptCount, 7);
+  assert.equal(model.recentToolCallCount, 10);
+  assert.equal(model.toolCallCount, 15);
+  assert.deepEqual(model.activityTrend, [
+    { date: "2026-06-02", promptCount: 7, toolCallCount: 10 },
+  ]);
+  assert.deepEqual(model.activityTrendHourly, [
+    { date: "2026-06-02T10:00:00.000Z", promptCount: 7, toolCallCount: 10 },
+  ]);
+});
+
+test("buildDashboardViewModel counts configured Helms before they connect", () => {
+  const model = buildDashboardViewModel({
+    connection: "connected",
+    daemonHost: "127.0.0.1",
+    daemonPort: "47631",
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "47631",
+    currentHelmKey: "127.0.0.1:47631",
+    configuredHelms: [
+      { id: "local", name: "Local", host: "127.0.0.1", port: 47631 },
+      { id: "remote", name: "Remote", host: "remote", port: 47631 },
+      { id: "offline", name: "Offline", host: "offline", port: 47631 },
+    ],
+    helmConnectionStates: {
+      "127.0.0.1:47631": "connected",
+      "remote:47631": "connecting",
+      "offline:47631": "disconnected",
+    },
+    agents: [],
+    projects: [],
+    sessions: [],
+    toolCalls: {},
+    approvalItemsById: {},
+    resolveDisplaySessionTitle: (session) => session.title ?? session.id,
+  });
+
+  assert.equal(model.onlineHelmCount, 1);
+  assert.equal(model.totalHelmCount, 3);
+});
+
+test("buildDashboardViewModel excludes historical Helm state from configured counts", () => {
+  const model = buildDashboardViewModel({
+    connection: "connected",
+    daemonHost: "127.0.0.1",
+    daemonPort: "47631",
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "47631",
+    currentHelmKey: "127.0.0.1:47631",
+    configuredHelms: [
+      { id: "local", name: "Local", host: "127.0.0.1", port: 47631 },
+    ],
+    helmConnectionStates: {
+      "127.0.0.1:47631": "connected",
+      "historical:47631": "disconnected",
+    },
+    helmInventories: {
+      "historical:47631": {
+        agents: [],
+        sessions: [],
+        statuses: {},
+      },
+    },
+    agents: [],
+    projects: [],
+    sessions: [],
+    toolCalls: {},
+    approvalItemsById: {},
+    resolveDisplaySessionTitle: (session) => session.title ?? session.id,
+  });
+
+  assert.equal(model.onlineHelmCount, 1);
+  assert.equal(model.totalHelmCount, 1);
+});

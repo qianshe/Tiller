@@ -64,7 +64,7 @@ function formatDateLabel(date: string) {
   if (date.includes("T")) {
     const timestamp = Date.parse(date);
     if (!Number.isNaN(timestamp)) {
-      const hour = String(new Date(timestamp).getUTCHours()).padStart(2, "0");
+      const hour = String(new Date(timestamp).getHours()).padStart(2, "0");
       return `${hour}:00`;
     }
   }

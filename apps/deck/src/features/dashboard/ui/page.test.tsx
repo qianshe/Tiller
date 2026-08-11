@@ -102,7 +102,7 @@ test("DashboardPage keeps activity counts in the trend chart", () => {
   }));
 
   assert.match(html, /在线 Helm/);
-  assert.match(html, /ACP 连接/);
+  assert.match(html, /ACP Agent/);
   assert.match(html, /1 \/ 2/);
   assert.match(html, /运行中会话[\s\S]*1 \/ 3/);
   assert.equal((html.match(/dashboard-metric-card/g) ?? []).length, 4);
@@ -140,6 +140,8 @@ test("DashboardPage renders the activity trend with shadcn-style range controls"
   assert.match(html, /data-slot="dashboard-trend-chart"/);
   assert.match(html, /data-slot="dashboard-trend-legend"/);
   assert.match(activityTrendSource, /flex min-w-0 flex-nowrap items-center gap-2/);
+  assert.match(activityTrendSource, /getHours\(\)/);
+  assert.doesNotMatch(activityTrendSource, /getUTCHours\(\)/);
   assert.match(pageSource, /DashboardActivityTrend/);
 });
 
@@ -719,6 +721,23 @@ test("DashboardPage mobile keeps v6 priority order", () => {
   assert.match(html, /待审批[\s\S]*通知[\s\S]*活动流/);
   assert.doesNotMatch(html, /2\/3 Helm 在线/);
   assert.match(html, /最近 24 小时/);
+});
+
+test("DashboardPage keeps empty mobile panels out of the first viewport", () => {
+  const html = renderToStaticMarkup(createElement(DashboardPage, {
+    ...commonProps,
+    approvals: [],
+    approvalHistory: [],
+    notifications: [],
+    pendingApprovalCount: 0,
+    isMobile: true,
+  }));
+
+  assert.match(html, /活动流/);
+  assert.doesNotMatch(html, /暂无待处理请求/);
+  assert.doesNotMatch(html, /暂无通知/);
+  assert.match(pageSource, /approvalRows\.length > 0 \|\| pendingApprovalCount > 0/);
+  assert.match(pageSource, /notifications\.length > 0/);
 });
 
 test("DashboardPage keeps the mobile trend panel within the viewport", () => {

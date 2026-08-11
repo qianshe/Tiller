@@ -168,7 +168,7 @@ function DashboardMetricCard({ metric }: { metric: DashboardMetric }) {
         <strong className="shrink-0 tabular text-display font-semibold leading-none">
           {metric.value}
         </strong>
-        <span className="flex min-w-0 items-center gap-1.5 font-mono text-meta tabular text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1 font-mono text-2xs tabular text-muted-foreground">
           <StatusDot
             tone={metric.tone}
             size={5}
@@ -404,9 +404,9 @@ export function DashboardPage({
       tone: onlineHelmCount > 0 ? "active" : "idle",
     },
     {
-      label: "ACP 连接",
+      label: "ACP Agent",
       value: `${runningAcpCount} / ${totalAcpCount}`,
-      sub: totalAcpCount > 0 ? "连接中/总数" : "暂无 ACP 连接",
+      sub: totalAcpCount > 0 ? "在线/总数" : "暂无 ACP Agent",
       icon: "terminal",
       tone: runningAcpCount > 0 ? "primary" : "idle",
     },
@@ -490,16 +490,20 @@ export function DashboardPage({
                 />
                 {isMobile ? (
                   <>
-                    <DashboardApprovalPanel
-                      approvals={approvalRows}
-                      pendingApprovalCount={pendingApprovalCount}
-                      onRespondApproval={onRespondApproval}
-                    />
-                    <DashboardNotificationList
-                      notifications={notifications}
-                      onOpenSession={onOpenSession}
-                      onClear={onClearNotifications}
-                    />
+                    {approvalRows.length > 0 || pendingApprovalCount > 0 ? (
+                      <DashboardApprovalPanel
+                        approvals={approvalRows}
+                        pendingApprovalCount={pendingApprovalCount}
+                        onRespondApproval={onRespondApproval}
+                      />
+                    ) : null}
+                    {notifications.length > 0 ? (
+                      <DashboardNotificationList
+                        notifications={notifications}
+                        onOpenSession={onOpenSession}
+                        onClear={onClearNotifications}
+                      />
+                    ) : null}
                     <DashboardActivityStream
                       sessions={sessions}
                       approvals={approvalHistory}

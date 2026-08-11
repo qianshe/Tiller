@@ -16,6 +16,14 @@ import { daemonProfileKey } from "../../helm-connection/facade";
 import type { DeckNotificationDetails } from "../../../store";
 import type { DashboardActivityTrendPoint } from "../types";
 
+type DashboardHelmInventory = {
+  agents?: unknown[];
+  agentConnections?: Array<{ providerId?: unknown; status?: string }>;
+  sessions?: SessionSummary[];
+  statuses?: Record<string, SessionStatus | undefined>;
+  activitySummary?: SessionActivitySummary;
+};
+
 type DashboardInput = {
   connection: string;
   daemonHost: string;
@@ -24,12 +32,10 @@ type DashboardInput = {
   defaultDaemonPort: string;
   activeHelm?: { id?: string; name?: string; host?: string; port?: string | number } | null;
   helms?: Array<Partial<HelmSummary> & Record<string, unknown>>;
+  configuredHelms?: Array<Partial<HelmSummary> & Record<string, unknown>>;
   currentHelmKey?: string;
   helmConnectionStates?: Record<string, "connecting" | "connected" | "disconnected">;
-  helmInventories?: Record<string, {
-    agents?: unknown[];
-    agentConnections?: Array<{ providerId?: unknown; status?: string }>;
-  } | undefined>;
+  helmInventories?: Record<string, DashboardHelmInventory | undefined>;
   agents: unknown[];
   agentConnectionInventory?: Array<{ providerId?: unknown; status?: string }>;
   projects: unknown[];
@@ -247,6 +253,152 @@ function resolveDashboardActivityMetrics(
   };
 }
 
+function mergeDashboardActivityTrendPoints(
+  points: DashboardActivityTrendPoint[],
+  additions: DashboardActivityTrendPoint[],
+) {
+  const merged = points.map((point) => ({ ...point }));
+  const pointsByDate = new Map(merged.map((point) => [point.date, point]));
+  for (const addition of additions) {
+    const point = pointsByDate.get(addition.date);
+    if (point) {
+      point.promptCount += addition.promptCount;
+      point.toolCallCount += addition.toolCallCount;
+      continue;
+    }
+    const next = { ...addition };
+    merged.push(next);
+    pointsByDate.set(next.date, next);
+  }
+  return merged.sort((left, right) => left.date.localeCompare(right.date));
+}
+
+function resolveDashboardCurrentHelmKey(input: Pick<
+  DashboardInput,
+  "activeHelm" | "currentHelmKey" | "daemonHost" | "daemonPort"
+>) {
+  return input.currentHelmKey ?? daemonProfileKey(
+    input.activeHelm?.host ?? input.daemonHost,
+    String(input.activeHelm?.port ?? input.daemonPort),
+  );
+}
+
+function resolveDashboardInventories(input: Pick<
+  DashboardInput,
+  | "activeHelm"
+  | "agentConnectionInventory"
+  | "agents"
+  | "activitySummary"
+  | "currentHelmKey"
+  | "daemonHost"
+  | "daemonPort"
+  | "helmInventories"
+  | "sessions"
+  | "statuses"
+>) {
+  const inventories = new Map(Object.entries(input.helmInventories ?? {}));
+  const currentHelmKey = resolveDashboardCurrentHelmKey(input);
+  const currentInventory = inventories.get(currentHelmKey) ?? {};
+  inventories.set(currentHelmKey, {
+    ...currentInventory,
+    agents: input.agents,
+    agentConnections: input.agentConnectionInventory ?? [],
+    sessions: input.sessions,
+    statuses: input.statuses,
+    activitySummary: input.activitySummary ?? currentInventory.activitySummary,
+  });
+  return inventories;
+}
+
+function resolveDashboardHelmKey(value: Partial<HelmSummary> & Record<string, unknown>) {
+  const host = dashboardText(value.host);
+  const port = typeof value.port === "number"
+    ? String(value.port)
+    : dashboardText(value.port);
+  return host && port ? daemonProfileKey(host, port) : dashboardText(value.id);
+}
+
+function resolveDashboardHelmKeys(input: DashboardInput) {
+  const configuredKeys = new Set<string>();
+  for (const helm of input.configuredHelms ?? []) {
+    const key = resolveDashboardHelmKey(helm);
+    if (key) configuredKeys.add(key);
+  }
+  if (configuredKeys.size > 0) {
+    return configuredKeys;
+  }
+
+  const keys = new Set<string>();
+  for (const helm of input.helms ?? []) {
+    const key = resolveDashboardHelmKey(helm);
+    if (key) keys.add(key);
+  }
+  Object.keys(input.helmConnectionStates ?? {}).forEach((key) => keys.add(key));
+  Object.keys(input.helmInventories ?? {}).forEach((key) => keys.add(key));
+  keys.add(resolveDashboardCurrentHelmKey(input));
+  return keys;
+}
+
+function resolveDashboardHelmCounts(input: DashboardInput) {
+  const keys = resolveDashboardHelmKeys(input);
+  const onlineHelmCount = Array.from(keys).filter((key) =>
+    isDashboardHelmConnected(input, key),
+  ).length;
+  return {
+    onlineHelmCount,
+    totalHelmCount: keys.size,
+  };
+}
+
+function resolveDashboardSessionCounts(input: DashboardInput) {
+  let runningSessionCount = 0;
+  let totalSessionCount = 0;
+  for (const inventory of resolveDashboardInventories(input).values()) {
+    const sessions = inventory?.sessions ?? [];
+    const statuses = inventory?.statuses ?? {};
+    totalSessionCount += sessions.length;
+    runningSessionCount += sessions.filter((session) =>
+      (statuses[session.id] ?? session.status) === "running",
+    ).length;
+  }
+  return { runningSessionCount, totalSessionCount };
+}
+
+function mergeDashboardFleetActivityMetrics(
+  input: DashboardInput,
+  currentMetrics: ReturnType<typeof resolveDashboardActivityMetrics>,
+) {
+  let promptCount = currentMetrics.promptCount;
+  let recentToolCallCount = currentMetrics.recentToolCallCount;
+  let toolCallCount = currentMetrics.toolCallCount;
+  let activityTrend = currentMetrics.activityTrend;
+  let activityTrendHourly = currentMetrics.activityTrendHourly;
+  const currentHelmKey = resolveDashboardCurrentHelmKey(input);
+
+  for (const [helmKey, inventory] of resolveDashboardInventories(input)) {
+    if (helmKey === currentHelmKey || !inventory?.activitySummary) {
+      continue;
+    }
+    const summary = inventory.activitySummary;
+    promptCount += summary.promptCount;
+    recentToolCallCount += summary.recentToolCallCount;
+    toolCallCount += summary.toolCallCount;
+    activityTrend = mergeDashboardActivityTrendPoints(activityTrend, summary.activityTrend);
+    activityTrendHourly = mergeDashboardActivityTrendPoints(
+      activityTrendHourly,
+      summary.activityTrendHourly,
+    );
+  }
+
+  return {
+    promptCount,
+    recentToolCallCount,
+    toolCallCount,
+    activityTrend,
+    activityTrendHourly,
+  };
+}
+
 function buildDashboardBucketedActivityTrend(
   events: DashboardActivityEvent[],
   now: number,
@@ -404,27 +556,18 @@ function resolveDashboardAcpCounts(input: Pick<
   DashboardInput,
   | "agents"
   | "agentConnectionInventory"
+  | "activeHelm"
+  | "activitySummary"
   | "connection"
   | "currentHelmKey"
+  | "daemonHost"
+  | "daemonPort"
   | "helmConnectionStates"
   | "helmInventories"
+  | "sessions"
+  | "statuses"
 >) {
-  const scopedInventories = new Map(Object.entries(input.helmInventories ?? {}));
-  if (input.currentHelmKey) {
-    scopedInventories.set(input.currentHelmKey, {
-      ...(scopedInventories.get(input.currentHelmKey) ?? {}),
-      agents: input.agents,
-      agentConnections: input.agentConnectionInventory ?? [],
-    });
-  }
-
-  if (!scopedInventories.size) {
-    return countDashboardAcpAgents(
-      input.agents,
-      input.agentConnectionInventory ?? [],
-      input.connection === "connected",
-    );
-  }
+  const scopedInventories = resolveDashboardInventories(input);
 
   const configuredAgentKeys = new Set<string>();
   const runningAgentKeys = new Set<string>();
@@ -461,58 +604,50 @@ function resolveDashboardAcpCounts(input: Pick<
 }
 
 function isDashboardHelmConnected(
-  input: Pick<DashboardInput, "connection" | "currentHelmKey" | "helmConnectionStates">,
+  input: Pick<
+    DashboardInput,
+    | "activeHelm"
+    | "connection"
+    | "currentHelmKey"
+    | "daemonHost"
+    | "daemonPort"
+    | "helmConnectionStates"
+  >,
   helmKey: string,
 ) {
   const state = input.helmConnectionStates?.[helmKey];
   if (state) {
     return state === "connected";
   }
-  return helmKey === input.currentHelmKey && input.connection === "connected";
-}
-
-function countDashboardAcpAgents(
-  agents: unknown[],
-  connections: Array<{ providerId?: unknown; status?: string }>,
-  isConnected: boolean,
-) {
-  const configuredAgentIds = new Set(
-    agents
-      .map((agent) => resolveDashboardObjectField(agent, "id"))
-      .filter((providerId): providerId is string => Boolean(providerId)),
-  );
-  const runningAgentIds = new Set(
-    isConnected
-      ? connections
-        .filter((connection) =>
-          DASHBOARD_ACTIVE_ACP_CONNECTION_STATUSES.has(connection.status ?? ""),
-        )
-        .map((connection) => resolveDashboardObjectField(connection, "providerId"))
-        .filter((providerId): providerId is string => Boolean(providerId))
-      : [],
-  );
-  return {
-    runningAcpCount: Array.from(runningAgentIds).filter((providerId) => configuredAgentIds.has(providerId)).length,
-    totalAcpCount: configuredAgentIds.size,
-  };
+  return helmKey === resolveDashboardCurrentHelmKey(input) && input.connection === "connected";
 }
 
 export function buildDashboardViewModel(input: DashboardInput) {
   const now = input.now ?? Date.now();
+  const currentHelmKey = resolveDashboardCurrentHelmKey(input);
+  const dashboardInventories = resolveDashboardInventories(input);
   const activeHelmLabel = input.activeHelm
     ? `${input.activeHelm.name ?? "Local Helm"} · ${input.activeHelm.host ?? input.defaultDaemonHost}:${input.activeHelm.port ?? input.defaultDaemonPort}`
     : `${input.daemonHost || input.defaultDaemonHost}:${input.daemonPort || input.defaultDaemonPort}`;
 
-  const helms = (input.helms ?? []).map((helm) => ({
-    id: String(helm.id ?? `${helm.host}:${helm.port}`),
-    name: String(helm.name ?? "Local Helm"),
-    endpoint: `${helm.host ?? input.defaultDaemonHost}:${helm.port ?? input.defaultDaemonPort}`,
-    agentCount: Number(helm.agentCount ?? helm.agentsCount ?? input.agents.length),
-    projectCount: Number(helm.projectCount ?? helm.projectsCount ?? input.projects.length),
-    sessionCount: Number(helm.sessionCount ?? helm.sessions ?? input.sessions.length),
-    status: helm.status === "connected" || helm.status === "active" ? "active" as const : "idle" as const,
-  }));
+  const helmCatalog = input.configuredHelms?.length ? input.configuredHelms : input.helms ?? [];
+  const helms = helmCatalog.map((helm) => {
+    const helmKey = resolveDashboardHelmKey(helm) ?? currentHelmKey;
+    const inventory = dashboardInventories.get(helmKey);
+    const connected = isDashboardHelmConnected(input, helmKey);
+    return {
+      id: String(helm.id ?? `${helm.host}:${helm.port}`),
+      name: String(helm.name ?? "Local Helm"),
+      endpoint: `${helm.host ?? input.defaultDaemonHost}:${helm.port ?? input.defaultDaemonPort}`,
+      agentCount: Number(helm.agentCount ?? helm.agentsCount ?? inventory?.agents?.length ?? input.agents.length),
+      projectCount: Number(helm.projectCount ?? helm.projectsCount ?? input.projects.length),
+      sessionCount: Number(helm.sessionCount ?? helm.sessions ?? inventory?.sessions?.length ?? input.sessions.length),
+      status: connected ? "active" as const : "idle" as const,
+    };
+  });
   const { runningAcpCount, totalAcpCount } = resolveDashboardAcpCounts(input);
+  const { onlineHelmCount, totalHelmCount } = resolveDashboardHelmCounts(input);
+  const { runningSessionCount, totalSessionCount } = resolveDashboardSessionCounts(input);
 
   const sessionsById = new Map(input.sessions.map((session) => [session.id, session]));
   const approvals = Object.values(input.approvalItemsById ?? {}).map((item) =>
@@ -539,7 +674,14 @@ export function buildDashboardViewModel(input: DashboardInput) {
     input.messages,
     input.toolCalls ?? {},
   );
-  const activityMetrics = resolveDashboardActivityMetrics(input.activitySummary, activityEvents, now);
+  const activityMetrics = mergeDashboardFleetActivityMetrics(
+    input,
+    resolveDashboardActivityMetrics(
+      input.activitySummary ?? dashboardInventories.get(currentHelmKey)?.activitySummary,
+      activityEvents,
+      now,
+    ),
+  );
   const { toolCallCount, promptCount, recentToolCallCount } = activityMetrics;
   const sessions = input.sessions.map((session) => ({
     id: session.id,
@@ -549,10 +691,7 @@ export function buildDashboardViewModel(input: DashboardInput) {
     worktreeName: session.worktreeName,
     cwd: session.cwd,
     helmId: session.helmId,
-    helmKey: daemonProfileKey(
-      input.activeHelm?.host ?? input.daemonHost,
-      String(input.activeHelm?.port ?? input.daemonPort),
-    ),
+    helmKey: currentHelmKey,
     agentId: session.agentId,
     agentName: session.agentName,
     runtimeSessionId: session.runtimeSessionId ?? session.resume?.runtimeSessionId,
@@ -574,10 +713,7 @@ export function buildDashboardViewModel(input: DashboardInput) {
     )?.name,
     cwd: preparation.cwd,
     worktreeName: preparation.cwd?.split(/[\\/]/u).filter(Boolean).at(-1),
-    helmKey: daemonProfileKey(
-      input.activeHelm?.host ?? input.daemonHost,
-      String(input.activeHelm?.port ?? input.daemonPort),
-    ),
+    helmKey: currentHelmKey,
     agentId: preparation.agentId,
     agentName: preparation.agentId,
     status: undefined,
@@ -591,13 +727,10 @@ export function buildDashboardViewModel(input: DashboardInput) {
       session.planSummary &&
       session.planSummary.completed === session.planSummary.total,
   ).length;
-  const runningSessionCount = sessions.filter((session) => session.status === "running").length;
-  const totalSessionCount = sessions.length;
-
   return {
     activeHelmLabel,
-    onlineHelmCount: input.connection === "connected" ? 1 : 0,
-    totalHelmCount: Math.max(helms.length, 1),
+    onlineHelmCount,
+    totalHelmCount,
     runningAcpCount,
     totalAcpCount,
     runningSessionCount,

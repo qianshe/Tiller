@@ -270,6 +270,7 @@ function renderDashboard() {
     defaultDaemonPort: DEFAULT_DAEMON_PORT,
     activeHelm,
     helms,
+    configuredHelms,
     currentHelmKey,
     helmConnectionStates,
     helmInventories,
