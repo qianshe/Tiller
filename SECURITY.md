@@ -13,9 +13,13 @@ Current supported line:
 
 ## Reporting a vulnerability
 
-Until a public security contact is created, report security issues privately to
-the project owner. Do not publish exploit details before a fix or mitigation is
-available.
+Report security issues privately through GitHub's security advisory form:
+
+<https://github.com/qianshe/Tiller/security/advisories/new>
+
+Do not publish exploit details before a fix or mitigation is available. If the
+private advisory form is unavailable, contact the project owner through the
+repository's GitHub profile and do not include exploit details in a public issue.
 
 Please include:
 
