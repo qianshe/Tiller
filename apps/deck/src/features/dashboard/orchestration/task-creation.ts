@@ -5,6 +5,11 @@ type DashboardTaskDispatch = (
   params: Record<string, unknown>,
 ) => Promise<unknown>;
 
+type DashboardTaskPreparationCleanupDispatch = (
+  method: "conversation/delete",
+  params: Record<string, unknown>,
+) => Promise<unknown>;
+
 type LaunchDashboardTaskBaseInput = {
   prompt: string;
   dispatch: DashboardTaskDispatch;
@@ -79,4 +84,25 @@ export async function launchDashboardTask(input: LaunchDashboardTaskInput): Prom
   }
 
   return sessionId;
+}
+
+export async function finalizeDashboardTaskLaunch({
+  mode,
+  preparationId,
+  revision,
+  dispatch,
+}: {
+  mode: "new" | "reuse";
+  preparationId?: string;
+  revision?: number;
+  dispatch: DashboardTaskPreparationCleanupDispatch;
+}) {
+  if (mode !== "reuse" || !preparationId) {
+    return;
+  }
+
+  await dispatch("conversation/delete", {
+    id: preparationId,
+    ...(revision !== undefined ? { revision } : {}),
+  });
 }

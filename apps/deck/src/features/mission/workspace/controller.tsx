@@ -59,6 +59,7 @@ export function MissionWorktree(props: any) {
   const {
     embedded = false,
     chatOnly = false,
+    hideSessionCloseAction,
     prompt,
     promptImages,
     rpcClientRef,
@@ -253,6 +254,8 @@ export function MissionWorktree(props: any) {
     openedMissionDiffFilePaths = [],
     closeMissionDiffFile,
   } = props;
+  const effectiveHideSessionCloseAction =
+    hideSessionCloseAction ?? (chatOnly && !onCloseSessionView);
   const sessionLegacyEvidence = useDeckStore((state) => state.sessionLegacyEvidence);
   const setSessionLegacyEvidence = useDeckStore((state) => state.setSessionLegacyEvidence);
   const sessionSubagentDetails = useDeckStore((state) => state.sessionSubagentDetails);
@@ -987,7 +990,8 @@ export function MissionWorktree(props: any) {
   const displayPaneCollapsed = effectiveDisplayCollapsed;
   const canToggleDisplay = true;
   const missionLayoutClassName = joinClassNames([
-    "wb-pane shadow-ambient chat-layout chat-layout-sidebar mission-responsive-mode mission-grid w-full overflow-hidden",
+    !embedded && "wb-pane shadow-ambient",
+    "chat-layout chat-layout-sidebar mission-responsive-mode mission-grid w-full min-w-0 overflow-hidden",
     embedded ? "h-full min-h-0" : "h-[calc(100vh-16px)] min-h-[640px]",
     chatOnly && "mission-chat-only",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
@@ -1168,7 +1172,7 @@ export function MissionWorktree(props: any) {
             style={missionChatPaneStyle}
             isMissionMobile={isMissionMobile}
             hideWorkspaceHeader={chatOnly}
-            hideSessionCloseAction={chatOnly && !onCloseSessionView}
+            hideSessionCloseAction={effectiveHideSessionCloseAction}
             isPaneResizing={isMissionPaneResizing}
           paneResizeVersion={missionPaneResizeVersion}
           chatMainRef={chatMainRef}

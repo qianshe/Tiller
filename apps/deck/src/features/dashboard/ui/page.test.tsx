@@ -28,11 +28,13 @@ const commonProps = {
   activeHelmLabel: "workstation · 127.0.0.1:47631",
   onlineHelmCount: 2,
   totalHelmCount: 3,
-  activeSessionCount: 1,
+  runningAcpCount: 1,
+  totalAcpCount: 2,
+  runningSessionCount: 1,
+  totalSessionCount: 3,
   pendingApprovalCount: 3,
   planSessionCount: 1,
   completedPlanSessionCount: 0,
-  toolCallCount: 23,
   sessions: [
     {
       id: "session-1",
@@ -94,19 +96,22 @@ test("DashboardPage renders the v6 KPI, activity, and approvals layout", () => {
   assert.doesNotMatch(html, /本日消息/);
 });
 
-test("DashboardPage renders runtime-backed dashboard metrics", () => {
+test("DashboardPage keeps activity counts in the trend chart", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, {
     ...commonProps,
-    promptCount: 12,
-    recentToolCallCount: 7,
   }));
 
   assert.match(html, /在线 Helm/);
-  assert.match(html, /活跃会话/);
-  assert.match(html, /近24h Prompt[\s\S]*12/);
-  assert.match(html, /工具调用[\s\S]*7/);
+  assert.match(html, /ACP 连接/);
+  assert.match(html, /1 \/ 2/);
+  assert.match(html, /运行中会话[\s\S]*1 \/ 3/);
+  assert.equal((html.match(/dashboard-metric-card/g) ?? []).length, 4);
+  assert.doesNotMatch(html, /24h Prompt/);
+  assert.doesNotMatch(html, /24h 工具调用/);
+  assert.doesNotMatch(html, /dashboard-recent-prompt-count/);
+  assert.doesNotMatch(html, /dashboard-recent-tool-count/);
   assert.match(html, /待审批/);
-  assert.match(html, /计划/);
+  assert.doesNotMatch(html, /<span[^>]*>计划<\/span>/);
   assert.match(html, /1 个离线/);
 });
 
@@ -117,6 +122,10 @@ test("DashboardPage renders the activity trend with shadcn-style range controls"
       { date: "2026-05-31", promptCount: 2, toolCallCount: 1 },
       { date: "2026-06-01", promptCount: 3, toolCallCount: 4 },
     ],
+    activityTrendHourly: [
+      { date: "2026-06-02T09:00:00.000Z", promptCount: 2, toolCallCount: 1 },
+      { date: "2026-06-02T10:00:00.000Z", promptCount: 3, toolCallCount: 4 },
+    ],
   }));
 
   assert.match(html, /dashboard-activity-trend/);
@@ -124,17 +133,13 @@ test("DashboardPage renders the activity trend with shadcn-style range controls"
   assert.match(html, /近1个月/);
   assert.match(html, /近1周/);
   assert.match(html, /近1天/);
+  assert.match(html, /data-state="active"[^>]*>近1天<\/button>/);
   assert.match(html, /Prompt[\s\S]*>5<\/span>/);
   assert.match(html, /工具调用[\s\S]*>5<\/span>/);
-  assert.match(html, /data-slot="dashboard-recent-prompt-count">0<\/strong>/);
-  assert.match(html, /data-slot="dashboard-recent-tool-count">23<\/strong>/);
+  assert.doesNotMatch(html, /data-slot="dashboard-trend-summary"/);
   assert.match(html, /data-slot="dashboard-trend-chart"/);
   assert.match(html, /data-slot="dashboard-trend-legend"/);
-  assert.match(html, /data-slot="dashboard-trend-summary"/);
-  assert.ok(
-    html.indexOf('data-slot="dashboard-trend-summary"') <
-      html.indexOf('data-slot="dashboard-trend-chart"'),
-  );
+  assert.match(activityTrendSource, /flex min-w-0 flex-nowrap items-center gap-2/);
   assert.match(pageSource, /DashboardActivityTrend/);
 });
 
@@ -154,15 +159,10 @@ test("one-day trend selects hourly points and keeps prompt/tool counts separate"
 
   const html = renderToStaticMarkup(createElement(DashboardActivityTrend, {
     points: hourlyPoints,
-    activitySummary: { recentActivityCount: 4, sparklinePoints: [1, 2] },
-    recentPromptCount: 2,
-    recentToolCallCount: 4,
   }));
 
-  assert.match(html, /data-slot="dashboard-recent-prompt-count"/);
-  assert.match(html, /data-slot="dashboard-recent-tool-count"/);
-  assert.doesNotMatch(html, /2 Prompt · 4 tool/);
-  assert.match(html, /h-\[240px\] min-h-\[240px\] w-full sm:h-\[280px\] sm:min-h-\[280px\]/);
+  assert.doesNotMatch(html, /data-slot="dashboard-trend-summary"/);
+  assert.match(html, /h-\[180px\] min-h-\[180px\] w-full sm:h-\[220px\] sm:min-h-\[220px\]/);
   assert.match(html, /data-slot="dashboard-trend-chart"/);
   assert.match(activityTrendSource, /ChartContainer/);
   assert.match(activityTrendSource, /AreaChart/);
@@ -174,23 +174,25 @@ test("activity trend reserves a visible canvas for both charts", () => {
   }));
 
   const chart = html.match(/<div[^>]*data-slot="dashboard-trend-chart"[^>]*>/)?.[0] ?? "";
-  assert.match(chart, /min-h-\[280px\]/);
+  assert.match(chart, /min-h-0/);
   assert.match(html, /data-slot="dashboard-trend-chart"/);
   assert.match(html, /data-slot="dashboard-trend-legend"/);
-  assert.match(html, /class="[^\"]*h-\[240px\][^\"]*min-h-\[240px\][^\"]*w-full/);
+  assert.match(html, /class="[^\"]*h-\[180px\][^\"]*min-h-\[180px\][^\"]*w-full/);
 });
 
-test("DashboardPage places recent activity summary inside the trend panel", () => {
+test("DashboardPage keeps the trend chart as the activity metric", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, {
     ...commonProps,
     activityTrend: [{ date: "2026-06-02", promptCount: 0, toolCallCount: 0 }],
   }));
 
-  assert.match(html, /data-slot="dashboard-recent-activity-summary"/);
-  assert.match(html, /近24h/);
-  assert.match(pageSource, /buildDashboardActivitySummary/);
-  assert.match(pageSource, /activitySummary=\{activitySummary\}/);
-  assert.doesNotMatch(activityStreamSource, /data-slot="dashboard-recent-activity-summary"/);
+  assert.doesNotMatch(html, /data-slot="dashboard-recent-activity-summary"/);
+  assert.doesNotMatch(html, /24h 活动/);
+  assert.doesNotMatch(html, /data-slot="dashboard-trend-summary"/);
+  assert.doesNotMatch(html, /data-slot="dashboard-recent-prompt-count"/);
+  assert.doesNotMatch(html, /data-slot="dashboard-recent-tool-count"/);
+  assert.match(activityTrendSource, /useState<DashboardTrendRange>\("1d"\)/);
+  assert.doesNotMatch(activityStreamSource, /buildActivitySparkline/);
 });
 
 test("DashboardPage renders the session list only once on the overview", () => {
@@ -709,19 +711,14 @@ test("DashboardPage limits the recent activity stream to the latest 15 items", (
   assert.doesNotMatch(html, /Recent activity 17/);
 });
 
-test("DashboardPage derives the activity sparkline from activity timestamps", () => {
-  assert.match(activityStreamSource, /buildActivitySparkline/);
-  assert.match(activityStreamSource, /timestampMs/);
-  assert.doesNotMatch(activityStreamSource, /const points = \[3, 5, 4/);
-});
-
 test("DashboardPage mobile keeps v6 priority order", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
 
-  assert.match(html, /grid grid-cols-2 gap-2 mb-3/);
+  assert.match(html, /data-slot="dashboard-metrics"/);
+  assert.match(html, /grid grid-cols-2 gap-2 md:grid-cols-4/);
   assert.match(html, /待审批[\s\S]*通知[\s\S]*活动流/);
   assert.doesNotMatch(html, /2\/3 Helm 在线/);
-  assert.match(html, /24h/);
+  assert.match(html, /最近 24 小时/);
 });
 
 test("DashboardPage keeps the mobile trend panel within the viewport", () => {
@@ -740,7 +737,8 @@ test("DashboardPage uses the shadcn sidebar drawer on mobile", () => {
 
 test("DashboardPage uses shared v6 pane primitives and no redesign mock imports", () => {
   assert.match(pageSource, /wb-pane/);
-  assert.match(activityStreamSource, /Sparkline/);
+  assert.match(activityTrendSource, /AreaChart/);
+  assert.doesNotMatch(activityStreamSource, /Sparkline/);
   assert.doesNotMatch(pageSource, /docs\/redesign\/v6/);
   assert.doesNotMatch(pageSource, /\.\.\/data\/mock/);
   assert.doesNotMatch(pageSource, /"系统"/);

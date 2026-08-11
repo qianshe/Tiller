@@ -16,11 +16,6 @@ export type DashboardActivityTrendPoint = {
 
 export type DashboardActivitySummary = SessionActivitySummary;
 
-export type DashboardRecentActivitySummary = {
-  recentActivityCount: number;
-  sparklinePoints: number[];
-};
-
 export type DashboardQuickCreateAgent = {
   id: string;
   name: string;

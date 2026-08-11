@@ -78,6 +78,31 @@ test("update check keeps disabled automatic checks distinct from up-to-date", ()
   assert.equal(update?.checkStatus, "disabled");
 });
 
+test("agent connection results remain available in the source Helm inventory", () => {
+  const connections = [
+    { providerId: "codex", status: "ready" },
+    { providerId: "codex", status: "ready" },
+  ];
+  useDeckStore.setState({
+    helmInventories: {},
+    agentConnectionInventory: [],
+  });
+
+  applyInventoryResult(
+    "agent/connections",
+    { connections },
+    "helm-remote",
+    false,
+    {} as any,
+  );
+
+  assert.deepEqual(
+    useDeckStore.getState().helmInventories["helm-remote"]?.agentConnections,
+    connections,
+  );
+  assert.deepEqual(useDeckStore.getState().agentConnectionInventory, []);
+});
+
 test("git file diff results merge patch bodies into the matching status files", () => {
   const cwd = "/repo";
   const current: Record<string, GitStatusState> = {

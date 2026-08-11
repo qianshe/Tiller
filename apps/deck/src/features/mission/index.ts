@@ -36,6 +36,7 @@ export {
   resolveReasoningOptionsForModel,
 } from "./utils/composer-options";
 export { projectFilesKey } from "./utils/project-files-key";
+export { resolveSessionComposerConfiguration } from "./utils/session-composer-configuration";
 export { createMissionVisualFixture, shouldUseMissionVisualFixture } from "./utils/visual-fixture";
 export { MissionAgentIcon } from "./navigation";
 export { SessionCleanupConfirmDialog } from "./ui/session-cleanup-confirm-dialog";

@@ -1,7 +1,6 @@
 import {
   AlertTriangle,
   CircleDashed,
-  ChevronRight,
   LayoutPanelTop,
   MoreHorizontal,
   PauseCircle,
@@ -246,10 +245,10 @@ function TaskPanelView({
               {group.sessions.length > 0 ? (
                 <ul className="divide-y divide-border-ghost">
                   {group.sessions.map((session) => {
-                    const status = resolveTaskStatus(session);
                     return (
                       <li
                         key={session.id}
+                        data-task-session-row={session.id}
                         draggable={
                           resolveTaskBoardColumn(session) === "ready" &&
                           Boolean(onConfigureReadySession)
@@ -264,23 +263,21 @@ function TaskPanelView({
                           onOpenSession={onOpenSession}
                           onConfigureReadySession={onConfigureReadySession}
                           className={cn(
-                            "grid w-full min-w-0 gap-2 px-3 py-3 text-left transition-colors hover:bg-surface-sunken",
+                            "grid w-full min-w-0 gap-1.5 px-3 py-3 text-left transition-colors hover:bg-surface-sunken",
                           )}
                         >
-                          <span className="flex min-w-0 items-start gap-2">
+                          <span className="flex min-w-0 items-center gap-2">
                             <span className="min-w-0 flex-1 truncate text-section font-medium">{session.title}</span>
-                            <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            <Badge
+                              variant="outline"
+                              className="max-w-[45%] shrink-0 truncate rounded-full border-primary/25 bg-primary-soft/15 px-2 py-0.5 text-2xs font-medium text-primary"
+                              data-task-agent-badge={session.agentId ?? "unassigned"}
+                            >
+                              {session.agentName ?? session.agentId ?? "未分配"}
+                            </Badge>
                           </span>
                           <span className="truncate font-mono text-meta tabular text-muted-foreground">
                             {formatProjectBranch(session)}
-                          </span>
-                          <span className="flex min-w-0 items-center gap-2">
-                            <Badge variant={status.badge} className="max-w-[55%] truncate px-2 py-0.5">
-                              {status.label}
-                            </Badge>
-                            <span className="ml-auto truncate font-mono text-meta text-muted-foreground">
-                              {session.agentName ?? session.agentId ?? "未分配"}
-                            </span>
                           </span>
                         </TaskOpenButton>
                       </li>
@@ -384,10 +381,10 @@ function TaskTableView({
                 />
               </TableHead>
               <TableHead className="min-w-48 px-3 text-meta">任务</TableHead>
+              <TableHead className="min-w-20 px-3 text-meta">状态</TableHead>
               <TableHead className="min-w-40 px-3 text-meta">项目 / 分支</TableHead>
               <TableHead className="min-w-24 px-3 text-meta">Agent</TableHead>
               <TableHead className="min-w-24 px-3 text-meta">计划</TableHead>
-              <TableHead className="min-w-20 px-3 text-meta">状态</TableHead>
               <TableHead className="min-w-28 px-3 text-right text-meta">更新时间</TableHead>
               <TableHead className="sticky right-0 z-10 w-12 bg-surface-sunken/40 px-2 text-right text-meta"><span className="sr-only">操作</span></TableHead>
             </TableRow>
@@ -425,6 +422,9 @@ function TaskTableView({
                       </Button>
                     </div>
                   </TableCell>
+                  <TableCell className="px-3 py-2.5">
+                    <Badge variant={status.badge} className="px-2 py-0.5">{status.label}</Badge>
+                  </TableCell>
                   <TableCell className="max-w-64 truncate px-3 py-2.5 font-mono text-meta text-muted-foreground">
                     {formatProjectBranch(session)}
                   </TableCell>
@@ -435,9 +435,6 @@ function TaskTableView({
                   </TableCell>
                   <TableCell className="px-3 py-2.5 font-mono text-meta tabular text-muted-foreground">
                     {session.planSummary?.label ?? "未规划"}
-                  </TableCell>
-                  <TableCell className="px-3 py-2.5">
-                    <Badge variant={status.badge} className="px-2 py-0.5">{status.label}</Badge>
                   </TableCell>
                   <TableCell className="px-3 py-2.5 text-right font-mono text-meta tabular text-muted-foreground">
                     {formatDateTime(session.updatedAt)}

@@ -17,7 +17,6 @@ import {
 } from "../../../../shared/ui";
 import type {
   DashboardActivityTrendPoint,
-  DashboardRecentActivitySummary,
 } from "../../types";
 
 type DashboardTrendRange = "30d" | "7d" | "1d";
@@ -37,9 +36,6 @@ const DASHBOARD_TREND_RANGES: Array<{
 export type DashboardActivityTrendProps = {
   points?: DashboardActivityTrendPoint[];
   hourlyPoints?: DashboardActivityTrendPoint[];
-  activitySummary?: DashboardRecentActivitySummary;
-  recentPromptCount?: number;
-  recentToolCallCount?: number;
 };
 
 function resolveRange(value: string): DashboardTrendRange {
@@ -80,37 +76,6 @@ function sumTrend(points: DashboardActivityTrendPoint[], field: DashboardTrendFi
   return points.reduce((total, point) => total + point[field], 0);
 }
 
-function ActivitySparkline({ points }: { points: number[] }) {
-  const visiblePoints = points.length > 0 ? points : Array.from({ length: 24 }, () => 0);
-  const max = Math.max(1, ...visiblePoints);
-  return (
-    <svg
-      width="180"
-      height="20"
-      viewBox={`0 0 ${visiblePoints.length * 6} 20`}
-      className="h-5 w-20 shrink-0 text-primary sm:w-28"
-      aria-hidden="true"
-    >
-      {visiblePoints.map((point, index) => {
-        const height = point === 0 ? 2 : Math.max(3, (point / max) * 18);
-        const opacity = point === 0 ? 0.2 : 0.45 + (point / max) * 0.55;
-        return (
-          <rect
-            key={index}
-            x={index * 6}
-            y={20 - height}
-            width="4"
-            height={height}
-            fill="currentColor"
-            opacity={opacity}
-            rx="1"
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
 type DashboardTrendChartProps = {
   points: DashboardActivityTrendPoint[];
   rangeLabel: string;
@@ -143,10 +108,10 @@ function DashboardTrendChart({
   const hasActivity = chartData.some((point) => point.prompt > 0 || point.tools > 0);
 
   return (
-    <div className="relative min-h-[280px] min-w-0" data-slot="dashboard-trend-chart">
+    <div className="relative min-h-0 min-w-0" data-slot="dashboard-trend-chart">
       <ChartContainer
         config={TREND_CHART_CONFIG}
-        className="h-[240px] min-h-[240px] w-full sm:h-[280px] sm:min-h-[280px]"
+        className="h-[180px] min-h-[180px] w-full sm:h-[220px] sm:min-h-[220px]"
       >
         <AreaChart
           data={chartData}
@@ -227,12 +192,9 @@ function DashboardTrendChart({
 export function DashboardActivityTrend({
   points = [],
   hourlyPoints,
-  activitySummary = { recentActivityCount: 0, sparklinePoints: [] },
-  recentPromptCount = 0,
-  recentToolCallCount = 0,
 }: DashboardActivityTrendProps) {
-  const [range, setRange] = useState<DashboardTrendRange>("30d");
-  const defaultRange = DASHBOARD_TREND_RANGES[0]!;
+  const [range, setRange] = useState<DashboardTrendRange>("1d");
+  const defaultRange = DASHBOARD_TREND_RANGES.find((option) => option.value === "1d") ?? DASHBOARD_TREND_RANGES[0]!;
   const selectedRange = DASHBOARD_TREND_RANGES.find((option) => option.value === range) ?? defaultRange;
   const visiblePoints = useMemo(
     () => selectDashboardTrendPoints(points, hourlyPoints, range),
@@ -247,76 +209,41 @@ export function DashboardActivityTrend({
       data-slot="dashboard-activity-trend"
       aria-labelledby="dashboard-activity-trend-title"
     >
-      <CardHeader className="relative flex flex-row flex-wrap items-start justify-between gap-3 px-4 pb-2 pt-4 sm:px-5">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="grid size-7 shrink-0 place-items-center rounded-md bg-surface-sunken text-muted-foreground">
-              <Icon name="chart" size={14} />
-            </span>
-            <CardTitle id="dashboard-activity-trend-title" className="text-section font-semibold text-foreground">
-              Prompt 与工具调用
-            </CardTitle>
-          </div>
-          <CardDescription className="mt-1 text-meta">{selectedRange.description}</CardDescription>
+      <CardHeader className="relative flex flex-col gap-2 px-4 pb-2 pt-4 sm:px-5">
+        <div className="flex items-center gap-2">
+          <span className="grid size-7 shrink-0 place-items-center rounded-md bg-surface-sunken text-muted-foreground">
+            <Icon name="chart" size={14} />
+          </span>
+          <CardTitle id="dashboard-activity-trend-title" className="text-section font-semibold text-foreground">
+            Prompt 与工具调用
+          </CardTitle>
         </div>
 
-        <Tabs
-          value={range}
-          onValueChange={(value) => setRange(resolveRange(value))}
-          aria-label="活动趋势时间范围"
-        >
-          <TabsList size="sm" className="shrink-0 border border-border-ghost bg-surface-sunken p-0">
-            {DASHBOARD_TREND_RANGES.map((option) => (
-              <TabsTrigger
-                key={option.value}
-                value={option.value}
-                size="sm"
-                className="h-8 rounded-none px-3 text-meta first:rounded-l-md last:rounded-r-md data-[state=active]:bg-surface-emphasis data-[state=active]:text-foreground"
-              >
-                {option.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
+        <div className="flex min-w-0 flex-nowrap items-center gap-2">
+          <CardDescription className="min-w-0 flex-1 truncate text-meta">{selectedRange.description}</CardDescription>
+          <Tabs
+            className="shrink-0"
+            value={range}
+            onValueChange={(value) => setRange(resolveRange(value))}
+            aria-label="活动趋势时间范围"
+          >
+            <TabsList size="sm" className="shrink-0 border border-border-ghost bg-surface-sunken p-0">
+              {DASHBOARD_TREND_RANGES.map((option) => (
+                <TabsTrigger
+                  key={option.value}
+                  value={option.value}
+                  size="sm"
+                  className="h-7 rounded-none px-2.5 text-meta first:rounded-l-md last:rounded-r-md data-[state=active]:bg-surface-emphasis data-[state=active]:text-foreground"
+                >
+                  {option.label}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+          </Tabs>
+        </div>
       </CardHeader>
 
-      <CardContent className="flex flex-col gap-3 px-4 pb-4 sm:px-5">
-        <div
-          className="grid min-w-0 grid-cols-1 gap-2 min-[420px]:grid-cols-3"
-          data-slot="dashboard-trend-summary"
-        >
-        <div className="min-w-0 rounded-md border border-border-ghost bg-surface-sunken px-2.5 py-2 sm:px-3">
-          <div className="flex min-w-0 items-center justify-between gap-2">
-            <span className="truncate text-meta text-muted-foreground">近24h 活动</span>
-            <ActivitySparkline points={activitySummary.sparklinePoints} />
-          </div>
-          <strong
-            className="mt-1 block truncate font-mono text-lg font-semibold tabular text-foreground"
-            data-slot="dashboard-recent-activity-summary"
-          >
-            {activitySummary.recentActivityCount}
-          </strong>
-        </div>
-        <div className="min-w-0 rounded-md border border-border-ghost bg-surface-sunken px-2.5 py-2 sm:px-3">
-          <span className="block truncate text-meta text-muted-foreground">近24h Prompt</span>
-          <strong
-            className="mt-1 block truncate font-mono text-lg font-semibold tabular text-foreground"
-            data-slot="dashboard-recent-prompt-count"
-          >
-            {recentPromptCount}
-          </strong>
-        </div>
-        <div className="min-w-0 rounded-md border border-border-ghost bg-surface-sunken px-2.5 py-2 sm:px-3">
-          <span className="block truncate text-meta text-muted-foreground">近24h 工具调用</span>
-          <strong
-            className="mt-1 block truncate font-mono text-lg font-semibold tabular text-foreground"
-            data-slot="dashboard-recent-tool-count"
-          >
-            {recentToolCallCount}
-          </strong>
-        </div>
-        </div>
-
+      <CardContent className="px-4 pb-3 sm:px-5 sm:pb-4">
         <DashboardTrendChart
           points={visiblePoints}
           rangeLabel={selectedRange.label}

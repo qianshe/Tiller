@@ -43,18 +43,48 @@ test("dashboard embeds the dedicated Agents presentation mode and add Helm actio
   assert.match(routeContentSource, /mode=\{mode\}/);
 });
 
-test("dashboard session actions open an embedded Mission dialog", () => {
+test("dashboard session actions open an embedded Mission drawer", () => {
   assert.match(routeContentSource, /dashboardMissionSessionId/);
   assert.match(routeContentSource, /setDashboardMissionSessionId/);
-  assert.match(routeContentSource, /data-slot="dashboard-mission-dialog"/);
-  assert.match(routeContentSource, /DialogTitle/);
+  assert.match(routeContentSource, /data-slot="dashboard-mission-drawer"/);
+  assert.match(routeContentSource, /DrawerTitle/);
+  assert.match(routeContentSource, /<Drawer/);
+  assert.match(routeContentSource, /<DrawerContent/);
   assert.match(
     routeContentSource,
     /<MissionRoute[\s\S]*key=\{dashboardMissionSessionId\}[\s\S]*source=\{dashboardMissionSource\}[\s\S]*embedded[\s\S]*chatOnly[\s\S]*\/>/,
   );
   assert.match(routeContentSource, /embedded\?: boolean;\s*chatOnly\?: boolean/);
-  assert.match(routeContentSource, /className="dashboard-mission-dialog/);
-  assert.match(routeContentSource, /\[&>button\]:hidden/);
+  assert.match(routeContentSource, /hideSessionCloseAction\?: boolean/);
+  assert.match(routeContentSource, /const dashboardMissionDrawerClassName = isMobile/);
+  assert.match(routeContentSource, /className=\{dashboardMissionDrawerClassName\}/);
+  assert.match(routeContentSource, /showHandle=\{false\}/);
+  assert.match(routeContentSource, /rounded-none border-0/);
+  assert.match(routeContentSource, /<Suspense fallback=\{<DashboardMissionDrawerLoading \/>\}>/);
+  assert.match(routeContentSource, /direction=\{isMobile \? "bottom" : "right"\}/);
+  assert.match(routeContentSource, /h-\[min\(80dvh,720px\)\]/);
+  assert.match(routeContentSource, /hideSessionCloseAction/);
+  assert.match(routeContentSource, /--dashboard-mission-drawer-width/);
+  assert.match(routeContentSource, /w-\[var\(--dashboard-mission-drawer-width\)\]/);
+  assert.match(routeContentSource, /max-w-\[calc\(100vw_-_1rem\)\]/);
+  assert.match(routeContentSource, /sm:max-w-\[calc\(100vw_-_1rem\)\]/);
+  assert.match(routeContentSource, /max-h-\[80dvh\]/);
+  assert.match(routeContentSource, /min-h-0 min-w-0 flex-1 overflow-hidden/);
+  assert.match(routeContentSource, /dismissible\s+handleOnly=\{!isMobile\}/);
+  assert.doesNotMatch(routeContentSource, /dismissible=\{isMobile\}/);
+  assert.match(routeContentSource, /width: isMobile \? undefined/);
+  assert.match(routeContentSource, /maxWidth: isMobile \? undefined/);
+  assert.doesNotMatch(routeContentSource, /sm:right-0/);
+  assert.doesNotMatch(routeContentSource, /sm:hidden/);
+  assert.match(routeContentSource, /DashboardMissionDrawerResizeHandle/);
   assert.match(routeContentSource, /onCloseSessionView: \(\) => setDashboardMissionSessionId\(null\)/);
-  assert.doesNotMatch(shellStylesSource, /\.dashboard-mission-dialog > button/);
+  assert.match(routeContentSource, /resolveSessionComposerConfiguration\(\{/);
+  assert.match(
+    routeContentSource,
+    /source\.updateSessionDraftPreferences\(next, dashboardMissionSessionId\)/,
+  );
+  assert.doesNotMatch(routeContentSource, /<Dialog/);
+  assert.doesNotMatch(routeContentSource, /<Sheet/);
+  assert.doesNotMatch(routeContentSource, /\[&>button\]:hidden/);
+  assert.doesNotMatch(shellStylesSource, /\.dashboard-mission-drawer > button/);
 });

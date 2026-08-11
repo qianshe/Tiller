@@ -24,7 +24,14 @@ type DashboardInput = {
   defaultDaemonPort: string;
   activeHelm?: { id?: string; name?: string; host?: string; port?: string | number } | null;
   helms?: Array<Partial<HelmSummary> & Record<string, unknown>>;
+  currentHelmKey?: string;
+  helmConnectionStates?: Record<string, "connecting" | "connected" | "disconnected">;
+  helmInventories?: Record<string, {
+    agents?: unknown[];
+    agentConnections?: Array<{ providerId?: unknown; status?: string }>;
+  } | undefined>;
   agents: unknown[];
+  agentConnectionInventory?: Array<{ providerId?: unknown; status?: string }>;
   projects: unknown[];
   sessions: SessionSummary[];
   preparations?: ConversationPreparation[];
@@ -380,6 +387,116 @@ function buildDashboardApprovalRow(
   };
 }
 
+const DASHBOARD_ACTIVE_ACP_CONNECTION_STATUSES = new Set([
+  "starting",
+  "ready",
+  "idle",
+]);
+
+function resolveDashboardObjectField(value: unknown, field: string) {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  return dashboardText((value as Record<string, unknown>)[field]);
+}
+
+function resolveDashboardAcpCounts(input: Pick<
+  DashboardInput,
+  | "agents"
+  | "agentConnectionInventory"
+  | "connection"
+  | "currentHelmKey"
+  | "helmConnectionStates"
+  | "helmInventories"
+>) {
+  const scopedInventories = new Map(Object.entries(input.helmInventories ?? {}));
+  if (input.currentHelmKey) {
+    scopedInventories.set(input.currentHelmKey, {
+      ...(scopedInventories.get(input.currentHelmKey) ?? {}),
+      agents: input.agents,
+      agentConnections: input.agentConnectionInventory ?? [],
+    });
+  }
+
+  if (!scopedInventories.size) {
+    return countDashboardAcpAgents(
+      input.agents,
+      input.agentConnectionInventory ?? [],
+      input.connection === "connected",
+    );
+  }
+
+  const configuredAgentKeys = new Set<string>();
+  const runningAgentKeys = new Set<string>();
+  for (const [helmKey, inventory] of scopedInventories) {
+    if (!inventory) {
+      continue;
+    }
+    const agents = inventory.agents ?? [];
+    const connections = inventory.agentConnections ?? [];
+    for (const agent of agents) {
+      const providerId = resolveDashboardObjectField(agent, "id");
+      if (providerId) {
+        configuredAgentKeys.add(`${helmKey}:${providerId}`);
+      }
+    }
+    if (!isDashboardHelmConnected(input, helmKey)) {
+      continue;
+    }
+    for (const connection of connections) {
+      const providerId = resolveDashboardObjectField(connection, "providerId");
+      if (
+        providerId &&
+        DASHBOARD_ACTIVE_ACP_CONNECTION_STATUSES.has(connection.status ?? "")
+      ) {
+        runningAgentKeys.add(`${helmKey}:${providerId}`);
+      }
+    }
+  }
+
+  return {
+    runningAcpCount: Array.from(runningAgentKeys).filter((key) => configuredAgentKeys.has(key)).length,
+    totalAcpCount: configuredAgentKeys.size,
+  };
+}
+
+function isDashboardHelmConnected(
+  input: Pick<DashboardInput, "connection" | "currentHelmKey" | "helmConnectionStates">,
+  helmKey: string,
+) {
+  const state = input.helmConnectionStates?.[helmKey];
+  if (state) {
+    return state === "connected";
+  }
+  return helmKey === input.currentHelmKey && input.connection === "connected";
+}
+
+function countDashboardAcpAgents(
+  agents: unknown[],
+  connections: Array<{ providerId?: unknown; status?: string }>,
+  isConnected: boolean,
+) {
+  const configuredAgentIds = new Set(
+    agents
+      .map((agent) => resolveDashboardObjectField(agent, "id"))
+      .filter((providerId): providerId is string => Boolean(providerId)),
+  );
+  const runningAgentIds = new Set(
+    isConnected
+      ? connections
+        .filter((connection) =>
+          DASHBOARD_ACTIVE_ACP_CONNECTION_STATUSES.has(connection.status ?? ""),
+        )
+        .map((connection) => resolveDashboardObjectField(connection, "providerId"))
+        .filter((providerId): providerId is string => Boolean(providerId))
+      : [],
+  );
+  return {
+    runningAcpCount: Array.from(runningAgentIds).filter((providerId) => configuredAgentIds.has(providerId)).length,
+    totalAcpCount: configuredAgentIds.size,
+  };
+}
+
 export function buildDashboardViewModel(input: DashboardInput) {
   const now = input.now ?? Date.now();
   const activeHelmLabel = input.activeHelm
@@ -395,6 +512,7 @@ export function buildDashboardViewModel(input: DashboardInput) {
     sessionCount: Number(helm.sessionCount ?? helm.sessions ?? input.sessions.length),
     status: helm.status === "connected" || helm.status === "active" ? "active" as const : "idle" as const,
   }));
+  const { runningAcpCount, totalAcpCount } = resolveDashboardAcpCounts(input);
 
   const sessionsById = new Map(input.sessions.map((session) => [session.id, session]));
   const approvals = Object.values(input.approvalItemsById ?? {}).map((item) =>
@@ -473,12 +591,17 @@ export function buildDashboardViewModel(input: DashboardInput) {
       session.planSummary &&
       session.planSummary.completed === session.planSummary.total,
   ).length;
+  const runningSessionCount = sessions.filter((session) => session.status === "running").length;
+  const totalSessionCount = sessions.length;
 
   return {
     activeHelmLabel,
     onlineHelmCount: input.connection === "connected" ? 1 : 0,
     totalHelmCount: Math.max(helms.length, 1),
-    activeSessionCount: input.sessions.length,
+    runningAcpCount,
+    totalAcpCount,
+    runningSessionCount,
+    totalSessionCount,
     pendingApprovalCount: approvals.length,
     planSessionCount,
     completedPlanSessionCount,

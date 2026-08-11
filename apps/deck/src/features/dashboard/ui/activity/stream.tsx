@@ -3,7 +3,6 @@ import type { ApprovalStatus, PermissionDecision } from "@tiller/shared";
 import { AgentIcon, Icon, StatusDot } from "../../../../shared/ui";
 import { cn } from "../../../../shared/utils/cn";
 import type { DashboardNotification } from "../../orchestration/view-model";
-import type { DashboardRecentActivitySummary } from "../../types";
 import { DashboardNotificationList } from "../notification-list";
 
 export type DashboardActivityApproval = {
@@ -88,7 +87,6 @@ type DashboardActivityStreamProps = {
 type ActivityTab = "最近" | "权限" | "通知" | "7天前";
 
 const ACTIVITY_GRID_COLUMNS = "grid grid-cols-[76px_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,var(--dashboard-activity-acp-width))] gap-2";
-const ACTIVITY_SPARKLINE_HOURS = 24;
 const HOUR_MS = 60 * 60 * 1000;
 const ACTIVITY_RECENT_LIMIT = 15;
 const ACTIVITY_OLD_MS = 7 * 24 * HOUR_MS;
@@ -238,31 +236,6 @@ function buildActivities(
 
 function formatActivityAriaLabel(activity: DashboardActivity) {
   return `${activity.type}: ${activity.title}. ${activity.statusLabel}. ${activity.agentName ?? "Agent"}. ${formatActivityField(activity.projectName)}. ${formatActivityField(activity.worktreeName)}. ${resolveActivityDetail(activity)}`;
-}
-
-function buildActivitySparkline(activities: DashboardActivity[], now = Date.now()) {
-  const points = Array.from({ length: ACTIVITY_SPARKLINE_HOURS }, () => 0);
-  const start = now - ACTIVITY_SPARKLINE_HOURS * HOUR_MS;
-  for (const activity of activities) {
-    if (activity.timestampMs === undefined || activity.timestampMs < start || activity.timestampMs > now) {
-      continue;
-    }
-    const bucket = Math.min(points.length - 1, Math.floor((activity.timestampMs - start) / HOUR_MS));
-    points[bucket] = (points[bucket] ?? 0) + 1;
-  }
-  return points;
-}
-
-export function buildDashboardActivitySummary(
-  sessions: DashboardActivitySession[] = [],
-  approvals: DashboardActivityApproval[] = [],
-  now = Date.now(),
-): DashboardRecentActivitySummary {
-  const sparklinePoints = buildActivitySparkline(buildActivities(sessions, approvals), now);
-  return {
-    sparklinePoints,
-    recentActivityCount: sparklinePoints.reduce((total, value) => total + value, 0),
-  };
 }
 
 function sortActivitiesByRecency(activities: DashboardActivity[]) {

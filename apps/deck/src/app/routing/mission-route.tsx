@@ -3,9 +3,17 @@ import type { MissionRouteSource } from "./route-context";
 
 export function renderMissionRoute(
   source: MissionRouteSource,
-  options: { embedded?: boolean; chatOnly?: boolean } = {},
+  options: {
+    embedded?: boolean;
+    chatOnly?: boolean;
+    hideSessionCloseAction?: boolean;
+  } = {},
 ) {
-  const { embedded = false, chatOnly = false } = options;
+  const {
+    embedded = false,
+    chatOnly = false,
+    hideSessionCloseAction,
+  } = options;
   const {
     prompt,
     promptImages,
@@ -204,6 +212,7 @@ export function renderMissionRoute(
     <MissionWorktree
       embedded={embedded}
       chatOnly={chatOnly}
+      hideSessionCloseAction={hideSessionCloseAction}
       prompt={prompt}
       promptImages={promptImages}
       rpcClientRef={rpcClientRef}

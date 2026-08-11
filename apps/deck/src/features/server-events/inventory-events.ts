@@ -559,6 +559,9 @@ export function applyInventoryResult(
       }
       return true;
     case "agent/connections":
+      store.applyHelmInventory(sourceHelmKey, {
+        agentConnections: payload.connections ?? [],
+      });
       if (sourceIsCurrentHelm) {
         store.setAgentConnectionInventory(payload.connections ?? []);
       }
@@ -668,6 +671,9 @@ export function applyInventoryResult(
           }));
         }
       }
+      store.applyHelmInventory(sourceHelmKey, {
+        agentConnections: payload.connections ?? [],
+      });
       return true;
     case "agent/test":
       setAgentTestResult(payload.message);

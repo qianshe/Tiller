@@ -12,6 +12,7 @@ import {
   mergeHistoricalAndLiveToolCalls,
 } from "../utils/timeline-activity";
 import { buildChatWindowModel } from "../workspace/chat-window-model";
+import { resolveSessionComposerConfiguration } from "../utils/session-composer-configuration";
 import {
   MODEL_OPTIONS,
   resolveAgentModeOptions,
@@ -368,6 +369,14 @@ const draftReasoningOptions = resolveReasoningOptionsForModel(
 const effectiveDraftReasoningEffort =
   draftModelParts.reasoning ?? draftReasoningEffort;
 const showDraftReasoningSelect = draftReasoningOptions.length > 0;
+const activeSessionComposerConfiguration = activeSession
+  ? resolveSessionComposerConfiguration({
+      session: activeSession,
+      sessions,
+      sessionConfigOptions,
+      agents,
+    })
+  : null;
   return {
     activeSession,
     selectedComposerSession,
@@ -441,5 +450,6 @@ const showDraftReasoningSelect = draftReasoningOptions.length > 0;
     draftReasoningOptions,
     effectiveDraftReasoningEffort,
     showDraftReasoningSelect,
+    ...(activeSessionComposerConfiguration ?? {}),
   };
 }

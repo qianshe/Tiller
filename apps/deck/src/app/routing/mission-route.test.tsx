@@ -84,4 +84,6 @@ test("renderMissionRoute supports a dashboard chat-only layout", () => {
 
   assert.match(source, /chatOnly\?: boolean/);
   assert.match(source, /chatOnly=\{chatOnly\}/);
+  assert.match(source, /hideSessionCloseAction\?: boolean/);
+  assert.match(source, /hideSessionCloseAction=\{hideSessionCloseAction\}/);
 });

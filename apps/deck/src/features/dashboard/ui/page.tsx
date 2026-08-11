@@ -3,7 +3,6 @@ import { Suspense, useState, type CSSProperties, type ReactNode } from "react";
 import { Icon, SidebarInset, SidebarProvider, SidebarTrigger, StatusDot } from "../../../shared/ui";
 import {
   DashboardActivityStream,
-  buildDashboardActivitySummary,
   type DashboardActivityApproval,
   type DashboardActivitySession,
 } from "./activity/stream";
@@ -24,7 +23,6 @@ import type {
   DashboardQuickCreateProject,
   DashboardQuickCreatePreset,
   DashboardQuickCreateRequest,
-  DashboardRecentActivitySummary,
   DashboardSection,
 } from "../types";
 import { cn } from "../../../shared/utils/cn";
@@ -56,7 +54,7 @@ type DashboardMetric = {
   label: string;
   value: string;
   sub: string;
-  icon: "server" | "activity" | "message" | "terminal" | "shield";
+  icon: "server" | "activity" | "terminal" | "shield";
   tone: DashboardMetricTone;
 };
 
@@ -64,13 +62,13 @@ export type DashboardPageProps = {
   activeHelmLabel: string;
   onlineHelmCount: number;
   totalHelmCount: number;
-  activeSessionCount: number;
+  runningAcpCount?: number;
+  totalAcpCount?: number;
+  runningSessionCount: number;
+  totalSessionCount: number;
   pendingApprovalCount: number;
   planSessionCount: number;
   completedPlanSessionCount: number;
-  toolCallCount: number;
-  promptCount?: number;
-  recentToolCallCount?: number;
   sessions?: DashboardSession[];
   activityTrend?: DashboardActivityTrendPoint[];
   activityTrendHourly?: DashboardActivityTrendPoint[];
@@ -157,27 +155,27 @@ function DashboardApprovalActions({
 
 function DashboardMetricCard({ metric }: { metric: DashboardMetric }) {
   return (
-    <article className="dashboard-metric-card wb-pane min-w-0 p-3.5 transition-colors hover:bg-surface-emphasis/35">
-      <div className="flex items-start justify-between gap-3">
-        <div className="grid min-w-0 gap-2">
-          <span className="truncate text-meta font-medium uppercase tracking-wider text-muted-foreground">
-            {metric.label}
-          </span>
-          <strong className="tabular text-[25px] font-semibold leading-none tracking-tight">
-            {metric.value}
-          </strong>
-        </div>
-        <span className="grid size-8 shrink-0 place-items-center rounded-md bg-surface-sunken text-muted-foreground">
-          <Icon name={metric.icon} size={15} />
+    <article className="dashboard-metric-card wb-pane min-w-0 p-2.5 transition-colors hover:bg-surface-emphasis/35">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-surface-sunken text-muted-foreground">
+          <Icon name={metric.icon} size={14} />
+        </span>
+        <span className="min-w-0 truncate text-meta font-medium text-muted-foreground">
+          {metric.label}
         </span>
       </div>
-      <div className="mt-3 flex min-w-0 items-center gap-1.5 font-mono text-meta tabular text-muted-foreground">
-        <StatusDot
-          tone={metric.tone}
-          size={6}
-          pulse={metric.tone === "active" || metric.tone === "primary"}
-        />
-        <span className="truncate">{metric.sub}</span>
+      <div className="mt-2 flex min-w-0 items-baseline justify-between gap-2">
+        <strong className="shrink-0 tabular text-display font-semibold leading-none">
+          {metric.value}
+        </strong>
+        <span className="flex min-w-0 items-center gap-1.5 font-mono text-meta tabular text-muted-foreground">
+          <StatusDot
+            tone={metric.tone}
+            size={5}
+            pulse={metric.tone === "active" || metric.tone === "primary"}
+          />
+          <span className="truncate">{metric.sub}</span>
+        </span>
       </div>
     </article>
   );
@@ -326,13 +324,11 @@ function resolveDashboardSectionTitle(section: DashboardSection) {
 export function DashboardPage({
   onlineHelmCount,
   totalHelmCount,
-  activeSessionCount,
+  runningAcpCount = 0,
+  totalAcpCount = runningAcpCount,
+  runningSessionCount,
+  totalSessionCount,
   pendingApprovalCount,
-  planSessionCount,
-  completedPlanSessionCount,
-  toolCallCount,
-  promptCount = 0,
-  recentToolCallCount = toolCallCount,
   sessions = [],
   activityTrend = [],
   activityTrendHourly = [],
@@ -362,10 +358,6 @@ export function DashboardPage({
   const [quickCreatePreset, setQuickCreatePreset] = useState<DashboardQuickCreatePreset | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(DASHBOARD_SIDEBAR_DEFAULT_WIDTH);
   const selectedSection = activeSection ?? internalSection;
-  const activitySummary: DashboardRecentActivitySummary = buildDashboardActivitySummary(
-    sessions,
-    approvalHistory,
-  );
   const selectSection = (section: DashboardSection) => {
     setInternalSection(section);
     onSelectSection?.(section);
@@ -412,39 +404,25 @@ export function DashboardPage({
       tone: onlineHelmCount > 0 ? "active" : "idle",
     },
     {
-      label: "活跃会话",
-      value: String(activeSessionCount),
-      sub: activeSessionCount > 0 ? "当前运行会话" : "暂无运行会话",
-      icon: "activity",
-      tone: activeSessionCount > 0 ? "primary" : "idle",
-    },
-    {
-      label: "近24h Prompt",
-      value: String(promptCount),
-      sub: "已同步用户消息",
-      icon: "message",
-      tone: promptCount > 0 ? "primary" : "idle",
-    },
-    {
-      label: "近24h 工具调用",
-      value: String(recentToolCallCount),
-      sub: `${toolCallCount} 次累计`,
+      label: "ACP 连接",
+      value: `${runningAcpCount} / ${totalAcpCount}`,
+      sub: totalAcpCount > 0 ? "连接中/总数" : "暂无 ACP 连接",
       icon: "terminal",
-      tone: recentToolCallCount > 0 ? "primary" : "idle",
+      tone: runningAcpCount > 0 ? "primary" : "idle",
+    },
+    {
+      label: "运行中会话",
+      value: `${runningSessionCount} / ${totalSessionCount}`,
+      sub: totalSessionCount > 0 ? "运行中/总数" : "暂无会话",
+      icon: "activity",
+      tone: runningSessionCount > 0 ? "primary" : "idle",
     },
     {
       label: "待审批",
       value: String(pendingApprovalCount),
-      sub: "权限请求",
+      sub: pendingApprovalCount > 0 ? "需要你处理" : "暂无权限请求",
       icon: "shield",
       tone: pendingApprovalCount > 0 ? "warning" : "idle",
-    },
-    {
-      label: "计划",
-      value: String(planSessionCount),
-      sub: `${completedPlanSessionCount} 已完成`,
-      icon: "activity",
-      tone: planSessionCount > completedPlanSessionCount ? "primary" : "idle",
     },
   ];
 
@@ -499,48 +477,38 @@ export function DashboardPage({
             aria-label={sectionTitle}
           >
             {selectedSection === "overview" ? (
-              isMobile ? (
-                <>
-                  <div className="grid grid-cols-2 gap-2 mb-3">
-                    {metrics.map((metric) => <DashboardMetricCard key={metric.label} metric={metric} />)}
-                  </div>
-                  <DashboardActivityTrend
-                    points={activityTrend}
-                    hourlyPoints={activityTrendHourly}
-                    activitySummary={activitySummary}
-                    recentPromptCount={promptCount}
-                    recentToolCallCount={recentToolCallCount}
-                  />
-                  <DashboardApprovalPanel
-                    approvals={approvalRows}
-                    pendingApprovalCount={pendingApprovalCount}
-                    onRespondApproval={onRespondApproval}
-                  />
-                  <DashboardNotificationList
-                    notifications={notifications}
-                    onOpenSession={onOpenSession}
-                    onClear={onClearNotifications}
-                  />
-                  <DashboardActivityStream
-                    sessions={sessions}
-                    approvals={approvalHistory}
-                    onOpenSession={onOpenSession}
-                    onClearApprovalHistory={onClearApprovalHistory}
-                    isMobile
-                  />
-                </>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 gap-2 md:grid-cols-3 xl:grid-cols-6">
-                    {metrics.map((metric) => <DashboardMetricCard key={metric.label} metric={metric} />)}
-                  </div>
-                  <DashboardActivityTrend
-                    points={activityTrend}
-                    hourlyPoints={activityTrendHourly}
-                    activitySummary={activitySummary}
-                    recentPromptCount={promptCount}
-                    recentToolCallCount={recentToolCallCount}
-                  />
+              <>
+                <div
+                  className="grid grid-cols-2 gap-2 md:grid-cols-4"
+                  data-slot="dashboard-metrics"
+                >
+                  {metrics.map((metric) => <DashboardMetricCard key={metric.label} metric={metric} />)}
+                </div>
+                <DashboardActivityTrend
+                  points={activityTrend}
+                  hourlyPoints={activityTrendHourly}
+                />
+                {isMobile ? (
+                  <>
+                    <DashboardApprovalPanel
+                      approvals={approvalRows}
+                      pendingApprovalCount={pendingApprovalCount}
+                      onRespondApproval={onRespondApproval}
+                    />
+                    <DashboardNotificationList
+                      notifications={notifications}
+                      onOpenSession={onOpenSession}
+                      onClear={onClearNotifications}
+                    />
+                    <DashboardActivityStream
+                      sessions={sessions}
+                      approvals={approvalHistory}
+                      onOpenSession={onOpenSession}
+                      onClearApprovalHistory={onClearApprovalHistory}
+                      isMobile
+                    />
+                  </>
+                ) : (
                   <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-12">
                     <div className="min-w-0 lg:col-span-8">
                       <DashboardActivityStream
@@ -560,8 +528,8 @@ export function DashboardPage({
                       />
                     </aside>
                   </div>
-                </>
-              )
+                )}
+              </>
             ) : selectedSection === "tasks" ? (
               <DashboardTaskWorkspace
                 sessions={sessions}

@@ -327,6 +327,8 @@ test("ACP runtime overview refreshes after restore and does not stay connected d
 test("mission worktree uses Tailwind pane layout instead of feature css", () => {
   assert.match(worktreeSource, /mission-grid/);
   assert.match(worktreeSource, /wb-pane shadow-ambient/);
+  assert.match(worktreeSource, /!embedded && "wb-pane shadow-ambient"/);
+  assert.match(worktreeSource, /mission-grid w-full min-w-0 overflow-hidden/);
   assert.doesNotMatch(worktreeSource, /grid-cols-\[minmax\(220px,22%\)_6px_minmax\(0,1fr\)_6px_minmax\(280px,24%\)\]/);
   assert.doesNotMatch(worktreeSource, /surface-card/);
   assert.match(worktreeSource, /mission-sidebar-collapsed/);
@@ -528,7 +530,8 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /onCloseSessionView=\{onCloseSessionView \?\? closeChatSession\}/);
   assert.match(worktreeSource, /openSessions=/);
   assert.match(worktreeSource, /hideWorkspaceHeader=\{chatOnly\}/);
-  assert.match(worktreeSource, /hideSessionCloseAction=\{chatOnly && !onCloseSessionView\}/);
+  assert.match(worktreeSource, /effectiveHideSessionCloseAction/);
+  assert.match(worktreeSource, /hideSessionCloseAction=\{effectiveHideSessionCloseAction\}/);
   assert.match(worktreeSource, /sidebarCollapsed=\{chatOnly \? false : effectiveSidebarCollapsed\}/);
   assert.match(worktreeSource, /onExpandSidebar=\{\(\) => setMissionSidebarCollapsed\(false\)\}/);
   assert.match(worktreeSource, /onCollapse=\{onToggleDisplay\}/);
@@ -1021,12 +1024,15 @@ test("mission mobile pager is compact and exposes four pane destinations", () =>
   assert.doesNotMatch(mobilePagerSource, /引导|教程|滑动说明/);
 });
 
-test("mission mobile session selection routes back to chat and keeps desktop thinking in the top menu", () => {
+test("mission session menus expose Thinking when the workspace header is hidden", () => {
   assert.match(chatWindowActionsSource, /isMissionMobile/);
   assert.match(chatWindowActionsSource, /if \(isMissionMobile\) \{\s*setSelectedMissionMobilePane\("chat"\);\s*\}/s);
   assert.match(chatPaneComponentSource, /isMissionMobile: boolean;/);
   assert.match(chatPaneComponentSource, /!isMissionMobile && !hideWorkspaceHeader \? \(\s*<div className=\"wb-pane-head\"/s);
-  assert.match(chatPaneComponentSource, /showThinkingToggle=\{isMissionMobile\}/);
+  assert.match(
+    chatPaneComponentSource,
+    /showThinkingToggle=\{isMissionMobile \|\| hideWorkspaceHeader\}/,
+  );
   assert.match(chatPaneComponentSource, /onToggleThinking=\{onToggleThinking\}/);
   assert.match(workspaceChatCompositionSource, /return isMobile \? "输入消息" : draftPromptPlaceholder/);
 });

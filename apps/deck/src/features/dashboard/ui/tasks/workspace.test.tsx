@@ -79,6 +79,9 @@ test("DashboardTaskWorkspace renders only the selected task view", () => {
   assert.doesNotMatch(panelHtml, /已结束|需要关注/);
   assert.match(panelHtml, /梳理后续拆分任务/);
   assert.match(panelHtml, /未分配/);
+  assert.match(panelHtml, /data-task-agent-badge="codex"/);
+  assert.doesNotMatch(panelHtml, /data-task-session-row="running-session"[\s\S]*?进行中/);
+  assert.doesNotMatch(workspaceSource, /ChevronRight/);
   assert.match(panelHtml, /data-task-view="panel"/);
   assert.doesNotMatch(panelHtml, /data-task-view="table"|data-task-view="gantt"/);
 
@@ -93,6 +96,7 @@ test("task table keeps project and worktree context without an agent", () => {
   );
 
   assert.match(html, new RegExp("项目 / 分支"));
+  assert.ok(html.indexOf(">状态<") < html.indexOf(">项目 / 分支<"));
   assert.match(html, /Tiller \/ feature\/task-workspace/);
   assert.match(html, /Tiller \/ main/);
   assert.match(html, /Agent/);

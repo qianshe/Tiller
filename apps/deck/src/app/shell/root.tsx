@@ -8,6 +8,7 @@ import {
 } from "../../features/agents";
 import {
   DashboardTaskLaunchError,
+  finalizeDashboardTaskLaunch,
   launchDashboardTask,
   type DashboardQuickCreateRequest,
   type DashboardSection,
@@ -451,7 +452,7 @@ export function App() {
     }
 
     const dispatchDashboardTask = (
-      method: "session/new" | "session/prompt" | "session/rename" | "conversation/save" | "conversation/start" | "conversation/delete",
+      method: "session/new" | "session/prompt" | "conversation/save" | "conversation/start" | "conversation/delete",
       params: Record<string, unknown>,
     ) => dispatch(
       client,
@@ -519,10 +520,23 @@ export function App() {
     }
 
     void launchTask.then(async (sessionId) => {
-      if (request.title?.trim() && request.mode === "reuse") {
-        await dispatchDashboardTask("session/rename", {
+      if (request.mode !== "reuse" || !request.preparationId) {
+        return;
+      }
+      try {
+        await finalizeDashboardTaskLaunch({
+          mode: request.mode,
+          preparationId: request.preparationId,
+          revision: request.revision,
+          dispatch: dispatchDashboardTask,
+        });
+      } catch (error) {
+        deckData.addNotification({
+          kind: "warning",
+          source: "dashboard",
+          message: `会话已继续，但准备记录清理失败：${formatRpcError(error)}`,
           sessionId,
-          title: request.title.trim(),
+          details: { helmKey: request.helmKey, phase: "conversation/delete" },
         });
       }
     }).catch((error) => {

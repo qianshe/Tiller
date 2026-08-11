@@ -71,6 +71,8 @@ test("Dashboard quick create launches the prompt instead of staging the Mission 
     .split("function openNewTaskFromDashboard")[1]
     ?.split("const layoutContext")[0] ?? "";
   assert.match(handlerSource, /launchDashboardTask/);
+  assert.match(handlerSource, /finalizeDashboardTaskLaunch/);
+  assert.doesNotMatch(handlerSource, /session\/rename/);
   assert.doesNotMatch(handlerSource, /setDraftChatWindow|setPrompt\(/);
 });
 

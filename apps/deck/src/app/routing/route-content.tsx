@@ -1,9 +1,11 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
 import { useDeckStore } from "../../store";
 import {
   buildDashboardQuickCreateHelms,
   buildDashboardQuickCreateProjects,
   buildDashboardViewModel,
+  DASHBOARD_MISSION_DRAWER_DEFAULT_WIDTH,
+  DashboardMissionDrawerResizeHandle,
 } from "../../features/dashboard";
 import type { AppRouteContext, MissionRouteSource } from "./route-context";
 import {
@@ -13,13 +15,17 @@ import {
 } from "../../shared/config/deck-runtime";
 import { useEffectiveViewport } from "../../features/preferences";
 import { clearProcessedApprovalHistory } from "../../features/approvals";
+import {
+  resolveSessionComposerConfiguration,
+  type SessionConfigPreferencePatch,
+} from "../../features/mission/facade";
 import { daemonProfileKey } from "../../features/helm-connection/facade";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
 } from "../../shared/ui";
 
 const OverviewPage = lazy(() =>
@@ -48,15 +54,35 @@ const MissionRoute = lazy(() =>
       source,
       embedded,
       chatOnly,
+      hideSessionCloseAction,
     }: {
       source: MissionRouteSource;
       embedded?: boolean;
       chatOnly?: boolean;
-    }) => module.renderMissionRoute(source, { embedded, chatOnly }),
+      hideSessionCloseAction?: boolean;
+    }) => module.renderMissionRoute(source, { embedded, chatOnly, hideSessionCloseAction }),
   })),
 );
 
 const ignoreDashboardMissionStateUpdate = () => undefined;
+
+function DashboardMissionDrawerLoading() {
+  return (
+    <div className="flex h-full min-h-0 items-center justify-center bg-surface-elevated">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex items-center gap-2 text-sm text-muted-foreground"
+      >
+        <span
+          aria-hidden="true"
+          className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent"
+        />
+        <span>正在打开会话...</span>
+      </div>
+    </div>
+  );
+}
 
 export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
   const viewport = useEffectiveViewport();
@@ -82,6 +108,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     worktrees,
     projectFilesByScope,
     agents,
+    agentConnectionInventory,
     sessions,
     preparations,
     messages,
@@ -186,6 +213,9 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
   } = source;
   const [dashboardMissionSessionId, setDashboardMissionSessionId] = useState<string | null>(null);
   const [dashboardSelectedSessionId, setDashboardSelectedSessionId] = useState<string | null>(null);
+  const [dashboardMissionDrawerWidth, setDashboardMissionDrawerWidth] = useState(
+    DASHBOARD_MISSION_DRAWER_DEFAULT_WIDTH,
+  );
 
   useEffect(() => {
     if (activeView !== "dashboard") {
@@ -240,7 +270,11 @@ function renderDashboard() {
     defaultDaemonPort: DEFAULT_DAEMON_PORT,
     activeHelm,
     helms,
+    currentHelmKey,
+    helmConnectionStates,
+    helmInventories,
     agents,
+    agentConnectionInventory,
     projects,
     sessions,
     preparations: dashboardPreparations,
@@ -334,7 +368,7 @@ function renderDashboard() {
   );
 }
 
-function renderDashboardMissionDialog() {
+function renderDashboardMissionDrawer() {
   if (!dashboardMissionSessionId) {
     return null;
   }
@@ -349,9 +383,19 @@ function renderDashboardMissionDialog() {
     (worktree: any) => worktree.path === dashboardSession.cwd,
   ) ?? null;
   const dashboardAgent = agents.find((agent: any) => agent.id === dashboardSession.agentId) ?? null;
+  const dashboardSessionComposerConfiguration = resolveSessionComposerConfiguration({
+    session: dashboardSession,
+    sessions,
+    sessionConfigOptions: source.sessionConfigOptions ?? {},
+    agents,
+  });
+  const updateDashboardSessionDraftPreferences = (
+    next: SessionConfigPreferencePatch,
+  ) => source.updateSessionDraftPreferences(next, dashboardMissionSessionId);
 
   const dashboardMissionSource = {
     ...source,
+    ...dashboardSessionComposerConfiguration,
     activeSessionId: dashboardMissionSessionId,
     activeSession: dashboardSession,
     activeSessionMessages: messages?.[dashboardMissionSessionId] ?? [],
@@ -365,6 +409,7 @@ function renderDashboardMissionDialog() {
     selectedDraftAgent: dashboardAgent,
     effectiveMissionHelmId: dashboardSession.helmId,
     pendingPermission: source.permissionRequests?.[dashboardMissionSessionId] ?? null,
+    updateSessionDraftPreferences: updateDashboardSessionDraftPreferences,
     openChatSessionIds: [dashboardMissionSessionId],
     focusedChatWindowId: `session:${dashboardMissionSessionId}`,
     setOpenChatSessionIds: ignoreDashboardMissionStateUpdate,
@@ -374,8 +419,15 @@ function renderDashboardMissionDialog() {
     onCloseSessionView: () => setDashboardMissionSessionId(null),
   };
 
+  const dashboardMissionDrawerClassName = isMobile
+    ? "dashboard-mission-drawer h-[min(80dvh,720px)] max-h-[80dvh] min-h-0 gap-0 overflow-hidden rounded-none border-0 p-0"
+    : "dashboard-mission-drawer h-full max-h-none gap-0 overflow-hidden rounded-none border-0 p-0 w-[var(--dashboard-mission-drawer-width)] sm:w-[var(--dashboard-mission-drawer-width)] max-w-[calc(100vw_-_1rem)] sm:max-w-[calc(100vw_-_1rem)]";
+
   return (
-    <Dialog
+    <Drawer
+      direction={isMobile ? "bottom" : "right"}
+      dismissible
+      handleOnly={!isMobile}
       open
       onOpenChange={(open) => {
         if (!open) {
@@ -383,24 +435,43 @@ function renderDashboardMissionDialog() {
         }
       }}
     >
-      <DialogContent
-        className="dashboard-mission-dialog h-[calc(100vh_-_1rem)] w-[calc(100vw_-_1rem)] max-w-[1200px] gap-0 overflow-hidden p-0 [&>button]:hidden sm:h-[min(800px,calc(100vh_-_2rem))] sm:w-[min(1200px,calc(100vw_-_2rem))]"
-        data-slot="dashboard-mission-dialog"
+      <DrawerContent
+        showHandle={false}
+        style={
+          {
+            "--dashboard-mission-drawer-width": `${dashboardMissionDrawerWidth}px`,
+            width: isMobile ? undefined : "var(--dashboard-mission-drawer-width)",
+            maxWidth: isMobile ? undefined : "calc(100vw - 1rem)",
+          } as CSSProperties
+        }
+        className={dashboardMissionDrawerClassName}
+        data-slot="dashboard-mission-drawer"
       >
-        <DialogHeader className="sr-only">
-          <DialogTitle>Mission 工作台</DialogTitle>
-          <DialogDescription>在 Dashboard 中查看并继续当前会话</DialogDescription>
-        </DialogHeader>
-        <div className="h-full min-h-0 w-full overflow-hidden">
-          <MissionRoute
-            key={dashboardMissionSessionId}
-            source={dashboardMissionSource}
-            embedded
-            chatOnly
+        {isMobile ? null : (
+          <DashboardMissionDrawerResizeHandle
+            width={dashboardMissionDrawerWidth}
+            onWidthChange={setDashboardMissionDrawerWidth}
           />
+        )}
+        <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+          <DrawerHeader className="sr-only">
+            <DrawerTitle>Mission 工作台</DrawerTitle>
+            <DrawerDescription>在 Dashboard 中查看并继续当前会话</DrawerDescription>
+          </DrawerHeader>
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <Suspense fallback={<DashboardMissionDrawerLoading />}>
+              <MissionRoute
+                key={dashboardMissionSessionId}
+                source={dashboardMissionSource}
+                embedded
+                chatOnly
+                hideSessionCloseAction
+              />
+            </Suspense>
+          </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </DrawerContent>
+    </Drawer>
   );
 }
 
@@ -520,7 +591,7 @@ function renderSettings(mode: "standalone" | "dashboard" = "standalone") {
         {activeView === "dashboard" && (
           <>
             {renderDashboard()}
-            {renderDashboardMissionDialog()}
+            {renderDashboardMissionDrawer()}
           </>
         )}
         {activeView === "sessions" && <MissionRoute source={source} />}

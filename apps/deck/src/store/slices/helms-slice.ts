@@ -32,11 +32,17 @@ export type HelmUpdateState = {
   message?: string;
 };
 
+export type HelmAgentConnectionSummary = {
+  providerId: string;
+  status: string;
+};
+
 export type HelmInventoryBucket = {
   helms?: HelmSummary[];
   projects: ProjectSummary[];
   worktrees: WorktreeSummary[];
   agents: AcpAgentProvider[];
+  agentConnections?: HelmAgentConnectionSummary[];
   sessions: SessionSummary[];
   statuses: Record<string, SessionStatus>;
   trustedDevices: TrustedDeviceSummary[];

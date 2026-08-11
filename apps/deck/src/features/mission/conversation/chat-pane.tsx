@@ -973,7 +973,7 @@ export function MissionChatPane({
                   onUpdateQueuedPrompt={onUpdateQueuedPrompt}
                   onDeleteQueuedPrompt={onDeleteQueuedPrompt}
                   onRespondToPermission={handleRespondToPermission}
-                  showThinkingToggle={isMissionMobile}
+                  showThinkingToggle={isMissionMobile || hideWorkspaceHeader}
                   onToggleThinking={onToggleThinking}
                   showCreateTaskAction={isMissionMobile && !hideWorkspaceHeader}
                   hideSessionCloseAction={hideSessionCloseAction}

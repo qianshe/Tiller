@@ -227,7 +227,11 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
         sessionCount: 1,
       },
     ],
-    agents: [{ id: "codex" }],
+    agents: [{ id: "codex" }, { id: "claudecode" }],
+    agentConnectionInventory: [
+      { providerId: "codex", status: "ready" },
+      { providerId: "claudecode", status: "closed" },
+    ],
     projects: [{ id: "tiller" }],
     sessions,
     statuses: { "session-1": "waiting_for_permission" },
@@ -314,7 +318,10 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
 
   assert.equal(model.activeHelmLabel, "Local Helm · 127.0.0.1:47631");
   assert.equal(model.onlineHelmCount, 1);
-  assert.equal(model.activeSessionCount, 1);
+  assert.equal(model.runningAcpCount, 1);
+  assert.equal(model.totalAcpCount, 2);
+  assert.equal(model.runningSessionCount, 0);
+  assert.equal(model.totalSessionCount, 1);
   assert.equal(model.pendingApprovalCount, 1);
   assert.equal(model.toolCallCount, 1);
   assert.equal(model.promptCount, 0);
@@ -355,4 +362,73 @@ test("buildDashboardViewModel derives helm rows and approval rows", () => {
     total: 2,
     label: "1/2 进行中",
   });
+});
+
+test("buildDashboardViewModel counts one ACP agent across multiple worktree connections", () => {
+  const agents = [{ id: "claudecode" }, { id: "opencode" }, { id: "codex" }];
+  const connections = [
+    { providerId: "claudecode", status: "ready" },
+    { providerId: "opencode", status: "ready" },
+    { providerId: "codex", status: "ready" },
+    { providerId: "codex", status: "ready" },
+  ];
+  const model = buildDashboardViewModel({
+    connection: "connected",
+    daemonHost: "127.0.0.1",
+    daemonPort: "47631",
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "47631",
+    currentHelmKey: "helm-local",
+    helmConnectionStates: { "helm-local": "connected" },
+    helmInventories: {
+      "helm-local": { agents, agentConnections: connections },
+    },
+    agents,
+    agentConnectionInventory: connections,
+    projects: [],
+    sessions: [],
+    toolCalls: {},
+    approvalItemsById: {},
+    resolveDisplaySessionTitle: (session) => session.title ?? session.id,
+  });
+
+  assert.equal(model.runningAcpCount, 3);
+  assert.equal(model.totalAcpCount, 3);
+});
+
+test("buildDashboardViewModel aggregates ACP agents across connected Helms", () => {
+  const localAgents = [{ id: "claudecode" }, { id: "opencode" }, { id: "codex" }];
+  const localConnections = [
+    { providerId: "claudecode", status: "ready" },
+    { providerId: "opencode", status: "ready" },
+    { providerId: "codex", status: "ready" },
+  ];
+  const remoteAgents = [{ id: "codex" }];
+  const remoteConnections = [{ providerId: "codex", status: "ready" }];
+  const model = buildDashboardViewModel({
+    connection: "connected",
+    daemonHost: "127.0.0.1",
+    daemonPort: "47631",
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "47631",
+    currentHelmKey: "helm-local",
+    helmConnectionStates: {
+      "helm-local": "connected",
+      "helm-remote": "connected",
+    },
+    helmInventories: {
+      "helm-local": { agents: localAgents, agentConnections: localConnections },
+      "helm-remote": { agents: remoteAgents, agentConnections: remoteConnections },
+    },
+    agents: localAgents,
+    agentConnectionInventory: localConnections,
+    projects: [],
+    sessions: [],
+    toolCalls: {},
+    approvalItemsById: {},
+    resolveDisplaySessionTitle: (session) => session.title ?? session.id,
+  });
+
+  assert.equal(model.runningAcpCount, 4);
+  assert.equal(model.totalAcpCount, 4);
 });
