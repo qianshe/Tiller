@@ -10,6 +10,7 @@ import * as notificationRaised from "./notification/raised";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
 import * as daemonUpdateStatus from "./daemon/update-status";
+import * as dashboardActivitySummary from "./dashboard/activity-summary";
 
 test("session/prompt result has stopReason", () => {
   assert.equal(sessionPrompt.method, "session/prompt");
@@ -113,5 +114,18 @@ test("daemon/update status carries capability and progress fields", () => {
     checkStatus: "checked",
     manualCommand: "npm install -g @qianshe/tiller@latest",
     occurredAt: "2026-08-02T00:00:00.000Z",
+  });
+});
+
+test("dashboard/activity_summary is a typed server notification", () => {
+  assert.equal(dashboardActivitySummary.method, "dashboard/activity_summary");
+  assert.equal(dashboardActivitySummary.descriptor.kind, "notification");
+  dashboardActivitySummary.ParamsSchema.parse({
+    generatedAt: "2026-08-12T00:00:00.000Z",
+    promptCount: 1,
+    recentToolCallCount: 2,
+    toolCallCount: 2,
+    activityTrend: [],
+    activityTrendHourly: [],
   });
 });

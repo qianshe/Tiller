@@ -1,5 +1,5 @@
 import type { NotificationRaisedParams } from "@tiller/sync-protocol";
-import type { PromptTraceEvent } from "@tiller/shared";
+import type { PromptTraceEvent, SessionActivitySummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 
 export function broadcastSessionUpdate(
@@ -22,6 +22,13 @@ export function broadcastConversationUpdate(
     | { kind: "preparation_deleted"; preparationId: string },
 ): void {
   context.broadcastNotification("conversation/update", update);
+}
+
+export function broadcastSessionActivitySummary(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  summary: SessionActivitySummary,
+): void {
+  context.broadcastNotification("dashboard/activity_summary", summary);
 }
 
 export function broadcastErrorRaised(

@@ -27,6 +27,7 @@ import {
   applyInventoryResult,
   applyConversationUpdate,
   applySessionResult,
+  applySessionActivitySummary,
   applySessionUpdate,
   applyPromptTraceEvent,
   createDeckSessionUpdateTraceEvent,
@@ -233,6 +234,13 @@ export function createServerEventController(source: any, helpers: any) {
     }
     if (method === "debug/prompt_trace") {
       applyPromptTraceEvent(params as PromptTraceEvent);
+      return;
+    }
+    if (method === "dashboard/activity_summary") {
+      applySessionActivitySummary(
+        params as import("@tiller/shared").SessionActivitySummary,
+        sourceHelmKey,
+      );
       return;
     }
     if (method === "session/update") {

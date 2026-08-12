@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { broadcastPromptTrace, broadcastSessionUpdate } from "./notifications.js";
+import {
+  broadcastPromptTrace,
+  broadcastSessionActivitySummary,
+  broadcastSessionUpdate,
+} from "./notifications.js";
 import { createSessionEventPublisher } from "../runtime/session/event/publisher";
 
 const detailUpdates = [
@@ -85,6 +89,25 @@ test("prompt trace debug events use global notification broadcast", () => {
       params: event,
     },
   ]);
+});
+
+test("activity summary updates use the global dashboard notification", () => {
+  const calls: Array<{ method: string; params: unknown }> = [];
+  const summary = {
+    generatedAt: "2026-08-12T00:00:00.000Z",
+    promptCount: 1,
+    recentToolCallCount: 2,
+    toolCallCount: 2,
+    activityTrend: [],
+    activityTrendHourly: [],
+  };
+
+  broadcastSessionActivitySummary(
+    { broadcastNotification: (method, params) => calls.push({ method, params }) },
+    summary,
+  );
+
+  assert.deepEqual(calls, [{ method: "dashboard/activity_summary", params: summary }]);
 });
 
 test("session event publisher preserves notification payloads", () => {

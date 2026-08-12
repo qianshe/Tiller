@@ -233,6 +233,30 @@ test("runtime keeps ignoring late tool-call events after cancellation", () => {
   assert.equal(capture.timelineEntries?.length ?? 0, 0);
 });
 
+test("runtime keeps the session cancelled when idle arrives after cancellation", () => {
+  const logs: string[] = [];
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    sessionUpdates: [],
+    timelineEntries: [],
+  };
+  const context = createTestContext(logs, capture, "session-cancelled-idle", {
+    status: "cancelled",
+  });
+
+  handleRuntimeEvent(
+    "session-cancelled-idle",
+    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  assert.equal(context.sessionStore.get("session-cancelled-idle")?.status, "cancelled");
+  assert.ok(findStructuredLog(capture, "runtime.event.ignored_late"));
+  assert.equal(capture.sessionUpdates?.length ?? 0, 0);
+});
+
 test("runtime compaction started publishes a canonical timeline batch when the pipeline is available", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {

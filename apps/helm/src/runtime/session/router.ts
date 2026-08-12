@@ -674,6 +674,18 @@ export async function cancelSessionRuntime(
     status: "cancelled",
     message: "Cancelled by user",
   }, context);
-  record.runtime.cancel();
+  try {
+    void Promise.resolve(record.runtime.cancel()).catch((error: unknown) => {
+      logRuntimeError(context, "runtime.session.cancel_failed", {
+        sessionId,
+        message: error instanceof Error ? error.message : "Runtime cancellation failed.",
+      });
+    });
+  } catch (error) {
+    logRuntimeError(context, "runtime.session.cancel_failed", {
+      sessionId,
+      message: error instanceof Error ? error.message : "Runtime cancellation failed.",
+    });
+  }
   return true;
 }

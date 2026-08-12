@@ -94,6 +94,6 @@ test("method name lists are exhaustive and stable", () => {
   assert.deepEqual([...CLIENT_NOTIFICATION_METHODS], ["session/cancel"]);
   assert.deepEqual(
     [...SERVER_NOTIFICATION_METHODS],
-    ["session/update", "error/raised", "notification/raised", "approval/created", "approval/resolved", "daemon/update/status", "conversation/update"],
+    ["session/update", "error/raised", "notification/raised", "dashboard/activity_summary", "approval/created", "approval/resolved", "daemon/update/status", "conversation/update"],
   );
 });

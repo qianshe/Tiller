@@ -132,6 +132,25 @@ function resolveSessionActivityState(status: string | undefined): Pick<Dashboard
   return { tone: "idle", statusLabel: "空闲" };
 }
 
+function resolveActivityStatusClass(tone: DashboardActivity["tone"]) {
+  switch (tone) {
+    case "primary":
+      return "text-primary";
+    case "active":
+      return "text-success";
+    case "warning":
+      return "text-warning";
+    case "danger":
+      return "text-destructive";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+function shouldPulseActivity(activity: DashboardActivity) {
+  return activity.statusLabel === "运行中" || activity.statusLabel === "处理中";
+}
+
 function formatApprovalDetail(approval: DashboardActivityApproval) {
   if (approval.status === "expired") return "请求已失效";
   if (approval.status === "resolving") return "正在提交";
@@ -303,9 +322,9 @@ export function DashboardActivityStream({
                 onClick={() => activity.sessionId ? onOpenSession?.(activity.sessionId) : undefined}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <StatusDot tone={activity.tone} size={6} />
+                  <StatusDot tone={activity.tone} pulse={shouldPulseActivity(activity)} size={6} />
                   <span className="min-w-0 flex-1 truncate text-section">{activity.title}</span>
-                  <span className="font-mono text-meta tabular text-muted-foreground">{activity.statusLabel}</span>
+                  <span className={cn("font-mono text-meta tabular", resolveActivityStatusClass(activity.tone))}>{activity.statusLabel}</span>
                 </span>
                 <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                   <span className="truncate font-mono text-meta tabular text-muted-foreground">
@@ -418,9 +437,9 @@ export function DashboardActivityStream({
               onClick={() => activity.sessionId ? onOpenSession?.(activity.sessionId) : undefined}
             >
               <span className="flex min-w-0 items-center gap-2">
-                <StatusDot tone={activity.tone} size={6} />
+                <StatusDot tone={activity.tone} pulse={shouldPulseActivity(activity)} size={6} />
                 <span className="grid min-w-0 gap-0.5">
-                  <span className="truncate text-section">{activity.statusLabel}</span>
+                  <span className={cn("truncate text-section", resolveActivityStatusClass(activity.tone))}>{activity.statusLabel}</span>
                   <span className="truncate font-mono text-meta tabular text-muted-foreground">{activity.time}</span>
                 </span>
               </span>

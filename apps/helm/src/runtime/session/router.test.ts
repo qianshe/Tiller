@@ -1270,6 +1270,28 @@ test("cancelSessionRuntime canonicalizes active tools while keeping the runtime 
   assert.equal(liveStateUpdates.at(-1)?.params.update.snapshot.status.effectiveStatus, "cancelled");
 });
 
+test("cancelSessionRuntime keeps the session cancelled when runtime cancellation throws", async () => {
+  const { context, broadcasts } = createContext({
+    activeRuntime: {
+      prompt: async () => undefined,
+      cancel: () => {
+        throw new Error("runtime cancel failed");
+      },
+      sessionCapabilities: { imageInput: true },
+    } as any,
+  });
+  const { cancelSessionRuntime } = await import("./router");
+
+  const handled = await cancelSessionRuntime("session-1", context);
+
+  assert.equal(handled, true);
+  assert.equal(context.sessionStore.get("session-1")?.status, "cancelled");
+  assert.equal(
+    broadcasts.some((item) => item.method === "notification/raised"),
+    false,
+  );
+});
+
 test("cancelSessionRuntime broadcasts an error when the runtime is missing", async () => {
   const { context, broadcasts } = createContext();
   const { cancelSessionRuntime } = await import("./router");

@@ -17,7 +17,11 @@ import { applyActivityUpdate } from "./activity-events.js";
 import { applyApprovalCreated, applyApprovalResolved } from "./approval-events.js";
 import { applyDeviceResult } from "./device-events.js";
 import { applyInventoryResult } from "./inventory-events.js";
-import { applySessionResult, applySessionUpdate } from "./session-events.js";
+import {
+  applySessionActivitySummary,
+  applySessionResult,
+  applySessionUpdate,
+} from "./session-events.js";
 
 function session(id: string): SessionSummary {
   return {
@@ -97,6 +101,22 @@ test("session/activity_summary stores summary data in the source Helm inventory"
 
   assert.equal(handled, true);
   assert.deepEqual(useDeckStore.getState().helmInventories["helm-1"]?.activitySummary, summary);
+});
+
+test("dashboard activity summary notifications update only their source Helm inventory", () => {
+  resetStore();
+  const summary = {
+    generatedAt: "2026-08-09T12:34:56.000Z",
+    promptCount: 5,
+    recentToolCallCount: 8,
+    toolCallCount: 19,
+    activityTrend: [],
+    activityTrendHourly: [],
+  };
+
+  assert.equal(applySessionActivitySummary(summary, "helm-2"), true);
+  assert.deepEqual(useDeckStore.getState().helmInventories["helm-2"]?.activitySummary, summary);
+  assert.equal(useDeckStore.getState().helmInventories["helm-1"], undefined);
 });
 
 test("session cleanup releases session-scoped caches without touching another session", () => {

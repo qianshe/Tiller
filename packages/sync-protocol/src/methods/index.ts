@@ -68,6 +68,7 @@ import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
 import * as notificationRaised from "./notification/raised";
+import * as dashboardActivitySummary from "./dashboard/activity-summary";
 import * as conversationList from "./conversation/list";
 import * as conversationSave from "./conversation/save";
 import * as conversationDelete from "./conversation/delete";
@@ -147,6 +148,7 @@ const METHOD_DESCRIPTORS = {
   [sessionUpdate.method]: sessionUpdate.descriptor,
   [errorRaised.method]: errorRaised.descriptor,
   [notificationRaised.method]: notificationRaised.descriptor,
+  [dashboardActivitySummary.method]: dashboardActivitySummary.descriptor,
   [conversationList.method]: conversationList.descriptor,
   [conversationSave.method]: conversationSave.descriptor,
   [conversationDelete.method]: conversationDelete.descriptor,
@@ -233,6 +235,7 @@ export const SERVER_NOTIFICATION_METHODS = [
   sessionUpdate.method,
   errorRaised.method,
   notificationRaised.method,
+  dashboardActivitySummary.method,
   approvalCreated.method,
   approvalResolved.method,
   daemonUpdateStatus.method,

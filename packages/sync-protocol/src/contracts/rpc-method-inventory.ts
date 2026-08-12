@@ -10,6 +10,7 @@ export type RpcMethodDirection = "client-request" | "client-notification" | "ser
 export type RpcMethodFamily =
   | "agent"
   | "approval"
+  | "dashboard"
   | "daemon"
   | "debug"
   | "device"
@@ -61,6 +62,7 @@ function isRpcMethodFamily(value: string | undefined): value is RpcMethodFamily 
   return (
     value === "agent" ||
     value === "approval" ||
+    value === "dashboard" ||
     value === "daemon" ||
     value === "debug" ||
     value === "device" ||

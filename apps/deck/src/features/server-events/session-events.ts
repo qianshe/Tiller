@@ -7,6 +7,7 @@ import {
   type AgentPromptImageContent,
   type AgentToolCall,
   type SessionConfigOption,
+  type SessionActivitySummary,
   type SessionLiveStateSnapshot,
   type LegacyEvidenceAvailability,
   type LegacyEvidencePage,
@@ -396,10 +397,7 @@ export function applySessionResult(
       return true;
     }
     case "session/activity_summary":
-      store.applyHelmInventory(sourceHelmKey, {
-        activitySummary: payload as import("@tiller/shared").SessionActivitySummary,
-      });
-      return true;
+      return applySessionActivitySummary(payload as SessionActivitySummary, sourceHelmKey);
     case "session/list_legacy_evidence": {
       const page = payload as LegacyEvidencePage;
       store.setSessionLegacyEvidence((current) => {
@@ -617,6 +615,16 @@ export function applySessionResult(
     default:
       return false;
   }
+}
+
+export function applySessionActivitySummary(
+  summary: SessionActivitySummary,
+  sourceHelmKey: string,
+) {
+  useDeckStore.getState().applyHelmInventory(sourceHelmKey, {
+    activitySummary: summary,
+  });
+  return true;
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
