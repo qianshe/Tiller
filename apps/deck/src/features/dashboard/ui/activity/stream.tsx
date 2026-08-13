@@ -347,7 +347,7 @@ export function DashboardActivityStream({
   }
 
   return (
-    <section className="wb-pane flex min-h-[520px] flex-col lg:col-span-2" style={acpColumnStyle}>
+    <section className="wb-pane flex min-h-0 flex-col lg:col-span-2" style={acpColumnStyle}>
       <div className="wb-pane-head min-h-9">
         <span className="wb-pane-head-title">活动流</span>
         <div className="ml-2 flex items-center gap-1" role="tablist" aria-label="活动分类">
@@ -422,7 +422,7 @@ export function DashboardActivityStream({
         <span>计划 / 权限</span>
         <span>ACP</span>
       </div>
-      <ul className="flex-1 overflow-y-auto overflow-x-hidden" hidden={activeTab === "通知"}>
+      <ul className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" hidden={activeTab === "通知"}>
         {filteredActivities.map((activity) => (
           <li key={activity.id} className="border-b border-border-ghost last:border-b-0">
             <button

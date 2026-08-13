@@ -1224,7 +1224,7 @@ export function MissionWorktree(props: any) {
           showPermissionWorktree={technicalPanels.showPermissionWorktree}
           displayCollapsed={chatOnly || displayPaneCollapsed}
           inspectorCollapsed={chatOnly || effectiveInspectorCollapsed}
-          sidebarCollapsed={chatOnly ? false : effectiveSidebarCollapsed}
+          sidebarCollapsed={chatOnly || effectiveSidebarCollapsed}
           showThinking={technicalPanels.showMissionThinking}
           canToggleDisplay={canToggleDisplay}
           projectOptions={workbenchProjectOptions}

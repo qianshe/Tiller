@@ -608,7 +608,7 @@ test("DashboardPage keeps the ACP column content-sized and left-aligned", () => 
 
 test("DashboardPage confines desktop scrolling to the right content region", () => {
   assert.match(pageSource, /SidebarProvider[\s\S]*className="dashboard-page h-full min-h-0 overflow-hidden"/);
-  assert.match(pageSource, /SidebarInset className="dashboard-sidebar-inset h-full min-h-0 overflow-hidden"/);
+  assert.match(pageSource, /SidebarInset className="dashboard-sidebar-inset h-full min-h-0 overflow-hidden md:mr-0!"/);
   assert.match(pageSource, /overflow-y-auto overflow-x-hidden/);
 });
 
@@ -719,7 +719,7 @@ test("DashboardPage mobile keeps v6 priority order", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
 
   assert.match(html, /data-slot="dashboard-metrics"/);
-  assert.match(html, /grid grid-cols-2 gap-2 md:grid-cols-4/);
+  assert.match(html, /grid-cols-2 gap-2 md:grid-cols-4/);
   assert.match(html, /待审批[\s\S]*通知/);
   assert.doesNotMatch(html, /2\/3 Helm 在线/);
   assert.match(html, /最近 24 小时/);

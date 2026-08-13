@@ -532,7 +532,7 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /hideWorkspaceHeader=\{chatOnly\}/);
   assert.match(worktreeSource, /effectiveHideSessionCloseAction/);
   assert.match(worktreeSource, /hideSessionCloseAction=\{effectiveHideSessionCloseAction\}/);
-  assert.match(worktreeSource, /sidebarCollapsed=\{chatOnly \? false : effectiveSidebarCollapsed\}/);
+  assert.match(worktreeSource, /sidebarCollapsed=\{chatOnly \|\| effectiveSidebarCollapsed\}/);
   assert.match(worktreeSource, /onExpandSidebar=\{\(\) => setMissionSidebarCollapsed\(false\)\}/);
   assert.match(worktreeSource, /onCollapse=\{onToggleDisplay\}/);
   assert.match(worktreeSource, /onCollapse=\{onToggleInspector\}/);

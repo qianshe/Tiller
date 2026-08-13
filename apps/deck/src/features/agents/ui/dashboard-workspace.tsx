@@ -20,17 +20,6 @@ export type DashboardAgentsWorkspaceProps = {
   onAddHelm?: () => void;
 };
 
-function resolveConnectionLabel(connection: ConnectionState) {
-  switch (connection) {
-    case "connected":
-      return "已连接";
-    case "connecting":
-      return "连接中";
-    default:
-      return "未连接";
-  }
-}
-
 function resolveConnectionTone(connection: ConnectionState): "active" | "primary" | "idle" {
   if (connection === "connected") return "active";
   if (connection === "connecting") return "primary";
@@ -44,7 +33,6 @@ function HelmListRow({
   helm: DashboardHelmListItem;
   onSelect: () => void;
 }) {
-  const connectionLabel = resolveConnectionLabel(helm.connection);
   return (
     <li className="border-b border-border-ghost last:border-b-0">
       <button
@@ -67,7 +55,6 @@ function HelmListRow({
           <span className="mt-1 block truncate font-mono text-meta text-muted-foreground">{helm.endpoint}</span>
         </span>
         <span className="hidden shrink-0 items-center gap-2 sm:flex">
-          <Badge variant="outline">{connectionLabel}</Badge>
           <Badge variant="outline">{helm.counts.agents} Agents</Badge>
           <Badge variant="outline">{helm.counts.projects} 项目</Badge>
           <Badge variant="outline">{helm.counts.worktrees} 工作区</Badge>
@@ -78,7 +65,6 @@ function HelmListRow({
         />
       </button>
       <div className="flex flex-wrap gap-2 px-4 pb-4 pl-16 sm:hidden">
-        <Badge variant="outline">{connectionLabel}</Badge>
         <Badge variant="outline">{helm.counts.agents} Agents</Badge>
         <Badge variant="outline">{helm.counts.projects} 项目</Badge>
         <Badge variant="outline">{helm.counts.worktrees} 工作区</Badge>

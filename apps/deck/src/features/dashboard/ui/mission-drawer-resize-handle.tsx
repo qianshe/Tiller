@@ -67,12 +67,13 @@ export function DashboardMissionDrawerResizeHandle({
   }, [isResizing, onWidthChange]);
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
-    event.stopPropagation();
     if (event.button !== 0) {
       return;
     }
+    // 不阻断 pointerdown 冒泡。Vaul 依赖 Radix DismissableLayer 在 document
+    // 冒泡阶段清理“事件发生在抽屉内”的标记；阻断它会让拖拽后的第一次抽屉外点击
+    // 被误判为抽屉内事件。拖拽本身仍由 window 层事件跟踪。
     event.preventDefault();
-    event.currentTarget.setPointerCapture(event.pointerId);
     dragState.current = {
       startX: event.clientX,
       startWidth: width,
@@ -115,7 +116,7 @@ export function DashboardMissionDrawerResizeHandle({
         "absolute inset-y-0 left-0 z-20 hidden w-3 touch-none cursor-col-resize select-none items-center justify-center border-r border-transparent hover:border-border-ghost focus-visible:border-border-ghost focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:flex",
         isResizing && "border-primary bg-primary/10",
       )}
-      onPointerDownCapture={handlePointerDown}
+      onPointerDown={handlePointerDown}
       onKeyDown={handleKeyDown}
     />
   );

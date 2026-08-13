@@ -459,7 +459,7 @@ export function DashboardPage({
           width={sidebarWidth}
           onWidthChange={setSidebarWidth}
         />
-        <SidebarInset className="dashboard-sidebar-inset h-full min-h-0 overflow-hidden" data-slot="sidebar-inset">
+        <SidebarInset className="dashboard-sidebar-inset h-full min-h-0 overflow-hidden md:mr-0!" data-slot="sidebar-inset">
           <DashboardHeader
             sectionTitle={sectionTitle}
             showSidebarTrigger
@@ -468,16 +468,16 @@ export function DashboardPage({
             className={cn(
               "flex min-h-0 min-w-0 w-full flex-1 flex-col",
               isEmbeddedSection
-                ? "max-w-none gap-0 overflow-hidden px-0 py-0"
+                ? "max-w-none gap-0 overflow-y-auto overflow-x-hidden px-0 py-0"
                 : isMobile
                   ? "gap-3 overflow-y-auto overflow-x-hidden px-3 py-3"
-                  : "mx-auto max-w-[1440px] gap-4 overflow-y-auto overflow-x-hidden px-4 py-5",
+                  : "gap-4 overflow-y-auto overflow-x-hidden px-8 py-5",
             )}
             data-slot="dashboard-content"
             aria-label={sectionTitle}
           >
             {selectedSection === "overview" ? (
-              <>
+              <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-3 lg:gap-4">
                 <div
                   className="grid grid-cols-2 gap-2 md:grid-cols-4"
                   data-slot="dashboard-metrics"
@@ -522,7 +522,7 @@ export function DashboardPage({
                     </aside>
                   </div>
                 )}
-              </>
+              </div>
             ) : selectedSection === "tasks" ? (
               <DashboardTaskWorkspace
                 sessions={sessions}

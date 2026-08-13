@@ -33,7 +33,8 @@ test("DashboardAgentsWorkspace renders a scan-friendly Helm list", () => {
   assert.match(html, /Helm 列表/);
   assert.match(html, /Local Helm/);
   assert.match(html, /localhost:47631/);
-  assert.match(html, /已连接/);
+  assert.match(html, /bg-success/);
+  assert.match(html, /aria-hidden="true"/);
   assert.match(html, /2 Agents/);
   assert.match(html, /3 项目/);
   assert.match(html, /4 工作区/);
