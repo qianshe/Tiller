@@ -47,3 +47,24 @@ test("installing status remains visible while a restart target is pending", () =
   assert.equal(resolved.update.targetVersion, "1.1.0");
   assert.deepEqual(resolved.intent, { kind: "write", targetVersion: "1.1.0" });
 });
+
+test("stale restart state does not recreate an update intent", () => {
+  const resolved = resolveHelmUpdateStatus(
+    {
+      status: "restarting",
+      currentVersion: "1.0.0",
+      latestVersion: "1.1.0",
+    },
+    {
+      status: "restarting",
+      currentVersion: "1.0.0",
+      latestVersion: "1.1.0",
+      targetVersion: "1.1.0",
+      updateAvailable: false,
+      canUpdate: true,
+    },
+  );
+
+  assert.equal(resolved.update.targetVersion, "1.1.0");
+  assert.deepEqual(resolved.intent, { kind: "keep" });
+});

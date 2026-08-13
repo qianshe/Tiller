@@ -18,7 +18,10 @@ export {
   type DispatchToHelm,
 } from "./request-dispatch";
 export { DeckRpcClient } from "./rpc-client";
-export { shouldCheckHelmHealth } from "./reconnect-policy";
+export {
+  resolveHelmHealthStatus,
+  shouldCheckHelmHealth,
+} from "./reconnect-policy";
 export type { HelmHealthStatus } from "../../store/facade";
 export {
   clearHelmUpdateIntent,

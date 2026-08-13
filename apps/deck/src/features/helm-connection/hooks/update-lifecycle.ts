@@ -4,23 +4,29 @@ import { useDeckStore } from "../../../store";
 import {
   clearHelmUpdateIntent,
   isHelmVersionAtLeast,
+  readHelmUpdateIntent,
 } from "../update-intent";
 
-export type HelmUpdateLifecycleDecision = "idle" | "reload" | "recover";
+export type HelmUpdateLifecycleDecision = "idle" | "complete" | "recover";
 
 export function resolveHelmUpdateLifecycleDecision(input: {
   connection: string;
   update: HelmUpdateState | null;
+  hasPendingUpdateIntent: boolean;
 }): HelmUpdateLifecycleDecision {
   const targetVersion = input.update?.targetVersion;
-  if (input.update?.status !== "restarting" || !targetVersion) {
+  if (
+    input.update?.status !== "restarting" ||
+    !targetVersion ||
+    !input.hasPendingUpdateIntent
+  ) {
     return "idle";
   }
   if (
     input.connection === "connected" &&
     isHelmVersionAtLeast(input.update.currentVersion, targetVersion)
   ) {
-    return "reload";
+    return "complete";
   }
   return "recover";
 }
@@ -33,15 +39,18 @@ export function useHelmUpdateLifecycle(input: {
   const { connection, helmKey, update } = input;
 
   useEffect(() => {
-    const decision = resolveHelmUpdateLifecycleDecision({ connection, update });
+    const decision = resolveHelmUpdateLifecycleDecision({
+      connection,
+      update,
+      hasPendingUpdateIntent: Boolean(readHelmUpdateIntent(helmKey)),
+    });
     const targetVersion = update?.targetVersion;
     if (decision === "idle" || !targetVersion) {
       return;
     }
-    if (decision === "reload") {
+    if (decision === "complete") {
       clearHelmUpdateIntent(helmKey);
-      const refreshTimer = window.setTimeout(() => window.location.reload(), 0);
-      return () => window.clearTimeout(refreshTimer);
+      return;
     }
 
     const reconnectTimer = window.setTimeout(() => {

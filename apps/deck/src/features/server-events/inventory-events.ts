@@ -609,9 +609,9 @@ export function applyInventoryResult(
             ...(targetConfirmed ? { message: "已连接新 Helm，正在确认版本。" } : {}),
           },
         });
-        if (targetVersion && !targetConfirmed) {
+        if (targetVersion && !targetConfirmed && pendingTarget) {
           writeHelmUpdateIntent(sourceHelmKey, targetVersion);
-        } else if (targetConfirmed) {
+        } else if (targetConfirmed && !pendingTarget) {
           clearHelmUpdateIntent(sourceHelmKey);
         }
       }
