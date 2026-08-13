@@ -31,10 +31,10 @@ export function resolveTaskBoardColumn(
   if (status === "starting" || status === "running") {
     return "running";
   }
-  if (status === "waiting_for_permission" || status === "error" || status === "cancelled") {
+  if (status === "waiting_for_permission" || status === "error") {
     return "attention";
   }
-  if (status === "idle" || status === "completed") {
+  if (status === "idle" || status === "completed" || status === "cancelled" || status === "canceled") {
     return "idle";
   }
   return "idle";

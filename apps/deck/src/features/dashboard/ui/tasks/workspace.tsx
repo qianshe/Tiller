@@ -1,7 +1,11 @@
 import {
   AlertTriangle,
   CircleDashed,
+  ChevronDown,
+  Bot,
+  Folder,
   LayoutPanelTop,
+  ListFilter,
   MoreHorizontal,
   PauseCircle,
   Pencil,
@@ -21,11 +25,17 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
+  AgentIcon,
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
   Input,
   Label,
@@ -36,10 +46,6 @@ import {
   TableHead,
   TableHeader,
   TableRow,
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
 } from "../../../../shared/ui";
 import { cn } from "../../../../shared/utils/cn";
 import type { DashboardActivitySession } from "../activity/stream";
@@ -57,6 +63,19 @@ type DashboardTaskWorkspaceProps = {
   onRenameSession?: (sessionId: string, title: string) => void;
   onDeleteSession?: (sessionId: string) => void;
   defaultView?: "panel" | "table";
+};
+
+type TaskFilterStatus = "all" | TaskBoardColumnId;
+
+type TaskFilterSelection = {
+  status: TaskFilterStatus;
+  project: string;
+  agent: string;
+};
+
+type TaskFilterOption = {
+  value: string;
+  label: string;
 };
 
 type TaskGroup = {
@@ -85,6 +104,81 @@ const TASK_COLUMN_ICONS: Record<TaskBoardColumnId, LucideIcon> = {
   idle: PauseCircle,
 };
 
+const TASK_COLUMN_DOT_TONES: Record<TaskBoardColumnId, "active" | "idle" | "warning" | "danger" | "primary"> = {
+  ready: "warning",
+  running: "primary",
+  attention: "danger",
+  idle: "idle",
+};
+
+const TASK_COLUMN_SURFACES: Record<TaskBoardColumnId, string> = {
+  ready: "border-l-2 border-l-warning/45 bg-warning/10",
+  running: "border-l-2 border-l-primary/75 bg-primary-soft/35",
+  attention: "border-l-2 border-l-destructive/60 bg-destructive/10",
+  idle: "border-l-2 border-l-border-ghost bg-surface-sunken/40",
+};
+
+const TASK_COLUMN_HEADER_SURFACES: Record<TaskBoardColumnId, string> = {
+  ready: "bg-warning/10",
+  running: "bg-primary-soft/40",
+  attention: "bg-destructive/10",
+  idle: "bg-surface-sunken/45",
+};
+
+const TASK_COLUMN_LABEL_COLORS: Record<TaskBoardColumnId, string> = {
+  ready: "text-warning",
+  running: "text-primary",
+  attention: "text-destructive",
+  idle: "text-muted-foreground",
+};
+
+const TASK_FILTER_OPTIONS: Array<{ id: TaskFilterStatus; label: string; icon: LucideIcon }> = [
+  { id: "all", label: "全部", icon: ListFilter },
+  ...TASK_BOARD_COLUMNS.map((column) => ({
+    id: column.id,
+    label: column.label,
+    icon: TASK_COLUMN_ICONS[column.id],
+  })),
+];
+
+function resolveTaskProjectFilterValue(session: DashboardActivitySession) {
+  const value = session.projectId?.trim() || session.projectName?.trim();
+  return value ? `project:${value}` : "project:unassigned";
+}
+
+function resolveTaskAgentFilterValue(session: DashboardActivitySession) {
+  const value = session.agentId?.trim() || session.agentName?.trim();
+  return value ? `agent:${value}` : "agent:unassigned";
+}
+
+function buildTaskFilterOptions(
+  sessions: DashboardActivitySession[],
+  resolveValue: (session: DashboardActivitySession) => string,
+  resolveLabel: (session: DashboardActivitySession) => string,
+  unassignedLabel: string,
+): TaskFilterOption[] {
+  const options = new Map<string, string>();
+  sessions.forEach((session) => {
+    const value = resolveValue(session);
+    const label = resolveLabel(session);
+    options.set(value, label || unassignedLabel);
+  });
+  return [...options.entries()]
+    .map(([value, label]) => ({ value, label }))
+    .sort((left, right) => left.label.localeCompare(right.label, "zh-CN"));
+}
+
+function filterTaskSessions(
+  sessions: DashboardActivitySession[],
+  filter: TaskFilterSelection,
+) {
+  return sessions.filter((session) => (
+    (filter.status === "all" || resolveTaskBoardColumn(session) === filter.status) &&
+    (filter.project === "all" || resolveTaskProjectFilterValue(session) === filter.project) &&
+    (filter.agent === "all" || resolveTaskAgentFilterValue(session) === filter.agent)
+  ));
+}
+
 function resolveTaskStatus(session: DashboardActivitySession) {
   const column = resolveTaskBoardColumn(session);
   const definition = TASK_BOARD_COLUMNS.find((item) => item.id === column)!;
@@ -93,7 +187,15 @@ function resolveTaskStatus(session: DashboardActivitySession) {
     : column === "running" ? "default" as const
       : column === "ready" ? "outline" as const
         : "secondary" as const;
-  return { label: definition.label, tone: definition.tone, badge };
+  return { label: definition.label, tone: definition.tone, badge, icon: TASK_COLUMN_ICONS[column] };
+}
+
+function resolveTaskAgent(session: DashboardActivitySession) {
+  const name = session.agentName ?? session.agentId;
+  return {
+    label: name ?? "未分配",
+    iconName: name ?? "ACP",
+  };
 }
 
 function parseTimestamp(value?: string, fallback = 0) {
@@ -154,6 +256,158 @@ function TaskOpenButton({
   );
 }
 
+function TaskToolbar({
+  activeFilter,
+  view,
+  projectOptions,
+  agentOptions,
+  onFilterChange,
+  onViewChange,
+}: {
+  activeFilter: TaskFilterSelection;
+  view: "panel" | "table";
+  projectOptions: TaskFilterOption[];
+  agentOptions: TaskFilterOption[];
+  onFilterChange: (filter: TaskFilterSelection) => void;
+  onViewChange: (view: "panel" | "table") => void;
+}) {
+  const ViewIcon = view === "panel" ? LayoutPanelTop : Table2;
+  const viewLabel = view === "panel" ? "看板" : "表格";
+  const activeFilterOption = TASK_FILTER_OPTIONS.find((option) => option.id === activeFilter.status)!;
+  const ActiveFilterIcon = activeFilterOption.icon;
+  const activeFilterCount = [
+    activeFilter.status !== "all",
+    activeFilter.project !== "all",
+    activeFilter.agent !== "all",
+  ].filter(Boolean).length;
+
+  return (
+    <div className="flex min-w-0 flex-wrap items-center justify-end gap-2" data-task-toolbar>
+      <div className="flex min-w-0 shrink-0 items-center gap-2">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              aria-label="筛选任务"
+              data-task-filter-trigger
+            >
+              <ActiveFilterIcon className="size-3.5" aria-hidden="true" />
+              <span>筛选</span>
+              {activeFilterCount > 0 ? <span className="font-mono text-2xs text-primary">· {activeFilterCount}</span> : null}
+              <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-44" data-task-filter-menu>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger data-task-filter-category="status">
+                <ListFilter className="mr-2 size-3.5" aria-hidden="true" />
+                <span>状态</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-36">
+                <DropdownMenuRadioGroup value={activeFilter.status} onValueChange={(value) => {
+                  if (value === "all" || TASK_BOARD_COLUMNS.some((column) => column.id === value)) {
+                    onFilterChange({ ...activeFilter, status: value as TaskFilterStatus });
+                  }
+                }}>
+                  {TASK_FILTER_OPTIONS.map((option) => {
+                    const FilterIcon = option.icon;
+                    return (
+                      <DropdownMenuRadioItem key={option.id} value={option.id} data-task-filter={option.id}>
+                        <FilterIcon className="mr-2 size-3.5" aria-hidden="true" />
+                        {option.label}
+                      </DropdownMenuRadioItem>
+                    );
+                  })}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger data-task-filter-category="project">
+                <Folder className="mr-2 size-3.5" aria-hidden="true" />
+                <span>项目</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-48">
+                <DropdownMenuRadioGroup value={activeFilter.project} onValueChange={(value) => {
+                  if (value === "all" || projectOptions.some((option) => option.value === value)) {
+                    onFilterChange({ ...activeFilter, project: value });
+                  }
+                }}>
+                  <DropdownMenuRadioItem value="all" data-task-filter="project:all">
+                    <Folder className="mr-2 size-3.5" aria-hidden="true" />
+                    全部项目
+                  </DropdownMenuRadioItem>
+                  {projectOptions.map((option) => (
+                    <DropdownMenuRadioItem key={option.value} value={option.value} data-task-filter={option.value}>
+                      <Folder className="mr-2 size-3.5" aria-hidden="true" />
+                      <span className="max-w-32 truncate">{option.label}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger data-task-filter-category="agent">
+                <Bot className="mr-2 size-3.5" aria-hidden="true" />
+                <span>ACP</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent className="w-48">
+                <DropdownMenuRadioGroup value={activeFilter.agent} onValueChange={(value) => {
+                  if (value === "all" || agentOptions.some((option) => option.value === value)) {
+                    onFilterChange({ ...activeFilter, agent: value });
+                  }
+                }}>
+                  <DropdownMenuRadioItem value="all" data-task-filter="agent:all">
+                    <Bot className="mr-2 size-3.5" aria-hidden="true" />
+                    全部 ACP
+                  </DropdownMenuRadioItem>
+                  {agentOptions.map((option) => (
+                    <DropdownMenuRadioItem key={option.value} value={option.value} data-task-filter={option.value}>
+                      <AgentIcon name={option.label} size={14} />
+                      <span className="ml-2 max-w-32 truncate">{option.label}</span>
+                    </DropdownMenuRadioItem>
+                  ))}
+                </DropdownMenuRadioGroup>
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0 gap-1.5"
+              aria-label="切换任务视图"
+              data-task-view-trigger
+            >
+              <ViewIcon className="size-3.5" aria-hidden="true" />
+              <span>{viewLabel}</span>
+              <ChevronDown className="size-3.5 text-muted-foreground" aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-32">
+            <DropdownMenuLabel>视图</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={view} onValueChange={(value) => {
+              if (value === "panel" || value === "table") onViewChange(value);
+            }}>
+              <DropdownMenuRadioItem value="panel">
+                <LayoutPanelTop className="mr-2 size-3.5" aria-hidden="true" />
+                看板
+              </DropdownMenuRadioItem>
+              <DropdownMenuRadioItem value="table">
+                <Table2 className="mr-2 size-3.5" aria-hidden="true" />
+                表格
+              </DropdownMenuRadioItem>
+            </DropdownMenuRadioGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
+    </div>
+  );
+}
+
 function TaskPanelView({
   sessions,
   onOpenSession,
@@ -201,18 +455,20 @@ function TaskPanelView({
   }
 
   return (
-    <div className="max-w-full overflow-x-auto pb-1" data-task-view="panel">
-      <div className="grid min-w-[900px] grid-cols-4 gap-3">
+    <div className="flex min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden pb-1" data-task-view="panel">
+      <div className="grid h-full min-h-0 min-w-max grid-flow-col auto-cols-[minmax(13rem,72vw)] gap-2.5 lg:min-w-0 lg:flex-1 lg:grid-flow-row lg:auto-cols-auto lg:grid-cols-4 lg:gap-3">
         {groups.map((group) => {
           const ColumnIcon = TASK_COLUMN_ICONS[group.id];
           return (
             <section
               key={group.id}
               className={cn(
-                "wb-pane min-w-0 overflow-hidden",
+                "wb-pane flex min-h-0 min-w-0 self-stretch flex-col overflow-hidden",
+                TASK_COLUMN_SURFACES[group.id],
                 group.id === "running" && dragOverRunning && "ring-2 ring-primary/50",
               )}
               data-task-column={group.id}
+              data-task-column-tone={group.id}
               data-task-drop-target={group.id === "running" ? "running" : undefined}
               aria-labelledby={`task-group-${group.id}`}
               onDragOver={
@@ -236,15 +492,16 @@ function TaskPanelView({
                   : undefined
               }
             >
-              <div className="wb-pane-head min-h-10 px-3">
-                <StatusDot tone={group.tone} size={6} pulse={group.id === "running"} />
-                <ColumnIcon className="size-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                <span id={`task-group-${group.id}`} className="wb-pane-head-title">{group.label}</span>
-                <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{group.sessions.length}</span>
+              <div className={cn("wb-pane-head min-h-9 px-2.5 lg:px-3", TASK_COLUMN_HEADER_SURFACES[group.id])}>
+                <StatusDot tone={TASK_COLUMN_DOT_TONES[group.id]} size={6} pulse={group.id === "running"} />
+                <ColumnIcon className={cn("size-3.5 shrink-0", TASK_COLUMN_LABEL_COLORS[group.id])} aria-hidden="true" />
+                <span id={`task-group-${group.id}`} className={cn("wb-pane-head-title", TASK_COLUMN_LABEL_COLORS[group.id])}>{group.label}</span>
+                <span className={cn("ml-auto font-mono text-meta tabular", TASK_COLUMN_LABEL_COLORS[group.id])}>{group.sessions.length}</span>
               </div>
               {group.sessions.length > 0 ? (
-                <ul className="divide-y divide-border-ghost">
+                <ul className="min-h-0 flex-1 divide-y divide-border-ghost overflow-y-auto">
                   {group.sessions.map((session) => {
+                    const agent = resolveTaskAgent(session);
                     return (
                       <li
                         key={session.id}
@@ -262,19 +519,21 @@ function TaskPanelView({
                           session={session}
                           onOpenSession={onOpenSession}
                           onConfigureReadySession={onConfigureReadySession}
-                          className={cn(
-                            "grid w-full min-w-0 gap-1.5 px-3 py-3 text-left transition-colors hover:bg-surface-sunken",
-                          )}
+                          className="grid w-full min-w-0 gap-1 px-2.5 py-2 text-left transition-colors hover:bg-surface-emphasis/25 lg:px-3"
                         >
                           <span className="flex min-w-0 items-center gap-2">
                             <span className="min-w-0 flex-1 truncate text-section font-medium">{session.title}</span>
-                            <Badge
-                              variant="outline"
-                              className="max-w-[45%] shrink-0 truncate rounded-full border-primary/25 bg-primary-soft/15 px-2 py-0.5 text-2xs font-medium text-primary"
+                            <span
+                              className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary-soft/15 text-primary"
                               data-task-agent-badge={session.agentId ?? "unassigned"}
+                              data-task-agent-icon={agent.iconName}
+                              role="img"
+                              aria-label={`ACP：${agent.label}`}
+                              title={`ACP：${agent.label}`}
                             >
-                              {session.agentName ?? session.agentId ?? "未分配"}
-                            </Badge>
+                              <AgentIcon name={agent.iconName} size={14} />
+                              <span className="sr-only">{agent.label}</span>
+                            </span>
                           </span>
                           <span className="truncate font-mono text-meta tabular text-muted-foreground">
                             {formatProjectBranch(session)}
@@ -285,7 +544,10 @@ function TaskPanelView({
                   })}
                 </ul>
               ) : (
-                <div className="px-3 py-6 text-center font-mono text-meta text-muted-foreground">
+                <div
+                  className="flex min-h-14 flex-1 items-start justify-center px-3 pt-5 font-mono text-meta text-muted-foreground/80"
+                  data-task-empty
+                >
                   暂无任务
                 </div>
               )}
@@ -370,7 +632,8 @@ function TaskTableView({
 
   return (
     <section className="wb-pane min-w-0 overflow-hidden" data-task-view="table" aria-label="任务表格">
-      <Table className="min-w-[900px]">
+      <div className="max-w-full overflow-x-auto" data-task-table-scroll>
+        <Table className="min-w-[900px]">
           <TableHeader className="bg-surface-sunken/40">
             <TableRow className="border-border-ghost/60 hover:bg-transparent">
               <TableHead className="w-10 px-3">
@@ -392,6 +655,8 @@ function TaskTableView({
           <TableBody className="[&_tr]:border-border-ghost/60">
             {sessions.length > 0 ? sessions.map((session) => {
               const status = resolveTaskStatus(session);
+              const StatusIcon = status.icon;
+              const agent = resolveTaskAgent(session);
               const selected = selectedSessionIds.has(session.id);
               const isReady = resolveTaskBoardColumn(session) === "ready";
               return (
@@ -423,14 +688,32 @@ function TaskTableView({
                     </div>
                   </TableCell>
                   <TableCell className="px-3 py-2.5">
-                    <Badge variant={status.badge} className="px-2 py-0.5">{status.label}</Badge>
+                    <Badge variant={status.badge} className="inline-flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5">
+                      <StatusIcon
+                        className="size-3.5"
+                        aria-hidden="true"
+                        data-task-status-icon={resolveTaskBoardColumn(session)}
+                      />
+                      <span>{status.label}</span>
+                    </Badge>
                   </TableCell>
                   <TableCell className="max-w-64 truncate px-3 py-2.5 font-mono text-meta text-muted-foreground">
                     {formatProjectBranch(session)}
                   </TableCell>
                   <TableCell className="px-3 py-2.5">
-                    <span className={cn("text-meta", !session.agentName && "text-muted-foreground")}>
-                      {session.agentName ?? session.agentId ?? "未分配"}
+                    <span
+                      className={cn("flex min-w-0 items-center gap-1.5 text-meta", !session.agentName && "text-muted-foreground")}
+                      title={`ACP：${agent.label}`}
+                    >
+                      <span
+                        className="inline-flex shrink-0 items-center justify-center"
+                        data-task-agent-icon={agent.iconName}
+                        role="img"
+                        aria-label={`ACP：${agent.label}`}
+                      >
+                        <AgentIcon name={agent.iconName} size={14} />
+                      </span>
+                      <span className="truncate">{agent.label}</span>
                     </span>
                   </TableCell>
                   <TableCell className="px-3 py-2.5 font-mono text-meta tabular text-muted-foreground">
@@ -455,7 +738,8 @@ function TaskTableView({
               </TableRow>
             )}
           </TableBody>
-      </Table>
+        </Table>
+      </div>
       <div className="flex min-h-10 flex-wrap items-center justify-between gap-2 border-t border-border-ghost/60 px-3 py-2 font-mono text-meta tabular text-muted-foreground">
         <span>{selectedSessionIds.size > 0 ? `已选择 ${selectedSessionIds.size} 项` : `共 ${sessions.length} 项`}</span>
         <span>{sessions.length > 0 ? `显示 ${sessions.length} 项` : "暂无任务"}</span>
@@ -546,14 +830,30 @@ export function DashboardTaskWorkspace({
   defaultView = "panel",
 }: DashboardTaskWorkspaceProps) {
   const taskItems = [...sessions, ...preparations];
+  const [view, setView] = useState<"panel" | "table">(defaultView);
+  const [activeFilter, setActiveFilter] = useState<TaskFilterSelection>({
+    status: "all",
+    project: "all",
+    agent: "all",
+  });
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set());
   const [renameSession, setRenameSession] = useState<DashboardActivitySession | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [deleteSession, setDeleteSession] = useState<DashboardActivitySession | null>(null);
 
-  const activeCount = sessions.filter((session) => resolveTaskBoardColumn(session) === "running").length;
-  const attentionCount = sessions.filter((session) => resolveTaskBoardColumn(session) === "attention").length;
-  const unassignedCount = preparations.length;
+  const visibleTaskItems = filterTaskSessions(taskItems, activeFilter);
+  const projectOptions = buildTaskFilterOptions(
+    taskItems,
+    resolveTaskProjectFilterValue,
+    (session) => session.projectName?.trim() || session.projectId?.trim() || "",
+    "未分配项目",
+  );
+  const agentOptions = buildTaskFilterOptions(
+    taskItems,
+    resolveTaskAgentFilterValue,
+    (session) => session.agentName?.trim() || session.agentId?.trim() || "",
+    "未分配 ACP",
+  );
 
   function toggleSession(sessionId: string, checked: boolean) {
     setSelectedSessionIds((current) => {
@@ -567,12 +867,17 @@ export function DashboardTaskWorkspace({
   function toggleAll(checked: boolean) {
     setSelectedSessionIds((current) => {
       const next = new Set(current);
-      for (const session of sessions) {
+      for (const session of visibleTaskItems) {
         if (checked) next.add(session.id);
         else next.delete(session.id);
       }
       return next;
     });
+  }
+
+  function changeTaskFilter(filter: TaskFilterSelection) {
+    setActiveFilter(filter);
+    setSelectedSessionIds(new Set());
   }
 
   function openRename(session: DashboardActivitySession) {
@@ -601,32 +906,24 @@ export function DashboardTaskWorkspace({
 
   return (
     <>
-      <Tabs defaultValue={defaultView} className="min-h-0 min-w-0" aria-label="任务视图">
-        <div className="mb-3 flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 font-mono text-meta tabular text-muted-foreground">
-            <span>{taskItems.length} 个任务</span>
-            <span aria-hidden="true">·</span>
-            <span>{activeCount} 进行中</span>
-            {attentionCount > 0 ? <><span aria-hidden="true">·</span><span>{attentionCount} 待处理</span></> : null}
-            {unassignedCount > 0 ? <><span aria-hidden="true">·</span><span>{unassignedCount} 未分配</span></> : null}
-          </div>
-          <div className="flex max-w-full flex-wrap items-center gap-2">
-            <TabsList size="sm" aria-label="切换任务视图">
-              <TabsTrigger value="panel" size="sm" className="gap-1.5"><LayoutPanelTop className="size-3.5" />面板</TabsTrigger>
-              <TabsTrigger value="table" size="sm" className="gap-1.5"><Table2 className="size-3.5" />表格</TabsTrigger>
-            </TabsList>
-          </div>
-        </div>
-        <TabsContent value="panel" className="mt-0">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-4" data-task-workspace>
+        <TaskToolbar
+          activeFilter={activeFilter}
+          projectOptions={projectOptions}
+          agentOptions={agentOptions}
+          view={view}
+          onFilterChange={changeTaskFilter}
+          onViewChange={setView}
+        />
+        {view === "panel" ? (
           <TaskPanelView
-            sessions={taskItems}
+            sessions={visibleTaskItems}
             onOpenSession={onOpenSession}
             onConfigureReadySession={onConfigureReadySession}
           />
-        </TabsContent>
-        <TabsContent value="table" className="mt-0">
+        ) : (
           <TaskTableView
-            sessions={taskItems}
+            sessions={visibleTaskItems}
             selectedSessionIds={selectedSessionIds}
             onOpenSession={onOpenSession}
             onConfigureReadySession={onConfigureReadySession}
@@ -635,8 +932,8 @@ export function DashboardTaskWorkspace({
             onToggleSession={toggleSession}
             onToggleAll={toggleAll}
           />
-        </TabsContent>
-      </Tabs>
+        )}
+      </div>
       <TaskRenameDialog
         session={renameSession}
         value={renameValue}

@@ -7,6 +7,7 @@ type DashboardNotificationListProps = {
   onOpenSession?: (sessionId: string) => void;
   onClear?: () => void;
   embedded?: boolean;
+  compact?: boolean;
 };
 
 const KIND_LABELS: Record<DashboardNotification["kind"], string> = {
@@ -180,11 +181,55 @@ function NotificationCopyButton({ notification }: { notification: DashboardNotif
 function NotificationRow({
   notification,
   onOpenSession,
+  compact = false,
 }: {
   notification: DashboardNotification;
   onOpenSession?: (sessionId: string) => void;
+  compact?: boolean;
 }) {
   const diagnosticSummary = formatNotificationDiagnosticSummary(notification.details);
+  if (compact) {
+    const compactContent = (
+      <span className="grid min-w-0 gap-1">
+        <span className="flex min-w-0 items-center gap-2">
+          <StatusDot tone={resolveNotificationTone(notification.kind)} size={6} />
+          <span className="text-section text-foreground">{KIND_LABELS[notification.kind]}</span>
+          <span className="ml-auto shrink-0 font-mono text-meta tabular text-muted-foreground">
+            {formatNotificationTime(notification.createdAt)}
+          </span>
+        </span>
+        <span className="break-words text-section text-foreground" title={notification.message}>
+          {notification.message}
+        </span>
+        <span className="truncate font-mono text-meta tabular text-muted-foreground">
+          {[resolveSourceLabel(notification.source), notification.sessionName ?? notification.sessionId, notification.code]
+            .filter((value): value is string => Boolean(value))
+            .join(" · ")}
+        </span>
+      </span>
+    );
+    const rowContent = notification.sessionId && onOpenSession ? (
+      <button
+        type="button"
+        className="min-w-0 px-3 py-2.5 text-left transition-colors hover:bg-surface-sunken"
+        aria-label={formatNotificationAriaLabel(notification)}
+        title="打开会话"
+        onClick={() => onOpenSession(notification.sessionId!)}
+      >
+        {compactContent}
+      </button>
+    ) : (
+      <div className="min-w-0 px-3 py-2.5" aria-label={formatNotificationAriaLabel(notification)}>
+        {compactContent}
+      </div>
+    );
+    return (
+      <div className={NOTIFICATION_ROW_COLUMNS}>
+        {rowContent}
+        <NotificationCopyButton notification={notification} />
+      </div>
+    );
+  }
   const content = (
     <>
       <span className="flex min-w-0 items-center gap-2">
@@ -255,6 +300,7 @@ export function DashboardNotificationList({
   onOpenSession,
   onClear,
   embedded = false,
+  compact = false,
 }: DashboardNotificationListProps) {
   return (
     <section
@@ -281,23 +327,29 @@ export function DashboardNotificationList({
           ) : null}
         </div>
       ) : null}
-      <div className="min-w-0 flex-1 overflow-x-auto">
-        <div className="min-w-[800px]">
-          <div className={`${NOTIFICATION_ROW_COLUMNS} border-b border-border-ghost`}>
-            <div className={`${NOTIFICATION_GRID_COLUMNS} px-3 py-2 font-mono text-meta uppercase tracking-wider text-muted-foreground`}>
-              <span>级别</span>
-              <span>通知</span>
-              <span>来源</span>
-              <span>Conversation</span>
-              <span>错误码</span>
+      <div className={compact ? "min-w-0 flex-1" : "min-w-0 flex-1 overflow-x-auto"}>
+        <div className={compact ? "min-w-0" : "min-w-[800px]"}>
+          {!compact ? (
+            <div className={`${NOTIFICATION_ROW_COLUMNS} border-b border-border-ghost`}>
+              <div className={`${NOTIFICATION_GRID_COLUMNS} px-3 py-2 font-mono text-meta uppercase tracking-wider text-muted-foreground`}>
+                <span>级别</span>
+                <span>通知</span>
+                <span>来源</span>
+                <span>Conversation</span>
+                <span>错误码</span>
+              </div>
+              <span aria-hidden="true" />
             </div>
-            <span aria-hidden="true" />
-          </div>
+          ) : null}
           {notifications.length > 0 ? (
             <ul className="divide-y divide-border-ghost">
               {notifications.map((notification) => (
                 <li key={notification.id}>
-                  <NotificationRow notification={notification} onOpenSession={onOpenSession} />
+                  <NotificationRow
+                    notification={notification}
+                    onOpenSession={onOpenSession}
+                    compact={compact}
+                  />
                 </li>
               ))}
             </ul>

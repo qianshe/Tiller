@@ -24,9 +24,11 @@ test("task board places idle work before attention items", () => {
   );
 });
 
-test("idle and completed sessions share the idle column", () => {
+test("idle, completed, and cancelled sessions share the idle column", () => {
   assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "idle" }), "idle");
   assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "completed" }), "idle");
+  assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "cancelled" }), "idle");
+  assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "canceled" }), "idle");
 });
 
 test("only explicit preparation records enter the ready column", () => {
@@ -43,5 +45,4 @@ test("only explicit preparation records enter the ready column", () => {
     "idle",
   );
   assert.equal(resolveTaskBoardColumn({ ...baseSession, preparationId: "preparation-1" }), "ready");
-  assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "cancelled" }), "attention");
 });
