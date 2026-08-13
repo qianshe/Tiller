@@ -26,7 +26,7 @@ test("quick create resets the agent when the project changes", () => {
 test("quick create uses a prompt canvas with a compact target dock", () => {
   assert.match(source, /data-slot="dashboard-quick-create-prompt-canvas"/);
   assert.match(source, /data-slot="dashboard-quick-create-target-dock"/);
-  assert.match(source, /告诉 Agent 需要完成什么/);
+  assert.match(source, /描述要完成的事项/);
   assert.match(source, /selectedHelm\.name/);
   assert.match(source, /创建任务/);
   assert.doesNotMatch(source, />Prompt<\/Label>/);
@@ -102,7 +102,7 @@ test("quick create can switch between a new session and reusing an idle session"
 test("quick create accepts a prepared task preset and source record", () => {
   assert.match(source, /preset\?: DashboardQuickCreatePreset \| null\s*;/);
   assert.match(source, /presetProjectKey/);
-  assert.match(source, /preset\?\.prompt\?\.trim\(\) \|\| preset\?\.title\?\.trim\(\)/);
+  assert.match(source, /pendingDraft = preset\?\.prompt\?\.trim\(\) \?\? preset\?\.title\?\.trim\(\)/);
   assert.match(source, /preparationId: preset\.preparationId/);
   assert.match(source, /title: preset\.title\.trim\(\)/);
   assert.match(source, /autoFocus=\{preset\?\.focusTarget === "project"\}/);

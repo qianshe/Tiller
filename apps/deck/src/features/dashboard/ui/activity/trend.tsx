@@ -22,6 +22,8 @@ import type {
 type DashboardTrendRange = "30d" | "7d" | "1d";
 type DashboardTrendField = "promptCount" | "toolCallCount";
 
+const PROMPT_RENDER_SCALE = 5;
+
 const DASHBOARD_TREND_RANGES: Array<{
   value: DashboardTrendRange;
   label: string;
@@ -76,6 +78,16 @@ function sumTrend(points: DashboardActivityTrendPoint[], field: DashboardTrendFi
   return points.reduce((total, point) => total + point[field], 0);
 }
 
+export function buildDashboardTrendChartData(points: DashboardActivityTrendPoint[]) {
+  return points.map((point) => ({
+    date: point.date,
+    prompt: point.promptCount * PROMPT_RENDER_SCALE,
+    tools: point.toolCallCount,
+    promptCount: point.promptCount,
+    toolCallCount: point.toolCallCount,
+  }));
+}
+
 type DashboardTrendChartProps = {
   points: DashboardActivityTrendPoint[];
   rangeLabel: string;
@@ -100,11 +112,7 @@ function DashboardTrendChart({
   promptTotal,
   toolTotal,
 }: DashboardTrendChartProps) {
-  const chartData = points.map((point) => ({
-    date: point.date,
-    prompt: point.promptCount,
-    tools: point.toolCallCount,
-  }));
+  const chartData = buildDashboardTrendChartData(points);
   const hasActivity = chartData.some((point) => point.prompt > 0 || point.tools > 0);
 
   return (
@@ -149,6 +157,11 @@ function DashboardTrendChart({
             content={
               <ChartTooltipContent
                 labelFormatter={(value) => `${rangeLabel} · ${formatDateLabel(String(value))}`}
+                valueFormatter={(value, item) => {
+                  if (item.dataKey === "prompt") return item.payload?.promptCount ?? value;
+                  if (item.dataKey === "tools") return item.payload?.toolCallCount ?? value;
+                  return value;
+                }}
               />
             }
           />

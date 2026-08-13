@@ -27,6 +27,7 @@ export type DashboardNavigationActions = {
   onOpenQuickCreate?: () => void;
   quickCreateHelms?: DashboardQuickCreateHelm[];
   quickCreateProjects?: DashboardQuickCreateProject[];
+  quickCreateHasDraft?: boolean;
 };
 
 type DashboardNavigationItem = {
@@ -224,6 +225,9 @@ function DashboardQuickCreate({ actions }: { actions: DashboardNavigationActions
             >
               <Icon name="plus" />
               <span>快速创建</span>
+              {actions.quickCreateHasDraft ? (
+                <span className="ml-auto size-2 shrink-0 rounded-full bg-warning" aria-label="有待提交的草稿" />
+              ) : null}
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>

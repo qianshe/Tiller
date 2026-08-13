@@ -10,7 +10,11 @@ import {
   DashboardNotificationList,
   formatNotificationReport,
 } from "./notification-list";
-import { DashboardActivityTrend, selectDashboardTrendPoints } from "./activity/trend";
+import {
+  buildDashboardTrendChartData,
+  DashboardActivityTrend,
+  selectDashboardTrendPoints,
+} from "./activity/trend";
 import { DashboardPage } from "./page";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
@@ -168,6 +172,19 @@ test("one-day trend selects hourly points and keeps prompt/tool counts separate"
   assert.match(html, /data-slot="dashboard-trend-chart"/);
   assert.match(activityTrendSource, /ChartContainer/);
   assert.match(activityTrendSource, /AreaChart/);
+});
+
+test("activity trend renders one prompt at the same height as five tool calls", () => {
+  assert.deepEqual(
+    buildDashboardTrendChartData([
+      { date: "2026-06-02", promptCount: 1, toolCallCount: 5 },
+      { date: "2026-06-03", promptCount: 2, toolCallCount: 10 },
+    ]),
+    [
+      { date: "2026-06-02", prompt: 5, tools: 5, promptCount: 1, toolCallCount: 5 },
+      { date: "2026-06-03", prompt: 10, tools: 10, promptCount: 2, toolCallCount: 10 },
+    ],
+  );
 });
 
 test("activity trend reserves a visible canvas for both charts", () => {

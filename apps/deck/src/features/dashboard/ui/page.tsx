@@ -14,7 +14,7 @@ import {
   type DashboardNavigationActions,
 } from "./sidebar";
 import { DashboardSessionSearchDialog } from "./sessions/search-dialog";
-import { DashboardQuickCreateDialog } from "./quick-create/dialog";
+import { DashboardQuickCreateDialog, readDraftPrompt } from "./quick-create/dialog";
 import { DashboardTaskWorkspace } from "./tasks/workspace";
 import type { DashboardNotification } from "../orchestration/view-model";
 import type {
@@ -356,6 +356,9 @@ export function DashboardPage({
   const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [quickCreateOpen, setQuickCreateOpen] = useState(false);
   const [quickCreatePreset, setQuickCreatePreset] = useState<DashboardQuickCreatePreset | null>(null);
+  const [quickCreateHasDraft, setQuickCreateHasDraft] = useState(() =>
+    Boolean(readDraftPrompt().trim()),
+  );
   const [sidebarWidth, setSidebarWidth] = useState(DASHBOARD_SIDEBAR_DEFAULT_WIDTH);
   const selectedSection = activeSection ?? internalSection;
   const selectSection = (section: DashboardSection) => {
@@ -434,6 +437,7 @@ export function DashboardPage({
     onOpenQuickCreate: openQuickCreate,
     quickCreateHelms,
     quickCreateProjects,
+    quickCreateHasDraft,
   };
 
   const quickCreateDialog = (
@@ -443,6 +447,7 @@ export function DashboardPage({
       projects={quickCreateProjects ?? []}
       preset={quickCreatePreset}
       onOpenChange={setQuickCreateOpen}
+      onDraftChange={setQuickCreateHasDraft}
       onCreateTask={createTask}
     />
   );

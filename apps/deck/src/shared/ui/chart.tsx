@@ -58,6 +58,7 @@ type ChartPayloadItem = {
   name?: string | number;
   value?: string | number;
   color?: string;
+  payload?: Record<string, unknown>;
 };
 
 export const ChartTooltipContent = React.forwardRef<
@@ -67,9 +68,10 @@ export const ChartTooltipContent = React.forwardRef<
     payload?: readonly ChartPayloadItem[];
     label?: string | number;
     labelFormatter?: (label: string | number, payload: readonly ChartPayloadItem[]) => React.ReactNode;
+    valueFormatter?: (value: string | number, item: ChartPayloadItem) => React.ReactNode;
     indicator?: "line" | "dot";
   }
->(({ active, payload, label, labelFormatter, indicator = "dot", className, ...props }, ref) => {
+>(({ active, payload, label, labelFormatter, valueFormatter, indicator = "dot", className, ...props }, ref) => {
   const config = useChartConfig();
   if (!active || !payload?.length) return null;
 
@@ -104,7 +106,7 @@ export const ChartTooltipContent = React.forwardRef<
                 {itemConfig?.label ?? item.name ?? key}
               </span>
               <span className="font-mono font-medium tabular-nums text-foreground">
-                {item.value ?? 0}
+                {valueFormatter ? valueFormatter(item.value ?? 0, item) : item.value ?? 0}
               </span>
             </div>
           );

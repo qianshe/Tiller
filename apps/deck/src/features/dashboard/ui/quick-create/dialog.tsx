@@ -1,9 +1,8 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import {
   Button,
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogHeader,
   DialogTitle,
   Icon,
@@ -19,6 +18,7 @@ import {
   TabsTrigger,
   Textarea,
 } from "../../../../shared/ui";
+import { indentTypedMarkdownListMarker, insertMarkdownLineBreak } from "../../../mission/composer/list-continuation";
 import type {
   DashboardQuickCreateHelm,
   DashboardQuickCreateProject,
@@ -34,6 +34,44 @@ function projectOptionValue(project: DashboardQuickCreateProject): string {
 
 const LATER_PROJECT_VALUE = "__tiller_later__";
 const LATER_AGENT_VALUE = "__tiller_agent_later__";
+const QUICK_CREATE_DRAFT_KEY = "tiller:quick-create:draft";
+
+export function readDraftPrompt(): string {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  try {
+    return window.sessionStorage.getItem(QUICK_CREATE_DRAFT_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeDraftPrompt(value: string) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    if (value.trim()) {
+      window.sessionStorage.setItem(QUICK_CREATE_DRAFT_KEY, value);
+    } else {
+      window.sessionStorage.removeItem(QUICK_CREATE_DRAFT_KEY);
+    }
+  } catch {
+    // sessionStorage 不可用时静默降级，不阻塞输入
+  }
+}
+
+function hasDraftPrompt(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  try {
+    return Boolean(window.sessionStorage.getItem(QUICK_CREATE_DRAFT_KEY)?.trim());
+  } catch {
+    return false;
+  }
+}
 
 export type DashboardQuickCreateDialogProps = {
   open: boolean;
@@ -41,6 +79,7 @@ export type DashboardQuickCreateDialogProps = {
   projects: DashboardQuickCreateProject[];
   preset?: DashboardQuickCreatePreset | null;
   onOpenChange: (open: boolean) => void;
+  onDraftChange?: (hasDraft: boolean) => void;
   onCreateTask: (request: DashboardQuickCreateRequest) => boolean | void;
 };
 
@@ -50,6 +89,7 @@ export function DashboardQuickCreateDialog({
   projects,
   preset = null,
   onOpenChange,
+  onDraftChange,
   onCreateTask,
 }: DashboardQuickCreateDialogProps) {
   const [prompt, setPrompt] = useState("");
@@ -59,6 +99,9 @@ export function DashboardQuickCreateDialog({
   const [selectedAgentId, setSelectedAgentId] = useState("");
   const [selectedIdleSessionId, setSelectedIdleSessionId] = useState("");
   const [submitError, setSubmitError] = useState("");
+  const promptRef = useRef<HTMLTextAreaElement | null>(null);
+  const dismissIsIntentionalRef = useRef(false);
+  const pendingRestoredPromptRef = useRef("");
   const selectedHelm = useMemo(
     () => helms.find((helm) => helm.key === selectedHelmKey),
     [helms, selectedHelmKey],
@@ -97,17 +140,15 @@ export function DashboardQuickCreateDialog({
         : selectedProject?.projectId && selectedIdleSession),
   );
 
-  const isCompleteNewTask = Boolean(
-    selectedProject?.projectId &&
-    selectedProject.cwd &&
-    selectedAgent,
-  );
-
   useEffect(() => {
     if (!open) {
       return;
     }
-    setPrompt(preset?.prompt?.trim() || preset?.title?.trim() || "");
+    const pendingDraft = preset?.prompt?.trim() ?? preset?.title?.trim();
+    const restoredPrompt = pendingDraft || readDraftPrompt();
+    pendingRestoredPromptRef.current = restoredPrompt;
+    setPrompt(restoredPrompt);
+    onDraftChange?.(Boolean(restoredPrompt));
     setMode("new");
     setSelectedProjectKey(presetProjectKey || LATER_PROJECT_VALUE);
     setSelectedHelmKey(defaultHelmKey);
@@ -118,7 +159,18 @@ export function DashboardQuickCreateDialog({
 
   const handleOpenChange = (nextOpen: boolean) => {
     if (!nextOpen) {
-      setPrompt("");
+      const hadPrompt = prompt.trim().length > 0;
+      if (dismissIsIntentionalRef.current) {
+        // 主动关闭（右上角 X / 提交成功）：清空草稿并丢弃缓存
+        dismissIsIntentionalRef.current = false;
+        writeDraftPrompt("");
+        onDraftChange?.(false);
+        setPrompt("");
+      } else if (hadPrompt) {
+        // 误关（点击外部 / Esc）：保留输入，写入草稿
+        writeDraftPrompt(prompt);
+        onDraftChange?.(true);
+      }
       setMode("new");
       setSelectedProjectKey("");
       setSelectedHelmKey("");
@@ -182,7 +234,51 @@ export function DashboardQuickCreateDialog({
       setSubmitError("任务未创建，请检查目标 Helm 连接和项目工作区。");
       return;
     }
+    dismissIsIntentionalRef.current = true; // 提交成功视为主动关闭：清草稿，不保留内容
     handleOpenChange(false);
+  };
+
+  function syncMarkdownLineBreak(target: HTMLTextAreaElement) {
+    const selectionStart = target.selectionStart ?? 0;
+    const selectionEnd = target.selectionEnd ?? 0;
+    const lineBreak = insertMarkdownLineBreak(target.value, selectionStart, selectionEnd);
+    setPrompt(lineBreak.nextValue);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        promptRef.current?.setSelectionRange(lineBreak.nextCaret, lineBreak.nextCaret);
+      });
+    }
+  }
+
+  const handlePromptChange = (event: ChangeEvent<HTMLTextAreaElement>) => {
+    const target = event.currentTarget;
+    const isComposing = (event.nativeEvent as InputEvent).isComposing;
+    const indentation = isComposing
+      ? null
+      : indentTypedMarkdownListMarker(target.value, target.selectionStart, target.selectionEnd);
+    if (!indentation) {
+      setPrompt(target.value);
+      return;
+    }
+    setPrompt(indentation.nextValue);
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        promptRef.current?.setSelectionRange(indentation.nextCaret, indentation.nextCaret);
+      });
+    }
+  };
+
+  const handlePromptKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (
+      event.key === "Enter" &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      !event.nativeEvent.isComposing
+    ) {
+      event.preventDefault();
+      syncMarkdownLineBreak(event.currentTarget);
+    }
   };
 
   return (
@@ -190,6 +286,28 @@ export function DashboardQuickCreateDialog({
       <DialogContent
         className="w-[calc(100%-2rem)] max-w-4xl gap-0 overflow-hidden rounded-xl p-0 [&>button]:right-6 [&>button]:top-6"
         data-testid="dashboard-quick-create-dialog"
+        onPointerDownOutside={() => {
+          dismissIsIntentionalRef.current = false;
+        }}
+        onEscapeKeyDown={() => {
+          dismissIsIntentionalRef.current = false;
+        }}
+        onCloseClick={() => {
+          dismissIsIntentionalRef.current = true;
+        }}
+        onOpenAutoFocus={(event) => {
+          const restored = pendingRestoredPromptRef.current;
+          if (restored && promptRef.current) {
+            // 恢复草稿后把光标放到文本末尾，方便继续输入；
+            // 阻止默认聚焦，避免光标被放回开头
+            event.preventDefault();
+            const textarea = promptRef.current;
+            window.requestAnimationFrame(() => {
+              textarea.setSelectionRange(restored.length, restored.length);
+            });
+            textarea.focus();
+          }
+        }}
       >
         <form
           className="flex min-h-[460px] max-h-[calc(100vh-2rem)] flex-col"
@@ -203,13 +321,6 @@ export function DashboardQuickCreateDialog({
                 快速创建任务
               </DialogTitle>
             </div>
-            <DialogDescription className="mt-1.5 text-meta text-muted-foreground">
-              {mode === "reuse"
-                ? "将在已有空闲会话中继续，并保留原有上下文。"
-                : isCompleteNewTask
-                  ? "将创建真实会话并发送首条内容。"
-                  : "只保存内容，不会启动 Agent。补齐项目、工作区和 Agent 后即可开始。"}
-            </DialogDescription>
           </DialogHeader>
 
           <div
@@ -221,11 +332,13 @@ export function DashboardQuickCreateDialog({
             </Label>
             <Textarea
               id="dashboard-quick-create-prompt"
+              ref={promptRef}
               value={prompt}
-              onChange={(event) => setPrompt(event.target.value)}
-              placeholder="告诉 Agent 需要完成什么，例如：修复当前项目中的横向滚动问题"
+              onChange={handlePromptChange}
+              onKeyDown={handlePromptKeyDown}
+              placeholder="描述要完成的事项，例如：重构登录流程并补充单元测试"
               className="min-h-[220px] flex-1 resize-none border-0 bg-transparent p-0 text-[18px] leading-8 shadow-none placeholder:text-muted-foreground/70 focus-visible:ring-0"
-              autoFocus={!preset?.focusTarget}
+              autoFocus={!preset?.focusTarget && !pendingRestoredPromptRef.current}
             />
           </div>
 
@@ -237,7 +350,9 @@ export function DashboardQuickCreateDialog({
               <div className="min-w-0">
                 <span className="text-meta font-medium text-foreground">执行方式</span>
                 <span className="ml-2 hidden text-meta text-muted-foreground sm:inline">
-                  复用会保留旧会话上下文
+                  {mode === "reuse"
+                    ? "在旧会话中继续"
+                    : "启动新会话"}
                 </span>
               </div>
               <Tabs value={mode} onValueChange={handleModeChange}>
@@ -461,9 +576,13 @@ export function DashboardQuickCreateDialog({
                 </div>
               )}
 
-              <Button className="h-10 shrink-0 px-4" type="submit" disabled={!canSubmit}>
+              <Button className="h-10 w-36 shrink-0 px-4" type="submit" disabled={!canSubmit}>
                 <Icon name={mode === "reuse" ? "send" : "plus"} />
-                {mode === "reuse" ? "继续会话" : isCompleteNewTask ? "创建并开始会话" : "保存为准备"}
+                {mode === "reuse"
+                  ? "继续会话"
+                  : selectedProject?.projectId && selectedProject.cwd && selectedAgent
+                    ? "创建并开始会话"
+                    : "保存为准备"}
               </Button>
             </div>
           </div>
