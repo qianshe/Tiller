@@ -355,6 +355,12 @@ body[data-density="cozy"] {
     overflow: hidden;
   }
 
+  .shell.view-dashboard.dashboard-tasks-view {
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+
   .mission-mobile-pager {
     position: sticky;
     bottom: 0;

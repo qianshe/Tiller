@@ -704,6 +704,7 @@ export function App() {
     route.activeView,
     deckData.deckPreferences.theme,
     deckData.deckPreferences.reduceMotion,
+    dashboardSection,
   );
   const deckTheme = deckData.deckPreferences.theme;
 

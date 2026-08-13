@@ -7,12 +7,12 @@ import {
   type DashboardActivitySession,
 } from "./activity/stream";
 import { DashboardActivityTrend } from "./activity/trend";
+import { DashboardNotificationList } from "./notification-list";
 import {
   DashboardSidebar,
   DASHBOARD_SIDEBAR_DEFAULT_WIDTH,
   type DashboardNavigationActions,
 } from "./sidebar";
-import { DashboardNotificationList } from "./notification-list";
 import { DashboardSessionSearchDialog } from "./sessions/search-dialog";
 import { DashboardQuickCreateDialog } from "./quick-create/dialog";
 import { DashboardTaskWorkspace } from "./tasks/workspace";
@@ -490,26 +490,15 @@ export function DashboardPage({
                 />
                 {isMobile ? (
                   <>
-                    {approvalRows.length > 0 || pendingApprovalCount > 0 ? (
-                      <DashboardApprovalPanel
-                        approvals={approvalRows}
-                        pendingApprovalCount={pendingApprovalCount}
-                        onRespondApproval={onRespondApproval}
-                      />
-                    ) : null}
-                    {notifications.length > 0 ? (
-                      <DashboardNotificationList
-                        notifications={notifications}
-                        onOpenSession={onOpenSession}
-                        onClear={onClearNotifications}
-                      />
-                    ) : null}
-                    <DashboardActivityStream
-                      sessions={sessions}
-                      approvals={approvalHistory}
+                    <DashboardApprovalPanel
+                      approvals={approvalRows}
+                      pendingApprovalCount={pendingApprovalCount}
+                      onRespondApproval={onRespondApproval}
+                    />
+                    <DashboardNotificationList
+                      notifications={notifications}
                       onOpenSession={onOpenSession}
-                      onClearApprovalHistory={onClearApprovalHistory}
-                      isMobile
+                      onClear={onClearNotifications}
                     />
                   </>
                 ) : (

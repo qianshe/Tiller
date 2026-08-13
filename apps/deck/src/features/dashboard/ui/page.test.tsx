@@ -376,9 +376,9 @@ test("DashboardPage renders tasks without switching to Mission", () => {
 
   assert.doesNotMatch(html, /TILLER \/ TASKS/);
   assert.doesNotMatch(html, /任务与运行状态/);
-  assert.match(html, /任务视图/);
-  assert.match(html, /面板/);
-  assert.match(html, /表格/);
+  assert.match(html, /任务/);
+  assert.match(html, /看板/);
+  assert.match(pageSource, /DashboardTaskWorkspace/);
   assert.doesNotMatch(html, /甘特图/);
 });
 
@@ -671,12 +671,14 @@ test("DashboardPage renders persisted approval outcomes and exposes processed-hi
   assert.match(activityStreamSource, /activeTab === "权限"/);
 });
 
-test("DashboardPage puts desktop notifications after the permission tab and keeps mobile notifications after approvals", () => {
+test("DashboardPage keeps desktop activity tabs and replaces the mobile activity stream with permissions and notifications", () => {
   const desktopHtml = renderToStaticMarkup(createElement(DashboardPage, commonProps));
   const mobileHtml = renderToStaticMarkup(createElement(DashboardPage, { ...commonProps, isMobile: true }));
 
   assert.match(desktopHtml, /最近[\s\S]*权限[\s\S]*通知[\s\S]*7天前/);
-  assert.match(mobileHtml, /待审批[\s\S]*通知[\s\S]*活动流/);
+  assert.match(mobileHtml, /待审批[\s\S]*通知/);
+  assert.doesNotMatch(mobileHtml, /权限与通知/);
+  assert.doesNotMatch(mobileHtml, /活动流/);
   assert.match(mobileHtml, /ACP connection closed/);
   assert.match(mobileHtml, /ACP_PROMPT_FAILED/);
   assert.match(activityStreamSource, /notifications=\{notifications\}/);
@@ -718,12 +720,12 @@ test("DashboardPage mobile keeps v6 priority order", () => {
 
   assert.match(html, /data-slot="dashboard-metrics"/);
   assert.match(html, /grid grid-cols-2 gap-2 md:grid-cols-4/);
-  assert.match(html, /待审批[\s\S]*通知[\s\S]*活动流/);
+  assert.match(html, /待审批[\s\S]*通知/);
   assert.doesNotMatch(html, /2\/3 Helm 在线/);
   assert.match(html, /最近 24 小时/);
 });
 
-test("DashboardPage keeps empty mobile panels out of the first viewport", () => {
+test("DashboardPage keeps empty mobile panels always visible with empty states", () => {
   const html = renderToStaticMarkup(createElement(DashboardPage, {
     ...commonProps,
     approvals: [],
@@ -733,11 +735,11 @@ test("DashboardPage keeps empty mobile panels out of the first viewport", () => 
     isMobile: true,
   }));
 
-  assert.match(html, /活动流/);
-  assert.doesNotMatch(html, /暂无待处理请求/);
-  assert.doesNotMatch(html, /暂无通知/);
-  assert.match(pageSource, /approvalRows\.length > 0 \|\| pendingApprovalCount > 0/);
-  assert.match(pageSource, /notifications\.length > 0/);
+  assert.match(html, /暂无待处理请求/);
+  assert.match(html, /暂无通知/);
+  assert.doesNotMatch(html, /权限与通知/);
+  assert.doesNotMatch(pageSource, /approvalRows\.length > 0\s*\|\|\s*pendingApprovalCount > 0/);
+  assert.doesNotMatch(pageSource, /approvalHistory\.length > 0\s*\|\|\s*notifications\.length > 0/);
 });
 
 test("DashboardPage keeps the mobile trend panel within the viewport", () => {

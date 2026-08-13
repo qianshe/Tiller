@@ -89,11 +89,18 @@ export function buildAppRouteContext(input: any) {
   };
 }
 
-export function resolveShellClassName(activeView: string, theme: string, reduceMotion: boolean) {
+export function resolveShellClassName(
+  activeView: string,
+  theme: string,
+  reduceMotion: boolean,
+  dashboardSection: string = "overview",
+) {
   return [
     "shell",
     `view-${activeView}`,
     "v6-radial-shell",
+    /* 任务页在移动端需使用动态视口高度（100dvh），仅作用该视图 */
+    activeView === "dashboard" && dashboardSection === "tasks" ? "dashboard-tasks-view" : "",
     `theme-${theme}`,
     reduceMotion ? "motion-reduced" : "",
   ]

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { resolveShellClassName } from "../composition/bindings";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const rootSource = readFileSync(resolve(currentDir, "root.tsx"), "utf8");
@@ -64,6 +65,19 @@ test("Dashboard keeps the shell viewport fixed while its content region scrolls"
     stylesCss,
     /\.shell\.view-dashboard\.v6-radial-shell \.page-content\s*\{[^}]*overflow:\s*hidden;/s,
   );
+});
+
+test("Dashboard tasks view uses the dynamic viewport height on mobile", () => {
+  assert.match(
+    stylesCss,
+    /\.shell\.view-dashboard\.dashboard-tasks-view\s*\{[^}]*height:\s*100dvh;/s,
+  );
+});
+
+test("Shell class name marks only the dashboard tasks section", () => {
+  assert.match(resolveShellClassName("dashboard", "dark", false, "tasks"), /dashboard-tasks-view/);
+  assert.doesNotMatch(resolveShellClassName("dashboard", "dark", false, "overview"), /dashboard-tasks-view/);
+  assert.doesNotMatch(resolveShellClassName("sessions", "dark", false, "tasks"), /dashboard-tasks-view/);
 });
 
 test("Dashboard quick create launches the prompt instead of staging the Mission composer", () => {
