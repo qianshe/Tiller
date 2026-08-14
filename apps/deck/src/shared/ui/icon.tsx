@@ -35,6 +35,7 @@ export type TillerIconName =
   | "server"
   | "folder"
   | "clock"
+  | "circleAlert"
   | "shield"
   | "activity"
   | "terminal"
@@ -192,6 +193,13 @@ const ICONS: Record<TillerIconName, ReactNode> = {
     <>
       <circle cx="12" cy="12" r="9" />
       <polyline points="12 7 12 12 15 14" />
+    </>
+  ),
+  circleAlert: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v4" />
+      <path d="M12 16h.01" />
     </>
   ),
   shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,

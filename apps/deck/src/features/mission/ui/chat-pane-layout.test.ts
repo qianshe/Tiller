@@ -662,8 +662,8 @@ test("mission project sidebar uses shared primitives and explicit Tailwind tree 
   assert.doesNotMatch(sidebarProjectNodeSource, /mission-tree-new-inline/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[12px_14px_minmax\(0,1fr\)_auto\]/);
   assert.doesNotMatch(sidebarProjectNodeSource, />Project<\/span>/);
-  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_24px\]/);
-  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_14px_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_auto\]/);
   assert.match(sidebarSource, /border-success\/50 bg-success\/20 text-success/);
 });
 
@@ -680,8 +680,8 @@ test("mission sidebar rows stay compact and session actions open below rows", ()
 });
 
 test("mission session rows stay tree-like instead of selected card pills", () => {
-  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_24px\]/);
-  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_14px_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_auto\]/);
   assert.match(sessionRowSource, /highlightedSessionId: string \| null/);
   assert.match(sessionRowSource, /const isOpenSession = openSessionIds\.has\(session\.id\)/);
   assert.match(sessionRowSource, /const isHighlighted = isFocused \|\| isOpenSession/);
@@ -690,7 +690,9 @@ test("mission session rows stay tree-like instead of selected card pills", () =>
   assert.match(sessionRowSource, /bg-primary-soft[^\n]+before:absolute before:left-0 before:top-0\.5 before:bottom-0\.5 before:w-1 before:rounded-full before:bg-primary-strong/);
   assert.doesNotMatch(sessionRowSource, /mission-tree-caret/);
   assert.doesNotMatch(sessionRowSource, /mission-tree-session-meta/);
-  assert.doesNotMatch(sessionRowSource, /\{session\.agentName\}<\/span>/);
+  // agentName 不作为行内文本展示（保持树状紧凑），仅出现在悬浮信息卡片（TooltipContent）中
+  assert.doesNotMatch(sessionRowSource, /mission-tree-main[\s\S]{0,200}?\{session\.agentName\}<\/span>/);
+  assert.match(sessionRowSource, /TooltipContent[\s\S]{0,1200}?\{session\.agentName\}<\/span>/);
   assert.match(sessionRowSource, /mission-tree-cleanup/);
   assert.doesNotMatch(sessionRowSource, /session\.id === activeSessionId && "text-primary"/);
   assert.doesNotMatch(sessionRowSource, /rounded-xl/);

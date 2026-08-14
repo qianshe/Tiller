@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import type { ProjectSummary, SessionSummary } from "@tiller/shared";
+import type { ProjectSummary, SessionStatus, SessionSummary } from "@tiller/shared";
 import { SessionRow } from "./session-row.js";
 
 function project(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
@@ -38,6 +38,7 @@ function session(overrides: Partial<SessionSummary> = {}): SessionSummary {
 function renderSessionRow(
   overrides: Partial<SessionSummary> = {},
   projectOverrides: Partial<ProjectSummary> = {},
+  sessionStatus: SessionStatus = "idle",
 ) {
   return renderToStaticMarkup(
     <SessionRow
@@ -53,7 +54,7 @@ function renderSessionRow(
       isRegenerating={false}
       project={project(projectOverrides)}
       session={session(overrides)}
-      sessionStatus="idle"
+      sessionStatus={sessionStatus}
       setPendingSessionCleanup={() => undefined}
     />,
   );
@@ -68,7 +69,9 @@ test("SessionRow keeps the action trigger inside the active row frame", () => {
   assert.match(rowClass, /before:w-1/u);
   assert.match(rowClass, /before:bg-primary-strong/u);
   assert.match(html, /mission-tree-actions-trigger/u);
-  assert.match(html, /title="最后更新：4m"/u);
+  // 行内不再显示时间（时间移入悬浮信息卡片）
+  assert.doesNotMatch(html, /最后更新/u);
+  assert.doesNotMatch(html, /mission-tree-time/u);
 });
 
 test("SessionRow marks managed worktree sessions with a branch tooltip", () => {
@@ -106,4 +109,17 @@ test("SessionRow does not mark the project root worktree as a branch session", (
 
   assert.doesNotMatch(html, /mission-tree-worktree-icon/u);
   assert.doesNotMatch(html, /title="Worktree：main"/u);
+});
+
+test("SessionRow uses one aligned icon slot for worktree and status indicators", () => {
+  const worktreeHtml = renderSessionRow();
+  const statusHtml = renderSessionRow({}, {}, "running");
+  const errorHtml = renderSessionRow({}, {}, "error");
+
+  assert.match(worktreeHtml, /mission-tree-session-icon mission-tree-worktree-icon[^"]*leading-none/u);
+  assert.match(statusHtml, /mission-tree-session-icon mission-tree-session-status[^"]*leading-none/u);
+  assert.match(errorHtml, /mission-tree-session-status-error[^>]*>\s*<svg[^>]*text-destructive/u);
+  assert.doesNotMatch(errorHtml, /mission-tree-session-status-error[^>]*>\s*!\s*</u);
+  assert.doesNotMatch(worktreeHtml, /mission-tree-session-side[^"]*gap-1\.5/u);
+  assert.doesNotMatch(statusHtml, /mission-tree-session-side[^"]*gap-1\.5/u);
 });
