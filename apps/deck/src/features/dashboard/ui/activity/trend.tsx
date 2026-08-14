@@ -22,7 +22,7 @@ import type {
 type DashboardTrendRange = "30d" | "7d" | "1d";
 type DashboardTrendField = "promptCount" | "toolCallCount";
 
-const PROMPT_RENDER_SCALE = 5;
+const PROMPT_RENDER_SCALE = 2;
 
 const DASHBOARD_TREND_RANGES: Array<{
   value: DashboardTrendRange;
@@ -123,7 +123,7 @@ function DashboardTrendChart({
       >
         <AreaChart
           data={chartData}
-          margin={{ left: 0, right: 8, top: 8, bottom: 0 }}
+          margin={{ left: 12, right: 8, top: 8, bottom: 0 }}
           accessibilityLayer
         >
           <defs>
@@ -149,7 +149,7 @@ function DashboardTrendChart({
             tickLine={false}
             axisLine={false}
             tickMargin={8}
-            width={28}
+            width={44}
             allowDecimals={false}
           />
           <ChartTooltip
@@ -158,8 +158,10 @@ function DashboardTrendChart({
               <ChartTooltipContent
                 labelFormatter={(value) => `${rangeLabel} · ${formatDateLabel(String(value))}`}
                 valueFormatter={(value, item) => {
-                  if (item.dataKey === "prompt") return item.payload?.promptCount ?? value;
-                  if (item.dataKey === "tools") return item.payload?.toolCallCount ?? value;
+                  const rawValue = item.dataKey === "prompt"
+                    ? item.payload?.promptCount
+                    : item.payload?.toolCallCount;
+                  if (typeof rawValue === "number") return rawValue;
                   return value;
                 }}
               />

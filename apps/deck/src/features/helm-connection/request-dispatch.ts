@@ -5,7 +5,10 @@ export type DispatchToHelm = (
   client: DeckRpcClient,
   method: string,
   params: unknown,
-  options?: { onResult?: (method: string, result: unknown) => void },
+  options?: {
+    onResult?: (method: string, result: unknown) => void;
+    sourceHelmKey?: string;
+  },
 ) => Promise<unknown>;
 
 const REQUEST_TIMEOUT_OVERRIDES_MS: Record<string, number> = {

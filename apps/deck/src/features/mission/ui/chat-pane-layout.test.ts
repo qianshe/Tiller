@@ -28,6 +28,10 @@ const sessionActionsSource = readFileSync(
 );
 const diffPanelSource = readFileSync(resolve(currentDir, "../display/diff-panel.tsx"), "utf8");
 const diffTreeSource = readFileSync(resolve(currentDir, "../display/diff-tree.tsx"), "utf8");
+const sharedGitDiffTreeSource = readFileSync(
+  resolve(currentDir, "../../git/ui/diff-tree.tsx"),
+  "utf8",
+);
 const mobilePagerSource = readFileSync(resolve(currentDir, "../workspace/mobile-pager.tsx"), "utf8");
 const worktreeModelSource = readFileSync(resolve(currentDir, "../workspace/model.ts"), "utf8");
 const workspaceChatCompositionSource = readFileSync(
@@ -1167,7 +1171,7 @@ test("mission inspector diff rows stay compact on mobile", () => {
   assert.match(diffPanelSource, /mission-file-row-compact[^\"]*grid w-full grid-cols-\[16px_minmax\(0,1fr\)_auto_auto\][^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-meta/);
   assert.match(diffPanelSource, /mission-file-status[^\"]*grid size-3 place-items-center/);
   assert.match(diffPanelSource, /mission-change-group-title[^\"]*grid w-full grid-cols-\[16px_minmax\(0,1fr\)_auto_auto\][^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-meta/);
-  assert.match(diffTreeSource, /diff-meta-split[^\"]*gap-1[^\"]*text-xs/);
+  assert.match(sharedGitDiffTreeSource, /diff-meta-split[^\"]*gap-1[^\"]*text-xs/);
 });
 
 test("mission worktree keeps the display pane independently toggleable", () => {
@@ -1188,7 +1192,7 @@ test("mission inspector git scope follows the explicitly selected worktree", () 
     /const activeGitProjectId = activeSessionProjectId \?\? selectedProjectId;/,
   );
   assert.match(worktreeSource, /const selectedWorktreeSummaryItem = selectedCwd/);
-  assert.match(worktreeSource, /gitStatusByWorktree\?\.\[selectedWorktreeSummaryItem\.path\]\?\.branch/);
+  assert.match(worktreeSource, /currentGitStatus\?\.branch/);
   assert.match(worktreeSource, /selectedWorktreeSummaryItem\.branch/);
   // Git scope derivation lives solely in the workspace controller now; the
   // selection-effects module no longer keeps its own (dead) copies.
@@ -1285,7 +1289,7 @@ test("mission diff patches load on demand instead of riding the status payload",
   // 结果事件把 patch 合并回 status 条目
   assert.match(
     inventoryEventsSource,
-    /case "project\/git\/file_diff":[\s\S]*applyGitFileDiffResult\(current, payload, payload\.cwd\)/,
+    /case "project\/git\/file_diff":[\s\S]*applyGitFileDiffResult\(current, payload, payload\.cwd(?:, scopeKey)?\)/,
   );
 });
 
@@ -1318,7 +1322,7 @@ test("mission inspector only exposes confirmed selected Git discard", () => {
 test("mission graph auto-load does not loop after a completed fetch", () => {
   assert.match(
     gitSyncSource,
-    /return !currentGraph\?\.loading &&\s*!currentGraph\?\.lastUpdated &&\s*\(currentGraph\?\.commits\?\.length \?\? 0\) === 0;/,
+    /return (?:!currentGraph\?\.loading &&\s*!currentGraph\?\.lastUpdated &&\s*\(currentGraph\?\.commits\?\.length \?\? 0\) === 0|shouldPrimeSharedGitGraphLoad\(currentGraph\));/,
   );
 });
 

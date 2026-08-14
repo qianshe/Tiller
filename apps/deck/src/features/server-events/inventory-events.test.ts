@@ -11,6 +11,7 @@ import {
   applyGitOperationResult,
   applyInventoryResult,
 } from "./inventory-events";
+import { gitScopeKey } from "../git/facade";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const inventoryEventsSource = readFileSync(resolve(currentDir, "inventory-events.ts"), "utf8");
@@ -22,11 +23,11 @@ test("inventory events clear git status and graph loading state even when RPC re
   );
   assert.match(
     inventoryEventsSource,
-    /case "project\/git\/graph":[\s\S]*applyGitGraphResult\(current, payload, payload\.cwd\)/s,
+    /case "project\/git\/graph":[\s\S]*applyGitGraphResult\(current, payload, payload\.cwd(?:, scopeKey)?\)/s,
   );
   assert.match(
     inventoryEventsSource,
-    /case "project\/git\/discard":[\s\S]*applyGitOperationResult\(current, payload, payload\.cwd, "discarding"\)/s,
+    /case "project\/git\/discard":[\s\S]*applyGitOperationResult\(current, payload, payload\.cwd, "discarding"(?:, scopeKey)?\)/s,
   );
   assert.match(
     inventoryEventsSource,
@@ -178,6 +179,63 @@ test("git file diff failures leave the status snapshot untouched", () => {
     message: "ok",
   }, "/other");
   assert.equal(unknownWorktree, current);
+});
+
+test("scoped Git reducer entries stay isolated for identical project paths across Helms", () => {
+  const cwd = "/repo";
+  const scopeA = gitScopeKey({ helmKey: "helm-a", projectId: "p1", cwd });
+  const scopeB = gitScopeKey({ helmKey: "helm-b", projectId: "p1", cwd });
+  const base = (branch: string): GitStatusState => ({
+    scopeKey: scopeA,
+    projectId: "p1",
+    cwd,
+    branch,
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    trackingStale: false,
+    clean: false,
+    files: [{ path: "src/a.ts", indexStatus: " ", worktreeStatus: "M" }],
+  });
+  const current = { [scopeA]: base("helm-a-branch") };
+
+  const afterStatus = applyGitOperationResult(current, {
+    ok: false,
+    projectId: "p1",
+    cwd,
+    message: "helm-b failed",
+    branch: "",
+    detached: false,
+    ahead: 0,
+    behind: 0,
+    trackingStale: false,
+    clean: false,
+    files: [],
+  }, cwd, "loading", scopeB);
+  assert.equal(afterStatus[scopeB]?.branch, "");
+  assert.equal(afterStatus[scopeA]?.branch, "helm-a-branch");
+
+  const afterGraph = applyGitGraphResult({
+    [scopeA]: { scopeKey: scopeA, projectId: "p1", cwd, commits: [{
+      hash: "a", parents: [], refs: [], subject: "helm-a", authorName: "a", authoredAt: "2026-01-01T00:00:00.000Z",
+    }] },
+  }, {
+    ok: false,
+    projectId: "p1",
+    cwd,
+    message: "helm-b graph failed",
+  }, cwd, scopeB);
+  assert.deepEqual(afterGraph[scopeB]?.commits, []);
+  assert.equal(afterGraph[scopeA]?.commits[0]?.subject, "helm-a");
+
+  const afterDiff = applyGitFileDiffResult({ [scopeA]: base("helm-a-branch") }, {
+    ok: true,
+    projectId: "p1",
+    cwd,
+    files: [{ path: "src/a.ts", additions: 1, deletions: 0, patch: "+helm-b" }],
+  }, cwd, scopeB);
+  assert.equal(afterDiff[scopeB], undefined);
+  assert.equal(afterDiff[scopeA]?.files[0]?.patch, undefined);
 });
 
 const baseGraphCommit = {

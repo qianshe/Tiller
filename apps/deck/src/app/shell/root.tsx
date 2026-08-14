@@ -631,7 +631,10 @@ export function App() {
     route,
     lastFilesScopeKeyRef,
     missionVisualMode,
-    activeProfileId: `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`,
+    activeProfileId: daemonProfileKey(
+      helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
+      helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
+    ),
     requestChatScrollToBottom,
     dispatch,
   });
@@ -692,7 +695,10 @@ export function App() {
     return <MissionAgentIcon agentName={agentName} />;
   }
 
-  const activeProfileId = `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+  const activeProfileId = daemonProfileKey(
+    helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
+    helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
+  );
   const currentLoggingSettings = resolveLocalLoggingSettings();
   const syncedLoggingSettings = resolveSyncedLoggingSettings();
   const effectiveLoggingSettings = currentLoggingSettings ?? syncedLoggingSettings;

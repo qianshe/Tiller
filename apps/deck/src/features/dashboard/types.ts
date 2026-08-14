@@ -3,6 +3,7 @@ import type { SessionActivitySummary } from "@tiller/shared";
 export type DashboardSection =
   | "overview"
   | "tasks"
+  | "git"
   | "automations"
   | "issues"
   | "agents"

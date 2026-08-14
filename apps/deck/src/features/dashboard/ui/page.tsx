@@ -243,11 +243,12 @@ function DashboardHeader({
   );
 }
 
-function DashboardEmbeddedFallback({ section }: { section: "agents" | "settings" }) {
+function DashboardEmbeddedFallback({ section }: { section: "agents" | "settings" | "git" }) {
+  const label = section === "agents" ? " Agents" : section === "git" ? " Git" : "设置";
   return (
     <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-6" role="status" aria-live="polite">
       <span className="font-mono text-meta text-muted-foreground">
-        正在加载{section === "agents" ? " Agents" : "设置"}...
+        正在加载{label}...
       </span>
     </div>
   );
@@ -257,10 +258,10 @@ function DashboardEmbeddedContent({
   section,
   content,
 }: {
-  section: "agents" | "settings";
+  section: "agents" | "settings" | "git";
   content?: ReactNode;
 }) {
-  const title = section === "agents" ? "Agents" : "设置";
+  const title = section === "agents" ? "Agents" : section === "git" ? "Git" : "设置";
   return (
     <section
       className="dashboard-embedded-content flex min-h-0 min-w-0 w-full flex-1 overflow-hidden"
@@ -288,7 +289,7 @@ function DashboardRoadmapView({ section }: { section: "automations" | "issues" }
       aria-labelledby={`dashboard-${section}-title`}
     >
       <span className="grid size-10 place-items-center rounded-md bg-surface-sunken text-muted-foreground">
-        <Icon name={isAutomation ? "branch" : "fileText"} size={18} />
+        <Icon name={isAutomation ? "workflow" : "fileText"} size={18} />
       </span>
       <h1
         id={`dashboard-${section}-title`}
@@ -308,6 +309,8 @@ function resolveDashboardSectionTitle(section: DashboardSection) {
   switch (section) {
     case "tasks":
       return "任务";
+    case "git":
+      return "Git";
     case "agents":
       return "Agents";
     case "settings":
@@ -393,7 +396,7 @@ export function DashboardPage({
   };
   const sectionTitle = resolveDashboardSectionTitle(selectedSection);
   const approvalRows = approvals;
-  const isEmbeddedSection = selectedSection === "agents" || selectedSection === "settings";
+  const isEmbeddedSection = selectedSection === "agents" || selectedSection === "settings" || selectedSection === "git";
   const searchSession = onOpenSearchSession ?? onOpenSession;
 
   const metrics: DashboardMetric[] = [
@@ -464,7 +467,7 @@ export function DashboardPage({
           width={sidebarWidth}
           onWidthChange={setSidebarWidth}
         />
-        <SidebarInset className="dashboard-sidebar-inset h-full min-h-0 overflow-hidden md:mr-0!" data-slot="sidebar-inset">
+        <SidebarInset className="dashboard-sidebar-inset min-h-0 overflow-hidden md:mr-0!" data-slot="sidebar-inset">
           <DashboardHeader
             sectionTitle={sectionTitle}
             showSidebarTrigger
@@ -472,7 +475,9 @@ export function DashboardPage({
           <div
             className={cn(
               "flex min-h-0 min-w-0 w-full flex-1 flex-col",
-              isEmbeddedSection
+              selectedSection === "git"
+                ? "max-w-none gap-0 overflow-hidden px-0 py-0"
+                : isEmbeddedSection
                 ? "max-w-none gap-0 overflow-y-auto overflow-x-hidden px-0 py-0"
                 : isMobile
                   ? "gap-3 overflow-y-auto overflow-x-hidden px-3 py-3"
@@ -537,6 +542,8 @@ export function DashboardPage({
                 onRenameSession={onRenameSession}
                 onDeleteSession={onDeleteSession}
               />
+            ) : selectedSection === "git" ? (
+              <DashboardEmbeddedContent section="git" content={embeddedContent} />
             ) : selectedSection === "agents" || selectedSection === "settings" ? (
               <DashboardEmbeddedContent
                 section={selectedSection}

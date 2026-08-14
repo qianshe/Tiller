@@ -6,6 +6,7 @@ import {
   buildDashboardViewModel,
   DASHBOARD_MISSION_DRAWER_DEFAULT_WIDTH,
   DashboardMissionDrawerResizeHandle,
+  DashboardGitWorkspace,
 } from "../../features/dashboard";
 import type { AppRouteContext, MissionRouteSource } from "./route-context";
 import {
@@ -27,6 +28,7 @@ import {
   DrawerHeader,
   DrawerTitle,
 } from "../../shared/ui";
+import type { SessionSummary } from "@tiller/shared";
 
 const OverviewPage = lazy(() =>
   import("../../features/overview/ui/page").then((module) => ({
@@ -211,6 +213,10 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     dashboardSection,
     setDashboardSection,
   } = source;
+  const currentHelmKey = daemonProfileKey(
+    daemonHost.trim() || DEFAULT_DAEMON_HOST,
+    daemonPort.trim() || DEFAULT_DAEMON_PORT,
+  );
   const [dashboardMissionSessionId, setDashboardMissionSessionId] = useState<string | null>(null);
   const [dashboardSelectedSessionId, setDashboardSelectedSessionId] = useState<string | null>(null);
   const [dashboardMissionDrawerWidth, setDashboardMissionDrawerWidth] = useState(
@@ -224,8 +230,12 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     }
   }, [activeView]);
 
-  const openDashboardMission = (sessionId: string) => {
-    if (!sessions.some((session: any) => session.id === sessionId)) {
+  const openDashboardMission = (sessionId: string, helmKey?: string) => {
+    const targetSession = sessions.find((session: any) => session.id === sessionId);
+    if (!targetSession) {
+      return;
+    }
+    if (helmKey && targetSession.helmId !== helmKey) {
       return;
     }
     setDashboardSelectedSessionId(sessionId);
@@ -257,10 +267,6 @@ function renderOverview() {
 }
 
 function renderDashboard() {
-  const currentHelmKey = daemonProfileKey(
-    daemonHost.trim() || DEFAULT_DAEMON_HOST,
-    daemonPort.trim() || DEFAULT_DAEMON_PORT,
-  );
   const dashboardPreparations = helmInventories[currentHelmKey]?.preparations ?? preparations ?? [];
   const dashboard = buildDashboardViewModel({
     connection,
@@ -344,7 +350,27 @@ function renderDashboard() {
       activeSection={dashboardSection}
       onSelectSection={setDashboardSection}
       embeddedContent={
-        dashboardSection === "agents"
+        dashboardSection === "git"
+          ? (
+            <DashboardGitWorkspace
+              currentHelmKey={currentHelmKey}
+              currentConnection={connection as "connecting" | "connected" | "disconnected"}
+              configuredHelms={configuredHelms as any}
+              helms={helms as any}
+              helmConnectionStates={helmConnectionStates}
+              helmInventories={helmInventories}
+              projects={projects as any}
+              worktrees={worktrees as any}
+              gitStatusByWorktree={source.gitStatusByWorktree ?? {}}
+              gitGraphByWorktree={source.gitGraphByWorktree ?? {}}
+              setGitGraphByWorktree={source.setGitGraphByWorktree}
+              rpcClientRef={rpcClientRef}
+              helmRpcClientRefs={helmRpcClientRefs}
+              dispatch={dispatch as any}
+              isMobile={isMobile}
+            />
+          )
+          : dashboardSection === "agents"
           ? renderAgents("dashboard")
           : dashboardSection === "settings"
             ? renderSettings("dashboard")
@@ -443,6 +469,7 @@ function renderDashboardMissionDrawer() {
             "--dashboard-mission-drawer-width": `${dashboardMissionDrawerWidth}px`,
             width: isMobile ? undefined : "var(--dashboard-mission-drawer-width)",
             maxWidth: isMobile ? undefined : "calc(100vw - 1rem)",
+            userSelect: "text",
           } as CSSProperties
         }
         className={dashboardMissionDrawerClassName}

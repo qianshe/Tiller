@@ -23,6 +23,7 @@ type GitGraphPanelProps = {
   gitGraph?: GitGraphState;
   selectedCommitHash?: string | null;
   onSelectCommit?: (hash: string) => void;
+  showHeader?: boolean;
 };
 
 type GraphRowModel = {
@@ -51,6 +52,7 @@ export function GitGraphPanel({
   gitGraph,
   selectedCommitHash,
   onSelectCommit,
+  showHeader = true,
 }: GitGraphPanelProps) {
   const [expandedCommitHash, setExpandedCommitHash] = useState<string | null>(
     selectedCommitHash ?? null,
@@ -97,13 +99,15 @@ export function GitGraphPanel({
       className="git-graph-panel flex min-h-0 flex-1 flex-col overflow-auto"
       style={style}
     >
-      <div
-        className="grid items-center gap-2 border-b border-border-ghost px-3 py-2 text-2xs uppercase tracking-[0.08em] text-muted-foreground"
-        style={rowColumnStyle}
-      >
-        <span>Graph</span>
-        <span>提交历史</span>
-      </div>
+      {showHeader ? (
+        <div
+          className="grid items-center gap-2 border-b border-border-ghost px-3 py-2 text-2xs uppercase tracking-[0.08em] text-muted-foreground"
+          style={rowColumnStyle}
+        >
+          <span>Graph</span>
+          <span>提交历史</span>
+        </div>
+      ) : null}
       <TooltipProvider delayDuration={180}>
         <div className="git-graph-list">
           {rows.map((row, index) => {

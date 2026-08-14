@@ -43,6 +43,18 @@ test("dashboard embeds the dedicated Agents presentation mode and add Helm actio
   assert.match(routeContentSource, /mode=\{mode\}/);
 });
 
+test("dashboard Git route renders the flattened project scope and history bindings", () => {
+  assert.match(routeContentSource, /dashboardSection === "git"/);
+  assert.match(routeContentSource, /<DashboardGitWorkspace/);
+  assert.match(routeContentSource, /helmRpcClientRefs=\{helmRpcClientRefs\}/);
+  assert.match(routeContentSource, /gitStatusByWorktree=\{source\.gitStatusByWorktree \?\? \{\}\}/);
+  assert.match(routeContentSource, /gitGraphByWorktree=\{source\.gitGraphByWorktree \?\? \{\}\}/);
+  assert.match(routeContentSource, /setGitGraphByWorktree=\{source\.setGitGraphByWorktree\}/);
+  assert.doesNotMatch(routeContentSource, /configuredHelms\.find\(\(helm: any\) => endpointKeyForHelm\(helm\) === scope\.helmKey\)/);
+  assert.doesNotMatch(routeContentSource, /source\.setSelectedProjectId\?\.\(scope\.projectId\)/);
+  assert.doesNotMatch(routeContentSource, /source\.setSelectedCwd\?\.\(scope\.cwd\)/);
+});
+
 test("dashboard session actions open an embedded Mission drawer", () => {
   assert.match(routeContentSource, /dashboardMissionSessionId/);
   assert.match(routeContentSource, /setDashboardMissionSessionId/);
@@ -58,6 +70,7 @@ test("dashboard session actions open an embedded Mission drawer", () => {
   assert.match(routeContentSource, /hideSessionCloseAction\?: boolean/);
   assert.match(routeContentSource, /const dashboardMissionDrawerClassName = isMobile/);
   assert.match(routeContentSource, /className=\{dashboardMissionDrawerClassName\}/);
+  assert.match(routeContentSource, /userSelect:\s*"text"/);
   assert.match(routeContentSource, /showHandle=\{false\}/);
   assert.match(routeContentSource, /rounded-none border-0/);
   assert.match(routeContentSource, /<Suspense fallback=\{<DashboardMissionDrawerLoading \/>\}>/);

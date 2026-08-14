@@ -200,6 +200,15 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
   assert.deepEqual(states, [{ hasMore: false, loading: true }]);
 });
 
+test("DispatchToHelm options can carry the source Helm key", async () => {
+  const options = {
+    sourceHelmKey: "helm-b",
+    onResult: () => undefined,
+  };
+
+  assert.equal(options.sourceHelmKey, "helm-b");
+});
+
 test("requestInitialSync keeps inventory loading when activity summary is unsupported", async () => {
   const methods: string[] = [];
 

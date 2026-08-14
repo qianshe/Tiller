@@ -9,3 +9,4 @@ export {
   DASHBOARD_MISSION_DRAWER_MIN_WIDTH,
   clampDashboardMissionDrawerWidth,
 } from "./ui/mission-drawer-resize-handle";
+export { DashboardGitWorkspace, type DashboardGitWorkspaceProps } from "./ui/git/workspace";

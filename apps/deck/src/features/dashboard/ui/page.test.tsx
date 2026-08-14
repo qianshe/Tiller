@@ -174,17 +174,22 @@ test("one-day trend selects hourly points and keeps prompt/tool counts separate"
   assert.match(activityTrendSource, /AreaChart/);
 });
 
-test("activity trend renders one prompt at the same height as five tool calls", () => {
+test("activity trend renders one prompt at the same height as two tool calls", () => {
   assert.deepEqual(
     buildDashboardTrendChartData([
-      { date: "2026-06-02", promptCount: 1, toolCallCount: 5 },
-      { date: "2026-06-03", promptCount: 2, toolCallCount: 10 },
+      { date: "2026-06-02", promptCount: 1, toolCallCount: 2 },
+      { date: "2026-06-03", promptCount: 2, toolCallCount: 4 },
     ]),
     [
-      { date: "2026-06-02", prompt: 5, tools: 5, promptCount: 1, toolCallCount: 5 },
-      { date: "2026-06-03", prompt: 10, tools: 10, promptCount: 2, toolCallCount: 10 },
+      { date: "2026-06-02", prompt: 2, tools: 2, promptCount: 1, toolCallCount: 2 },
+      { date: "2026-06-03", prompt: 4, tools: 4, promptCount: 2, toolCallCount: 4 },
     ],
   );
+});
+
+test("activity trend keeps multi-digit Y-axis labels visible", () => {
+  assert.match(activityTrendSource, /margin=\{\{ left: 12, right: 8, top: 8, bottom: 0 \}\}/);
+  assert.match(activityTrendSource, /width=\{44\}/);
 });
 
 test("activity trend reserves a visible canvas for both charts", () => {
@@ -492,7 +497,7 @@ test("DashboardPage exposes Mission mode below session search", () => {
   assert.match(sidebarSource, /id: "tasks", label: "任务", icon: "listChecks"/);
   assert.match(sidebarSource, /id: "agents", label: "Agents", icon: "users"/);
   assert.match(sidebarSource, /<Icon name="mission" \/>/);
-  assert.match(sidebarSource, /id: "automations", label: "自动化", icon: "branch"/);
+  assert.match(sidebarSource, /id: "automations", label: "自动化", icon: "workflow"/);
   assert.match(sidebarSource, /id: "issues", label: "Issues", icon: "fileText"/);
   assert.match(sidebarSource, /comingSoon/);
 });
@@ -625,7 +630,7 @@ test("DashboardPage keeps the ACP column content-sized and left-aligned", () => 
 
 test("DashboardPage confines desktop scrolling to the right content region", () => {
   assert.match(pageSource, /SidebarProvider[\s\S]*className="dashboard-page h-full min-h-0 overflow-hidden"/);
-  assert.match(pageSource, /SidebarInset className="dashboard-sidebar-inset h-full min-h-0 overflow-hidden md:mr-0!"/);
+  assert.match(pageSource, /SidebarInset className="dashboard-sidebar-inset min-h-0 overflow-hidden md:mr-0!"/);
   assert.match(pageSource, /overflow-y-auto overflow-x-hidden/);
 });
 

@@ -33,7 +33,7 @@ export type DashboardNavigationActions = {
 type DashboardNavigationItem = {
   id: DashboardSection;
   label: string;
-  icon: "dashboard" | "listChecks" | "mission" | "branch" | "fileText" | "users" | "settings";
+  icon: "dashboard" | "listChecks" | "mission" | "branch" | "workflow" | "fileText" | "users" | "settings";
   comingSoon?: boolean;
 };
 
@@ -154,7 +154,8 @@ function resolveNavigationGroups(): DashboardNavigationGroup[] {
       items: [
         { id: "overview", label: "概览", icon: "dashboard" },
         { id: "tasks", label: "任务", icon: "listChecks" },
-        { id: "automations", label: "自动化", icon: "branch", comingSoon: true },
+        { id: "git", label: "Git", icon: "branch" },
+        { id: "automations", label: "自动化", icon: "workflow", comingSoon: true },
         { id: "issues", label: "Issues", icon: "fileText", comingSoon: true },
       ],
     },

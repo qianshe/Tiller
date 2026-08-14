@@ -1,4 +1,10 @@
 import type { FileDiffSummary } from "@tiller/shared";
+import {
+  mapGitStatusToDiffStatus,
+  reconcileGitDiffs as reconcileSharedGitDiffs,
+  refreshGitStatusAndGraph as refreshSharedGitStatusAndGraph,
+  shouldPrimeGitGraphLoad as shouldPrimeSharedGitGraphLoad,
+} from "../../git/orchestration/status";
 
 export type GitStatusDiffFile = {
   path: string;
@@ -8,6 +14,8 @@ export type GitStatusDiffFile = {
   additions?: number;
   deletions?: number;
   patch?: string;
+  patchTruncated?: boolean;
+  patchRef?: import("@tiller/shared").StoredTextContentRef;
 };
 
 export type GitDispatchResult = {
@@ -25,38 +33,7 @@ export function reconcileMissionDiffs(
   sessionDiffs: FileDiffSummary[],
   gitStatusFiles: GitStatusDiffFile[] | undefined,
 ) {
-  if (!gitStatusFiles?.length) {
-    return [];
-  }
-
-  const diffsByPath = new Map(
-    sessionDiffs.map((diff) => [normalizeMissionDiffPath(diff.path), diff] as const),
-  );
-
-  return gitStatusFiles.map((file) => {
-    const normalizedPath = normalizeMissionDiffPath(file.path);
-    const existingDiff = diffsByPath.get(normalizedPath);
-    const fallbackPatch = file.patch ?? "";
-    const fallbackAdditions = file.additions ?? 0;
-    const fallbackDeletions = file.deletions ?? 0;
-
-    if (existingDiff) {
-      return {
-        ...existingDiff,
-        additions: existingDiff.additions || fallbackAdditions,
-        deletions: existingDiff.deletions || fallbackDeletions,
-        patch: existingDiff.patch || fallbackPatch,
-      } satisfies FileDiffSummary;
-    }
-
-    return {
-      path: file.path,
-      status: mapGitStatusToDiffStatus(file.indexStatus, file.worktreeStatus),
-      additions: fallbackAdditions,
-      deletions: fallbackDeletions,
-      patch: fallbackPatch,
-    } satisfies FileDiffSummary;
-  });
+  return reconcileSharedGitDiffs(sessionDiffs, gitStatusFiles);
 }
 
 export function shouldPrimeGitGraphLoad(
@@ -68,9 +45,7 @@ export function shouldPrimeGitGraphLoad(
     }
     | undefined,
 ) {
-  return !currentGraph?.loading &&
-    !currentGraph?.lastUpdated &&
-    (currentGraph?.commits?.length ?? 0) === 0;
+  return shouldPrimeSharedGitGraphLoad(currentGraph);
 }
 
 /**
@@ -89,40 +64,13 @@ export async function refreshGitStatusAndGraph(
     projectId: string;
     cwd: string;
     hasGraph: boolean;
+    scopeKey?: string;
     refreshRemote?: boolean;
     // Cached graph signature; lets the server answer "unchanged" without payload.
     graphSignature?: string;
   },
 ) {
-  const status = await dispatch("project/git/status", {
-    projectId: opts.projectId,
-    cwd: opts.cwd,
-    refreshRemote: opts.refreshRemote ?? false,
-  });
-  if (!status?.ok) {
-    return status;
-  }
-  if (opts.hasGraph) {
-    await dispatch("project/git/graph", {
-      projectId: opts.projectId,
-      cwd: opts.cwd,
-      ...(opts.graphSignature ? { knownSignature: opts.graphSignature } : {}),
-    });
-  }
-  return status;
+  return refreshSharedGitStatusAndGraph(dispatch, opts);
 }
 
-function mapGitStatusToDiffStatus(indexStatus: string, worktreeStatus: string): FileDiffSummary["status"] {
-  const combinedStatus = `${indexStatus}${worktreeStatus}`;
-  if (combinedStatus.includes("A") || combinedStatus.includes("?")) {
-    return "added";
-  }
-  if (combinedStatus.includes("D")) {
-    return "deleted";
-  }
-  return "modified";
-}
-
-function normalizeMissionDiffPath(path: string) {
-  return path.replace(/\\/g, "/");
-}
+export { mapGitStatusToDiffStatus };

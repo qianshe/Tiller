@@ -48,6 +48,7 @@ export type ChatWindowActions = {
     projectId: string;
     cwd: string | null;
     agentId?: string | null;
+    helmId?: string | null;
   }) => void;
   selectAgentForDraftWindow: (agentId: string) => void;
   submitPromptFromFocusedWindow: (
@@ -169,10 +170,12 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     projectId,
     cwd,
     agentId = null,
+    helmId,
   }: {
     projectId: string;
     cwd: string | null;
     agentId?: string | null;
+    helmId?: string | null;
   }) => {
     const project = projects.find((item: any) => item.id === projectId);
     const draftWindow = {
@@ -184,7 +187,7 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     setDraftChatWindow?.(draftWindow);
     setFocusedChatWindowId(draftWindow.id);
     setActiveSessionId(null);
-    setSelectedMissionHelmId(project?.helmId ?? null);
+    setSelectedMissionHelmId(helmId ?? project?.helmId ?? null);
     setSelectedProjectId(projectId);
     setSelectedCwd(cwd);
     setSelectedAgentId(agentId);
