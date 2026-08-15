@@ -5,7 +5,7 @@
 ## Summary
 
 - CSS files: 12
-- Total lines: 1954
+- Total lines: 1956
 
 ## Files
 
@@ -206,7 +206,7 @@ Selectors:
 
 ### apps/deck/src/app/shell/tokens/semantic.css
 
-- Lines: 46
+- Lines: 48
 - Top-level selectors: 1
 - Hard-coded color tokens: 0
 
