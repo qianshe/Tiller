@@ -6,8 +6,12 @@ import {
   type StalledSession,
 } from "./stalled-detection";
 
-/** 与 WebSocket 心跳同频:失联会话最多滞留一个扫描周期。 */
-export const DEFAULT_STALLED_SESSION_SWEEP_INTERVAL_MS = 30_000;
+/**
+ * 每轮扫描要全表读出会话摘要并逐行 JSON.parse(node:sqlite 是同步的),
+ * 所以间隔不能拍脑袋定小。检测延迟的下限由宽限期(180s)决定,扫得比
+ * 它密只会白白增加开销,换不来更早的发现。
+ */
+export const DEFAULT_STALLED_SESSION_SWEEP_INTERVAL_MS = 60_000;
 
 export type StalledSessionSweepDeps = {
   listSessionSummaries: () => readonly SessionSummary[];
