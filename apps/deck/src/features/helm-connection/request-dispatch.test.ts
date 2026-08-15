@@ -126,11 +126,39 @@ test("dispatchWithTrace gives session resume a longer timeout", async () => {
   assert.equal(trace.lastRequestType, "session/resume");
 });
 
-test("dispatchWithTrace sends session/cancel as a JSON-RPC notification", async () => {
+test("dispatchWithTrace sends session/cancel as a request so the caller gets an ACK", async () => {
+  const requested: Array<{ method: string; params: unknown }> = [];
+  const client = {
+    request: async (method: string, params: unknown) => {
+      requested.push({ method, params });
+      return { sessionId: "s1", ok: true, status: "cancelled" };
+    },
+    notify: () => {
+      throw new Error("notify should not be used when the Helm supports the request");
+    },
+  };
+  let trace = { requestsSent: 0, lastRequestType: "" } as any;
+
+  const result = await dispatchWithTrace(
+    client as any,
+    "session/cancel",
+    { sessionId: "s1" },
+    (updater) => {
+      trace = updater(trace);
+    },
+  );
+
+  assert.deepEqual(requested, [{ method: "session/cancel", params: { sessionId: "s1" } }]);
+  assert.deepEqual(result, { sessionId: "s1", ok: true, status: "cancelled" });
+  assert.equal(trace.lastRequestType, "session/cancel");
+});
+
+test("dispatchWithTrace falls back to a notification when the Helm predates the cancel request", async () => {
+  // 旧 Helm 只把 session/cancel 当通知处理,升级后的 Deck 仍要能取消。
   const notified: Array<{ method: string; params: unknown }> = [];
   const client = {
     request: async () => {
-      throw new Error("request should not be called");
+      throw Object.assign(new Error("Unknown method: session/cancel"), { code: -32601 });
     },
     notify: (method: string, params: unknown) => {
       notified.push({ method, params });
@@ -138,7 +166,7 @@ test("dispatchWithTrace sends session/cancel as a JSON-RPC notification", async 
   };
   let trace = { requestsSent: 0, lastRequestType: "" } as any;
 
-  await dispatchWithTrace(
+  const result = await dispatchWithTrace(
     client as any,
     "session/cancel",
     { sessionId: "s1" },
@@ -148,7 +176,31 @@ test("dispatchWithTrace sends session/cancel as a JSON-RPC notification", async 
   );
 
   assert.deepEqual(notified, [{ method: "session/cancel", params: { sessionId: "s1" } }]);
-  assert.equal(trace.lastRequestType, "session/cancel");
+  assert.equal(result, undefined);
+});
+
+test("dispatchWithTrace surfaces a failing session/cancel instead of swallowing it", async () => {
+  const client = {
+    request: async () => {
+      throw new Error("connection lost");
+    },
+    notify: () => {
+      throw new Error("notify should not be used for non-MethodNotFound failures");
+    },
+  };
+  let trace = { requestsSent: 0, lastRequestType: "" } as any;
+
+  await assert.rejects(
+    dispatchWithTrace(
+      client as any,
+      "session/cancel",
+      { sessionId: "s1" },
+      (updater) => {
+        trace = updater(trace);
+      },
+    ),
+    /connection lost/,
+  );
 });
 
 test("requestInitialSync rehydrates approvals after reconnect", async () => {
@@ -192,6 +244,7 @@ test("requestInitialSync dispatches initial JSON-RPC methods in order", async ()
     { method: "daemon/update/check", params: {} },
     { method: "logging/get", params: {} },
     { method: "session/list", params: { limit: 25 } },
+    { method: "notification/list", params: { limit: 100 } },
     { method: "session/activity_summary", params: {} },
     { method: "approval/list_pending", params: {} },
     { method: "approval/list", params: { limit: 100 } },
@@ -223,6 +276,24 @@ test("requestInitialSync keeps inventory loading when activity summary is unsupp
     sessionPageLimit: 25,
   });
 
+  assert.equal(methods.at(-1), "device/list");
+});
+
+test("requestInitialSync tolerates older Helms without notification history", async () => {
+  const methods: string[] = [];
+
+  await requestInitialSync({} as any, {
+    dispatch: async (_client, method) => {
+      methods.push(method);
+      if (method === "notification/list") {
+        throw { code: -32601, message: "Unknown method" };
+      }
+    },
+    setSessionHistoryState: () => undefined,
+    sessionPageLimit: 25,
+  });
+
+  assert.equal(methods.includes("session/activity_summary"), true);
   assert.equal(methods.at(-1), "device/list");
 });
 
@@ -303,6 +374,7 @@ test("requestInitialSync keeps loading inventory when logging settings fail", as
     "daemon/update/check",
     "logging/get",
     "session/list",
+    "notification/list",
     "session/activity_summary",
     "approval/list_pending",
     "approval/list",

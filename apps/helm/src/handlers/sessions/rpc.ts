@@ -29,6 +29,7 @@ import { promptSession } from "./prompt-rpc";
 import { repairTimeline } from "./timeline-repair-rpc";
 import {
   checkResume,
+  acknowledgeSessionCompletion,
   getArtifacts,
   getSubagentDetail,
   listLegacyEvidence,
@@ -51,6 +52,11 @@ export async function handleSessionRpcRequest(
   switch (method) {
     case "session/list":
       return listSessions(params as { limit?: number; before?: string }, context);
+    case "session/acknowledge_completion":
+      return acknowledgeSessionCompletion(
+        params as { sessionId: string; completedAt: string },
+        context,
+      );
     case "session/activity_summary":
       return getSessionActivitySummary(context);
     case "session/subscribe":
@@ -189,6 +195,8 @@ export async function handleSessionRpcRequest(
       return renameSession(params as { sessionId: string; title: string }, context);
     case "session/cleanup":
       return cleanupSession(params as { sessionId: string }, context);
+    case "session/cancel":
+      return cancelSessionRuntime((params as { sessionId: string }).sessionId, context);
     default:
       return undefined;
   }
@@ -202,8 +210,11 @@ export async function handleSessionRpcNotification(
   if (method !== "session/cancel") {
     return false;
   }
+  // session/cancel 现在是带 ACK 的 request;旧 Deck 仍以通知形式发送,
+  // 保留这条路径让它们继续能取消,只是拿不到回执。
   const { sessionId } = params as { sessionId: string };
-  return cancelSessionRuntime(sessionId, context);
+  await cancelSessionRuntime(sessionId, context);
+  return true;
 }
 
 function broadcastPromptQueue(context: HelmHandlerContext, sessionId: string) {

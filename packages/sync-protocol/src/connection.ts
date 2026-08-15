@@ -18,6 +18,20 @@ export type ConnectionHandlers = {
 
 export type RequestOptions = { timeoutMs?: number };
 
+/**
+ * 标记「请求完全没有得到回应」。服务端返回的错误同样是一次回应,说明链路
+ * 仍然通畅;只有超时才代表连接可能已经死了。存活探测靠这个区分两者。
+ */
+export const REQUEST_TIMEOUT_DATA = { reason: "request-timeout" } as const;
+
+export function isRequestTimeoutError(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { data?: { reason?: unknown } }).data?.reason === REQUEST_TIMEOUT_DATA.reason
+  );
+}
+
 type Pending = {
   resolve: (result: unknown) => void;
   reject: (error: ErrorResponse) => void;
@@ -42,7 +56,7 @@ export class JsonRpcConnection {
       const timer = options?.timeoutMs
         ? setTimeout(() => {
             this.pending.delete(id);
-            reject(rpcError(ErrorCode.InternalError, `Request timeout: ${method}`));
+            reject(rpcError(ErrorCode.InternalError, `Request timeout: ${method}`, REQUEST_TIMEOUT_DATA));
           }, options.timeoutMs)
         : undefined;
       this.pending.set(id, { resolve, reject, timer });
