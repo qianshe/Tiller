@@ -37,6 +37,12 @@ or announce a public release until every required gate is complete.
 ## 4. Release gates
 
 - [ ] Decide release version and npm dist-tag.
+- [ ] Choose the publish workflow mode: `current` publishes the version already
+  declared by `apps/helm/package.json`; `patch`, `minor`, `major`, and the
+  prerelease modes run `npm version` and commit the generated version bump.
+- [ ] Re-running `current` for the same version must fail when its Git tag or npm
+  version already exists; re-running an automatic bump must produce the next
+  version from the branch's latest package metadata.
 - [ ] Build from `main` after all fixes are merged.
 - [ ] Create Git tag only after package smoke checks pass.
 - [ ] Publish npm package from the same commit as the GitHub tag.

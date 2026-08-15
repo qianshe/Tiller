@@ -16,12 +16,17 @@ test("buildLatestUpdateCommand installs latest Tiller globally", () => {
     command: "npm",
     args: ["install", "-g", "@qianshe/tiller@latest"],
   });
+  assert.deepEqual(buildLatestUpdateCommand("win32"), {
+    command: "npm.cmd",
+    args: ["install", "-g", "@qianshe/tiller@latest"],
+  });
 });
 
 test("resolveUpdateSpawnOptions uses a shell for Windows npm.cmd shims", () => {
   assert.deepEqual(resolveUpdateSpawnOptions("win32"), {
     stdio: "inherit",
     shell: true,
+    windowsHide: true,
   });
   assert.deepEqual(resolveUpdateSpawnOptions("linux"), {
     stdio: "inherit",
