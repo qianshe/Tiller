@@ -1,4 +1,4 @@
-import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
+import type { ProjectSummary, StoredTextContentRef, WorktreeSummary } from "@tiller/shared";
 import type { StateCreator } from "zustand";
 
 export type WorktreeGitState = {
@@ -17,9 +17,12 @@ export type GitStatusFile = {
   additions?: number;
   deletions?: number;
   patch?: string;
+  patchTruncated?: boolean;
+  patchRef?: StoredTextContentRef;
 };
 
 export type GitStatusState = {
+  scopeKey?: string;
   projectId: string;
   cwd: string;
   branch: string;
@@ -100,6 +103,7 @@ export type GitCommitDetailState = {
 };
 
 export type GitGraphState = {
+  scopeKey?: string;
   projectId: string;
   cwd: string;
   head?: string;

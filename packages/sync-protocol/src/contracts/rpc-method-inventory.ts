@@ -10,6 +10,7 @@ export type RpcMethodDirection = "client-request" | "client-notification" | "ser
 export type RpcMethodFamily =
   | "agent"
   | "approval"
+  | "dashboard"
   | "daemon"
   | "debug"
   | "device"
@@ -19,7 +20,8 @@ export type RpcMethodFamily =
   | "notification"
   | "permission"
   | "project"
-  | "session";
+  | "session"
+  | "conversation";
 
 export type RpcMethodInventoryItem = {
   method: MethodName;
@@ -60,6 +62,7 @@ function isRpcMethodFamily(value: string | undefined): value is RpcMethodFamily 
   return (
     value === "agent" ||
     value === "approval" ||
+    value === "dashboard" ||
     value === "daemon" ||
     value === "debug" ||
     value === "device" ||
@@ -70,5 +73,6 @@ function isRpcMethodFamily(value: string | undefined): value is RpcMethodFamily 
     value === "permission" ||
     value === "project" ||
     value === "session"
+    || value === "conversation"
   );
 }

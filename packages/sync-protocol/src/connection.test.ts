@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { JsonRpcConnection, type Stream } from "./connection";
+import { JsonRpcConnection, isRequestTimeoutError, type Stream } from "./connection";
 import type { JsonRpcMessage } from "./envelope";
 import { ErrorCode, rpcError } from "./errors";
 
@@ -90,4 +90,29 @@ test("close rejects pending requests", async () => {
   client.close();
   await assert.rejects(() => pending);
   server.close();
+});
+
+test("request timeouts are identifiable so callers can tell silence from an answer", async () => {
+  // 服务端答复了错误 = 链路是通的;只有完全没有回应才说明连接已死。
+  // 存活探测必须能区分这两者,否则一次鉴权拒绝就会被当成断线。
+  const answered = rpcError(ErrorCode.InvalidRequest, "Helm not authenticated yet.");
+  assert.equal(isRequestTimeoutError(answered), false);
+
+  const stream = {
+    send: () => undefined,
+    onMessage: () => () => undefined,
+    close: () => undefined,
+  };
+  const connection = new JsonRpcConnection(stream, {
+    onRequest: async () => undefined,
+    onNotification: () => undefined,
+  });
+
+  await assert.rejects(
+    connection.request("helm/list", {}, { timeoutMs: 1 }),
+    (error: unknown) => {
+      assert.equal(isRequestTimeoutError(error), true);
+      return true;
+    },
+  );
 });

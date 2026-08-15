@@ -121,7 +121,7 @@ export function OverviewPage({
             type="button"
             onClick={() => onNavigate("dashboard")}
           >
-            查看 Dashboard
+            查看概览
           </button>
         </div>
         <dl className="landing-meta" aria-label="首页实时指标">

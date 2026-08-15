@@ -423,7 +423,6 @@ function upsertToolCallEntry(
     entries[existingIndex] as SessionTimelineToolCallEntry,
     entry,
   );
-  merged.id = resolveSessionTimelineToolCallEntryId(merged.toolCall);
   entries[existingIndex] = merged;
   collapseDuplicateToolCommandEntries(entries, existingIndex);
   return entries;
@@ -789,7 +788,11 @@ function applyAssistantEntryBounds(entry: SessionTimelineAssistantEntry) {
   entry.timestamp = firstChunk?.timestamp ?? entry.timestamp;
   entry.updatedAt = lastChunk && "updatedAt" in lastChunk ? lastChunk.updatedAt : lastChunk?.timestamp ?? entry.updatedAt;
   entry.sequence = minDefined(entry.chunks.map((chunk) => chunk.sequence));
-  entry.streaming = entry.chunks.some((chunk) => chunk.kind === "content" && chunk.streaming);
+  entry.streaming = entry.chunks.some((chunk) =>
+    chunk.kind === "content"
+      ? chunk.streaming === true
+      : chunk.status === "pending" || chunk.status === "running",
+  );
 }
 
 function sortItemsByCompleteSequence<T>(

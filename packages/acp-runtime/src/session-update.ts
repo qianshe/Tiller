@@ -41,6 +41,13 @@ export function isToolCallUpdateType(updateType: string | undefined): boolean {
   return updateType === "tool_call" || updateType === "tool_call_update";
 }
 
+export function isToolOrTerminalUpdateType(updateType: string | undefined): boolean {
+  const type = updateType?.trim()
+    .replace(/([a-z0-9])([A-Z])/gu, "$1_$2")
+    .toLowerCase() ?? "";
+  return /(?:^|[_-])(?:command|tool|terminal)(?:$|[_-])/.test(type);
+}
+
 export function extractTextContent(content: unknown): string | null {
   if (!content) {
     return null;

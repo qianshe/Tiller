@@ -71,3 +71,19 @@ test("renderMissionRoute forwards navigateToView to the mission worktree", () =>
   assert.match(source, /navigateToView,/);
   assert.match(source, /navigateToView=\{navigateToView\}/);
 });
+
+test("renderMissionRoute supports an embedded workbench layout", () => {
+  const source = readFileSync(routePath, "utf8");
+
+  assert.match(source, /embedded\?: boolean/);
+  assert.match(source, /embedded=\{embedded\}/);
+});
+
+test("renderMissionRoute supports a dashboard chat-only layout", () => {
+  const source = readFileSync(routePath, "utf8");
+
+  assert.match(source, /chatOnly\?: boolean/);
+  assert.match(source, /chatOnly=\{chatOnly\}/);
+  assert.match(source, /hideSessionCloseAction\?: boolean/);
+  assert.match(source, /hideSessionCloseAction=\{hideSessionCloseAction\}/);
+});

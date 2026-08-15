@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  resolveHelmHealthStatus,
   shouldAttemptSilentReconnect,
   shouldEnsureLiveConnection,
   shouldRunSilentReconnect,
@@ -49,5 +50,40 @@ test("silent reconnect runs for a normal local Helm without a token", () => {
       port: "47631",
     }),
     true,
+  );
+});
+
+test("health status follows the primary connection without a probe socket", () => {
+  assert.equal(
+    resolveHelmHealthStatus({
+      connection: "connected",
+      host: "127.0.0.1",
+      port: "47631",
+    }),
+    "healthy",
+  );
+  assert.equal(
+    resolveHelmHealthStatus({
+      connection: "connecting",
+      host: "127.0.0.1",
+      port: "47631",
+    }),
+    "unknown",
+  );
+  assert.equal(
+    resolveHelmHealthStatus({
+      connection: "disconnected",
+      host: "127.0.0.1",
+      port: "47631",
+    }),
+    "unhealthy",
+  );
+  assert.equal(
+    resolveHelmHealthStatus({
+      connection: "disconnected",
+      host: "",
+      port: "47631",
+    }),
+    "unknown",
   );
 });

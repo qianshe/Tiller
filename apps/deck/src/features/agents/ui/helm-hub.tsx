@@ -55,7 +55,7 @@ export function HelmHub({
       <CardContent className="grid gap-4 p-0">
         <p className="m-0 text-sm leading-relaxed text-muted-foreground">
           {isEmbeddedHelmDeck
-            ? "当前内置 Deck 只管理这个 Helm；多 Helm 控制台由公版 Web 承载。"
+            ? "当前内置 Deck 只管理这个 Helm；多 Helm 概览由公版 Web 承载。"
             : "管理多个 Helm 节点；选择后查看项目、ACP 舰员与信标。"}
         </p>
         <div

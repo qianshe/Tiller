@@ -368,3 +368,46 @@ test("connection manager disposeAll closes cached and pending connections", asyn
   assert.equal(disposeCount, 2);
   assert.deepEqual(manager.listInventory(), []);
 });
+
+test("connection manager disposes a crashed cached connection instead of leaking it", async () => {
+  // 连接崩溃后只丢引用会把子进程和会话记录一起泄漏,替换前必须显式回收。
+  let openCount = 0;
+  let disposeCount = 0;
+  const statuses: Array<"ready" | "error"> = [];
+  const manager = createAcpConnectionManager({
+    openConnection: async () => {
+      const index = openCount;
+      openCount += 1;
+      statuses.push("ready");
+      return {
+        inventory: () => ({
+          key: resolveAcpConnectionKey({ provider, worktree }),
+          providerId: provider.id,
+          cwd: worktree.path,
+          launchCwd: worktree.path,
+          status: statuses[index] ?? "ready",
+          runtimeConnectionId: `conn-${index}`,
+          initialized: true,
+          activeSessionCount: 0,
+          pendingSessionCount: 0,
+          sessions: [],
+          capabilities: { sessionLoad: true, sessionResume: true, sessionList: true, sessionClose: true, sessionDelete: false, imageInput: true },
+        }),
+        dispose: async () => {
+          disposeCount += 1;
+        },
+        openOrCreateSession: async () => {
+          throw new Error("not used");
+        },
+      };
+    },
+  });
+
+  await manager.openConnection({ provider, worktree });
+  // 子进程崩溃:连接自行进入 error,但没有人调用过 dispose。
+  statuses[0] = "error";
+  await manager.openConnection({ provider, worktree });
+
+  assert.equal(openCount, 2);
+  assert.equal(disposeCount, 1);
+});

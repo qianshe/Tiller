@@ -4,6 +4,7 @@ import type {
   ProjectFileSummary,
   SessionConfigOption,
   SessionReasoningEffort,
+  StoredTextContentRef,
   WorktreeSummary,
 } from "@tiller/shared";
 import type { AgentModelOptionsEntry } from "../agents/facade";
@@ -21,6 +22,7 @@ import {
   type GitGraphState,
   type GitStatusState,
 } from "../../store/facade";
+import { gitCwdKey, gitScopeKey, type GitScope } from "../git/facade";
 
 type StoreUpdater<T> = T | ((current: T) => T);
 type StoreSetter<T> = (updater: StoreUpdater<T>) => void;
@@ -30,11 +32,38 @@ type ProjectFilesEntry = {
   files: ProjectFileSummary[];
 };
 
-function pickGitSnapshot(payload: Record<string, unknown>): GitStatusState {
+function resolveGitScopeKey(sourceHelmKey: string, payload: Record<string, unknown>): string | undefined {
+  if (typeof payload.projectId !== "string" || typeof payload.cwd !== "string") {
+    return undefined;
+  }
+  const scope: GitScope = {
+    helmKey: sourceHelmKey,
+    projectId: payload.projectId,
+    cwd: payload.cwd,
+  };
+  return gitScopeKey(scope);
+}
+
+function matchesGitScope(
+  entry: GitStatusState | GitGraphState | undefined,
+  payload: Record<string, unknown>,
+) {
+  return Boolean(
+    entry &&
+    (typeof payload.projectId !== "string" || entry.projectId === payload.projectId) &&
+    (typeof payload.cwd !== "string" || gitCwdKey(entry.cwd) === gitCwdKey(payload.cwd)),
+  );
+}
+
+function pickGitSnapshot(
+  payload: Record<string, unknown>,
+  scopeKey?: string,
+): GitStatusState {
   return createGitStatusState(
     typeof payload.projectId === "string" ? payload.projectId : "",
     typeof payload.cwd === "string" ? payload.cwd : "",
     {
+      ...(scopeKey ? { scopeKey } : {}),
       branch: typeof payload.branch === "string" ? payload.branch : "",
       detached: Boolean(payload.detached),
       upstreamBranch: typeof payload.upstreamBranch === "string" ? payload.upstreamBranch : undefined,
@@ -63,14 +92,19 @@ export function applyGitFileDiffResult(
   current: Record<string, GitStatusState>,
   payload: Record<string, unknown>,
   cwd: string,
+  scopeKey?: string,
 ): Record<string, GitStatusState> {
-  const entry = current[cwd];
+  const entryKey = scopeKey ?? cwd;
+  const entry = current[entryKey] ?? (scopeKey
+    ? undefined
+    : matchesGitScope(current[cwd], payload) ? current[cwd] : undefined);
   if (!entry || payload.ok !== true || !Array.isArray(payload.files)) {
     return current;
   }
   const diffs = new Map(
-    (payload.files as Array<{ path?: string; patch?: string }>)
-      .filter((file): file is { path: string; patch?: string } => typeof file.path === "string")
+    (payload.files as Array<{ path?: string; patch?: string; patchTruncated?: boolean; patchRef?: unknown }>)
+      .filter((file): file is { path: string; patch?: string; patchTruncated?: boolean; patchRef?: unknown } =>
+        typeof file.path === "string")
       .map((file) => [normalizeDiffFilePath(file.path), file] as const),
   );
   if (!diffs.size) {
@@ -78,11 +112,18 @@ export function applyGitFileDiffResult(
   }
   return {
     ...current,
-    [cwd]: {
+    [entryKey]: {
       ...entry,
+      ...(scopeKey ? { scopeKey } : {}),
       files: entry.files.map((file) => {
         const diff = diffs.get(normalizeDiffFilePath(file.path));
-        return diff?.patch ? { ...file, patch: diff.patch } : file;
+        if (!diff) return file;
+        return {
+          ...file,
+          ...(diff.patch ? { patch: diff.patch } : {}),
+          ...(diff.patchTruncated ? { patchTruncated: true } : {}),
+          ...(isStoredTextContentRef(diff.patchRef) ? { patchRef: diff.patchRef } : {}),
+        };
       }),
     },
   };
@@ -92,21 +133,36 @@ function normalizeDiffFilePath(path: string) {
   return path.replace(/\\/g, "/");
 }
 
+function isStoredTextContentRef(value: unknown): value is StoredTextContentRef {
+  if (!value || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  return typeof candidate.id === "string" &&
+    typeof candidate.uri === "string" &&
+    candidate.mimeType === "text/plain; charset=utf-8" &&
+    typeof candidate.byteSize === "number" &&
+    typeof candidate.sha256 === "string";
+}
+
 export function applyGitGraphResult(
   current: Record<string, GitGraphState>,
   payload: Record<string, unknown>,
   cwd: string,
+  scopeKey?: string,
 ): Record<string, GitGraphState> {
-  const previous = current[cwd];
+  const entryKey = scopeKey ?? cwd;
+  const previous = current[entryKey] ?? (scopeKey
+    ? undefined
+    : matchesGitScope(current[cwd], payload) ? current[cwd] : undefined);
   const ok = payload.ok === true;
   const unchanged = ok && payload.unchanged === true;
   const signature = typeof payload.signature === "string" ? payload.signature : undefined;
   return {
     ...current,
-    [cwd]: {
+    [entryKey]: {
       projectId: typeof payload.projectId === "string"
         ? payload.projectId
         : previous?.projectId ?? "",
+      ...(scopeKey ? { scopeKey } : previous?.scopeKey ? { scopeKey: previous.scopeKey } : {}),
       cwd,
       head: ok && !unchanged
         ? (typeof payload.head === "string" ? payload.head : undefined)
@@ -134,13 +190,17 @@ export function applyGitOperationResult(
   payload: Record<string, unknown>,
   cwd: string,
   busyFlag: GitBusyFlag,
+  scopeKey?: string,
 ) {
-  const previous = current[cwd];
-  const snapshot = pickGitSnapshot(payload);
+  const entryKey = scopeKey ?? cwd;
+  const previous = current[entryKey] ?? (scopeKey
+    ? undefined
+    : matchesGitScope(current[cwd], payload) ? current[cwd] : undefined);
+  const snapshot = pickGitSnapshot(payload, scopeKey);
   if (payload.ok === true) {
     return {
       ...current,
-      [cwd]: {
+      [entryKey]: {
         ...snapshot,
         loading: false,
         [busyFlag]: false,
@@ -150,12 +210,13 @@ export function applyGitOperationResult(
 
   return {
     ...current,
-    [cwd]: {
+    [entryKey]: {
       ...(previous ?? snapshot),
       projectId: typeof payload.projectId === "string"
         ? payload.projectId
         : previous?.projectId ?? snapshot.projectId,
       cwd,
+      ...(scopeKey ? { scopeKey } : {}),
       message: typeof payload.message === "string"
         ? payload.message
         : previous?.message ?? "",
@@ -472,38 +533,43 @@ export function applyInventoryResult(
       return true;
     case "project/git/status": {
       if (payload.cwd) {
+        const scopeKey = resolveGitScopeKey(sourceHelmKey, payload);
         store.setGitStatusByWorktree((current) =>
-          applyGitOperationResult(current, payload, payload.cwd, "loading"),
+          applyGitOperationResult(current, payload, payload.cwd, "loading", scopeKey),
         );
       }
       return true;
     }
     case "project/git/graph":
       if (payload.cwd) {
+        const scopeKey = resolveGitScopeKey(sourceHelmKey, payload);
         store.setGitGraphByWorktree((current) =>
-          applyGitGraphResult(current, payload, payload.cwd),
+          applyGitGraphResult(current, payload, payload.cwd, scopeKey),
         );
       }
       return true;
     case "project/git/file_diff":
       if (payload.cwd) {
+        const scopeKey = resolveGitScopeKey(sourceHelmKey, payload);
         store.setGitStatusByWorktree((current) =>
-          applyGitFileDiffResult(current, payload, payload.cwd),
+          applyGitFileDiffResult(current, payload, payload.cwd, scopeKey),
         );
       }
       return true;
     case "project/git/commit_detail":
       if (payload.cwd) {
+        const scopeKey = resolveGitScopeKey(sourceHelmKey, payload) ?? payload.cwd;
         store.setGitGraphByWorktree((current) => {
-          const graph: GitGraphState = current[payload.cwd] ?? {
+          const graph: GitGraphState = current[scopeKey] ?? {
             projectId: payload.projectId,
             cwd: payload.cwd,
             commits: [],
+            ...(scopeKey !== payload.cwd ? { scopeKey } : {}),
           };
           const previousDetail = graph.commitDetails?.[payload.commitHash];
           return {
             ...current,
-            [payload.cwd]: {
+            [scopeKey]: {
               ...graph,
               commitDetails: {
                 ...graph.commitDetails,
@@ -522,32 +588,36 @@ export function applyInventoryResult(
       return true;
     case "project/git/commit": {
       if (payload.cwd) {
+        const scopeKey = resolveGitScopeKey(sourceHelmKey, payload);
         store.setGitStatusByWorktree((current) =>
-          applyGitOperationResult(current, payload, payload.cwd, "committing"),
+          applyGitOperationResult(current, payload, payload.cwd, "committing", scopeKey),
         );
       }
       return true;
     }
     case "project/git/discard": {
       if (payload.cwd) {
+        const scopeKey = resolveGitScopeKey(sourceHelmKey, payload);
         store.setGitStatusByWorktree((current) =>
-          applyGitOperationResult(current, payload, payload.cwd, "discarding"),
+          applyGitOperationResult(current, payload, payload.cwd, "discarding", scopeKey),
         );
       }
       return true;
     }
     case "project/git/push": {
       if (payload.cwd) {
+        const scopeKey = resolveGitScopeKey(sourceHelmKey, payload);
         store.setGitStatusByWorktree((current) =>
-          applyGitOperationResult(current, payload, payload.cwd, "pushing"),
+          applyGitOperationResult(current, payload, payload.cwd, "pushing", scopeKey),
         );
       }
       return true;
     }
     case "project/git/pull": {
       if (payload.cwd) {
+        const scopeKey = resolveGitScopeKey(sourceHelmKey, payload);
         store.setGitStatusByWorktree((current) =>
-          applyGitOperationResult(current, payload, payload.cwd, "pulling"),
+          applyGitOperationResult(current, payload, payload.cwd, "pulling", scopeKey),
         );
       }
       return true;
@@ -559,6 +629,9 @@ export function applyInventoryResult(
       }
       return true;
     case "agent/connections":
+      store.applyHelmInventory(sourceHelmKey, {
+        agentConnections: payload.connections ?? [],
+      });
       if (sourceIsCurrentHelm) {
         store.setAgentConnectionInventory(payload.connections ?? []);
       }
@@ -606,9 +679,9 @@ export function applyInventoryResult(
             ...(targetConfirmed ? { message: "已连接新 Helm，正在确认版本。" } : {}),
           },
         });
-        if (targetVersion && !targetConfirmed) {
+        if (targetVersion && !targetConfirmed && pendingTarget) {
           writeHelmUpdateIntent(sourceHelmKey, targetVersion);
-        } else if (targetConfirmed) {
+        } else if (targetConfirmed && !pendingTarget) {
           clearHelmUpdateIntent(sourceHelmKey);
         }
       }
@@ -668,6 +741,9 @@ export function applyInventoryResult(
           }));
         }
       }
+      store.applyHelmInventory(sourceHelmKey, {
+        agentConnections: payload.connections ?? [],
+      });
       return true;
     case "agent/test":
       setAgentTestResult(payload.message);

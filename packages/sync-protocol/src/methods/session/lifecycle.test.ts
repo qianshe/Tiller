@@ -16,6 +16,7 @@ import * as sessionConfigure from "./configure";
 import * as sessionSetConfigOption from "./set-config-option";
 import * as sessionRename from "./rename";
 import * as sessionCleanup from "./cleanup";
+import * as sessionCancel from "./cancel";
 
 test("session/new requires project cwd and agent", () => {
   assert.equal(sessionNew.method, "session/new");
@@ -215,4 +216,18 @@ test("session/rename requires session id and title", () => {
 test("session/cleanup carries result payload", () => {
   assert.equal(sessionCleanup.method, "session/cleanup");
   sessionCleanup.ResultSchema.parse({ result: {} });
+});
+
+test("session/cancel answers with the authoritative session status", () => {
+  // 取消必须可被确认:半开连接或 helm 侧校验失败时,fire-and-forget 会让
+  // 用户完全无感。响应同时携带权威状态,广播丢失也能让客户端收敛。
+  assert.equal(sessionCancel.method, "session/cancel");
+  assert.equal(sessionCancel.descriptor.kind, "request");
+  sessionCancel.ParamsSchema.parse({ sessionId: "s-1" });
+  const result = sessionCancel.ResultSchema.parse({
+    sessionId: "s-1",
+    ok: true,
+    status: "cancelled",
+  });
+  assert.equal(result.status, "cancelled");
 });

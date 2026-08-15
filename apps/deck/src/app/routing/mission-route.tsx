@@ -1,7 +1,19 @@
 import { MissionWorktree } from "../../features/mission";
 import type { MissionRouteSource } from "./route-context";
 
-export function renderMissionRoute(source: MissionRouteSource) {
+export function renderMissionRoute(
+  source: MissionRouteSource,
+  options: {
+    embedded?: boolean;
+    chatOnly?: boolean;
+    hideSessionCloseAction?: boolean;
+  } = {},
+) {
+  const {
+    embedded = false,
+    chatOnly = false,
+    hideSessionCloseAction,
+  } = options;
   const {
     prompt,
     promptImages,
@@ -76,12 +88,14 @@ export function renderMissionRoute(source: MissionRouteSource) {
     setExpandedMissionProjectIds,
     setActiveSessionId,
     openSession,
+    acknowledgeSessionCompletion,
     renderMissionAgentIcon,
     resolveDisplaySessionTitle,
     regenerateSessionTitle,
     regeneratingIds,
     formatRelativeTime,
     setPendingSessionCleanup,
+    onCloseSessionView,
     sessionHistoryState,
     toggleMissionProjectNode,
     startMissionPaneResize,
@@ -197,6 +211,9 @@ export function renderMissionRoute(source: MissionRouteSource) {
   } = source;
   return (
     <MissionWorktree
+      embedded={embedded}
+      chatOnly={chatOnly}
+      hideSessionCloseAction={hideSessionCloseAction}
       prompt={prompt}
       promptImages={promptImages}
       rpcClientRef={rpcClientRef}
@@ -210,6 +227,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       focusedChatWindowId={focusedChatWindowId}
       setFocusedChatWindowId={setFocusedChatWindowId}
       navigateToView={navigateToView}
+      onCloseSessionView={onCloseSessionView}
       selectedProjectId={selectedProjectId}
       selectedCwd={selectedCwd}
       selectedAgentId={selectedAgentId}
@@ -275,6 +293,7 @@ export function renderMissionRoute(source: MissionRouteSource) {
       setExpandedMissionProjectIds={setExpandedMissionProjectIds}
       setActiveSessionId={setActiveSessionId}
       openSession={openSession}
+      acknowledgeSessionCompletion={acknowledgeSessionCompletion}
       renderMissionAgentIcon={renderMissionAgentIcon}
       resolveDisplaySessionTitle={resolveDisplaySessionTitle}
       regenerateSessionTitle={regenerateSessionTitle}

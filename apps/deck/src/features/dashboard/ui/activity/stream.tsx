@@ -1,9 +1,9 @@
 import { useState, type CSSProperties } from "react";
 import type { ApprovalStatus, PermissionDecision } from "@tiller/shared";
-import { AgentIcon, Icon, StatusDot } from "../../../shared/ui";
-import { cn } from "../../../shared/utils/cn";
-import type { DashboardNotification } from "../orchestration/dashboard-view-model";
-import { DashboardNotificationList } from "./notification-list";
+import { AgentIcon, Icon, StatusDot } from "../../../../shared/ui";
+import { cn } from "../../../../shared/utils/cn";
+import type { DashboardNotification } from "../../orchestration/view-model";
+import { DashboardNotificationList } from "../notification-list";
 
 export type DashboardActivityApproval = {
   id: string;
@@ -23,17 +23,29 @@ export type DashboardActivityApproval = {
 export type DashboardActivitySession = {
   id: string;
   title: string;
+  projectId?: string | null;
   projectName?: string | null;
   worktreeName?: string | null;
+  cwd?: string | null;
+  helmId?: string | null;
+  helmKey?: string | null;
+  agentId?: string | null;
   agentName?: string | null;
+  runtimeSessionId?: string | null;
+  lastMessagePreview?: string | null;
   status?: string;
+  completedUnread?: boolean;
   selected?: boolean;
+  createdAt?: string;
   updatedAt?: string;
   planSummary?: {
     completed: number;
     total: number;
     label: string;
   };
+  preparationId?: string;
+  content?: string;
+  revision?: number;
 };
 
 type DashboardActivity = {
@@ -57,6 +69,7 @@ type DashboardActivity = {
     | "已过期"
     | "错误"
     | "已取消"
+    | "已完成"
     | "空闲";
   selected?: boolean;
   detail?: string;
@@ -66,8 +79,6 @@ type DashboardActivity = {
 type DashboardActivityStreamProps = {
   sessions: DashboardActivitySession[];
   approvals: DashboardActivityApproval[];
-  planSessionCount: number;
-  toolCallCount: number;
   notifications?: DashboardNotification[];
   onOpenSession?: (sessionId: string) => void;
   onClearNotifications?: () => void;
@@ -77,8 +88,7 @@ type DashboardActivityStreamProps = {
 
 type ActivityTab = "最近" | "权限" | "通知" | "7天前";
 
-const ACTIVITY_GRID_COLUMNS = "grid grid-cols-[88px_minmax(140px,1fr)_minmax(88px,0.85fr)_minmax(96px,0.85fr)_112px_var(--dashboard-activity-acp-width)] gap-2";
-const ACTIVITY_SPARKLINE_HOURS = 24;
+const ACTIVITY_GRID_COLUMNS = "grid grid-cols-[76px_minmax(0,1.4fr)_minmax(0,0.8fr)_minmax(0,0.9fr)_minmax(0,0.8fr)_minmax(0,var(--dashboard-activity-acp-width))] gap-2";
 const HOUR_MS = 60 * 60 * 1000;
 const ACTIVITY_RECENT_LIMIT = 15;
 const ACTIVITY_OLD_MS = 7 * 24 * HOUR_MS;
@@ -104,8 +114,14 @@ function formatActivityTimeFromTimestamp(timestampMs: number | null) {
   }).format(new Date(timestampMs));
 }
 
-function resolveSessionActivityState(status: string | undefined): Pick<DashboardActivity, "tone" | "statusLabel"> {
+function resolveSessionActivityState(
+  status: string | undefined,
+  completedUnread = false,
+): Pick<DashboardActivity, "tone" | "statusLabel"> {
   const normalized = (status ?? "").toLowerCase();
+  if (completedUnread && (normalized === "idle" || normalized === "completed")) {
+    return { tone: "active", statusLabel: "已完成" };
+  }
   if (normalized === "running") {
     return { tone: "primary", statusLabel: "运行中" };
   }
@@ -122,6 +138,25 @@ function resolveSessionActivityState(status: string | undefined): Pick<Dashboard
     return { tone: "idle", statusLabel: "已取消" };
   }
   return { tone: "idle", statusLabel: "空闲" };
+}
+
+function resolveActivityStatusClass(tone: DashboardActivity["tone"]) {
+  switch (tone) {
+    case "primary":
+      return "text-primary";
+    case "active":
+      return "text-success";
+    case "warning":
+      return "text-warning";
+    case "danger":
+      return "text-destructive";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+function shouldPulseActivity(activity: DashboardActivity) {
+  return activity.statusLabel === "运行中" || activity.statusLabel === "处理中";
 }
 
 function formatApprovalDetail(approval: DashboardActivityApproval) {
@@ -176,7 +211,7 @@ function buildActivities(
   const list: DashboardActivity[] = [];
 
   sessions.forEach((session) => {
-    const state = resolveSessionActivityState(session.status);
+    const state = resolveSessionActivityState(session.status, session.completedUnread);
     const timestampMs = parseActivityTimestamp(session.updatedAt);
     list.push({
       id: `session-${session.id}`,
@@ -230,19 +265,6 @@ function formatActivityAriaLabel(activity: DashboardActivity) {
   return `${activity.type}: ${activity.title}. ${activity.statusLabel}. ${activity.agentName ?? "Agent"}. ${formatActivityField(activity.projectName)}. ${formatActivityField(activity.worktreeName)}. ${resolveActivityDetail(activity)}`;
 }
 
-function buildActivitySparkline(activities: DashboardActivity[], now = Date.now()) {
-  const points = Array.from({ length: ACTIVITY_SPARKLINE_HOURS }, () => 0);
-  const start = now - ACTIVITY_SPARKLINE_HOURS * HOUR_MS;
-  for (const activity of activities) {
-    if (activity.timestampMs === undefined || activity.timestampMs < start || activity.timestampMs > now) {
-      continue;
-    }
-    const bucket = Math.min(points.length - 1, Math.floor((activity.timestampMs - start) / HOUR_MS));
-    points[bucket] = (points[bucket] ?? 0) + 1;
-  }
-  return points;
-}
-
 function sortActivitiesByRecency(activities: DashboardActivity[]) {
   return activities
     .map((activity, index) => ({ activity, index }))
@@ -267,8 +289,6 @@ function filterActivitiesByTab(activeTab: ActivityTab, activities: DashboardActi
 export function DashboardActivityStream({
   sessions,
   approvals,
-  planSessionCount,
-  toolCallCount,
   notifications = [],
   onOpenSession,
   onClearNotifications,
@@ -279,8 +299,6 @@ export function DashboardActivityStream({
   const rawActivities = buildActivities(sessions, approvals);
   const orderedActivities = sortActivitiesByRecency(rawActivities);
   const filteredActivities = filterActivitiesByTab(activeTab, orderedActivities);
-  const sparklinePoints = buildActivitySparkline(rawActivities);
-  const recentActivityCount = sparklinePoints.reduce((total, value) => total + value, 0);
   const processedApprovalCount = approvals.filter(
     (approval) => approval.status === "resolved" || approval.status === "expired",
   ).length;
@@ -290,7 +308,7 @@ export function DashboardActivityStream({
 
   if (isMobile) {
     return (
-      <section className="wb-pane">
+      <section className="wb-pane min-w-0 overflow-hidden">
         <div className="wb-pane-head min-h-9">
           <span className="wb-pane-head-title">活动流</span>
           <div className="flex-1" />
@@ -312,11 +330,11 @@ export function DashboardActivityStream({
                 onClick={() => activity.sessionId ? onOpenSession?.(activity.sessionId) : undefined}
               >
                 <span className="flex min-w-0 items-center gap-2">
-                  <StatusDot tone={activity.tone} size={6} />
+                  <StatusDot tone={activity.tone} pulse={shouldPulseActivity(activity)} size={6} />
                   <span className="min-w-0 flex-1 truncate text-section">{activity.title}</span>
-                  <span className="font-mono text-meta tabular text-muted-foreground">{activity.statusLabel}</span>
+                  <span className={cn("font-mono text-meta tabular", resolveActivityStatusClass(activity.tone))}>{activity.statusLabel}</span>
                 </span>
-                <span className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                <span className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
                   <span className="truncate font-mono text-meta tabular text-muted-foreground">
                     {formatActivityField(activity.projectName)} · {formatActivityField(activity.worktreeName)}
                   </span>
@@ -332,17 +350,12 @@ export function DashboardActivityStream({
             </li>
           ))}
         </ul>
-        <div className="border-t border-border-ghost px-3 py-2.5 flex items-baseline gap-2">
-          <span className="font-mono text-meta text-muted-foreground uppercase tracking-wider">近24h</span>
-          <Sparkline points={sparklinePoints} />
-          <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{recentActivityCount} 活动</span>
-        </div>
       </section>
     );
   }
 
   return (
-    <section className="wb-pane flex min-h-[520px] flex-col lg:col-span-2" style={acpColumnStyle}>
+    <section className="wb-pane flex min-h-0 flex-col lg:col-span-2" style={acpColumnStyle}>
       <div className="wb-pane-head min-h-9">
         <span className="wb-pane-head-title">活动流</span>
         <div className="ml-2 flex items-center gap-1" role="tablist" aria-label="活动分类">
@@ -417,7 +430,7 @@ export function DashboardActivityStream({
         <span>计划 / 权限</span>
         <span>ACP</span>
       </div>
-      <ul className="flex-1 overflow-y-auto overflow-x-hidden" hidden={activeTab === "通知"}>
+      <ul className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden" hidden={activeTab === "通知"}>
         {filteredActivities.map((activity) => (
           <li key={activity.id} className="border-b border-border-ghost last:border-b-0">
             <button
@@ -432,9 +445,9 @@ export function DashboardActivityStream({
               onClick={() => activity.sessionId ? onOpenSession?.(activity.sessionId) : undefined}
             >
               <span className="flex min-w-0 items-center gap-2">
-                <StatusDot tone={activity.tone} size={6} />
+                <StatusDot tone={activity.tone} pulse={shouldPulseActivity(activity)} size={6} />
                 <span className="grid min-w-0 gap-0.5">
-                  <span className="truncate text-section">{activity.statusLabel}</span>
+                  <span className={cn("truncate text-section", resolveActivityStatusClass(activity.tone))}>{activity.statusLabel}</span>
                   <span className="truncate font-mono text-meta tabular text-muted-foreground">{activity.time}</span>
                 </span>
               </span>
@@ -450,27 +463,6 @@ export function DashboardActivityStream({
           </li>
         ))}
       </ul>
-      <div className="flex items-baseline gap-2 border-t border-border-ghost px-3 py-2.5" hidden={activeTab === "通知"}>
-        <span className="font-mono text-meta uppercase tracking-wider text-muted-foreground">近24h</span>
-        <Sparkline points={sparklinePoints} />
-        <span className="font-mono text-meta tabular text-muted-foreground">{recentActivityCount} 活动</span>
-        <span className="ml-auto font-mono text-meta tabular text-muted-foreground">{planSessionCount} plan · {toolCallCount} tool</span>
-      </div>
     </section>
-  );
-}
-
-function Sparkline({ points }: { points: number[] }) {
-  const max = Math.max(1, ...points);
-  return (
-    <svg width="180" height="20" viewBox={`0 0 ${points.length * 6} 20`} className="text-primary" aria-hidden="true">
-      {points.map((point, index) => {
-        const height = point === 0 ? 2 : Math.max(3, (point / max) * 18);
-        const opacity = point === 0 ? 0.2 : 0.45 + (point / max) * 0.55;
-        return (
-          <rect key={index} x={index * 6} y={20 - height} width="4" height={height} fill="currentColor" opacity={opacity} rx="1" />
-        );
-      })}
-    </svg>
   );
 }

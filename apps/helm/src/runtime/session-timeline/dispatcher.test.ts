@@ -47,6 +47,32 @@ test("timeline dispatcher commits updates with materialized entries before publi
   assert.deepEqual(order, ["commit:1", "publish"]);
 });
 
+test("timeline dispatcher invokes post-commit hooks with the persisted batch", () => {
+  const order: string[] = [];
+  const batch: SessionTimelineBatch = {
+    replace: false,
+    deliverySequence: 1,
+    lastSequence: 1,
+    entries: [],
+  };
+  const dispatcher = createSessionTimelineDispatcher({
+    store: {
+      commitBatch: () => {
+        order.push("commit");
+        return [];
+      },
+    } as unknown as SessionTimelineStore,
+    publish: () => order.push("publish"),
+    afterCommit: (_sessionId, committedBatch) => {
+      order.push(committedBatch === batch ? "after-commit" : "wrong-batch");
+    },
+  });
+
+  dispatcher.dispatch("session-1", batch);
+
+  assert.deepEqual(order, ["commit", "publish", "after-commit"]);
+});
+
 test("timeline dispatcher does not publish when the atomic commit fails", () => {
   let published = false;
   const dispatcher = createSessionTimelineDispatcher({

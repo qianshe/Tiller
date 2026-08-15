@@ -5,14 +5,14 @@
 ## Summary
 
 - CSS files: 12
-- Total lines: 1944
+- Total lines: 1956
 
 ## Files
 
 ### apps/deck/src/app/shell/styles.css
 
-- Lines: 759
-- Top-level selectors: 164
+- Lines: 769
+- Top-level selectors: 166
 - Hard-coded color tokens: 1
 
 Selectors:
@@ -107,6 +107,8 @@ Selectors:
 - `.muted`
 - `.shell.v6-radial-shell`
 - `.shell.v6-radial-shell .page-content`
+- `.shell.view-dashboard.dashboard-tasks-view`
+- `.shell.view-dashboard.v6-radial-shell .page-content`
 - `.shell.view-sessions`
 - `.shell.view-sessions .page-content`
 - `.shell.view-sessions.v6-radial-shell`
@@ -204,7 +206,7 @@ Selectors:
 
 ### apps/deck/src/app/shell/tokens/semantic.css
 
-- Lines: 46
+- Lines: 48
 - Top-level selectors: 1
 - Hard-coded color tokens: 0
 

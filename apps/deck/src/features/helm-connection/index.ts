@@ -14,11 +14,18 @@ export {
 } from "./daemon-profiles";
 export { resolveDefaultHelmEndpoint, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
 export {
+  resolveSessionRpcTarget,
+  type SessionRpcTarget,
+} from "./utils/session-rpc-client";
+export {
   dispatchWithTrace,
   type DispatchToHelm,
 } from "./request-dispatch";
 export { DeckRpcClient } from "./rpc-client";
-export { shouldCheckHelmHealth } from "./reconnect-policy";
+export {
+  resolveHelmHealthStatus,
+  shouldCheckHelmHealth,
+} from "./reconnect-policy";
 export type { HelmHealthStatus } from "../../store/facade";
 export {
   clearHelmUpdateIntent,

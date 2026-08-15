@@ -8,6 +8,7 @@ import {
 } from "../../../store/facade";
 import { toast } from "../../toast";
 import { refreshGitStatusAndGraph, type GitDispatch, type GitDispatchResult } from "./git-sync";
+import { gitScopeKey } from "../../git";
 
 type StoreUpdater<T> = T | ((current: T) => T);
 type StoreSetter<T> = (updater: StoreUpdater<T>) => void;
@@ -20,6 +21,7 @@ type StoreSetter<T> = (updater: StoreUpdater<T>) => void;
 export type GitOperationContext = {
   projectId: string;
   cwd: string;
+  scopeKey?: string;
   hasGraph: boolean;
   // Cached graph signature echoed to Helm so unchanged graphs skip the payload.
   graphSignature?: string;
@@ -73,6 +75,7 @@ export async function runGitRefresh(
       projectId,
       cwd,
       hasGraph,
+      scopeKey: context.scopeKey,
       refreshRemote: opts.refreshRemote,
       graphSignature: context.graphSignature,
     });
@@ -187,11 +190,17 @@ export async function runGitCommit(
     context.onCommitSuccess?.();
     context.notify.success("提交成功");
     if (hasGraph) {
-      await context.dispatch("project/git/graph", {
-        projectId,
-        cwd,
-        ...(context.graphSignature ? { knownSignature: context.graphSignature } : {}),
-      });
+      try {
+        await context.dispatch("project/git/graph", {
+          projectId,
+          cwd,
+          ...(context.graphSignature ? { knownSignature: context.graphSignature } : {}),
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "提交历史刷新失败";
+        context.patchGraph?.({ loading: false, message, error: message });
+        context.notify.warning("提交成功，但提交历史刷新失败");
+      }
     }
     return result;
   } catch (error) {
@@ -267,6 +276,7 @@ export async function runGitDiscard(
 export function useGitOperations(options: {
   activeGitProjectId: string | null | undefined;
   activeGitCwd: string | null | undefined;
+  activeGitHelmKey?: string | null;
   rpcClientRef: MutableRefObject<DeckRpcClient | null>;
   dispatch: DispatchToHelm;
   gitGraphByWorktree: Record<string, GitGraphState>;
@@ -277,6 +287,7 @@ export function useGitOperations(options: {
   const {
     activeGitProjectId,
     activeGitCwd,
+    activeGitHelmKey,
     rpcClientRef,
     dispatch,
     gitGraphByWorktree,
@@ -291,29 +302,41 @@ export function useGitOperations(options: {
     }
     const projectId = activeGitProjectId;
     const cwd = activeGitCwd;
+    const scopeKey = activeGitHelmKey
+      ? gitScopeKey({ helmKey: activeGitHelmKey, projectId, cwd })
+      : cwd;
+    const cachedGraph = gitGraphByWorktree[scopeKey];
     const client = rpcClientRef.current;
     return {
       projectId,
       cwd,
-      hasGraph: Boolean(gitGraphByWorktree[cwd]),
-      graphSignature: gitGraphByWorktree[cwd]?.signature,
+      ...(activeGitHelmKey ? { scopeKey } : {}),
+      hasGraph: Boolean(cachedGraph),
+      graphSignature: cachedGraph?.signature,
       dispatch: (method, params) =>
         dispatch(client, method, params) as Promise<GitDispatchResult>,
       updateStatus: (updater) => {
         setGitStatusByWorktree((current) => ({
           ...current,
-          [cwd]: updater(createGitStatusState(projectId, cwd, current[cwd])),
+          [scopeKey]: {
+            ...updater(createGitStatusState(
+              projectId,
+              cwd,
+              current[scopeKey],
+            )),
+            ...(activeGitHelmKey ? { scopeKey } : {}),
+          },
         }));
       },
       patchGraph: setGitGraphByWorktree
         ? (patch) => {
             setGitGraphByWorktree((prev) => {
-              const graph = prev[cwd];
+              const graph = prev[scopeKey];
               // Runners only patch when hasGraph; skip if the entry vanished.
-              return graph ? { ...prev, [cwd]: { ...graph, ...patch } } : prev;
+              return graph ? { ...prev, [scopeKey]: { ...graph, ...patch, ...(activeGitHelmKey ? { scopeKey } : {}) } } : prev;
             });
           }
-        : undefined,
+      : undefined,
       notify: toast,
       onCommitSuccess: () => setSelectedCommitDiffPaths(new Set()),
       onDiscardSuccess: (paths) => {
@@ -326,6 +349,7 @@ export function useGitOperations(options: {
   }, [
     activeGitProjectId,
     activeGitCwd,
+    activeGitHelmKey,
     rpcClientRef,
     dispatch,
     gitGraphByWorktree,

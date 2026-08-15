@@ -13,6 +13,8 @@ const currentDir = dirname(fileURLToPath(import.meta.url));
 const pageSource = readFileSync(resolve(currentDir, "page.tsx"), "utf8");
 const promptEnhancerSource = readFileSync(resolve(currentDir, "prompt-enhancer-card.tsx"), "utf8");
 const sectionsSource = readFileSync(resolve(currentDir, "settings-sections.ts"), "utf8");
+const workspaceSource = readFileSync(resolve(currentDir, "settings-workspace-shell.tsx"), "utf8");
+const navigationSource = readFileSync(resolve(currentDir, "settings-navigation.tsx"), "utf8");
 
 const technicalPanels: TechnicalPanelPreferences = {
   diffDefaultOpen: true,
@@ -73,10 +75,10 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
 
   assert.match(html, /设置/);
   assert.match(html, /settings-section-nav/);
+  assert.match(html, /settings-workspace-shell/);
   assert.match(html, /settings-section-frame/);
   assert.doesNotMatch(html, /settings-section-frame[^\"]*wb-pane/);
-  assert.match(html, /flex flex-col gap-2 border-b border-border-ghost py-3 last:border-b-0 sm:flex-row/);
-  assert.match(html, /max-w-\[640px\]/);
+  assert.match(html, /flex flex-col gap-2 border-b border-border-ghost px-4 py-4 last:border-b-0 sm:flex-row/);
   assert.match(html, /重置全部/);
   assert.match(html, /外观/);
   assert.match(html, /面板/);
@@ -101,18 +103,25 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
   assert.match(pageSource, /<SettingsRow label="减少动效" desc="禁用 streaming pulse \/ drawer slide \/ fade transitions">/);
   assert.match(pageSource, /<SettingsRow label="Mission Thinking" desc="只控制会话小窗口中的 Thinking 展示">/);
   assert.match(pageSource, /<SettingsRow label=\{settingsCopy\.connectionDebug\} desc="WebSocket \/ RPC raw 帧">/);
-  assert.match(pageSource, /className="flex h-12 w-full items-center gap-2\.5 rounded px-2 text-left transition-colors hover:bg-surface-sunken active:bg-surface-emphasis"/);
+  assert.match(workspaceSource, /className="flex min-h-12 w-full items-center gap-3 rounded-md px-3 text-left transition-colors hover:bg-surface-sunken active:bg-surface-emphasis"/);
   assert.doesNotMatch(pageSource, /wb-pane-sunken flex items-center gap-3 p-3/);
   assert.doesNotMatch(pageSource, /TechnicalSwitch/);
   assert.match(pageSource, /SettingsSwitch/);
-  assert.match(pageSource, /title="重置所有 Deck 前端偏好"/);
+  assert.match(workspaceSource, /title="重置所有 Deck 前端偏好"/);
   assert.doesNotMatch(pageSource, /\{settingsCopy\.reset\}/);
   assert.doesNotMatch(pageSource, />\s*更改\s*</);
+  assert.match(pageSource, /mode\?: SettingsPageMode/);
+  assert.match(pageSource, /mode = "standalone"/);
+  assert.match(pageSource, /mode=\{mode\}/);
+  assert.match(workspaceSource, /mode\?: SettingsPageMode/);
+  assert.match(workspaceSource, /showHeading=\{mode !== "dashboard"\}/);
+  assert.match(navigationSource, /showHeading\?: boolean/);
   assert.doesNotMatch(pageSource, /sm:grid-cols-2/);
   assert.doesNotMatch(pageSource, /h-\[46px\]/);
   assert.match(pageSource, /updatePreference=\{updatePromptEnhancerPreference\}/);
   assert.match(promptEnhancerSource, /max-w-\[720px\]/);
   assert.match(promptEnhancerSource, /Prompt 增强状态/);
+  assert.match(promptEnhancerSource, /border-b border-border-ghost px-4 py-4/);
   assert.match(promptEnhancerSource, /控制会话输入框中的增强按钮是否可用/);
   assert.match(promptEnhancerSource, /PromptEnhancerChip/);
   assert.match(promptEnhancerSource, /SettingsSwitch/);
@@ -131,6 +140,15 @@ test("SettingsPage renders preference and prompt enhancer sections", () => {
   assert.doesNotMatch(pageSource, /立即检查/);
   assert.doesNotMatch(pageSource, /noRecordAssistant/);
   assert.match(pageSource, /<select/);
+  assert.match(workspaceSource, /md:grid-cols-\[220px_minmax\(0,1fr\)\]/);
+  assert.match(workspaceSource, /h-full min-h-0/);
+  assert.match(workspaceSource, /h-full min-h-0 w-full/);
+  assert.match(workspaceSource, /<div className="w-full">\{children\}<\/div>/);
+  assert.doesNotMatch(workspaceSource, /max-w-\[760px\]/);
+  assert.doesNotMatch(workspaceSource, /h-screen/);
+  assert.doesNotMatch(workspaceSource, /TILLER \/ SETTINGS/);
+  assert.doesNotMatch(navigationSource, /TILLER \/ SETTINGS/);
+  assert.doesNotMatch(pageSource, /settings-v6-page/);
   assert.match(pageSource, /const \[loggingDraftLevel, setLoggingDraftLevel\] = useState<LoggingLevel \| "">\(""\);/);
   assert.match(pageSource, /setLoggingDraftLevel\(loggingSettings\?\.level \?\? ""\);/);
   assert.match(pageSource, /value=\{loggingDraftLevel\}/);

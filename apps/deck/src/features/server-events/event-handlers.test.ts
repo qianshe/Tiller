@@ -17,7 +17,11 @@ import { applyActivityUpdate } from "./activity-events.js";
 import { applyApprovalCreated, applyApprovalResolved } from "./approval-events.js";
 import { applyDeviceResult } from "./device-events.js";
 import { applyInventoryResult } from "./inventory-events.js";
-import { applySessionResult, applySessionUpdate } from "./session-events.js";
+import {
+  applySessionActivitySummary,
+  applySessionResult,
+  applySessionUpdate,
+} from "./session-events.js";
 
 function session(id: string): SessionSummary {
   return {
@@ -45,6 +49,7 @@ function resetStore() {
     projects: [],
     worktrees: [],
     sessions: [],
+    activeSessionId: null,
     statuses: {},
     sessionTitles: {},
     openChatSessionIds: [],
@@ -74,6 +79,45 @@ function resetStore() {
     pairingFeedback: "",
   } as any);
 }
+
+test("session/activity_summary stores summary data in the source Helm inventory", () => {
+  resetStore();
+  const summary = {
+    generatedAt: "2026-08-09T12:34:56.000Z",
+    promptCount: 4,
+    recentToolCallCount: 7,
+    toolCallCount: 18,
+    activityTrend: [{ date: "2026-08-09", promptCount: 4, toolCallCount: 7 }],
+    activityTrendHourly: [{ date: "2026-08-09T12:00:00.000Z", promptCount: 4, toolCallCount: 7 }],
+  };
+
+  const handled = applySessionResult(
+    "session/activity_summary",
+    summary,
+    "helm-1",
+    true,
+    {} as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().helmInventories["helm-1"]?.activitySummary, summary);
+});
+
+test("dashboard activity summary notifications update only their source Helm inventory", () => {
+  resetStore();
+  const summary = {
+    generatedAt: "2026-08-09T12:34:56.000Z",
+    promptCount: 5,
+    recentToolCallCount: 8,
+    toolCallCount: 19,
+    activityTrend: [],
+    activityTrendHourly: [],
+  };
+
+  assert.equal(applySessionActivitySummary(summary, "helm-2"), true);
+  assert.deepEqual(useDeckStore.getState().helmInventories["helm-2"]?.activitySummary, summary);
+  assert.equal(useDeckStore.getState().helmInventories["helm-1"], undefined);
+});
 
 test("session cleanup releases session-scoped caches without touching another session", () => {
   resetStore();
@@ -273,6 +317,27 @@ test("session creation results refresh ACP connection inventory when runtime is 
 
   assert.equal(handled, true);
   assert.deepEqual(dispatched, ["agent/connections"]);
+});
+
+test("remote session creation stays in the source Helm inventory", () => {
+  resetStore();
+
+  const handled = applySessionResult(
+    "session/new",
+    { session: { ...session("remote-session"), runtimeSessionId: "runtime-remote" } },
+    "helm-remote",
+    false,
+    createSessionEventContext(),
+  );
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.deepEqual(state.sessions, []);
+  assert.deepEqual(
+    state.helmInventories["helm-remote"]?.sessions.map((item) => item.id),
+    ["remote-session"],
+  );
+  assert.equal(state.activeSessionId, null);
 });
 
 test("session/list_timeline replaces the canonical timeline and applies live state", () => {
@@ -727,6 +792,84 @@ test("terminal session timeline_batch removes matching live tool overlays", () =
   assert.deepEqual(useDeckStore.getState().toolCalls["session-1"], []);
 });
 
+test("streaming thinking timeline batches keep the live thought overlay stable", () => {
+  resetStore();
+  const sessionId = "session-thinking-stream";
+  const context = createSessionEventContext();
+  const applyTimelineBatch = (deliverySequence: number, text: string, streaming: boolean) =>
+    applySessionUpdate(
+      {
+        sessionId,
+        update: {
+          kind: "timeline_batch",
+          batch: {
+            replace: false,
+            deliverySequence,
+            lastSequence: deliverySequence,
+            entries: [{
+              id: "thought-1",
+              kind: "assistant_message",
+              chunks: [{
+                id: "thought-1:thinking",
+                kind: "thinking",
+                text,
+                title: "Thinking",
+                status: streaming ? "running" : "completed",
+                streamMode: "delta",
+                timestamp: `2026-07-04T10:00:0${deliverySequence}.000Z`,
+                updatedAt: `2026-07-04T10:00:0${deliverySequence}.000Z`,
+                sequence: deliverySequence,
+              }],
+              timestamp: `2026-07-04T10:00:0${deliverySequence}.000Z`,
+              updatedAt: `2026-07-04T10:00:0${deliverySequence}.000Z`,
+              sequence: deliverySequence,
+              streaming,
+            }],
+          },
+        },
+      },
+      context,
+    );
+
+  useDeckStore.setState({
+    messages: {
+      [sessionId]: [{
+        id: "thought-1",
+        role: "assistant",
+        contentKind: "thought",
+        text: "首行内容",
+        timestamp: "2026-07-04T10:00:01.000Z",
+        streaming: true,
+        streamMode: "delta",
+      }],
+    },
+  });
+
+  applyTimelineBatch(1, "首行内容", true);
+  assert.equal(useDeckStore.getState().messages[sessionId]?.[0]?.text, "首行内容");
+
+  useDeckStore.getState().setMessages((current) => ({
+    ...current,
+    [sessionId]: [{
+      id: "thought-1",
+      role: "assistant",
+      contentKind: "thought",
+      text: "首行内容\n后续内容",
+      timestamp: "2026-07-04T10:00:02.000Z",
+      streaming: true,
+      streamMode: "delta",
+    }],
+  }));
+  applyTimelineBatch(2, "首行内容\n后续内容", true);
+  assert.equal(
+    useDeckStore.getState().messages[sessionId]?.[0]?.text,
+    "首行内容\n后续内容",
+  );
+
+  applyTimelineBatch(3, "首行内容\n后续内容", false);
+  assert.equal(useDeckStore.getState().messages[sessionId]?.[0]?.text, undefined);
+});
+
 test("compaction timeline_batch removes its matching live assistant overlay", () => {
   resetStore();
   useDeckStore.setState({
@@ -901,7 +1044,10 @@ test("session live_state snapshots replace plan and prompt queue", () => {
 
 test("session live_state projects the full canonical snapshot", () => {
   resetStore();
-  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "starting" }],
+    statuses: { "session-1": "starting" },
+  });
 
   const handled = applySessionUpdate(
     {
@@ -938,8 +1084,8 @@ test("session live_state projects the full canonical snapshot", () => {
 
   const state = useDeckStore.getState();
   assert.equal(handled, true);
-  assert.equal(state.statuses["session-1"], "waiting_for_permission");
-  assert.equal(state.sessions[0]?.status, "waiting_for_permission");
+  assert.equal(state.statuses["session-1"], "starting");
+  assert.equal(state.sessions[0]?.status, "starting");
   assert.equal(state.sessions[0]?.model, "gpt-5");
   assert.equal(state.sessions[0]?.agentMode, "plan");
   assert.equal(state.sessions[0]?.reasoningEffort, "high");
@@ -1023,7 +1169,10 @@ test("sequenced live_state applies one atomic Deck store update", () => {
 
 test("session live_state ignores an out-of-order canonical snapshot", () => {
   resetStore();
-  useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
+  useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "starting" }],
+    statuses: { "session-1": "starting" },
+  });
   const context = createSessionEventContext();
 
   applySessionUpdate({
@@ -1056,12 +1205,12 @@ test("session live_state ignores an out-of-order canonical snapshot", () => {
   }, context);
 
   const state = useDeckStore.getState();
-  assert.equal(state.statuses["session-1"], "running");
+  assert.equal(state.statuses["session-1"], "starting");
   assert.equal(state.sessions[0]?.model, "gpt-5");
   assert.equal(state.sessionLiveStateSequences["session-1"], 8);
 });
 
-test("session lifecycle updates cannot overwrite a canonical live snapshot", () => {
+test("session lifecycle updates keep canonical status over a stale live snapshot", () => {
   resetStore();
   useDeckStore.setState({ sessions: [{ ...session("session-1"), status: "starting" }] });
   const context = createSessionEventContext();
@@ -1086,9 +1235,65 @@ test("session lifecycle updates cannot overwrite a canonical live snapshot", () 
   }, context);
 
   const state = useDeckStore.getState();
-  assert.equal(state.statuses["session-1"], "waiting_for_permission");
-  assert.equal(state.sessions[0]?.status, "waiting_for_permission");
+  assert.equal(state.statuses["session-1"], "idle");
+  assert.equal(state.sessions[0]?.status, "idle");
   assert.equal(state.sessions[0]?.model, "gpt-5");
+});
+
+test("a stale live_state cannot overwrite a later global idle lifecycle update", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "running" }],
+    statuses: { "session-1": "running" },
+  });
+  const context = createSessionEventContext();
+
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "session_updated",
+      session: { ...session("session-1"), status: "idle" },
+    },
+  }, context);
+  applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "live_state",
+      snapshot: {
+        sequence: 9,
+        status: { runtimeStatus: "running", effectiveStatus: "running", pendingApprovalCount: 0 },
+        config: { configOptions: [], modelOptions: [] },
+        availableCommands: [],
+        sessionInfo: {},
+        diffs: [],
+      },
+    } as any,
+  }, context);
+
+  const state = useDeckStore.getState();
+  assert.equal(state.statuses["session-1"], "idle");
+  assert.equal(state.sessions[0]?.status, "idle");
+});
+
+test("session_updated synchronizes the lifecycle status map", () => {
+  resetStore();
+  useDeckStore.setState({
+    sessions: [{ ...session("session-1"), status: "error" }],
+    statuses: { "session-1": "error" },
+  });
+
+  const handled = applySessionUpdate({
+    sessionId: "session-1",
+    update: {
+      kind: "session_updated",
+      session: { ...session("session-1"), status: "idle" },
+    },
+  }, createSessionEventContext());
+
+  const state = useDeckStore.getState();
+  assert.equal(handled, true);
+  assert.equal(state.sessions[0]?.status, "idle");
+  assert.equal(state.statuses["session-1"], "idle");
 });
 
 test("session updates reject legacy transcript_event events", () => {

@@ -25,10 +25,14 @@ function listFiles(dir: string): string[] {
 test("agents overview layout uses shared UI and Tailwind classes", () => {
   const page = readUiFile("page.tsx");
   const agentsTree = readUiFile("agents-tree.tsx");
+  const dashboardWorkspace = readUiFile("dashboard-workspace.tsx");
   const helmDetail = readUiFile("helm-detail-section.tsx");
 
   assert.match(page, /agents-fleet-shell/);
+  assert.match(page, /agents-fleet-shell agents-v6-page w-full min-w-0/);
   assert.match(page, /<AgentsTree/);
+  assert.match(page, /mode = "standalone"/);
+  assert.match(page, /<DashboardAgentsWorkspace/);
   assert.match(page, /DeleteHelmConfigDialog/);
   assert.match(page, /min-h-0 min-w-0 overflow-hidden/);
   assert.doesNotMatch(page, /wb-pane flex min-h-0 min-w-0 flex-col overflow-hidden/);
@@ -40,6 +44,9 @@ test("agents overview layout uses shared UI and Tailwind classes", () => {
   assert.doesNotMatch(helmDetail, /AgentIcon/);
   assert.match(helmDetail, /Agents \(\$\{selectedHelmAgents.length\}\)/);
   assert.match(helmDetail, /h-full min-h-0/);
+  assert.match(helmDetail, /w-full min-w-0 flex-1/);
+  assert.match(dashboardWorkspace, /h-full min-h-0/);
+  assert.doesNotMatch(dashboardWorkspace, /h-screen/);
   assert.match(readUiFile("inventory-table.tsx"), /wb-pane-sunken/);
 });
 

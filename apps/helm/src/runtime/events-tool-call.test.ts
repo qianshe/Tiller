@@ -1518,7 +1518,7 @@ test("runtime canonical tool-call persistence preserves the mapper classificatio
   assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["tool-call"]);
 });
 
-test("runtime canonical tool-call persistence compacts inline image outputs before storage", () => {
+test("runtime canonical MCP tool-call persistence strips inline image outputs before storage", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
     broadcasts: [],
@@ -1545,21 +1545,22 @@ test("runtime canonical tool-call persistence compacts inline image outputs befo
     {
       type: "tool-call",
       toolCall: {
-        id: "call-view-image",
-        kind: "read",
-        title: "D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
+        id: "call-mcp-image",
+        kind: "mcp",
+        title: "mcp__image_tool",
         status: "completed",
-        input: JSON.stringify({
-          path: "D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
-          detail: "high",
+        input: JSON.stringify({ query: "render preview" }),
+        output: JSON.stringify({
+          content: [
+            { type: "text", text: "preview ready" },
+            {
+              type: "image",
+              data: `data:image/jpeg;base64,${"A".repeat(2048)}`,
+              mimeType: "image/jpeg",
+            },
+          ],
+          requestId: "request-1",
         }),
-        output: JSON.stringify([
-          {
-            type: "input_image",
-            image_url: `data:image/png;base64,${"A".repeat(2048)}`,
-            detail: "high",
-          },
-        ]),
         timestamp: "2026-07-08T06:00:00.000Z",
         updatedAt: "2026-07-08T06:00:00.000Z",
       },
@@ -1567,12 +1568,17 @@ test("runtime canonical tool-call persistence compacts inline image outputs befo
     context,
   );
 
-  const expectedOutput = [
-    "[image content omitted from history]",
-    "path: D:/myProject/tools/Tiller/apps/deck/public/landing/command-deck-bg.png",
-    "mimeType: image/png",
-    "detail: high",
-  ].join("\n");
+  const expectedOutput = JSON.stringify({
+    content: [
+      { type: "text", text: "preview ready" },
+      {
+        type: "image",
+        data: "[image content omitted from history]",
+        mimeType: "image/jpeg",
+      },
+    ],
+    requestId: "request-1",
+  });
   const timelineBatchUpdate = capture.detailBroadcasts.find((item: any) =>
     item.method === "session/update" && item.params?.update?.kind === "timeline_batch"
   ) as any;
@@ -1582,6 +1588,8 @@ test("runtime canonical tool-call persistence compacts inline image outputs befo
 
   assert.equal(appendedToolCalls.length, 0);
   assert.equal(toolCallEntry?.toolCall.output, expectedOutput);
+  assert.doesNotMatch(toolCallEntry?.toolCall.output ?? "", /data:image\/jpeg;base64/u);
+  assert.doesNotMatch(JSON.stringify(capture.sessionUpdates), /data:image\/jpeg;base64/u);
   assert.deepEqual(capture.sessionUpdates?.map((update) => update.updateType), ["tool-call"]);
 });
 

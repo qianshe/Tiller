@@ -18,7 +18,10 @@ import {
   prepareRuntimeSessionUpdate,
 } from "./canonical";
 import { flushLiveAssistantMessage } from "./message-stream";
-import { createSessionEventPublisher } from "./publisher";
+import {
+  createSessionEventPublisher,
+  updateSessionSummaryAndBroadcast,
+} from "./publisher";
 import {
   logRuntimeDebug,
   logRuntimeError,
@@ -35,6 +38,8 @@ export function handleRuntimeStatusEvent(
   event: Extract<SessionRuntimeEvent, { type: "status" }>,
   context: HelmHandlerContext,
 ) {
+  const previousStatus = context.sessions.get(sessionId)?.summary?.status
+    ?? context.sessionStore.get(sessionId)?.status;
   assertCanonicalTimelinePipeline(context);
   emitFirstHelmPromptTrace(context, {
     sessionId,
@@ -62,11 +67,21 @@ export function handleRuntimeStatusEvent(
     status: event.status,
     messageChars: event.message?.length ?? 0,
   });
-  context.updateSessionSummary(sessionId, (current) => ({
-    ...current,
-    status: event.status,
-    updatedAt: new Date().toISOString(),
-  }));
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) => {
+    const updatedAt = new Date().toISOString();
+    const completed = event.status === "idle"
+      && (
+        previousStatus === "starting"
+        || previousStatus === "running"
+        || previousStatus === "waiting_for_permission"
+      );
+    return {
+      ...current,
+      status: event.status,
+      updatedAt,
+      ...(completed ? { lastCompletedAt: updatedAt } : {}),
+    };
+  });
   if (event.status === "idle" || event.status === "error" || event.status === "cancelled") {
     context.sessionUpdateStore.compactTail(sessionId);
   }
@@ -246,7 +261,12 @@ export function handleRuntimeErrorEvent(
     code: event.code ?? "UNKNOWN",
     messageChars: event.message.length,
   });
-  context.updateSessionSummary(sessionId, (current) => ({
+  commitCanonicalStateEvent(sessionId, {
+    type: "status",
+    status: "error",
+    message: event.message,
+  }, context);
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
     ...current,
     status: "error",
     updatedAt: new Date().toISOString(),

@@ -241,35 +241,44 @@ test("approval boundary creates a manual pending approval when no policy matches
 
   assert.equal(context.approvalIndex.get("approval-1")?.sessionId, "session-1");
   assert.equal(summaryUpdates.length, 1);
+  const approvalCreatedNotification = notifications.find((item) => item.method === "approval/created");
   const createdApproval = (
-    notifications[0]?.params as
+    approvalCreatedNotification?.params as
       | { approval?: { createdAt: string; updatedAt: string } }
       | undefined
   )?.approval;
   assert.ok(createdApproval);
   assert.equal(createdApproval.createdAt, createdApproval.updatedAt);
   assert.ok(Number.isFinite(Date.parse(createdApproval.createdAt)));
-  assert.deepEqual(notifications, [
-    {
-      method: "approval/created",
-      params: {
+  assert.deepEqual(notifications.map((item) => item.method), ["session/update", "approval/created"]);
+  assert.deepEqual(approvalCreatedNotification, {
+    method: "approval/created",
+    params: {
+      sessionId: "session-1",
+      request,
+      approval: {
+        id: "approval-1",
         sessionId: "session-1",
+        runtimeInstanceId: "session-1",
+        toolCallId: undefined,
+        sequence: 1,
+        status: "pending",
         request,
-        approval: {
-          id: "approval-1",
-          sessionId: "session-1",
-          runtimeInstanceId: "session-1",
-          toolCallId: undefined,
-          sequence: 1,
-          status: "pending",
-          request,
-          createdAt: createdApproval.createdAt,
-          updatedAt: createdApproval.updatedAt,
-        },
-        session: { id: "session-1", agentId: "codex", projectId: "tiller" },
+        createdAt: createdApproval.createdAt,
+        updatedAt: createdApproval.updatedAt,
       },
+      session: { id: "session-1", agentId: "codex", projectId: "tiller" },
     },
-  ]);
+  });
+  assert.deepEqual((notifications[0]?.params as any)?.update, {
+    kind: "session_updated",
+    session: {
+      id: "session-1",
+      status: "waiting_for_permission",
+      updatedAt: (notifications[0]?.params as any)?.update?.session?.updatedAt,
+      lastMessagePreview: request.reason,
+    },
+  });
 });
 
 test("approval boundary auto-responds when policy matches and runtime supports responses", () => {

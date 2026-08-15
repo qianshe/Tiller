@@ -63,11 +63,40 @@ test("extractThinkingContent requires typed thinking block outside ACP thought u
     }),
     null,
   );
-  // 保留 tool_call_update 守卫测试（验证 isToolCallUpdateType 守卫有效）
+  // 工具结果即使携带思考形状的元数据，也不能进入思考流。
   assert.equal(
     extractThinkingContent("sess_tool_result_thinking", "tool_call_update", {
       content: { type: "thinking", thinking: "tool result metadata" },
     }),
     null,
   );
+});
+
+test("extractThinkingContent ignores tool and terminal output updates", () => {
+  const toolOutputUpdateTypes = [
+    "tool_call",
+    "tool_call_update",
+    "tool_call_content_chunk",
+    "tool_call_result",
+    "tool_result",
+    "tool_output",
+    "terminal",
+    "terminal_output",
+    "command_output",
+    "command_output_chunk",
+    "command-output-chunk",
+    "toolCallUpdate",
+    "agent_tool_call_content_chunk",
+    "agent_terminal_output",
+  ];
+
+  for (const updateType of toolOutputUpdateTypes) {
+    assert.equal(
+      extractThinkingContent("sess_tool_output", updateType, {
+        content: { type: "thinking", thinking: "Read output must stay tool output" },
+      }),
+      null,
+      `${updateType} must not become assistant thinking`,
+    );
+  }
 });

@@ -13,10 +13,12 @@ export function SettingsSectionFrame({ id, label, desc, children }: SettingsSect
   return (
     <section
       id={`settings-${id}`}
-      className="settings-section-frame grid gap-3"
+      className="settings-section-frame grid gap-2"
       aria-label={`${label} ${desc}`}
     >
-      {children}
+      <div className="overflow-hidden rounded-lg border border-border-ghost bg-surface-sunken/35 shadow-sm">
+        {children}
+      </div>
     </section>
   );
 }
@@ -29,7 +31,7 @@ type SettingsRowProps = {
 
 export function SettingsRow({ label, desc, children }: SettingsRowProps) {
   return (
-    <div className="flex flex-col gap-2 border-b border-border-ghost py-3 last:border-b-0 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+    <div className="flex flex-col gap-2 border-b border-border-ghost px-4 py-4 last:border-b-0 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
       <div className="flex-1 min-w-0">
         <span className="mb-0.5 block text-default text-foreground">{label}</span>
         {desc ? <span className="text-xs text-muted-foreground">{desc}</span> : null}

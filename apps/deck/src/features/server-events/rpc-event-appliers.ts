@@ -1,4 +1,10 @@
-import { applyActivityUpdate, applyErrorRaised, applyNotificationRaised } from "./activity-events";
+import {
+  applyActivityUpdate,
+  applyErrorRaised,
+  applyNotificationRaised,
+  applyNotificationCleared,
+  applyNotificationResult,
+} from "./activity-events";
 import { applyDeviceResult } from "./device-events";
 import { applyInventoryResult } from "./inventory-events";
 import { applySessionResult, applySessionUpdate as applySessionStateUpdate } from "./session-events";
@@ -9,6 +15,8 @@ export {
   applySessionResult,
   applyErrorRaised,
   applyNotificationRaised,
+  applyNotificationCleared,
+  applyNotificationResult,
 };
 
 export function applySessionUpdate(params: any, context: any) {

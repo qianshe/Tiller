@@ -7,8 +7,13 @@ export type DaemonProfile = {
   port: string;
 };
 
+function normalizeDaemonHost(host: string) {
+  const normalizedHost = host.trim().toLowerCase();
+  return normalizedHost === "localhost" ? "127.0.0.1" : normalizedHost;
+}
+
 export function daemonProfileKey(host: string, port: string) {
-  return `${host}:${port}`;
+  return `${normalizeDaemonHost(host)}:${port.trim()}`;
 }
 
 export function mergeDaemonProfile(
@@ -30,7 +35,9 @@ export function formatDaemonProfileLine(
   currentPort: string,
   connection: "connecting" | "connected" | "disconnected",
 ) {
-  const isCurrent = profile.host === currentHost && profile.port === currentPort;
+  const isCurrent =
+    daemonProfileKey(profile.host, profile.port) ===
+    daemonProfileKey(currentHost, currentPort);
   const status = isCurrent ? formatConnectionStatus(connection) : "已保存";
   return `${profile.name} · ${profile.host}:${profile.port} · ${status}`;
 }

@@ -7,6 +7,7 @@ import {
   type AgentPromptImageContent,
   type AgentToolCall,
   type SessionConfigOption,
+  type SessionActivitySummary,
   type SessionLiveStateSnapshot,
   type LegacyEvidenceAvailability,
   type LegacyEvidencePage,
@@ -46,6 +47,10 @@ import {
   mergeSessionLifecycleSummary,
 } from "./session-list-result";
 import { resolveSessionCleanupToast } from "./session-result-effects";
+import {
+  isSessionCompletionUnreadTransition,
+  isUnacknowledgedSessionCompletion,
+} from "./session-completion";
 import {
   pendingInitialPromptMessageId,
   pendingPromptImages,
@@ -131,7 +136,12 @@ function clearResumeStartRequest(
   });
 }
 
-function applySessionCreated(payload: { session: SessionSummary }, context: SessionServerEventContext) {
+function applySessionCreated(
+  payload: { session: SessionSummary },
+  context: SessionServerEventContext,
+  sourceHelmKey: string,
+  sourceIsCurrentHelm: boolean,
+) {
   const {
     setSelectedProjectId,
     pendingPromptRef,
@@ -142,9 +152,25 @@ function applySessionCreated(payload: { session: SessionSummary }, context: Sess
     dispatch,
   } = context;
   const store = useDeckStore.getState();
-  const previousSession = store.sessions.find((session) => session.id === payload.session.id);
+  const previousSessions = sourceIsCurrentHelm
+    ? store.sessions
+    : store.helmInventories[sourceHelmKey]?.sessions ?? [];
+  const previousSession = previousSessions.find((session) => session.id === payload.session.id);
 
-  store.setSessions((current) => upsertSessionSummary(current, payload.session));
+  if (sourceIsCurrentHelm) {
+    store.setSessions((current) => upsertSessionSummary(current, payload.session));
+  } else {
+    const previousInventory = store.helmInventories[sourceHelmKey];
+    store.applyHelmInventory(sourceHelmKey, {
+      sessions: upsertSessionSummary(previousSessions, payload.session),
+      statuses: {
+        ...(previousInventory?.statuses ?? {}),
+        [payload.session.id]: payload.session.status,
+      },
+    });
+    return true;
+  }
+
   if ((payload.session.configOptions?.length ?? 0) > 0) {
     store.setSessionConfigOptions((current) => ({
       ...current,
@@ -223,10 +249,20 @@ export function applySessionResult(
 
   switch (method) {
     case "session/new":
-      return applySessionCreated(payload as { session: SessionSummary }, context);
+      return applySessionCreated(
+        payload as { session: SessionSummary },
+        context,
+        sourceHelmKey,
+        sourceIsCurrentHelm,
+      );
     case "session/prompt":
       if (payload.session) {
-        return applySessionCreated(payload as { session: SessionSummary }, context);
+        return applySessionCreated(
+          payload as { session: SessionSummary },
+          context,
+          sourceHelmKey,
+          sourceIsCurrentHelm,
+        );
       }
       return true;
     case "session/list": {
@@ -257,6 +293,27 @@ export function applySessionResult(
         }
         pruneTimelineIndexCaches(nextSessions);
         store.setSessions(nextSessions);
+        for (const session of nextSessions) {
+          if (session.completionAcknowledgedAt) {
+            useDeckStore.getState().applySessionCompletionAcknowledgement(
+              session.id,
+              session.completionAcknowledgedAt,
+            );
+          }
+          if (!session.lastCompletedAt) {
+            continue;
+          }
+          const currentState = useDeckStore.getState();
+          const isUnread = isUnacknowledgedSessionCompletion(
+            session.lastCompletedAt,
+            currentState.acknowledgedSessionCompletionAt[session.id],
+          );
+          if (isUnread && currentState.focusedChatWindowId !== `session:${session.id}`) {
+            currentState.markSessionCompletedUnread(session.id);
+          } else {
+            currentState.clearSessionCompletedUnread(session.id);
+          }
+        }
         store.setSessionHistoryState(listResult.historyState);
         store.setStatuses(nextStatuses);
         store.setMessages((current) => pruneSessionScopedMap(current, nextSessions));
@@ -295,6 +352,9 @@ export function applySessionResult(
         );
         store.setSessionLiveStateSequences((current) =>
           pruneSessionScopedMap(current, nextSessions),
+        );
+        store.pruneCompletedUnreadSessionIds(
+          new Set(nextSessions.map((session) => session.id)),
         );
         store.setSessionConfigOptions((current) => ({
           ...pruneSessionScopedMap(current, nextSessions),
@@ -364,6 +424,8 @@ export function applySessionResult(
       }, toolCallsRef);
       return true;
     }
+    case "session/activity_summary":
+      return applySessionActivitySummary(payload as SessionActivitySummary, sourceHelmKey);
     case "session/list_legacy_evidence": {
       const page = payload as LegacyEvidencePage;
       store.setSessionLegacyEvidence((current) => {
@@ -497,6 +559,7 @@ export function applySessionResult(
       store.setStatuses((current) =>
         removeSessionRecord(current, sessionId),
       );
+      store.clearSessionCompletedUnread(sessionId);
       store.setMessages((current) =>
         removeSessionRecord(current, sessionId),
       );
@@ -581,6 +644,16 @@ export function applySessionResult(
     default:
       return false;
   }
+}
+
+export function applySessionActivitySummary(
+  summary: SessionActivitySummary,
+  sourceHelmKey: string,
+) {
+  useDeckStore.getState().applyHelmInventory(sourceHelmKey, {
+    activitySummary: summary,
+  });
+  return true;
 }
 
 type DeckStore = ReturnType<typeof useDeckStore.getState>;
@@ -937,13 +1010,42 @@ export function applySessionUpdate(
   switch (update.kind) {
     case "session_updated": {
       const previousSession = store.sessions.find((session) => session.id === sessionId);
-      const lifecycleSummary = mergeSessionLifecycleSummary(
-        update.session,
-        store.sessionLiveStates[sessionId],
-      );
+      const previousStatus = store.statuses[sessionId] ?? previousSession?.status;
+      const lifecycleSummary = {
+        ...mergeSessionLifecycleSummary(
+          update.session,
+          store.sessionLiveStates[sessionId],
+        ),
+        // The global lifecycle event is authoritative even when the last
+        // session-topic snapshot is older and still reports an active state.
+        status: update.session.status,
+        updatedAt: update.session.updatedAt,
+      };
       store.setSessions((current) =>
         upsertSessionSummary(current, lifecycleSummary),
       );
+      store.setStatuses((current) => ({
+        ...current,
+        [lifecycleSummary.id]: lifecycleSummary.status,
+      }));
+      if (lifecycleSummary.completionAcknowledgedAt) {
+        useDeckStore.getState().applySessionCompletionAcknowledgement(
+          lifecycleSummary.id,
+          lifecycleSummary.completionAcknowledgedAt,
+        );
+      }
+      const completionWasAcknowledged =
+        lifecycleSummary.lastCompletedAt !== undefined &&
+        lifecycleSummary.completionAcknowledgedAt === lifecycleSummary.lastCompletedAt;
+      if (completionWasAcknowledged) {
+        store.clearSessionCompletedUnread(sessionId);
+      } else if (isSessionCompletionUnreadTransition(previousStatus, lifecycleSummary.status)) {
+        if (store.focusedChatWindowId === `session:${sessionId}`) {
+          store.clearSessionCompletedUnread(sessionId);
+        } else {
+          store.markSessionCompletedUnread(sessionId);
+        }
+      }
       if (
         !store.sessionLiveStateSequences[sessionId] &&
         (lifecycleSummary.configOptions?.length ?? 0) > 0

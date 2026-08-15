@@ -100,6 +100,8 @@ type MissionChatPaneProps = {
   className: string;
   style: CSSProperties;
   isMissionMobile: boolean;
+  hideWorkspaceHeader?: boolean;
+  hideSessionCloseAction?: boolean;
   isPaneResizing?: boolean;
   paneResizeVersion?: number;
   chatMainRef: RefObject<HTMLDivElement | null>;
@@ -184,6 +186,8 @@ export function MissionChatPane({
   className,
   style,
   isMissionMobile,
+  hideWorkspaceHeader = false,
+  hideSessionCloseAction = false,
   isPaneResizing = false,
   paneResizeVersion = 0,
   chatMainRef,
@@ -767,7 +771,7 @@ export function MissionChatPane({
 
   return (
     <div className={className} style={style} data-mission-mobile-pane="chat" data-testid="mission-chat-pane">
-      {!isMissionMobile ? (
+      {!isMissionMobile && !hideWorkspaceHeader ? (
         <div className="wb-pane-head" style={{ background: "var(--surface)" }}>
           {sidebarCollapsed ? (
             <button
@@ -969,9 +973,10 @@ export function MissionChatPane({
                   onUpdateQueuedPrompt={onUpdateQueuedPrompt}
                   onDeleteQueuedPrompt={onDeleteQueuedPrompt}
                   onRespondToPermission={handleRespondToPermission}
-                  showThinkingToggle={isMissionMobile}
+                  showThinkingToggle={isMissionMobile || hideWorkspaceHeader}
                   onToggleThinking={onToggleThinking}
-                  showCreateTaskAction={isMissionMobile}
+                  showCreateTaskAction={isMissionMobile && !hideWorkspaceHeader}
+                  hideSessionCloseAction={hideSessionCloseAction}
                   onCreateTask={onCreateTask}
                 />
               ))}
@@ -1070,6 +1075,7 @@ type MissionChatSessionCardProps = {
   showThinking: boolean;
   showThinkingToggle: boolean;
   showCreateTaskAction: boolean;
+  hideSessionCloseAction: boolean;
   timelineItems: SessionTimelineEntry[];
 };
 
@@ -1117,6 +1123,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
   showThinking,
   showThinkingToggle,
   showCreateTaskAction,
+  hideSessionCloseAction,
   timelineItems,
 }: MissionChatSessionCardProps) {
   const sessionTimeline = useMemo(
@@ -1203,6 +1210,7 @@ const MissionChatSessionCard = memo(function MissionChatSessionCard({
       showThinking={showThinking}
       onToggleThinking={onToggleThinking}
       showCreateTaskAction={showCreateTaskAction}
+      hideCloseAction={hideSessionCloseAction}
     >
       {hasSessionContent ? (
         <MissionMessageTimeline

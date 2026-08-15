@@ -440,7 +440,8 @@ function findMessageTimelineEntry(entries: SessionTimelineEntry[], message: Agen
 
 function findToolCallTimelineEntry(entries: SessionTimelineEntry[], toolCall: AgentToolCall) {
   const entryId = resolveSessionTimelineToolCallEntryId(toolCall);
-  return entries.find((entry) => entry.kind === "tool_call" && entry.id === entryId);
+  return entries.find((entry) => entry.kind === "tool_call" && entry.id === entryId) ??
+    entries.find((entry) => entry.kind === "tool_call" && entry.toolCall.id === toolCall.id);
 }
 
 function matchesTimelineChunkId(chunkId: string, baseId: string) {

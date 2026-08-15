@@ -110,6 +110,33 @@ test("deck persistence includes compact chat workbench state", () => {
   });
 });
 
+
+test("deck persistence keeps completed unread session ids", () => {
+  const options = createDeckStorePersistOptions();
+  assert.ok(options.partialize);
+  const partial = options.partialize({
+    preferences: {} as never,
+    daemonProfiles: [],
+    selectedHelmKey: "local",
+    openChatSessionIds: [],
+    focusedChatWindowId: null,
+    draftChatWindow: null,
+    completedUnreadSessionIds: { "session-1": true },
+    acknowledgedSessionCompletionAt: {
+      "session-2": "2026-06-02T00:00:00.000Z",
+    },
+    notificationsClearedAt: "2026-06-03T00:00:00.000Z",
+    dismissedCompletedSessionPlanKeys: {},
+    notifications: [],
+  } as never);
+
+  assert.deepEqual(partial.completedUnreadSessionIds, { "session-1": true });
+  assert.deepEqual(partial.acknowledgedSessionCompletionAt, {
+    "session-2": "2026-06-02T00:00:00.000Z",
+  });
+  assert.equal(partial.notificationsClearedAt, "2026-06-03T00:00:00.000Z");
+});
+
 test("deck persistence strips legacy retry prompt contents from notifications", () => {
   const options = createDeckStorePersistOptions();
   assert.ok(options.partialize);

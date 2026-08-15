@@ -268,6 +268,10 @@ export type SessionSummaryCore = {
   status: SessionStatus;
   createdAt: string;
   updatedAt: string;
+  /** Latest active-to-idle completion observed by Helm. */
+  lastCompletedAt?: string;
+  /** Latest completion timestamp acknowledged by a connected Deck device. */
+  completionAcknowledgedAt?: string;
   messageCount: number;
   runtimeSessionId?: string;
   title?: string;

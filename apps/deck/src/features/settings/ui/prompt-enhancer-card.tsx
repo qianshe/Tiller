@@ -58,7 +58,7 @@ export function PromptEnhancerCard({
 
   return (
     <div className="grid w-full max-w-[720px] gap-0">
-      <div className="border-b border-border-ghost py-3">
+      <div className="border-b border-border-ghost px-4 py-4">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
           <div className="min-w-0">
             <span className="mb-0.5 block text-default text-foreground">Prompt 增强状态</span>

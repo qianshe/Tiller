@@ -59,6 +59,71 @@ test("createSessionDraftPreferencesAction configures an active session and updat
   ]);
 });
 
+test("createSessionDraftPreferencesAction configures an explicit drawer session", () => {
+  const client = openClient();
+  const dispatched: Array<{ method: string; params: any }> = [];
+  const action = createSessionDraftPreferencesAction({
+    runtimeState: {
+      selectedMissionHelmId: null,
+      primaryHelmKeyRef: { current: null },
+      helmRpcClientRefs: { current: new Map() },
+      rpcClientRef: { current: client },
+      selectedReasoningEffort: "medium",
+      setSelectedAgentMode: () => undefined,
+      setSelectedModel: () => undefined,
+      setSelectedReasoningEffort: () => undefined,
+    } as any,
+    deckData: {
+      sessions: [
+        {
+          id: "session-claude",
+          helmId: "helm-1",
+          agentMode: "default",
+          model: "claude-sonnet-4",
+          reasoningEffort: "medium",
+        },
+        {
+          id: "session-codex",
+          helmId: "helm-1",
+          agentMode: "full-access",
+          model: "gpt-5.4",
+          reasoningEffort: "high",
+        },
+      ],
+      sessionConfigOptions: {},
+      setSessionConfigOptions: () => undefined,
+      agentModelOptions: {},
+      setAgentModelOptions: () => undefined,
+    } as any,
+    missionView: {
+      activeSession: {
+        id: "session-claude",
+        helmId: "helm-1",
+        agentMode: "default",
+        model: "claude-sonnet-4",
+        reasoningEffort: "medium",
+      },
+      effectiveDraftAgentMode: "default",
+      draftModel: "claude-sonnet-4",
+    } as any,
+    dispatch: (_targetClient, method, params) => {
+      dispatched.push({ method, params });
+    },
+  });
+
+  action({ model: "gpt-5.4-mini" }, "session-codex");
+
+  assert.deepEqual(dispatched, [{
+    method: "session/configure",
+    params: {
+      sessionId: "session-codex",
+      agentMode: "full-access",
+      model: "gpt-5.4-mini",
+      reasoningEffort: "high",
+    },
+  }]);
+});
+
 test("createSessionDraftPreferencesAction configures a runtime draft and mirrors selection state", () => {
   const client = openClient();
   const selected: Record<string, unknown> = {};

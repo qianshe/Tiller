@@ -236,6 +236,28 @@ test("runGitCommit clears selection and refreshes graph on success", async () =>
   assert.equal(harness.currentStatus().committing, false);
 });
 
+test("runGitCommit preserves commit success when graph refresh fails", async () => {
+  const harness = createTestContext({
+    dispatch: async (method) => {
+      if (method === "project/git/graph") {
+        throw new Error("graph unavailable");
+      }
+      return { ok: true };
+    },
+    hasGraph: true,
+  });
+
+  const result = await runGitCommit(harness.context, { message: "fix：test", paths: ["a.ts"] });
+
+  assert.equal(result?.ok, true);
+  assert.equal(harness.commitSuccesses.length, 1);
+  assert.deepEqual(harness.notifications, [
+    { kind: "success", message: "提交成功" },
+    { kind: "warning", message: "提交成功，但提交历史刷新失败" },
+  ]);
+  assert.equal(harness.currentStatus().committing, false);
+});
+
 test("runGitCommit keeps selection when commit fails", async () => {
   const harness = createTestContext({
     dispatch: async () => ({ ok: false, message: "nothing to commit" }),

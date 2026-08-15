@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { resolveShellClassName } from "../composition/bindings";
 
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const rootSource = readFileSync(resolve(currentDir, "root.tsx"), "utf8");
@@ -22,6 +23,8 @@ test("Workbench v6 Tailwind inline color aliases are registered", () => {
     "--color-surface-sunken: var(--surface-sunken);",
     "--color-popover-glass: var(--popover-glass);",
     "--color-accent: var(--accent);",
+    "--color-success-container: var(--success-container);",
+    "--color-on-success-container: var(--on-success-container);",
     "--text-default--line-height: 1.45;",
   ]) {
     assert.match(tokensBundle, new RegExp(token.replace(/[()]/g, "\\$&")));
@@ -56,6 +59,37 @@ test("Workbench v6 shell no longer ships legacy top navigation", () => {
   assert.doesNotMatch(stylesCss, /\.admiral-/);
   assert.match(stylesCss, /\.shell\.v6-radial-shell \.page-content\s*\{[^}]*padding:\s*0;[^}]*gap:\s*0;/s);
   assert.match(stylesCss, /\.shell\.v6-radial-shell\s*\{[^}]*width:\s*100vw;/s);
+  assert.match(stylesCss, /\.shell\.v6-radial-shell\s*\{[^}]*max-width:\s*100%;/s);
+});
+
+test("Dashboard keeps the shell viewport fixed while its content region scrolls", () => {
+  assert.match(
+    stylesCss,
+    /\.shell\.view-dashboard\.v6-radial-shell \.page-content\s*\{[^}]*overflow:\s*hidden;/s,
+  );
+});
+
+test("Dashboard tasks view uses the dynamic viewport height on mobile", () => {
+  assert.match(
+    stylesCss,
+    /\.shell\.view-dashboard\.dashboard-tasks-view\s*\{[^}]*height:\s*100dvh;/s,
+  );
+});
+
+test("Shell class name marks only the dashboard tasks section", () => {
+  assert.match(resolveShellClassName("dashboard", "dark", false, "tasks"), /dashboard-tasks-view/);
+  assert.doesNotMatch(resolveShellClassName("dashboard", "dark", false, "overview"), /dashboard-tasks-view/);
+  assert.doesNotMatch(resolveShellClassName("sessions", "dark", false, "tasks"), /dashboard-tasks-view/);
+});
+
+test("Dashboard quick create launches the prompt instead of staging the Mission composer", () => {
+  const handlerSource = rootSource
+    .split("function openNewTaskFromDashboard")[1]
+    ?.split("const layoutContext")[0] ?? "";
+  assert.match(handlerSource, /launchDashboardTask/);
+  assert.match(handlerSource, /finalizeDashboardTaskLaunch/);
+  assert.doesNotMatch(handlerSource, /session\/rename/);
+  assert.doesNotMatch(handlerSource, /setDraftChatWindow|setPrompt\(/);
 });
 
 test("Workbench v6 shell does not mount the design-only tweaks panel", () => {

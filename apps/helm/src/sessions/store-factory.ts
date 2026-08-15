@@ -4,6 +4,7 @@ import {
   createSqliteSessionAttachmentStore,
   createSqliteSessionDiffBodyStore,
   createSqliteSessionMessageStore,
+  createSqliteNotificationStore,
   createSqliteSessionOutputBodyStore,
   createSqliteSessionPlanStore,
   createSqliteSessionRuntimeStore,
@@ -12,6 +13,7 @@ import {
   createSqliteSessionApprovalStore,
   createSqliteSessionUpdateStore,
   createSqliteSessionSubagentDetailStore,
+  createSqliteConversationPreparationStore,
   migrateJsonSessionDataToSqlite,
   type HelmSessionStores,
   type JsonSessionStorePaths,
@@ -29,6 +31,8 @@ import {
   type SessionTimelineStore,
   type SessionUpdateStore,
   type StoredSessionArtifacts,
+  type ConversationPreparationStore,
+  type NotificationStore,
 } from "@tiller/persistence";
 import { createModeAwareSessionTimelineStore } from "./timeline-store-mode";
 
@@ -48,6 +52,8 @@ export type {
   SessionTimelineStore,
   SessionUpdateStore,
   StoredSessionArtifacts,
+  ConversationPreparationStore,
+  NotificationStore,
 };
 
 type StoreFactoryLogger = (message: string) => void;
@@ -78,6 +84,7 @@ export function createHelmSessionStores(
   });
   options.logDebug?.(`[tiller] session.store backend=sqlite path=${options.sqlitePath}`);
   return {
+    notificationStore: createSqliteNotificationStore(options.sqlitePath),
     sessionStore: createSqliteSessionStore(options.sqlitePath),
     sessionMessageStore: createSqliteSessionMessageStore(options.sqlitePath),
     sessionArtifactStore: createSqliteSessionArtifactStore(options.sqlitePath),
@@ -106,5 +113,6 @@ export function createHelmSessionStores(
     sessionStateStore: createSqliteSessionStateStore(options.sqlitePath),
     sessionApprovalStore: createSqliteSessionApprovalStore(options.sqlitePath),
     sessionSubagentDetailStore: createSqliteSessionSubagentDetailStore(options.sqlitePath),
+    conversationPreparationStore: createSqliteConversationPreparationStore(options.sqlitePath),
   };
 }

@@ -31,6 +31,7 @@ import * as sessionNew from "./session/new";
 import * as sessionDraft from "./session/draft";
 import * as sessionDiscardDraft from "./session/discard-draft";
 import * as sessionList from "./session/list";
+import * as sessionActivitySummary from "./session/activity-summary";
 import * as sessionListTimeline from "./session/list-timeline";
 import * as sessionRepairTimeline from "./session/repair-timeline";
 import * as sessionListLegacyEvidence from "./session/list-legacy-evidence";
@@ -46,6 +47,7 @@ import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionConfigure from "./session/configure";
 import * as sessionSetConfigOption from "./session/set-config-option";
 import * as sessionCleanup from "./session/cleanup";
+import * as sessionAcknowledgeCompletion from "./session/acknowledge-completion";
 import * as permissionListPending from "./permission/list-pending";
 import * as permissionRespond from "./permission/respond";
 import * as approvalListPending from "./approval/list-pending";
@@ -67,6 +69,15 @@ import * as sessionCancel from "./session/cancel";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
 import * as notificationRaised from "./notification/raised";
+import * as notificationList from "./notification/list";
+import * as notificationClear from "./notification/clear";
+import * as notificationCleared from "./notification/cleared";
+import * as dashboardActivitySummary from "./dashboard/activity-summary";
+import * as conversationList from "./conversation/list";
+import * as conversationSave from "./conversation/save";
+import * as conversationDelete from "./conversation/delete";
+import * as conversationStart from "./conversation/start";
+import * as conversationUpdate from "./conversation/update";
 
 type AnyDescriptor =
   | RequestDescriptor<string, z.ZodType, z.ZodType>
@@ -104,6 +115,7 @@ const METHOD_DESCRIPTORS = {
   [sessionDraft.method]: sessionDraft.descriptor,
   [sessionDiscardDraft.method]: sessionDiscardDraft.descriptor,
   [sessionList.method]: sessionList.descriptor,
+  [sessionActivitySummary.method]: sessionActivitySummary.descriptor,
   [sessionListTimeline.method]: sessionListTimeline.descriptor,
   [sessionRepairTimeline.method]: sessionRepairTimeline.descriptor,
   [sessionListLegacyEvidence.method]: sessionListLegacyEvidence.descriptor,
@@ -120,6 +132,7 @@ const METHOD_DESCRIPTORS = {
   [sessionSetConfigOption.method]: sessionSetConfigOption.descriptor,
   [sessionRename.method]: sessionRename.descriptor,
   [sessionCleanup.method]: sessionCleanup.descriptor,
+  [sessionAcknowledgeCompletion.method]: sessionAcknowledgeCompletion.descriptor,
   [permissionListPending.method]: permissionListPending.descriptor,
   [permissionRespond.method]: permissionRespond.descriptor,
   [approvalListPending.method]: approvalListPending.descriptor,
@@ -140,6 +153,15 @@ const METHOD_DESCRIPTORS = {
   [sessionUpdate.method]: sessionUpdate.descriptor,
   [errorRaised.method]: errorRaised.descriptor,
   [notificationRaised.method]: notificationRaised.descriptor,
+  [notificationList.method]: notificationList.descriptor,
+  [notificationClear.method]: notificationClear.descriptor,
+  [notificationCleared.method]: notificationCleared.descriptor,
+  [dashboardActivitySummary.method]: dashboardActivitySummary.descriptor,
+  [conversationList.method]: conversationList.descriptor,
+  [conversationSave.method]: conversationSave.descriptor,
+  [conversationDelete.method]: conversationDelete.descriptor,
+  [conversationStart.method]: conversationStart.descriptor,
+  [conversationUpdate.method]: conversationUpdate.descriptor,
 } as const;
 
 export const METHODS: typeof METHOD_DESCRIPTORS &
@@ -179,6 +201,7 @@ export const CLIENT_REQUEST_METHODS = [
   sessionDraft.method,
   sessionDiscardDraft.method,
   sessionList.method,
+  sessionActivitySummary.method,
   sessionListTimeline.method,
   sessionRepairTimeline.method,
   sessionListLegacyEvidence.method,
@@ -195,6 +218,10 @@ export const CLIENT_REQUEST_METHODS = [
   sessionSetConfigOption.method,
   sessionRename.method,
   sessionCleanup.method,
+  sessionCancel.method,
+  sessionAcknowledgeCompletion.method,
+  notificationList.method,
+  notificationClear.method,
   permissionListPending.method,
   permissionRespond.method,
   approvalListPending.method,
@@ -208,17 +235,25 @@ export const CLIENT_REQUEST_METHODS = [
   daemonShutdown.method,
   daemonUpdateCheck.method,
   daemonUpdateStart.method,
+  conversationList.method,
+  conversationSave.method,
+  conversationDelete.method,
+  conversationStart.method,
 ] as const;
 
-export const CLIENT_NOTIFICATION_METHODS = [sessionCancel.method] as const;
+// session/cancel 已升级为带 ACK 的 request;Helm 仍接受旧 Deck 以通知形式发送。
+export const CLIENT_NOTIFICATION_METHODS = [] as const;
 
 export const SERVER_NOTIFICATION_METHODS = [
   sessionUpdate.method,
   errorRaised.method,
   notificationRaised.method,
+  notificationCleared.method,
+  dashboardActivitySummary.method,
   approvalCreated.method,
   approvalResolved.method,
   daemonUpdateStatus.method,
+  conversationUpdate.method,
 ] as const;
 
 export type ClientRequestMethod = (typeof CLIENT_REQUEST_METHODS)[number];
@@ -227,3 +262,5 @@ export type ClientNotificationMethod =
 export type ServerNotificationMethod = (typeof SERVER_NOTIFICATION_METHODS)[number];
 
 export type NotificationRaisedParams = notificationRaised.Params;
+export type NotificationListParams = notificationList.Params;
+export type NotificationListResult = notificationList.Result;

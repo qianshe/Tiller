@@ -272,7 +272,7 @@ export function createMissionVisualFixture({
     },
     {
       id: "visual-permission-3",
-      command: "file.write apps/deck/src/features/dashboard/ui/activity-stream.tsx",
+      command: "file.write apps/deck/src/features/dashboard/ui/activity/stream.tsx",
       reason: "需要写入 Dashboard 活动流组件。",
       cwd,
       options: [

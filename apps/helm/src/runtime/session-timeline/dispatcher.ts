@@ -9,6 +9,7 @@ import { upsertSessionCompactionEntry } from "../../sessions/compaction-entry";
 export type SessionTimelineDispatcherDeps = {
   store: SessionTimelineStore;
   publish: (sessionId: string, batch: SessionTimelineBatch) => void;
+  afterCommit?: (sessionId: string, batch: SessionTimelineBatch) => void;
 };
 
 export type SessionTimelineDispatcher = {
@@ -37,6 +38,7 @@ export function createSessionTimelineDispatcher(
         deps.store.applyBatch(sessionId, reconciledBatch);
       }
       deps.publish(sessionId, reconciledBatch);
+      deps.afterCommit?.(sessionId, reconciledBatch);
     },
   };
 }

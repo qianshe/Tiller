@@ -35,8 +35,13 @@ export function createSessionDraftPreferencesAction({
   missionView,
   dispatch,
 }: SessionDraftPreferencesActionOptions) {
-  return (next: SessionConfigPreferencePatch) => {
-    const activeSession = missionView.activeSession;
+  return (next: SessionConfigPreferencePatch, targetSessionId?: string) => {
+    const activeSession = targetSessionId
+      ? deckData.sessions.find((session) => session.id === targetSessionId) ?? null
+      : missionView.activeSession;
+    if (targetSessionId && !activeSession) {
+      return;
+    }
     const resolveConfigClient = (sessionHelmId?: string | null) => {
       const candidateHelmIds = [
         sessionHelmId,
@@ -59,6 +64,11 @@ export function createSessionDraftPreferencesAction({
 
     if (activeSession) {
       const client = resolveConfigClient(activeSession.helmId);
+      const activeSelectionState = readConfigSelectionState(
+        deckData.sessionConfigOptions[activeSession.id] ??
+          activeSession.configOptions ??
+          [],
+      );
       const activeConfigOptions = directConfigPatch
         ? applyConfigOptionValue(
             deckData.sessionConfigOptions[activeSession.id] ?? [],
@@ -80,14 +90,19 @@ export function createSessionDraftPreferencesAction({
             agentMode:
               next.agentMode ??
               activeSession.agentMode ??
-              missionView.effectiveDraftAgentMode,
+              activeSelectionState.agentMode ??
+              (targetSessionId ? undefined : missionView.effectiveDraftAgentMode),
             model: normalizeModelSelection(
-              next.model ?? activeSession.model ?? missionView.draftModel,
+              next.model ??
+                activeSession.model ??
+                activeSelectionState.model ??
+                (targetSessionId ? undefined : missionView.draftModel),
             ),
             reasoningEffort:
               next.reasoningEffort ??
               activeSession.reasoningEffort ??
-              runtimeState.selectedReasoningEffort,
+              activeSelectionState.reasoningEffort ??
+              (targetSessionId ? undefined : runtimeState.selectedReasoningEffort),
           }),
         });
       }

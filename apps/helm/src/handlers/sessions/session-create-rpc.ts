@@ -9,6 +9,7 @@ import {
   ensureLiveEventSequenceForSession,
   publishCanonicalSessionStateEvent,
 } from "../../runtime/events";
+import { updateSessionSummaryAndBroadcast } from "../../runtime/session/event/publisher";
 import { createSessionBootstrapEvents } from "../../runtime/session/event/bootstrap";
 import type { HelmHandlerContext } from "../context";
 import { resolveProjectSessionWorktree } from "./session-worktree";
@@ -178,7 +179,7 @@ export async function createSession(
       cwd: worktree.path,
       message,
     });
-    context.updateSessionSummary(sessionId, (current) => ({
+    updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
       ...current,
       status: "error",
       updatedAt: new Date().toISOString(),

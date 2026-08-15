@@ -22,6 +22,10 @@ export type ActivityServerEventContext = {
   scheduleSubagentSettlement?: (callback: () => void) => void;
 };
 
+export type NotificationClearedParams = {
+  clearedAt: string;
+};
+
 const SUBAGENT_RUNNING_MIN_VISIBLE_MS = 400;
 
 type ErrorRaisedParams = {
@@ -33,6 +37,7 @@ type ErrorRaisedParams = {
 };
 
 type NotificationRaisedParams = {
+  id?: string;
   kind: "error" | "warning" | "info";
   source: string;
   sessionId?: string;
@@ -164,6 +169,7 @@ export function applyNotificationRaised(
     ? `[${params.code}] ${params.message}`
     : params.message;
   addNotification?.({
+    id: params.id,
     kind: params.kind,
     message: params.message,
     source: params.source,
@@ -205,5 +211,43 @@ export function applyNotificationRaised(
       ),
     );
   }
+  return true;
+}
+
+export function applyNotificationResult(method: string, result: unknown) {
+  if (method !== "notification/list") {
+    return false;
+  }
+  const payload = result as {
+    notifications?: NotificationRaisedParams[];
+    clearedAt?: unknown;
+  };
+  const notifications = Array.isArray(payload.notifications) ? payload.notifications : [];
+  const store = useDeckStore.getState();
+  if (typeof payload.clearedAt === "string") {
+    store.applyNotificationClear(payload.clearedAt);
+  }
+  for (const notification of [...notifications].reverse()) {
+    store.addNotification({
+      id: notification.id,
+      kind: notification.kind,
+      message: notification.message,
+      source: notification.source,
+      code: notification.code,
+      sessionId: notification.sessionId,
+      details: notification.details,
+      createdAt: notification.occurredAt,
+    });
+  }
+  return true;
+}
+
+export function applyNotificationCleared(
+  params: NotificationClearedParams,
+): boolean {
+  if (!params || typeof params.clearedAt !== "string") {
+    return false;
+  }
+  useDeckStore.getState().applyNotificationClear(params.clearedAt);
   return true;
 }

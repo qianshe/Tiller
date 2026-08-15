@@ -22,6 +22,11 @@ import { FleetAddHelmDialog } from "./fleet-add-helm-dialog";
 import { HelmDetailSection } from "./helm-detail-section";
 import type { FleetAgentDraft } from "./agent-inventory-section";
 import type { FleetProjectDraft } from "./project-inventory-section";
+import { DashboardAgentsWorkspace } from "./dashboard-workspace";
+import {
+  resolveHelmConnectionState,
+  resolveHelmInventoryCounts,
+} from "../utils/fleet-helpers";
 import {
   resolveHelmSelection,
   type ConnectionState,
@@ -29,6 +34,7 @@ import {
 } from "../utils/helm-selection";
 type PairingState = "idle" | "waiting" | "input" | "paired" | "rejected";
 type AgentsPageProps = {
+  mode?: "standalone" | "dashboard";
   daemonHost: string;
   daemonPort: string;
   initialTab?: "agents" | "projects";
@@ -103,6 +109,7 @@ type AgentsPageProps = {
   isMobile?: boolean;
 };
 export function AgentsPage({
+  mode = "standalone",
   daemonHost,
   daemonPort,
   initialTab = "agents",
@@ -170,6 +177,7 @@ export function AgentsPage({
   isMobile = false,
 }: AgentsPageProps) {
   const [mobileScreen, setMobileScreen] = useState<"list" | "detail">("list");
+  const [dashboardScreen, setDashboardScreen] = useState<"list" | "detail">("list");
 
   const helmSelection = resolveHelmSelection({
     daemonHost,
@@ -221,10 +229,91 @@ export function AgentsPage({
     }
   };
 
+  const selectedHelmCounts = {
+    agents: selectedHelmAgents.length,
+    projects: selectedHelmProjects.length,
+    worktrees: selectedHelmWorktrees.length,
+  };
+  const dashboardHelms = helmCards.map((helm) => ({
+    key: helm.key,
+    name: helm.name,
+    endpoint: `${helm.host}:${helm.port}`,
+    connection: resolveHelmConnectionState(
+      helm,
+      currentHelmKey,
+      connection,
+      helmConnectionStates,
+    ),
+    counts: resolveHelmInventoryCounts({
+      helmKey: helm.key,
+      selectedHelmKey: selectedHelm.key,
+      selectedCounts: selectedHelmCounts,
+      inventory: helmInventories[helm.key],
+    }),
+  }));
+
+  const renderHelmDetail = ({
+    detailIsMobile = false,
+    onBack,
+  }: {
+    detailIsMobile?: boolean;
+    onBack?: () => void;
+  } = {}) => (
+    <HelmDetailSection
+      selectedHelm={selectedHelm}
+      selectedHelmConnection={selectedHelmConnection}
+      selectedHelmIsConnected={selectedHelmIsConnected}
+      selectedHelmIsCurrent={selectedHelmIsCurrent}
+      selectedHelmSavedProfile={selectedHelmSavedProfile}
+      selectedHelmProjects={selectedHelmProjects}
+      selectedHelmAgents={selectedHelmAgents}
+      selectedHelmWorktrees={selectedHelmWorktrees}
+      projectFilesByScope={projectFilesByScope}
+      selectedHelmSocket={selectedHelmSocket}
+      selectedHelmRpcClient={selectedHelmRpcClient}
+      selectedHelmId={selectedHelmId}
+      selectedHelmTrustedDevices={selectedHelmTrustedDevices}
+      socketRef={socketRef}
+      helmSocketRefs={helmSocketRefs}
+      isEmbeddedHelmDeck={isEmbeddedHelmDeck}
+      manualDisconnectRef={manualDisconnectRef}
+      lastFilesScopeKeyRef={lastFilesScopeKeyRef}
+      setConnection={setConnection}
+      setHelmConnectionState={setHelmConnectionState}
+      setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
+      connectDaemonProfile={connectDaemonProfile}
+      connectToDaemon={connectToDaemon}
+      fleetProjectFormOpen={fleetProjectFormOpen}
+      setFleetProjectFormOpen={setFleetProjectFormOpen}
+      fleetProjectDraft={fleetProjectDraft}
+      setFleetProjectDraft={setFleetProjectDraft}
+      setFleetProjectSaveMessage={setFleetProjectSaveMessage}
+      fleetProjectSaveMessage={fleetProjectSaveMessage}
+      fleetAgentFormOpen={fleetAgentFormOpen}
+      setFleetAgentFormOpen={setFleetAgentFormOpen}
+      fleetAgentDraft={fleetAgentDraft}
+      setFleetAgentDraft={setFleetAgentDraft}
+      requestCounter={requestCounter}
+      dispatch={dispatch}
+      copy={copy}
+      renderTrustedDevicesPanel={renderTrustedDevicesPanel}
+      isMobile={detailIsMobile}
+      initialTab={initialTab}
+      onBack={onBack}
+    />
+  );
+
   return (
     <section
-      className={`agents-fleet-shell agents-v6-page ${isMobile ? "flex flex-col h-screen p-1 bg-canvas" : "grid h-screen grid-cols-[260px_minmax(0,1fr)] gap-1 bg-canvas p-1"}`}
+      className={`agents-fleet-shell agents-v6-page w-full min-w-0 ${
+        mode === "dashboard"
+          ? "flex h-full min-h-0 flex-col overflow-hidden bg-canvas"
+          : isMobile
+            ? "flex h-screen flex-col bg-canvas p-1"
+            : "grid h-screen grid-cols-[260px_minmax(0,1fr)] gap-1 bg-canvas p-1"
+      }`}
       data-testid="agents-page"
+      data-agents-mode={mode}
     >
       {fleetAddHelmModalOpen ? (
         <FleetAddHelmDialog
@@ -261,7 +350,21 @@ export function AgentsPage({
           }}
         />
       ) : null}
-      {isMobile ? (
+      {mode === "dashboard" ? (
+        <DashboardAgentsWorkspace
+          screen={dashboardScreen}
+          helms={dashboardHelms}
+          detail={renderHelmDetail({
+            detailIsMobile: isMobile,
+            onBack: () => setDashboardScreen("list"),
+          })}
+          onSelectHelm={(key) => {
+            setSelectedHelmKey(key);
+            setDashboardScreen("detail");
+          }}
+          onAddHelm={openFleetAddHelmModal}
+        />
+      ) : isMobile ? (
         mobileScreen === "list" ? (
           <AgentsTree
             connection={connection}
@@ -272,58 +375,16 @@ export function AgentsPage({
             isEmbeddedHelmDeck={isEmbeddedHelmDeck}
             onAddHelm={openFleetAddHelmModal}
             selectedHelm={selectedHelm}
-            selectedHelmCounts={{
-              agents: selectedHelmAgents.length,
-              projects: selectedHelmProjects.length,
-              worktrees: selectedHelmWorktrees.length,
-            }}
+            selectedHelmCounts={selectedHelmCounts}
             setSelectedHelmKey={handleSelectHelmKey}
             isMobile={true}
           />
         ) : (
           <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
-            <HelmDetailSection
-              selectedHelm={selectedHelm}
-              selectedHelmConnection={selectedHelmConnection}
-              selectedHelmIsConnected={selectedHelmIsConnected}
-              selectedHelmIsCurrent={selectedHelmIsCurrent}
-              selectedHelmSavedProfile={selectedHelmSavedProfile}
-              selectedHelmProjects={selectedHelmProjects}
-              selectedHelmAgents={selectedHelmAgents}
-              selectedHelmWorktrees={selectedHelmWorktrees}
-              projectFilesByScope={projectFilesByScope}
-              selectedHelmSocket={selectedHelmSocket}
-              selectedHelmRpcClient={selectedHelmRpcClient}
-              selectedHelmId={selectedHelmId}
-              selectedHelmTrustedDevices={selectedHelmTrustedDevices}
-              socketRef={socketRef}
-              helmSocketRefs={helmSocketRefs}
-              isEmbeddedHelmDeck={isEmbeddedHelmDeck}
-              manualDisconnectRef={manualDisconnectRef}
-              lastFilesScopeKeyRef={lastFilesScopeKeyRef}
-              setConnection={setConnection}
-              setHelmConnectionState={setHelmConnectionState}
-              setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
-              connectDaemonProfile={connectDaemonProfile}
-              connectToDaemon={connectToDaemon}
-              fleetProjectFormOpen={fleetProjectFormOpen}
-              setFleetProjectFormOpen={setFleetProjectFormOpen}
-              fleetProjectDraft={fleetProjectDraft}
-              setFleetProjectDraft={setFleetProjectDraft}
-              setFleetProjectSaveMessage={setFleetProjectSaveMessage}
-              fleetProjectSaveMessage={fleetProjectSaveMessage}
-              fleetAgentFormOpen={fleetAgentFormOpen}
-              setFleetAgentFormOpen={setFleetAgentFormOpen}
-              fleetAgentDraft={fleetAgentDraft}
-              setFleetAgentDraft={setFleetAgentDraft}
-              requestCounter={requestCounter}
-              dispatch={dispatch}
-              copy={copy}
-              renderTrustedDevicesPanel={renderTrustedDevicesPanel}
-              isMobile={true}
-              initialTab={initialTab}
-              onBack={() => setMobileScreen("list")}
-            />
+            {renderHelmDetail({
+              detailIsMobile: true,
+              onBack: () => setMobileScreen("list"),
+            })}
           </div>
         )
       ) : (
@@ -337,54 +398,11 @@ export function AgentsPage({
             isEmbeddedHelmDeck={isEmbeddedHelmDeck}
             onAddHelm={openFleetAddHelmModal}
             selectedHelm={selectedHelm}
-            selectedHelmCounts={{
-              agents: selectedHelmAgents.length,
-              projects: selectedHelmProjects.length,
-              worktrees: selectedHelmWorktrees.length,
-            }}
+            selectedHelmCounts={selectedHelmCounts}
             setSelectedHelmKey={setSelectedHelmKey}
           />
           <div className="min-h-0 min-w-0 overflow-hidden">
-            <HelmDetailSection
-              selectedHelm={selectedHelm}
-              selectedHelmConnection={selectedHelmConnection}
-              selectedHelmIsConnected={selectedHelmIsConnected}
-              selectedHelmIsCurrent={selectedHelmIsCurrent}
-              selectedHelmSavedProfile={selectedHelmSavedProfile}
-              selectedHelmProjects={selectedHelmProjects}
-              selectedHelmAgents={selectedHelmAgents}
-              selectedHelmWorktrees={selectedHelmWorktrees}
-              projectFilesByScope={projectFilesByScope}
-              selectedHelmSocket={selectedHelmSocket}
-              selectedHelmRpcClient={selectedHelmRpcClient}
-              selectedHelmId={selectedHelmId}
-              selectedHelmTrustedDevices={selectedHelmTrustedDevices}
-              socketRef={socketRef}
-              helmSocketRefs={helmSocketRefs}
-              isEmbeddedHelmDeck={isEmbeddedHelmDeck}
-              manualDisconnectRef={manualDisconnectRef}
-              lastFilesScopeKeyRef={lastFilesScopeKeyRef}
-              setConnection={setConnection}
-              setHelmConnectionState={setHelmConnectionState}
-              setPendingHelmDeleteProfile={setPendingHelmDeleteProfile}
-              connectDaemonProfile={connectDaemonProfile}
-              connectToDaemon={connectToDaemon}
-              fleetProjectFormOpen={fleetProjectFormOpen}
-              setFleetProjectFormOpen={setFleetProjectFormOpen}
-              fleetProjectDraft={fleetProjectDraft}
-              setFleetProjectDraft={setFleetProjectDraft}
-              setFleetProjectSaveMessage={setFleetProjectSaveMessage}
-              fleetProjectSaveMessage={fleetProjectSaveMessage}
-              fleetAgentFormOpen={fleetAgentFormOpen}
-              setFleetAgentFormOpen={setFleetAgentFormOpen}
-              fleetAgentDraft={fleetAgentDraft}
-              setFleetAgentDraft={setFleetAgentDraft}
-              requestCounter={requestCounter}
-              dispatch={dispatch}
-              copy={copy}
-              renderTrustedDevicesPanel={renderTrustedDevicesPanel}
-              initialTab={initialTab}
-            />
+            {renderHelmDetail()}
           </div>
         </div>
       )}

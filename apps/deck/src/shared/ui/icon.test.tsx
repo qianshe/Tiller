@@ -12,6 +12,14 @@ test("Icon renders registered SVG icons and hides them from assistive tech", () 
   assert.match(html, /<title>Send prompt<\/title>/);
 });
 
+test("Icon renders the circle alert glyph", () => {
+  const html = renderToStaticMarkup(createElement(Icon, { name: "circleAlert", size: 12 }));
+
+  assert.match(html, /<circle cx="12" cy="12" r="9"/u);
+  assert.match(html, /<path d="M12 8v4"/u);
+  assert.match(html, /<path d="M12 16h\.01"/u);
+});
+
 test("Icon renders a deterministic fallback for unknown names", () => {
   const html = renderToStaticMarkup(createElement(Icon, { name: "missing" as never }));
 

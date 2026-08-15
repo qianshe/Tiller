@@ -29,6 +29,7 @@ export type UseChatWindowActionsOptions = {
   setOpenChatSessionIds: StateSetter<string[]>;
   setFocusedChatWindowId: (windowId: string | null) => void;
   openSession: (sessionId: string) => void;
+  acknowledgeSessionCompletion?: (session: SessionSummary) => void;
   setActiveSessionId: (sessionId: string | null) => void;
   setDraftChatWindow?: LooseSetter;
   setSelectedMissionHelmId: (helmId: string | null) => void;
@@ -48,6 +49,7 @@ export type ChatWindowActions = {
     projectId: string;
     cwd: string | null;
     agentId?: string | null;
+    helmId?: string | null;
   }) => void;
   selectAgentForDraftWindow: (agentId: string) => void;
   submitPromptFromFocusedWindow: (
@@ -74,6 +76,7 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     setOpenChatSessionIds,
     setFocusedChatWindowId,
     openSession,
+    acknowledgeSessionCompletion,
     setActiveSessionId,
     setDraftChatWindow,
     setSelectedMissionHelmId,
@@ -121,11 +124,15 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
   }, [focusedDraftWindow?.projectId, focusedDraftWindow?.cwd, focusedDraftWindow?.agentId, selectedProjectId, selectedCwd, selectedAgentId]);
 
   const focusSessionWindow = useCallback((sessionId: string) => {
+    const session = sessions.find((item) => item.id === sessionId);
+    if (session) {
+      acknowledgeSessionCompletion?.(session);
+    }
     if (isMissionMobile) {
       setSelectedMissionMobilePane("chat");
     }
     setFocusedChatWindowId(`session:${sessionId}`);
-  }, [isMissionMobile, setFocusedChatWindowId, setSelectedMissionMobilePane]);
+  }, [acknowledgeSessionCompletion, activeSessionId, isMissionMobile, sessions, setFocusedChatWindowId, setSelectedMissionMobilePane]);
 
   const openChatSession = (sessionId: string) => {
     setOpenChatSessionIds((current: string[]) => addChatSessionIdToFront(current, sessionId));
@@ -169,10 +176,12 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     projectId,
     cwd,
     agentId = null,
+    helmId,
   }: {
     projectId: string;
     cwd: string | null;
     agentId?: string | null;
+    helmId?: string | null;
   }) => {
     const project = projects.find((item: any) => item.id === projectId);
     const draftWindow = {
@@ -184,7 +193,7 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     setDraftChatWindow?.(draftWindow);
     setFocusedChatWindowId(draftWindow.id);
     setActiveSessionId(null);
-    setSelectedMissionHelmId(project?.helmId ?? null);
+    setSelectedMissionHelmId(helmId ?? project?.helmId ?? null);
     setSelectedProjectId(projectId);
     setSelectedCwd(cwd);
     setSelectedAgentId(agentId);

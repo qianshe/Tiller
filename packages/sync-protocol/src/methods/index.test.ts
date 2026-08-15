@@ -39,6 +39,7 @@ const expectedRequests = [
   "session/draft",
   "session/discard_draft",
   "session/list",
+  "session/activity_summary",
   "session/list_timeline",
   "session/repair_timeline",
   "session/list_legacy_evidence",
@@ -55,6 +56,10 @@ const expectedRequests = [
   "session/set_config_option",
   "session/rename",
   "session/cleanup",
+  "session/cancel",
+  "session/acknowledge_completion",
+  "notification/list",
+  "notification/clear",
   "permission/list_pending",
   "permission/respond",
   "approval/list_pending",
@@ -68,6 +73,10 @@ const expectedRequests = [
   "daemon/shutdown",
   "daemon/update/check",
   "daemon/update/start",
+  "conversation/list",
+  "conversation/save",
+  "conversation/delete",
+  "conversation/start",
 ];
 
 test("METHODS contains every request and notification method", () => {
@@ -75,10 +84,10 @@ test("METHODS contains every request and notification method", () => {
     assert.ok(METHODS[name], `missing request descriptor: ${name}`);
     assert.equal(METHODS[name].kind, "request", `wrong kind: ${name}`);
   }
-  assert.equal(METHODS["session/cancel"].kind, "notification");
   assert.equal(METHODS["session/update"].kind, "notification");
   assert.equal(METHODS["error/raised"].kind, "notification");
   assert.equal(METHODS["notification/raised"].kind, "notification");
+  assert.equal(METHODS["notification/cleared"].kind, "notification");
   assert.equal(METHODS["approval/created"].kind, "notification");
   assert.equal(METHODS["approval/resolved"].kind, "notification");
   assert.equal(METHODS["daemon/update/status"].kind, "notification");
@@ -86,9 +95,9 @@ test("METHODS contains every request and notification method", () => {
 
 test("method name lists are exhaustive and stable", () => {
   assert.deepEqual([...CLIENT_REQUEST_METHODS], expectedRequests);
-  assert.deepEqual([...CLIENT_NOTIFICATION_METHODS], ["session/cancel"]);
+  assert.deepEqual([...CLIENT_NOTIFICATION_METHODS], []);
   assert.deepEqual(
     [...SERVER_NOTIFICATION_METHODS],
-    ["session/update", "error/raised", "notification/raised", "approval/created", "approval/resolved", "daemon/update/status"],
+    ["session/update", "error/raised", "notification/raised", "notification/cleared", "dashboard/activity_summary", "approval/created", "approval/resolved", "daemon/update/status", "conversation/update"],
   );
 });

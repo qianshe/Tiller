@@ -52,11 +52,23 @@ import {
 } from "./worktree-summary";
 import { joinClassNames } from "../utils/session-render-state";
 import { shouldRefreshModelPickerOptions } from "../utils/model-picker-refresh";
-import { reconcileMissionDiffs, shouldPrimeGitGraphLoad } from "./git-sync";
+import { reconcileMissionDiffs } from "./git-sync";
 import { useGitOperations } from "./git-operations";
+import {
+  GIT_GRAPH_CACHE_TTL_MS,
+  gitScopeKey,
+  isGitCacheFresh,
+  requestGitGraph,
+  resolveGitGraph,
+  resolveGitStatus,
+  type GitDispatchResult,
+} from "../../git";
 
 export function MissionWorktree(props: any) {
   const {
+    embedded = false,
+    chatOnly = false,
+    hideSessionCloseAction,
     prompt,
     promptImages,
     rpcClientRef,
@@ -132,6 +144,7 @@ export function MissionWorktree(props: any) {
     setExpandedMissionProjectIds,
     setActiveSessionId,
     openSession,
+    acknowledgeSessionCompletion,
     renderMissionAgentIcon,
     resolveDisplaySessionTitle,
     regenerateSessionTitle,
@@ -174,6 +187,7 @@ export function MissionWorktree(props: any) {
     agentLocked,
     filteredAgents,
     navigateToView,
+    onCloseSessionView,
     selectDraftAgent,
     createDraftSessionForAgent,
     submitPrompt,
@@ -250,7 +264,12 @@ export function MissionWorktree(props: any) {
     openedMissionDiffFilePaths = [],
     closeMissionDiffFile,
   } = props;
+  const effectiveHideSessionCloseAction =
+    hideSessionCloseAction ?? (chatOnly && !onCloseSessionView);
   const sessionLegacyEvidence = useDeckStore((state) => state.sessionLegacyEvidence);
+  const completedUnreadSessionIds = useDeckStore(
+    (state) => state.completedUnreadSessionIds,
+  );
   const setSessionLegacyEvidence = useDeckStore((state) => state.setSessionLegacyEvidence);
   const sessionSubagentDetails = useDeckStore((state) => state.sessionSubagentDetails);
   const setSessionSubagentDetails = useDeckStore((state) => state.setSessionSubagentDetails);
@@ -511,7 +530,16 @@ export function MissionWorktree(props: any) {
   });
   const activeGitProjectId = activeSessionProjectId ?? selectedProjectId;
   const activeGitCwd = selectedCwd ?? activeSession?.cwd;
-  const currentGitStatus = activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined;
+  const activeGitHelmKey = activeProfileId;
+  const activeGitScope = activeGitProjectId && activeGitCwd && activeGitHelmKey
+    ? { helmKey: activeGitHelmKey, projectId: activeGitProjectId, cwd: activeGitCwd }
+    : null;
+  const currentGitStatus = activeGitScope
+    ? resolveGitStatus(gitStatusByWorktree, activeGitScope)
+    : undefined;
+  const currentGitGraph = activeGitScope
+    ? resolveGitGraph(gitGraphByWorktree, activeGitScope)
+    : undefined;
   const effectiveMissionDisplayTab = selectedMissionDisplayTabId === "git-error"
     ? { id: "git-error", title: "Git 错误" }
     : selectedMissionDisplayTab;
@@ -580,6 +608,7 @@ export function MissionWorktree(props: any) {
     setOpenChatSessionIds,
     setFocusedChatWindowId,
     openSession,
+    acknowledgeSessionCompletion,
     setActiveSessionId,
     setDraftChatWindow,
     setSelectedMissionHelmId,
@@ -643,17 +672,17 @@ export function MissionWorktree(props: any) {
           normalizeWorktreePath(worktree.path) === normalizeWorktreePath(selectedCwd),
       )
     : null;
+  const activeGitPathKey = activeGitCwd
+    ? normalizeWorktreePath(activeGitCwd) ?? activeGitCwd
+    : null;
   const selectedSessionWorktreeItems = buildSelectedSessionWorktreeItems({
     sessions: [],
     activeSession,
     currentGitBranch,
     selectedCwd,
-    branchByCwd: Object.fromEntries(
-      Object.entries(gitStatusByWorktree ?? {}).map(([cwd, status]: [string, any]) => [
-        normalizeWorktreePath(cwd),
-        status?.branch ?? undefined,
-      ]),
-    ),
+    branchByCwd: activeGitPathKey && currentGitStatus
+      ? { [activeGitPathKey]: currentGitStatus.branch }
+      : {},
   });
   const activeSessionPlan = activeSession?.id ? sessionPlans?.[activeSession.id] : null;
   const dismissCompletedSessionPlan = (sessionId: string, planKey: string) => {
@@ -691,6 +720,7 @@ export function MissionWorktree(props: any) {
   } = useGitOperations({
     activeGitProjectId,
     activeGitCwd,
+    activeGitHelmKey,
     rpcClientRef,
     dispatch,
     gitGraphByWorktree,
@@ -778,16 +808,18 @@ export function MissionWorktree(props: any) {
       return;
     }
 
-    const currentGraph = gitGraphByWorktree[activeGitCwd];
+    const currentGraph = currentGitGraph;
+    const graphKey = activeGitScope ? gitScopeKey(activeGitScope) : activeGitCwd;
     if (!currentGraph?.loading) {
       setGitGraphByWorktree?.((current: Record<string, any>) => ({
         ...current,
-        [activeGitCwd]: {
+        [graphKey]: {
           projectId: activeGitProjectId,
           cwd: activeGitCwd,
           head: currentGraph?.head,
           signature: currentGraph?.signature,
           commits: currentGraph?.commits ?? [],
+          ...(activeGitScope ? { scopeKey: graphKey } : {}),
           loading: true,
           message: "正在加载提交历史...",
         },
@@ -798,7 +830,7 @@ export function MissionWorktree(props: any) {
       cwd: activeGitCwd,
       ...(currentGraph?.signature ? { knownSignature: currentGraph.signature } : {}),
     });
-  }, [activeGitProjectId, activeGitCwd, rpcClientRef, dispatch, gitGraphByWorktree, setSelectedMissionDisplayTabId, setMissionDisplayCollapsed, isMissionMobile, setSelectedMissionMobilePane]);
+  }, [activeGitProjectId, activeGitCwd, activeGitScope, currentGitGraph, rpcClientRef, dispatch, setSelectedMissionDisplayTabId, setMissionDisplayCollapsed, isMissionMobile, setSelectedMissionMobilePane]);
 
   const handleOpenGitError = useCallback(() => {
     openMissionGitErrorTab();
@@ -813,7 +845,9 @@ export function MissionWorktree(props: any) {
     }
     const projectId = activeGitProjectId;
     const cwd = activeGitCwd;
-    const currentDetail = gitGraphByWorktree[cwd]?.commitDetails?.[commitHash];
+    const scope = activeGitScope;
+    const graphKey = scope ? gitScopeKey(scope) : cwd;
+    const currentDetail = (scope ? resolveGitGraph(gitGraphByWorktree, scope) : undefined)?.commitDetails?.[commitHash];
     if (currentDetail?.loading || (currentDetail && !currentDetail.error)) {
       return;
     }
@@ -822,11 +856,11 @@ export function MissionWorktree(props: any) {
       detail: Omit<GitCommitDetailState, "commitHash" | "files">,
     ) => {
       setGitGraphByWorktree?.((current: Record<string, GitGraphState>) => {
-        const graph: GitGraphState = current[cwd] ?? { projectId, cwd, commits: [] };
+        const graph: GitGraphState = current[graphKey] ?? { projectId, cwd, commits: [], ...(scope ? { scopeKey: graphKey } : {}) };
         const files = graph.commitDetails?.[commitHash]?.files ?? [];
         return {
           ...current,
-          [cwd]: {
+          [graphKey]: {
             ...graph,
             commitDetails: {
               ...graph.commitDetails,
@@ -848,6 +882,7 @@ export function MissionWorktree(props: any) {
   }, [
     activeGitCwd,
     activeGitProjectId,
+    activeGitScope,
     dispatch,
     gitGraphByWorktree,
     rpcClientRef,
@@ -855,7 +890,7 @@ export function MissionWorktree(props: any) {
   ]);
   const inspectorWorktreeCount = worktreeOptions.length || selectedSessionWorktreeItems.length;
   const inspectorWorktreeSummaryLabel = selectedWorktreeSummaryItem
-    ? `${activeSessionProject?.name ?? draftProject?.name ?? "未命名项目"} / ${gitStatusByWorktree?.[selectedWorktreeSummaryItem.path]?.branch ?? selectedWorktreeSummaryItem.branch ?? selectedWorktreeSummaryItem.name ?? "未检测分支"}`
+    ? `${activeSessionProject?.name ?? draftProject?.name ?? "未命名项目"} / ${currentGitStatus?.branch ?? selectedWorktreeSummaryItem.branch ?? selectedWorktreeSummaryItem.name ?? "未检测分支"}`
     : formatInspectorWorktreeSummaryLabel(
         selectedSessionWorktreeItems,
         worktreeOptions.length,
@@ -921,7 +956,9 @@ export function MissionWorktree(props: any) {
     "chat-conversation mission-pane mission-pane-chat relative col-start-3 col-end-4 flex h-full min-h-0 min-w-0 flex-col overflow-hidden bg-canvas",
     !activeSession && "mission-draft-chat",
   ]);
-  const resolvedMissionMobilePane = selectedMissionMobilePane ?? ((activeSession || draftChatWindow) ? "chat" : "project");
+  const resolvedMissionMobilePane = chatOnly
+    ? "chat"
+    : selectedMissionMobilePane ?? ((activeSession || draftChatWindow) ? "chat" : "project");
   const currentMobilePaneIndex = MISSION_MOBILE_PANE_ORDER.indexOf(resolvedMissionMobilePane);
   useEffect(() => {
     const visiblePaths = new Set(syncedMissionDiffs.map((diff) => diff.path));
@@ -947,29 +984,43 @@ export function MissionWorktree(props: any) {
       return;
     }
 
-    const currentGraph = gitGraphByWorktree[activeGitCwd];
-    if (!shouldPrimeGitGraphLoad(currentGraph)) {
+    const currentGraph = currentGitGraph;
+    const graphKey = activeGitScope ? gitScopeKey(activeGitScope) : activeGitCwd;
+    if (
+      currentGraph?.loading ||
+      isGitCacheFresh(currentGraph?.lastUpdated, GIT_GRAPH_CACHE_TTL_MS)
+    ) {
       return;
     }
 
     setGitGraphByWorktree?.((current: Record<string, any>) => ({
       ...current,
-      [activeGitCwd]: {
+      [graphKey]: {
+        ...currentGraph,
         projectId: activeGitProjectId,
         cwd: activeGitCwd,
-        commits: [],
+        commits: currentGraph?.commits ?? [],
+        ...(activeGitScope ? { scopeKey: graphKey } : {}),
         loading: true,
+        error: undefined,
         message: "正在加载提交历史...",
       },
     }));
 
-    void dispatch(client, "project/git/graph", {
-      projectId: activeGitProjectId,
-      cwd: activeGitCwd,
-    });
+    void requestGitGraph(
+      (method, params) => dispatch(client, method, params) as Promise<GitDispatchResult>,
+      {
+        projectId: activeGitProjectId,
+        cwd: activeGitCwd,
+        scopeKey: activeGitScope ? graphKey : undefined,
+        knownSignature: currentGraph?.signature,
+      },
+    ).catch(() => undefined);
   }, [
     activeGitCwd,
     activeGitProjectId,
+    activeGitScope,
+    currentGitGraph,
     dispatch,
     gitGraphByWorktree,
     rpcClientRef,
@@ -982,7 +1033,10 @@ export function MissionWorktree(props: any) {
   const displayPaneCollapsed = effectiveDisplayCollapsed;
   const canToggleDisplay = true;
   const missionLayoutClassName = joinClassNames([
-    "wb-pane shadow-ambient chat-layout chat-layout-sidebar mission-responsive-mode mission-grid h-[calc(100vh-16px)] min-h-[640px] w-full overflow-hidden",
+    !embedded && "wb-pane shadow-ambient",
+    "chat-layout chat-layout-sidebar mission-responsive-mode mission-grid w-full min-w-0 overflow-hidden",
+    embedded ? "h-full min-h-0" : "h-[calc(100vh-16px)] min-h-[640px]",
+    chatOnly && "mission-chat-only",
     effectiveSidebarCollapsed && "mission-sidebar-collapsed",
     effectiveSidebarCollapsed && "sidebar-collapsed",
     displayPaneCollapsed && "mission-display-collapsed",
@@ -1095,7 +1149,7 @@ export function MissionWorktree(props: any) {
         resizeTargetMinimumSize={{ fine: 4, coarse: 16 }}
       >
         {" "}
-        {isMissionMobile || !effectiveSidebarCollapsed ? (
+        {!chatOnly && (isMissionMobile || !effectiveSidebarCollapsed) ? (
           <ResizablePanel
             id="mission-sidebar"
             defaultSize="248px"
@@ -1125,6 +1179,7 @@ export function MissionWorktree(props: any) {
               runtimeOverviewItems={runtimeOverviewItems}
               setActiveSessionId={setActiveSessionId}
               statuses={statuses}
+              completedUnreadSessionIds={completedUnreadSessionIds}
               copy={copy}
               activeSessionId={activeSessionId}
               highlightedSessionId={focusedRealSessionId ?? activeSessionId}
@@ -1144,7 +1199,7 @@ export function MissionWorktree(props: any) {
             />{" "}
           </ResizablePanel>
         ) : null}
-        {!isMissionMobile && !effectiveSidebarCollapsed ? (
+        {!chatOnly && !isMissionMobile && !effectiveSidebarCollapsed ? (
           <ResizableHandle
             className="mission-pane-resizer mission-pane-resizer-sidebar w-px bg-transparent hover:bg-primary-soft/20"
             aria-label="调整任务列表宽度"
@@ -1156,11 +1211,13 @@ export function MissionWorktree(props: any) {
           minSize="360px"
           className="h-full min-w-0"
         >
-        <MissionChatPane
-          className={chatPaneClassName}
-          style={missionChatPaneStyle}
-          isMissionMobile={isMissionMobile}
-          isPaneResizing={isMissionPaneResizing}
+          <MissionChatPane
+            className={chatPaneClassName}
+            style={missionChatPaneStyle}
+            isMissionMobile={isMissionMobile}
+            hideWorkspaceHeader={chatOnly}
+            hideSessionCloseAction={effectiveHideSessionCloseAction}
+            isPaneResizing={isMissionPaneResizing}
           paneResizeVersion={missionPaneResizeVersion}
           chatMainRef={chatMainRef}
           onChatMainScroll={handleChatMainScroll}
@@ -1209,9 +1266,9 @@ export function MissionWorktree(props: any) {
           pendingApprovals={pendingApprovals}
           pendingToolTitle={pendingToolActivity?.title ?? null}
           showPermissionWorktree={technicalPanels.showPermissionWorktree}
-          displayCollapsed={displayPaneCollapsed}
-          inspectorCollapsed={effectiveInspectorCollapsed}
-          sidebarCollapsed={effectiveSidebarCollapsed}
+          displayCollapsed={chatOnly || displayPaneCollapsed}
+          inspectorCollapsed={chatOnly || effectiveInspectorCollapsed}
+          sidebarCollapsed={chatOnly || effectiveSidebarCollapsed}
           showThinking={technicalPanels.showMissionThinking}
           canToggleDisplay={canToggleDisplay}
           projectOptions={workbenchProjectOptions}
@@ -1226,7 +1283,7 @@ export function MissionWorktree(props: any) {
           onFocusSession={openChatSession}
           onSelectSessionView={selectChatSession}
           onRenameSession={regenerateSessionTitle}
-            onCloseSessionView={closeChatSession}
+            onCloseSessionView={onCloseSessionView ?? closeChatSession}
             onClearSession={setPendingSessionCleanup}
             onDismissCompletedSessionPlan={dismissCompletedSessionPlan}
           onRespondToPermission={respondToPermission}
@@ -1329,13 +1386,13 @@ export function MissionWorktree(props: any) {
           ) : null}{" "}
         </MissionChatPane>{" "}
         </ResizablePanel>
-        {!isMissionMobile && !displayPaneCollapsed ? (
+        {!chatOnly && !isMissionMobile && !displayPaneCollapsed ? (
           <ResizableHandle
             className="mission-pane-resizer mission-pane-resizer-display w-px bg-transparent hover:bg-primary-soft/20"
             aria-label="调整任务展示宽度"
           />
         ) : null}
-        {isMissionMobile || !displayPaneCollapsed ? (
+        {!chatOnly && (isMissionMobile || !displayPaneCollapsed) ? (
           <ResizablePanel
             id="mission-display"
             defaultSize="320px"
@@ -1355,7 +1412,7 @@ export function MissionWorktree(props: any) {
             noDiffSummary={diffEmptyText}
             historicalDiffIncomplete={historicalDiffIncomplete}
             onReconnectRuntime={reconnectAcpRuntime}
-            gitGraph={activeGitCwd ? gitGraphByWorktree[activeGitCwd] : undefined}
+            gitGraph={currentGitGraph}
             gitStatus={currentGitStatus}
             gitErrorTabOpen={missionGitErrorTabOpen}
             onSelectGitCommit={handleSelectGitCommit}
@@ -1374,13 +1431,13 @@ export function MissionWorktree(props: any) {
         />{" "}
           </ResizablePanel>
         ) : null}
-        {!isMissionMobile && !effectiveInspectorCollapsed ? (
+        {!chatOnly && !isMissionMobile && !effectiveInspectorCollapsed ? (
           <ResizableHandle
             className="mission-pane-resizer mission-pane-resizer-inspector w-px bg-transparent hover:bg-primary-soft/20"
             aria-label="调整检视器宽度"
           />
         ) : null}
-        {isMissionMobile || !effectiveInspectorCollapsed ? (
+        {!chatOnly && (isMissionMobile || !effectiveInspectorCollapsed) ? (
           <ResizablePanel
             id="mission-inspector"
             defaultSize="280px"
@@ -1399,7 +1456,7 @@ export function MissionWorktree(props: any) {
           selectedDiffCount={selectedCommitDiffPaths.size}
           selectedDiffPaths={selectedCommitDiffPaths}
           diffPanel={renderInspectorDiffPanel()}
-          gitStatus={activeGitCwd ? gitStatusByWorktree[activeGitCwd] : undefined}
+          gitStatus={currentGitStatus}
           onCommit={handleCommit}
           onGenerateDescription={handleGenerateDescription}
           onOpenGraph={handleOpenGraph}
@@ -1415,7 +1472,7 @@ export function MissionWorktree(props: any) {
         />{" "}
           </ResizablePanel>
         ) : null}
-        {isMissionMobile ? (
+        {!chatOnly && isMissionMobile ? (
           <nav className="mission-mobile-edge-pager" aria-label="移动端左右翻页热区">
             <button
               type="button"
@@ -1434,10 +1491,12 @@ export function MissionWorktree(props: any) {
             />
           </nav>
         ) : null}
-        <MissionMobilePager
-          selectedPane={resolvedMissionMobilePane}
-          onSelectPane={setSelectedMissionMobilePane}
-        />
+        {!chatOnly ? (
+          <MissionMobilePager
+            selectedPane={resolvedMissionMobilePane}
+            onSelectPane={setSelectedMissionMobilePane}
+          />
+        ) : null}
       </ResizablePanelGroup>{" "}
     </MissionPage>
   );

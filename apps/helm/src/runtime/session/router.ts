@@ -18,7 +18,10 @@ import {
   applyUserPromptToSummary,
   type StoredSessionRuntimeDescriptor,
 } from "../../sessions/facade";
-import { createSessionEventPublisher } from "./event/publisher";
+import {
+  createSessionEventPublisher,
+  updateSessionSummaryAndBroadcast,
+} from "./event/publisher";
 import {
   allocateLiveEventSequence,
   flushLiveAssistantMessage,
@@ -163,7 +166,7 @@ function broadcastPromptFailure(
   sessionId: string,
   message: string,
 ) {
-  context.updateSessionSummary(sessionId, (current) => ({
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
     ...current,
     status: "error",
     updatedAt: new Date().toISOString(),
@@ -171,6 +174,32 @@ function broadcastPromptFailure(
   }));
   createSessionEventPublisher(context).errorRaised({ sessionId, message });
   publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "error" }, context);
+}
+
+/**
+ * 会话的 ACP 运行时已不可达(连接崩溃、被替换或 Helm 侧记录已成孤儿),
+ * 它不会再收到任何运行时事件。把它推进到 error 终态,前端才不会一直
+ * 停在"运行中",用户也能重新发起或清理。
+ */
+export function markSessionStalled(
+  sessionId: string,
+  message: string,
+  context: HelmHandlerContext,
+) {
+  // 先摘掉死记录,后续 prompt/resume 才会重新建立连接而不是复用它。
+  context.sessions.delete(sessionId);
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
+    ...current,
+    status: "error",
+    updatedAt: new Date().toISOString(),
+    lastMessagePreview: "Disconnected from ACP runtime",
+  }));
+  createSessionEventPublisher(context).errorRaised({ sessionId, message });
+  publishCanonicalSessionStateEvent(
+    sessionId,
+    { type: "status", status: "error", message },
+    context,
+  );
 }
 
 function handleUnreportedPromptFailure(
@@ -297,15 +326,10 @@ async function appendUserPromptMessage(
     flushScheduler: context.sessionTimelineFlushScheduler,
     context,
   }, prepared.resolvedSequence, prepared.update);
-  const updated = context.updateSessionSummary(sessionId, (current) =>
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) =>
     applyDispatchingUserPromptToSummary(current, storedUserMessage.text, storedUserMessage.timestamp),
   );
-  if (updated) {
-    createSessionEventPublisher(context).sessionUpdate(sessionId, {
-      kind: "session_updated",
-      session: updated,
-    });
-  }
+  publishCanonicalSessionStateEvent(sessionId, { type: "status", status: "running" }, context);
 }
 
 function assertCanonicalTimelinePipeline(
@@ -636,21 +660,27 @@ const ACTIVE_SESSION_STATUSES: ReadonlySet<string> = new Set([
   "waiting_for_permission",
 ]);
 
+export type SessionCancelResult = {
+  sessionId: string;
+  ok: boolean;
+  status: SessionSummary["status"];
+};
+
 export async function cancelSessionRuntime(
   sessionId: string,
   context: HelmHandlerContext,
-): Promise<boolean> {
+): Promise<SessionCancelResult> {
   const record = context.sessions.get(sessionId);
   if (!record) {
     const persisted = context.sessionStore.get(sessionId);
     if (!persisted) {
       createSessionEventPublisher(context).errorRaised({ sessionId, message: "Session not found" });
-      return true;
+      return { sessionId, ok: false, status: "error" };
     }
     // Helm 重启后持久化摘要可能仍停留在活跃状态,但内存 runtime 已不存在;
     // 对这类会话取消是幂等操作:修正过期状态即可,不是错误。
     if (ACTIVE_SESSION_STATUSES.has(persisted.status)) {
-      context.updateSessionSummary(sessionId, (current) => ({
+      updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
         ...current,
         status: "cancelled",
         updatedAt: new Date().toISOString(),
@@ -660,7 +690,7 @@ export async function cancelSessionRuntime(
         status: "cancelled",
         message: "Cancelled by user",
       }, context);
-      return true;
+      return { sessionId, ok: true, status: "cancelled" };
     }
     // 终态会话不改库,但客户端会按取消通常意味着它还拿着过期的"运行中"
     // 状态(如 helm 重启前的缓存);回播一次权威状态让过期客户端收敛。
@@ -668,7 +698,7 @@ export async function cancelSessionRuntime(
       type: "status",
       status: persisted.status,
     }, context);
-    return true;
+    return { sessionId, ok: true, status: persisted.status };
   }
 
   handleRuntimeEvent(sessionId, {
@@ -676,6 +706,18 @@ export async function cancelSessionRuntime(
     status: "cancelled",
     message: "Cancelled by user",
   }, context);
-  record.runtime.cancel();
-  return true;
+  try {
+    void Promise.resolve(record.runtime.cancel()).catch((error: unknown) => {
+      logRuntimeError(context, "runtime.session.cancel_failed", {
+        sessionId,
+        message: error instanceof Error ? error.message : "Runtime cancellation failed.",
+      });
+    });
+  } catch (error) {
+    logRuntimeError(context, "runtime.session.cancel_failed", {
+      sessionId,
+      message: error instanceof Error ? error.message : "Runtime cancellation failed.",
+    });
+  }
+  return { sessionId, ok: true, status: "cancelled" };
 }

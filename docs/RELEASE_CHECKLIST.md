@@ -44,5 +44,6 @@ or announce a public release until every required gate is complete.
 
 ## Current decision
 
-As of 2026-05-03, release is paused. The package should remain `UNLICENSED` and
-unpublished until product behavior is stable.
+As of 2026-08-12, release remains paused until the product behavior, package,
+repository, and release gates above are complete. The package metadata declares
+the `Apache-2.0` license; keep the checklist and package metadata aligned.

@@ -1,6 +1,13 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useState, type CSSProperties } from "react";
 import { useDeckStore } from "../../store";
-import { buildDashboardViewModel } from "../../features/dashboard";
+import {
+  buildDashboardQuickCreateHelms,
+  buildDashboardQuickCreateProjects,
+  buildDashboardViewModel,
+  DASHBOARD_MISSION_DRAWER_DEFAULT_WIDTH,
+  DashboardMissionDrawerResizeHandle,
+  DashboardGitWorkspace,
+} from "../../features/dashboard";
 import type { AppRouteContext, MissionRouteSource } from "./route-context";
 import {
   DEFAULT_DAEMON_HOST,
@@ -9,6 +16,19 @@ import {
 } from "../../shared/config/deck-runtime";
 import { useEffectiveViewport } from "../../features/preferences";
 import { clearProcessedApprovalHistory } from "../../features/approvals";
+import {
+  resolveSessionComposerConfiguration,
+  type SessionConfigPreferencePatch,
+} from "../../features/mission/facade";
+import { daemonProfileKey } from "../../features/helm-connection/facade";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from "../../shared/ui";
+import type { SessionSummary } from "@tiller/shared";
 
 const OverviewPage = lazy(() =>
   import("../../features/overview/ui/page").then((module) => ({
@@ -32,9 +52,40 @@ const SettingsPage = lazy(() =>
 );
 const MissionRoute = lazy(() =>
   import("./mission-route").then((module) => ({
-    default: ({ source }: { source: MissionRouteSource }) => module.renderMissionRoute(source),
+    default: ({
+      source,
+      embedded,
+      chatOnly,
+      hideSessionCloseAction,
+    }: {
+      source: MissionRouteSource;
+      embedded?: boolean;
+      chatOnly?: boolean;
+      hideSessionCloseAction?: boolean;
+    }) => module.renderMissionRoute(source, { embedded, chatOnly, hideSessionCloseAction }),
   })),
 );
+
+const ignoreDashboardMissionStateUpdate = () => undefined;
+
+function DashboardMissionDrawerLoading() {
+  return (
+    <div className="flex h-full min-h-0 items-center justify-center bg-surface-elevated">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex items-center gap-2 text-sm text-muted-foreground"
+      >
+        <span
+          aria-hidden="true"
+          className="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent"
+        />
+        <span>正在打开会话...</span>
+      </div>
+    </div>
+  );
+}
+
 export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
   const viewport = useEffectiveViewport();
   const isMobile = viewport === "mobile";
@@ -59,11 +110,14 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     worktrees,
     projectFilesByScope,
     agents,
+    agentConnectionInventory,
     sessions,
+    preparations,
+    messages,
+    sessionTimeline,
     statuses,
-    activeSessionId,
-    openChatSessionIds,
-    focusedChatWindowId,
+    completedUnreadSessionIds,
+    acknowledgeSessionCompletion,
     sessionPlans,
     helms,
     notifications,
@@ -74,6 +128,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     navigateToView,
     respondToPermission,
     openSession,
+    openNewTaskFromDashboard,
     resolveDisplaySessionTitle,
     formatRelativeTime,
     socketRef,
@@ -157,7 +212,39 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     helmUpdateClient,
     refreshHelmUpdate,
     startHelmUpdate,
+    dashboardSection,
+    setDashboardSection,
   } = source;
+  const currentHelmKey = daemonProfileKey(
+    daemonHost.trim() || DEFAULT_DAEMON_HOST,
+    daemonPort.trim() || DEFAULT_DAEMON_PORT,
+  );
+  const [dashboardMissionSessionId, setDashboardMissionSessionId] = useState<string | null>(null);
+  const [dashboardSelectedSessionId, setDashboardSelectedSessionId] = useState<string | null>(null);
+  const [dashboardMissionDrawerWidth, setDashboardMissionDrawerWidth] = useState(
+    DASHBOARD_MISSION_DRAWER_DEFAULT_WIDTH,
+  );
+
+  useEffect(() => {
+    if (activeView !== "dashboard") {
+      setDashboardMissionSessionId(null);
+      setDashboardSelectedSessionId(null);
+    }
+  }, [activeView]);
+
+  const openDashboardMission = (sessionId: string, helmKey?: string) => {
+    const targetSession = sessions.find((session: any) => session.id === sessionId);
+    if (!targetSession) {
+      return;
+    }
+    if (helmKey && targetSession.helmId !== helmKey) {
+      return;
+    }
+    acknowledgeSessionCompletion?.(targetSession);
+    setDashboardSelectedSessionId(sessionId);
+    setDashboardMissionSessionId(sessionId);
+  };
+
 function renderOverview() {
   return (
     <OverviewPage
@@ -175,7 +262,9 @@ function renderOverview() {
       agents={agents}
       sessions={sessions}
       onNavigate={navigateToView}
-      onOpenSession={openSession}
+      onOpenSession={(sessionId) => {
+        openSession(sessionId);
+      }}
       resolveDisplaySessionTitle={resolveDisplaySessionTitle}
       formatRelativeTime={formatRelativeTime}
     />
@@ -183,6 +272,7 @@ function renderOverview() {
 }
 
 function renderDashboard() {
+  const dashboardPreparations = helmInventories[currentHelmKey]?.preparations ?? preparations ?? [];
   const dashboard = buildDashboardViewModel({
     connection,
     daemonHost,
@@ -191,30 +281,115 @@ function renderDashboard() {
     defaultDaemonPort: DEFAULT_DAEMON_PORT,
     activeHelm,
     helms,
+    configuredHelms,
+    currentHelmKey,
+    helmConnectionStates,
+    helmInventories,
     agents,
+    agentConnectionInventory,
     projects,
     sessions,
+    preparations: dashboardPreparations,
+    messages,
+    sessionTimeline,
     statuses,
-    activeSessionId,
-    openChatSessionIds,
-    focusedChatWindowId,
+    completedUnreadSessionIds,
+    selectedSessionId: dashboardSelectedSessionId,
     sessionPlans,
     toolCalls,
+    activitySummary: helmInventories[currentHelmKey]?.activitySummary,
     approvalItemsById,
     approvalHistory,
     notifications,
     resolveDisplaySessionTitle,
   });
+  const quickCreateInput = {
+    currentHelmKey,
+    currentHelm: activeHelm,
+    currentProjects: projects,
+    currentAgents: agents,
+    currentSessions: sessions,
+    currentStatuses: statuses,
+    daemonProfiles,
+    helmInventories,
+  };
+  const quickCreateHelms = buildDashboardQuickCreateHelms(quickCreateInput);
+  const quickCreateProjects = buildDashboardQuickCreateProjects(quickCreateInput);
+  const renameDashboardSession = (sessionId: string, title: string) => {
+    const preparation = dashboardPreparations.find((item: any) => item.id === sessionId);
+    const client = source.rpcClientRef?.current;
+    if (preparation && client?.socket.readyState === WebSocket.OPEN) {
+      void dispatch(client, "conversation/save", {
+        id: preparation.id,
+        revision: preparation.revision,
+        title,
+      });
+      return;
+    }
+    source.setSessionTitles?.((current: Record<string, string>) => ({
+      ...current,
+      [sessionId]: title,
+    }));
+    if (!client || client.socket.readyState !== WebSocket.OPEN) {
+      return;
+    }
+    void dispatch(client, "session/rename", { sessionId, title });
+  };
+  const deleteDashboardSession = (sessionId: string) => {
+    const preparation = dashboardPreparations.find((item: any) => item.id === sessionId);
+    const client = source.rpcClientRef?.current;
+    if (preparation && client?.socket.readyState === WebSocket.OPEN) {
+      void dispatch(client, "conversation/delete", {
+        id: preparation.id,
+        revision: preparation.revision,
+      });
+      return;
+    }
+    source.controllers?.cleanupSession?.(sessionId);
+  };
 
   return (
     <DashboardPage
       isMobile={isMobile}
       {...dashboard}
-      onNavigateAgents={() => navigateToView("agents")}
-      onOpenSession={(sessionId) => {
-        openSession(sessionId);
-        navigateToView("sessions");
-      }}
+      preparations={dashboard.preparations}
+      activeSection={dashboardSection}
+      onSelectSection={setDashboardSection}
+      embeddedContent={
+        dashboardSection === "git"
+          ? (
+            <DashboardGitWorkspace
+              currentHelmKey={currentHelmKey}
+              currentConnection={connection as "connecting" | "connected" | "disconnected"}
+              configuredHelms={configuredHelms as any}
+              helms={helms as any}
+              helmConnectionStates={helmConnectionStates}
+              helmInventories={helmInventories}
+              projects={projects as any}
+              worktrees={worktrees as any}
+              gitStatusByWorktree={source.gitStatusByWorktree ?? {}}
+              gitGraphByWorktree={source.gitGraphByWorktree ?? {}}
+              setGitGraphByWorktree={source.setGitGraphByWorktree}
+              rpcClientRef={rpcClientRef}
+              helmRpcClientRefs={helmRpcClientRefs}
+              dispatch={dispatch as any}
+              isMobile={isMobile}
+            />
+          )
+          : dashboardSection === "agents"
+          ? renderAgents("dashboard")
+          : dashboardSection === "settings"
+            ? renderSettings("dashboard")
+            : null
+      }
+      quickCreateHelms={quickCreateHelms}
+      quickCreateProjects={quickCreateProjects}
+      onCreateTask={openNewTaskFromDashboard}
+      onOpenMission={() => navigateToView("sessions")}
+      onOpenSession={openDashboardMission}
+      onOpenSearchSession={openDashboardMission}
+      onRenameSession={renameDashboardSession}
+      onDeleteSession={deleteDashboardSession}
       onRespondApproval={(approvalRequestId, decision) =>
         respondToPermission(approvalRequestId, decision)
       }
@@ -226,9 +401,118 @@ function renderDashboard() {
   );
 }
 
-function renderAgents() {
+function renderDashboardMissionDrawer() {
+  if (!dashboardMissionSessionId) {
+    return null;
+  }
+
+  const dashboardSession = sessions.find((session: any) => session.id === dashboardMissionSessionId);
+  if (!dashboardSession) {
+    return null;
+  }
+  const dashboardProjectId = dashboardSession.projectId;
+  const dashboardProject = projects.find((project: any) => project.id === dashboardProjectId) ?? null;
+  const dashboardWorktree = worktrees.find(
+    (worktree: any) => worktree.path === dashboardSession.cwd,
+  ) ?? null;
+  const dashboardAgent = agents.find((agent: any) => agent.id === dashboardSession.agentId) ?? null;
+  const dashboardSessionComposerConfiguration = resolveSessionComposerConfiguration({
+    session: dashboardSession,
+    sessions,
+    sessionConfigOptions: source.sessionConfigOptions ?? {},
+    agents,
+  });
+  const updateDashboardSessionDraftPreferences = (
+    next: SessionConfigPreferencePatch,
+  ) => source.updateSessionDraftPreferences(next, dashboardMissionSessionId);
+
+  const dashboardMissionSource = {
+    ...source,
+    ...dashboardSessionComposerConfiguration,
+    activeSessionId: dashboardMissionSessionId,
+    activeSession: dashboardSession,
+    activeSessionMessages: messages?.[dashboardMissionSessionId] ?? [],
+    activePromptQueue: source.promptQueues?.[dashboardMissionSessionId],
+    activeSessionProjectId: dashboardProjectId,
+    activeSessionProject: dashboardProject,
+    selectedProjectId: dashboardProjectId,
+    selectedCwd: dashboardSession.cwd,
+    selectedAgentId: dashboardSession.agentId,
+    selectedWorktree: dashboardWorktree,
+    selectedDraftAgent: dashboardAgent,
+    effectiveMissionHelmId: dashboardSession.helmId,
+    pendingPermission: source.permissionRequests?.[dashboardMissionSessionId] ?? null,
+    updateSessionDraftPreferences: updateDashboardSessionDraftPreferences,
+    openChatSessionIds: [dashboardMissionSessionId],
+    focusedChatWindowId: `session:${dashboardMissionSessionId}`,
+    setOpenChatSessionIds: ignoreDashboardMissionStateUpdate,
+    setFocusedChatWindowId: ignoreDashboardMissionStateUpdate,
+    setActiveSessionId: ignoreDashboardMissionStateUpdate,
+    openSession: ignoreDashboardMissionStateUpdate,
+    onCloseSessionView: () => setDashboardMissionSessionId(null),
+  };
+
+  const dashboardMissionDrawerClassName = isMobile
+    ? "dashboard-mission-drawer h-[min(80dvh,720px)] max-h-[80dvh] min-h-0 gap-0 overflow-hidden rounded-none border-0 p-0"
+    : "dashboard-mission-drawer h-full max-h-none gap-0 overflow-hidden rounded-none border-0 p-0 w-[var(--dashboard-mission-drawer-width)] sm:w-[var(--dashboard-mission-drawer-width)] max-w-[calc(100vw_-_1rem)] sm:max-w-[calc(100vw_-_1rem)]";
+
+  return (
+    <Drawer
+      direction={isMobile ? "bottom" : "right"}
+      dismissible
+      handleOnly={!isMobile}
+      open
+      onOpenChange={(open) => {
+        if (!open) {
+          setDashboardMissionSessionId(null);
+        }
+      }}
+    >
+      <DrawerContent
+        showHandle={false}
+        style={
+          {
+            "--dashboard-mission-drawer-width": `${dashboardMissionDrawerWidth}px`,
+            width: isMobile ? undefined : "var(--dashboard-mission-drawer-width)",
+            maxWidth: isMobile ? undefined : "calc(100vw - 1rem)",
+            userSelect: "text",
+          } as CSSProperties
+        }
+        className={dashboardMissionDrawerClassName}
+        data-slot="dashboard-mission-drawer"
+      >
+        {isMobile ? null : (
+          <DashboardMissionDrawerResizeHandle
+            width={dashboardMissionDrawerWidth}
+            onWidthChange={setDashboardMissionDrawerWidth}
+          />
+        )}
+        <div className="flex min-h-0 min-w-0 w-full flex-1 flex-col">
+          <DrawerHeader className="sr-only">
+            <DrawerTitle>Mission 工作台</DrawerTitle>
+            <DrawerDescription>在 Dashboard 中查看并继续当前会话</DrawerDescription>
+          </DrawerHeader>
+          <div className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            <Suspense fallback={<DashboardMissionDrawerLoading />}>
+              <MissionRoute
+                key={dashboardMissionSessionId}
+                source={dashboardMissionSource}
+                embedded
+                chatOnly
+                hideSessionCloseAction
+              />
+            </Suspense>
+          </div>
+        </div>
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
+function renderAgents(mode: "standalone" | "dashboard" = "standalone") {
   return (
     <AgentsPage
+      mode={mode}
       isMobile={isMobile}
       daemonHost={daemonHost}
       daemonPort={daemonPort}
@@ -297,9 +581,10 @@ function renderAgents() {
     />
   );
 }
-function renderSettings() {
+function renderSettings(mode: "standalone" | "dashboard" = "standalone") {
   return (
     <SettingsPage
+      mode={mode}
       isMobile={isMobile}
       deckPreferences={deckPreferences}
       technicalPanels={technicalPanels}
@@ -337,7 +622,12 @@ function renderSettings() {
     <div className="page-content">
       <Suspense fallback={null}>
         {activeView === "overview" && renderOverview()}
-        {activeView === "dashboard" && renderDashboard()}
+        {activeView === "dashboard" && (
+          <>
+            {renderDashboard()}
+            {renderDashboardMissionDrawer()}
+          </>
+        )}
         {activeView === "sessions" && <MissionRoute source={source} />}
         {activeView === "agents" && renderAgents()}
         {activeView === "settings" && renderSettings()}

@@ -56,11 +56,7 @@ export function createSessionTimelineWorker(
       if (changed) {
         pendingEntries.set(changed.id, changed);
       }
-      if (
-        event.type === "tool-call" &&
-        event.toolCall.kind !== "subagent" &&
-        event.toolCall.commandId
-      ) {
+      if (event.type === "tool-call") {
         prunePendingEntries(pendingEntries, mutationIndex.entryById);
       }
       if (update) {

@@ -76,16 +76,6 @@ export function projectSessionLiveStateSnapshot(
     patch.promptQueues = queues;
   }
 
-  if (snapshot.status) {
-    const statuses = replaceRecordValue(
-      state.statuses,
-      sessionId,
-      snapshot.status.effectiveStatus,
-    );
-    if (statuses !== state.statuses) {
-      patch.statuses = statuses;
-    }
-  }
   if (initializedConfig && selection) {
     const configOptions = replaceRecordValue(
       state.sessionConfigOptions,
@@ -126,14 +116,13 @@ export function projectSessionLiveStateSnapshot(
   }
   if (
     currentSession &&
-    (snapshot.status || initializedConfig || snapshot.availableCommands || snapshot.sessionInfo)
+    (initializedConfig || snapshot.availableCommands || snapshot.sessionInfo)
   ) {
     patch.sessions = state.sessions.map((session) =>
       session.id !== sessionId
         ? session
         : {
             ...session,
-            ...(snapshot.status ? { status: snapshot.status.effectiveStatus } : {}),
             ...(initializedConfig && selection
               ? {
                   agentMode: selection.agentMode,

@@ -29,6 +29,8 @@
   --color-on-primary: var(--on-primary);
   --color-accent: var(--accent);
   --color-success: var(--success-container);
+  --color-success-container: var(--success-container);
+  --color-on-success-container: var(--on-success-container);
   --color-warning: var(--warning);
   --color-destructive: var(--destructive);
   --color-border-ghost: var(--border-ghost);

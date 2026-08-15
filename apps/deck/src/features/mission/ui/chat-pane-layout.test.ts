@@ -28,6 +28,10 @@ const sessionActionsSource = readFileSync(
 );
 const diffPanelSource = readFileSync(resolve(currentDir, "../display/diff-panel.tsx"), "utf8");
 const diffTreeSource = readFileSync(resolve(currentDir, "../display/diff-tree.tsx"), "utf8");
+const sharedGitDiffTreeSource = readFileSync(
+  resolve(currentDir, "../../git/ui/diff-tree.tsx"),
+  "utf8",
+);
 const mobilePagerSource = readFileSync(resolve(currentDir, "../workspace/mobile-pager.tsx"), "utf8");
 const worktreeModelSource = readFileSync(resolve(currentDir, "../workspace/model.ts"), "utf8");
 const workspaceChatCompositionSource = readFileSync(
@@ -327,6 +331,8 @@ test("ACP runtime overview refreshes after restore and does not stay connected d
 test("mission worktree uses Tailwind pane layout instead of feature css", () => {
   assert.match(worktreeSource, /mission-grid/);
   assert.match(worktreeSource, /wb-pane shadow-ambient/);
+  assert.match(worktreeSource, /!embedded && "wb-pane shadow-ambient"/);
+  assert.match(worktreeSource, /mission-grid w-full min-w-0 overflow-hidden/);
   assert.doesNotMatch(worktreeSource, /grid-cols-\[minmax\(220px,22%\)_6px_minmax\(0,1fr\)_6px_minmax\(280px,24%\)\]/);
   assert.doesNotMatch(worktreeSource, /surface-card/);
   assert.match(worktreeSource, /mission-sidebar-collapsed/);
@@ -458,7 +464,7 @@ test("mission chat pane exposes the v6 session grid and more menu actions", () =
   assert.match(chatPaneComponentSource, /展示栏/);
   assert.match(chatPaneComponentSource, /Inspector 面板/);
   assert.match(chatPaneComponentSource, />\s*Thinking\s*<\/MenuItem>/);
-  assert.match(chatPaneSource, /showCreateTaskAction=\{isMissionMobile\}/);
+  assert.match(chatPaneSource, /showCreateTaskAction=\{isMissionMobile && !hideWorkspaceHeader\}/);
   assert.match(chatPaneSource, /title="当前项目下新建会话"/);
   assert.doesNotMatch(chatPaneComponentSource, />\s*重命名\s*<\/MenuItem>/);
   assert.doesNotMatch(chatPaneComponentSource, />\s*生成摘要\s*<\/MenuItem>/);
@@ -525,9 +531,12 @@ test("mission workspace wires session grid toggles into the chat pane", () => {
   assert.match(worktreeSource, /highlightedSessionId=\{focusedRealSessionId \?\? activeSessionId\}/);
   assert.match(worktreeSource, /onFocusSession=\{openChatSession\}/);
   assert.match(worktreeSource, /onSelectSessionView=\{selectChatSession\}/);
-  assert.match(worktreeSource, /onCloseSessionView=\{closeChatSession\}/);
+  assert.match(worktreeSource, /onCloseSessionView=\{onCloseSessionView \?\? closeChatSession\}/);
   assert.match(worktreeSource, /openSessions=/);
-  assert.match(worktreeSource, /sidebarCollapsed=\{effectiveSidebarCollapsed\}/);
+  assert.match(worktreeSource, /hideWorkspaceHeader=\{chatOnly\}/);
+  assert.match(worktreeSource, /effectiveHideSessionCloseAction/);
+  assert.match(worktreeSource, /hideSessionCloseAction=\{effectiveHideSessionCloseAction\}/);
+  assert.match(worktreeSource, /sidebarCollapsed=\{chatOnly \|\| effectiveSidebarCollapsed\}/);
   assert.match(worktreeSource, /onExpandSidebar=\{\(\) => setMissionSidebarCollapsed\(false\)\}/);
   assert.match(worktreeSource, /onCollapse=\{onToggleDisplay\}/);
   assert.match(worktreeSource, /onCollapse=\{onToggleInspector\}/);
@@ -653,8 +662,8 @@ test("mission project sidebar uses shared primitives and explicit Tailwind tree 
   assert.doesNotMatch(sidebarProjectNodeSource, /mission-tree-new-inline/);
   assert.match(sidebarProjectNodeSource, /grid-cols-\[12px_14px_minmax\(0,1fr\)_auto\]/);
   assert.doesNotMatch(sidebarProjectNodeSource, />Project<\/span>/);
-  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_24px\]/);
-  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_14px_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_auto\]/);
   assert.match(sidebarSource, /border-success\/50 bg-success\/20 text-success/);
 });
 
@@ -671,8 +680,8 @@ test("mission sidebar rows stay compact and session actions open below rows", ()
 });
 
 test("mission session rows stay tree-like instead of selected card pills", () => {
-  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_24px\]/);
-  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_14px_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[minmax\(0,1fr\)_auto\]/);
+  assert.match(sessionRowSource, /grid-cols-\[14px_minmax\(0,1fr\)_auto\]/);
   assert.match(sessionRowSource, /highlightedSessionId: string \| null/);
   assert.match(sessionRowSource, /const isOpenSession = openSessionIds\.has\(session\.id\)/);
   assert.match(sessionRowSource, /const isHighlighted = isFocused \|\| isOpenSession/);
@@ -681,7 +690,9 @@ test("mission session rows stay tree-like instead of selected card pills", () =>
   assert.match(sessionRowSource, /bg-primary-soft[^\n]+before:absolute before:left-0 before:top-0\.5 before:bottom-0\.5 before:w-1 before:rounded-full before:bg-primary-strong/);
   assert.doesNotMatch(sessionRowSource, /mission-tree-caret/);
   assert.doesNotMatch(sessionRowSource, /mission-tree-session-meta/);
-  assert.doesNotMatch(sessionRowSource, /\{session\.agentName\}<\/span>/);
+  // agentName 不作为行内文本展示（保持树状紧凑），仅出现在悬浮信息卡片（TooltipContent）中
+  assert.doesNotMatch(sessionRowSource, /mission-tree-main[\s\S]{0,200}?\{session\.agentName\}<\/span>/);
+  assert.match(sessionRowSource, /TooltipContent[\s\S]{0,1200}?\{session\.agentName\}<\/span>/);
   assert.match(sessionRowSource, /mission-tree-cleanup/);
   assert.doesNotMatch(sessionRowSource, /session\.id === activeSessionId && "text-primary"/);
   assert.doesNotMatch(sessionRowSource, /rounded-xl/);
@@ -1019,12 +1030,15 @@ test("mission mobile pager is compact and exposes four pane destinations", () =>
   assert.doesNotMatch(mobilePagerSource, /引导|教程|滑动说明/);
 });
 
-test("mission mobile session selection routes back to chat and keeps desktop thinking in the top menu", () => {
+test("mission session menus expose Thinking when the workspace header is hidden", () => {
   assert.match(chatWindowActionsSource, /isMissionMobile/);
   assert.match(chatWindowActionsSource, /if \(isMissionMobile\) \{\s*setSelectedMissionMobilePane\("chat"\);\s*\}/s);
   assert.match(chatPaneComponentSource, /isMissionMobile: boolean;/);
-  assert.match(chatPaneComponentSource, /!isMissionMobile \? \(\s*<div className=\"wb-pane-head\"/s);
-  assert.match(chatPaneComponentSource, /showThinkingToggle=\{isMissionMobile\}/);
+  assert.match(chatPaneComponentSource, /!isMissionMobile && !hideWorkspaceHeader \? \(\s*<div className=\"wb-pane-head\"/s);
+  assert.match(
+    chatPaneComponentSource,
+    /showThinkingToggle=\{isMissionMobile \|\| hideWorkspaceHeader\}/,
+  );
   assert.match(chatPaneComponentSource, /onToggleThinking=\{onToggleThinking\}/);
   assert.match(workspaceChatCompositionSource, /return isMobile \? "输入消息" : draftPromptPlaceholder/);
 });
@@ -1042,7 +1056,7 @@ test("mission worktree renders mobile pager and hides desktop resizers in mobile
   assert.match(worktreeSource, /isMissionMobile/);
   assert.match(worktreeSource, /!isMissionMobile && !effectiveSidebarCollapsed/);
   assert.match(worktreeSource, /<MissionDisplaySection/);
-  assert.match(worktreeSource, /isMissionMobile \|\| !displayPaneCollapsed \? \(/);
+  assert.match(worktreeSource, /!chatOnly && \(isMissionMobile \|\| !displayPaneCollapsed\) \?/);
   assert.match(worktreeSource, /!isMissionMobile && !effectiveInspectorCollapsed \? \(\s*<ResizableHandle[\s\S]*调整检视器宽度/s);
 });
 
@@ -1051,7 +1065,7 @@ test("mission mobile mode marks panes with identities and shows one selected pan
   assert.match(chatPaneSource, /data-mission-mobile-pane="chat"/);
   assert.match(displayPanelSource, /data-mission-mobile-pane="display"/);
   assert.match(inspectorSource, /data-mission-mobile-pane="inspector"/);
-  assert.match(worktreeSource, /resolvedMissionMobilePane = selectedMissionMobilePane \?\? \(\(activeSession \|\| draftChatWindow\) \? "chat" : "project"\)/);
+  assert.match(worktreeSource, /resolvedMissionMobilePane = chatOnly\s*\?\s*"chat"\s*:\s*selectedMissionMobilePane \?\? \(\(activeSession \|\| draftChatWindow\) \? "chat" : "project"\)/);
   assert.match(worktreeSource, /mission-responsive-mode/);
   assert.match(worktreeSource, /`mission-mobile-pane-\$\{resolvedMissionMobilePane\}`/);
   assert.match(worktreeSource, /selectedPane=\{resolvedMissionMobilePane\}/);
@@ -1159,12 +1173,12 @@ test("mission inspector diff rows stay compact on mobile", () => {
   assert.match(diffPanelSource, /mission-file-row-compact[^\"]*grid w-full grid-cols-\[16px_minmax\(0,1fr\)_auto_auto\][^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-meta/);
   assert.match(diffPanelSource, /mission-file-status[^\"]*grid size-3 place-items-center/);
   assert.match(diffPanelSource, /mission-change-group-title[^\"]*grid w-full grid-cols-\[16px_minmax\(0,1fr\)_auto_auto\][^\"]*gap-1[^\"]*px-1[^\"]*py-0\.5[^\"]*text-meta/);
-  assert.match(diffTreeSource, /diff-meta-split[^\"]*gap-1[^\"]*text-xs/);
+  assert.match(sharedGitDiffTreeSource, /diff-meta-split[^\"]*gap-1[^\"]*text-xs/);
 });
 
 test("mission worktree keeps the display pane independently toggleable", () => {
   assert.match(worktreeSource, /const displayPaneCollapsed = effectiveDisplayCollapsed;/);
-  assert.match(worktreeSource, /displayCollapsed=\{displayPaneCollapsed\}/);
+  assert.match(worktreeSource, /displayCollapsed=\{chatOnly \|\| displayPaneCollapsed\}/);
   assert.match(worktreeSource, /canToggleDisplay=\{canToggleDisplay\}/);
   assert.match(chatPaneComponentSource, /disabled=\{!canToggleDisplay\}/);
   assert.match(worktreeSource, /!isMissionMobile && !displayPaneCollapsed/);
@@ -1180,7 +1194,7 @@ test("mission inspector git scope follows the explicitly selected worktree", () 
     /const activeGitProjectId = activeSessionProjectId \?\? selectedProjectId;/,
   );
   assert.match(worktreeSource, /const selectedWorktreeSummaryItem = selectedCwd/);
-  assert.match(worktreeSource, /gitStatusByWorktree\?\.\[selectedWorktreeSummaryItem\.path\]\?\.branch/);
+  assert.match(worktreeSource, /currentGitStatus\?\.branch/);
   assert.match(worktreeSource, /selectedWorktreeSummaryItem\.branch/);
   // Git scope derivation lives solely in the workspace controller now; the
   // selection-effects module no longer keeps its own (dead) copies.
@@ -1277,7 +1291,7 @@ test("mission diff patches load on demand instead of riding the status payload",
   // 结果事件把 patch 合并回 status 条目
   assert.match(
     inventoryEventsSource,
-    /case "project\/git\/file_diff":[\s\S]*applyGitFileDiffResult\(current, payload, payload\.cwd\)/,
+    /case "project\/git\/file_diff":[\s\S]*applyGitFileDiffResult\(current, payload, payload\.cwd(?:, scopeKey)?\)/,
   );
 });
 
@@ -1310,7 +1324,7 @@ test("mission inspector only exposes confirmed selected Git discard", () => {
 test("mission graph auto-load does not loop after a completed fetch", () => {
   assert.match(
     gitSyncSource,
-    /return !currentGraph\?\.loading &&\s*!currentGraph\?\.lastUpdated &&\s*\(currentGraph\?\.commits\?\.length \?\? 0\) === 0;/,
+    /return (?:!currentGraph\?\.loading &&\s*!currentGraph\?\.lastUpdated &&\s*\(currentGraph\?\.commits\?\.length \?\? 0\) === 0|shouldPrimeSharedGitGraphLoad\(currentGraph\));/,
   );
 });
 

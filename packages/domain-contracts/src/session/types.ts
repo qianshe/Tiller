@@ -29,6 +29,8 @@ export type SessionSummary = {
   status: SessionStatus;
   createdAt: string;
   updatedAt: string;
+  lastCompletedAt?: string;
+  completionAcknowledgedAt?: string;
   messageCount: number;
   title?: string;
   runtimeSessionId?: string;

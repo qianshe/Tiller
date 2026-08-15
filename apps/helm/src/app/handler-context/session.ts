@@ -8,6 +8,7 @@ export type HandlerSessionContext = Pick<
   | "approvalIndex"
   | "permissionIndex"
   | "sessionStore"
+  | "conversationPreparationStore"
   | "sessionMessageStore"
   | "sessionArtifactStore"
   | "sessionLegacyEvidenceStore"
@@ -60,6 +61,7 @@ export type HandlerSessionContextFactoryOptions<TContext = HelmHandlerContext> =
   sessions: HelmHandlerContext["sessions"];
   permissionIndex: HelmHandlerContext["permissionIndex"];
   sessionStore: unknown;
+  conversationPreparationStore?: unknown;
   sessionMessageStore: unknown;
   sessionArtifactStore: unknown;
   sessionLegacyEvidenceStore: unknown;
@@ -123,6 +125,7 @@ export function createHandlerSessionContextFactory<TContext = HelmHandlerContext
         approvalIndex: options.permissionIndex,
         permissionIndex: options.permissionIndex,
         sessionStore: options.sessionStore,
+        conversationPreparationStore: options.conversationPreparationStore,
         sessionMessageStore: options.sessionMessageStore,
         sessionArtifactStore: options.sessionArtifactStore,
         sessionLegacyEvidenceStore: options.sessionLegacyEvidenceStore,

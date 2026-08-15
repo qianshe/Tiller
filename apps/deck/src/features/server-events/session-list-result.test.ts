@@ -55,7 +55,7 @@ test("deriveSessionListResult merges paged sessions and derives config and comma
   assert.deepEqual(result.availableCommands.byAgent.codex, incoming.availableCommands);
 });
 
-test("deriveSessionListResult keeps canonical live status over stale lifecycle inventory", () => {
+test("deriveSessionListResult keeps listed lifecycle status over stale live details", () => {
   const result = deriveSessionListResult({
     currentSessions: [],
     liveStatesBySession: {
@@ -77,8 +77,8 @@ test("deriveSessionListResult keeps canonical live status over stale lifecycle i
     },
   });
 
-  assert.equal(result.nextSessions[0]?.status, "idle");
-  assert.equal(result.nextStatuses.resumed, "idle");
+  assert.equal(result.nextSessions[0]?.status, "starting");
+  assert.equal(result.nextStatuses.resumed, "starting");
 });
 
 test("deriveSessionListResult keeps runtime-confirmed config over stale persisted selection", () => {

@@ -1,6 +1,9 @@
 import type { NotificationRaisedParams } from "@tiller/sync-protocol";
-import type { PromptTraceEvent } from "@tiller/shared";
+import type { PromptTraceEvent, SessionActivitySummary } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
+
+type NotificationBroadcastContext = Pick<HelmHandlerContext, "broadcastNotification">
+  & Partial<Pick<HelmHandlerContext, "notificationStore" | "logWarn">>;
 
 export function broadcastSessionUpdate(
   context: HelmHandlerContext,
@@ -13,6 +16,22 @@ export function broadcastSessionUpdate(
     return;
   }
   context.broadcastNotification("session/update", params);
+}
+
+export function broadcastConversationUpdate(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  update:
+    | { kind: "preparation_updated"; preparation: unknown }
+    | { kind: "preparation_deleted"; preparationId: string },
+): void {
+  context.broadcastNotification("conversation/update", update);
+}
+
+export function broadcastSessionActivitySummary(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  summary: SessionActivitySummary,
+): void {
+  context.broadcastNotification("dashboard/activity_summary", summary);
 }
 
 export function broadcastErrorRaised(
@@ -30,7 +49,7 @@ export function broadcastErrorRaised(
 }
 
 export function broadcastInfoRaised(
-  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  context: NotificationBroadcastContext,
   input: Omit<NotificationRaisedParams, "kind" | "source" | "occurredAt"> & {
     source?: string;
     occurredAt?: string;
@@ -44,13 +63,27 @@ export function broadcastInfoRaised(
 }
 
 export function broadcastNotificationRaised(
-  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  context: NotificationBroadcastContext,
   input: NotificationRaisedParams,
 ): void {
-  context.broadcastNotification("notification/raised", {
+  const notification = {
     ...input,
     occurredAt: input.occurredAt ?? new Date().toISOString(),
-  });
+  };
+  let persisted: ReturnType<NonNullable<typeof context.notificationStore>["append"]> | undefined;
+  try {
+    persisted = context.notificationStore?.append(notification);
+  } catch {
+    context.logWarn?.("[tiller] notification history persistence failed");
+  }
+  context.broadcastNotification("notification/raised", persisted ?? notification);
+}
+
+export function broadcastNotificationCleared(
+  context: Pick<HelmHandlerContext, "broadcastNotification">,
+  clearedAt: string,
+): void {
+  context.broadcastNotification("notification/cleared", { clearedAt });
 }
 
 export function broadcastPromptTrace(

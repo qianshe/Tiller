@@ -161,9 +161,15 @@ export function connectHelmSocket(profile: DaemonProfile, context: ConnectHelmSo
 
   const helmKey = daemonProfileKey(profile.host, profile.port);
   const existing = helmSocketRefs.current.get(helmKey);
-  if (existing?.readyState === WebSocket.OPEN) {
-    setHelmConnectionState(helmKey, "connected");
-    setDaemonProfileMessage(`${profile.name} 已连接`);
+  if (
+    existing?.readyState === WebSocket.CONNECTING ||
+    existing?.readyState === WebSocket.OPEN
+  ) {
+    const state = existing.readyState === WebSocket.OPEN ? "connected" : "connecting";
+    setHelmConnectionState(helmKey, state);
+    setDaemonProfileMessage(
+      state === "connected" ? `${profile.name} 已连接` : `正在连接 ${profile.name}...`,
+    );
     return;
   }
   existing?.close();
@@ -283,6 +289,14 @@ export function connectToDaemon(
     port,
     location,
   });
+  const existingSocket = socketRef.current;
+  const existingClient = rpcClientRef.current;
+  const existingSocketState = existingSocket?.readyState;
+  const canReuseExistingSocket =
+    options?.auto === true &&
+    primaryHelmKeyRef.current === helmKey &&
+    existingClient?.socket === existingSocket &&
+    (existingSocketState === WebSocket.CONNECTING || existingSocketState === WebSocket.OPEN);
   primaryHelmKeyRef.current = helmKey;
 
   if (!options?.auto) {
@@ -292,6 +306,21 @@ export function connectToDaemon(
   if (!embedded && (options?.persistEndpoint ?? true)) {
     window.localStorage.setItem(DAEMON_HOST_KEY, host);
     window.localStorage.setItem(DAEMON_PORT_KEY, port);
+  }
+  if (canReuseExistingSocket) {
+    // 自动重连复用已有 socket：前台连接状态保持不变，避免每次重试把
+    // disconnected -> connecting -> disconnected 抖一遍，导致移动端
+    // sticky/dvh 布局反复重算。成功切换 connected 统一由 socket 的 open
+    // 事件处理器负责，这里只替换/复用底层 socket。
+    if (!options?.auto) {
+      const state = existingSocketState === WebSocket.OPEN ? "connected" : "connecting";
+      setConnectFeedback(
+        state === "connected"
+          ? `已连接到 ${wsUrl}`
+          : `${copy.connectFeedbackConnecting} (${wsUrl})`,
+      );
+    }
+    return;
   }
   rpcClientRef.current?.close();
   socketRef.current?.close();
@@ -315,12 +344,17 @@ export function connectToDaemon(
     ...current,
     connectClicks: current.connectClicks + 1,
   }));
-  setHelmConnectionState(helmKey, "connecting");
-  setConnection("connecting");
-  setConnectFeedback(`${copy.connectFeedbackConnecting} (${wsUrl})`);
-  setPairingState("idle");
-  setPairingCodeInput("");
-  setPairingFeedback(copy.pairingFeedbackIdle);
+  if (!options?.auto) {
+    // 仅手动连接写入 connecting 状态与配对界面反馈；自动重连保持前台
+    // disconnected，只在 socket open 后一次性切换 connected，避免断线期间
+    // 每次重试都抖动前台状态并清空配对输入。
+    setHelmConnectionState(helmKey, "connecting");
+    setConnection("connecting");
+    setConnectFeedback(`${copy.connectFeedbackConnecting} (${wsUrl})`);
+    setPairingState("idle");
+    setPairingCodeInput("");
+    setPairingFeedback(copy.pairingFeedbackIdle);
+  }
 
   const socket = new WebSocket(wsUrl);
   const client = createRpcClient(socket, helmKey, { handleRpcResult, handleRpcNotification });
@@ -376,12 +410,14 @@ export function connectToDaemon(
     if (socketRef.current !== socket) {
       return;
     }
-    setConnection("disconnected");
-    setConnectFeedback(
-      readHelmUpdateIntent(helmKey)
-        ? "Helm 正在更新并重启，等待自动重连..."
-        : `连接 ${wsUrl} 失败`,
-    );
+    if (!options?.auto) {
+      setConnection("disconnected");
+      setConnectFeedback(
+        readHelmUpdateIntent(helmKey)
+          ? "Helm 正在更新并重启，等待自动重连..."
+          : `连接 ${wsUrl} 失败`,
+      );
+    }
     if (!options?.auto) {
       setPairingState("idle");
     }

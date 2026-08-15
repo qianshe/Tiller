@@ -43,7 +43,10 @@ import { createSessionTimelineFlushScheduler } from "../session-timeline/flush-s
 import { createSessionLiveStateStore } from "../session-timeline/live-state-store";
 import { createSessionApprovalStateStore } from "./event/approval-store";
 import { createSessionRuntimeEventState } from "./event/runtime-state";
-import { broadcastNotificationRaised } from "../../rpc/notifications";
+import {
+  broadcastNotificationRaised,
+  broadcastSessionActivitySummary,
+} from "../../rpc/notifications";
 import { expirePersistedApprovalsOnStartup } from "./event/approval-recovery";
 import { createSessionTimelineWorkerRegistry } from "../session-timeline/worker-registry";
 import { resolveStoredSessionWorktree as resolveStoredSessionWorktreeFromSummary } from "./worktree-resolution";
@@ -52,6 +55,7 @@ import type { AcpProtocolLoggingOptions } from "@tiller/acp-runtime";
 import { createSessionSubagentDetailService } from "./subagent-detail-service";
 import type { SessionSubagentDetailStore } from "@tiller/persistence";
 import { materializeRuntimeCommandOutputChunk } from "./event/effects";
+import { getSessionActivitySummary } from "../../handlers/sessions/activity-summary-rpc";
 
 type HelmSessionStores = ReturnType<typeof createHelmSessionStores>;
 
@@ -198,7 +202,38 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
         batch,
       });
     },
+    afterCommit: (_sessionId, batch) => {
+      if (!batch.entries.some(
+        (entry) => entry.kind === "user_message" || entry.kind === "tool_call",
+      )) {
+        return;
+      }
+      scheduleActivitySummaryBroadcast();
+    },
   });
+  let activitySummaryTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function scheduleActivitySummaryBroadcast() {
+    if (activitySummaryTimer !== undefined) {
+      return;
+    }
+    activitySummaryTimer = setTimeout(() => {
+      activitySummaryTimer = undefined;
+      try {
+        broadcastSessionActivitySummary(
+          { broadcastNotification: options.broadcastNotification },
+          getSessionActivitySummary({
+            sessionStore: options.sessionStore,
+            sessionTimelineStore: options.sessionTimelineStore,
+          }),
+        );
+      } catch (error) {
+        options.logError(
+          `[tiller] dashboard.activity_summary.failed message=${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }, 100);
+  }
   const sessionTimelineFlushScheduler = createSessionTimelineFlushScheduler({
     workers: sessionTimelineWorkers,
     dispatcher: sessionTimelineDispatcher,
@@ -246,7 +281,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logger: options.logger,
     protocolLogging: options.protocolLogging,
     notify: (notification) => broadcastNotificationRaised(
-      { broadcastNotification: options.broadcastNotification },
+      options.createHandlerContext(),
       notification,
     ),
   });
@@ -267,7 +302,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logInfo: options.logInfo,
     logError: options.logError,
     notify: (notification) => broadcastNotificationRaised(
-      { broadcastNotification: options.broadcastNotification },
+      options.createHandlerContext(),
       notification,
     ),
     protocolLogging: options.protocolLogging,
@@ -381,6 +416,10 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     sessionTimelineFlushScheduler,
     sessionTimelineWorkers,
     dispose() {
+      if (activitySummaryTimer !== undefined) {
+        clearTimeout(activitySummaryTimer);
+        activitySummaryTimer = undefined;
+      }
       clearInterval(sessionTimelineIdleEvictionTimer);
       const context = options.createHandlerContext();
       const transientSessionIds = new Set([

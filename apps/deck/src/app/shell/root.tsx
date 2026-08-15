@@ -1,17 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "highlight.js/styles/github-dark.css";
-import type { AgentToolCall } from "@tiller/shared";
+import type { AgentToolCall, SessionSummary } from "@tiller/shared";
 import {
   agentModelOptionsKey,
   readAgentModelOptionsCache,
   useAppActions,
 } from "../../features/agents";
+import {
+  DashboardTaskLaunchError,
+  finalizeDashboardTaskLaunch,
+  launchDashboardTask,
+  type DashboardQuickCreateRequest,
+  type DashboardSection,
+} from "../../features/dashboard";
 import { getOrCreateDeviceId } from "../../features/auth";
 import {
   daemonProfileKey,
   dispatchWithTrace,
   resolveDefaultHelmEndpoint,
   createHelmUpdateActions,
+  resolveSessionRpcTarget,
   type DeckRpcClient,
   useAppControllers,
   useHelmConnection,
@@ -83,7 +91,7 @@ type LocalLoggingSettings = {
 
 const V6_RADIAL_ITEMS: RadialMenuItem[] = [
   { id: "overview", icon: "home", label: "首页" },
-  { id: "dashboard", icon: "board", label: "Dashboard" },
+  { id: "dashboard", icon: "board", label: "概览" },
   { id: "sessions", icon: "mission", label: "工作台" },
   { id: "agents", icon: "fleet", label: "舰队" },
   { id: "settings", icon: "settings", label: "设置" },
@@ -187,7 +195,10 @@ export function App() {
     client: DeckRpcClient,
     method: string,
     params: unknown,
-    options?: { onResult?: (method: string, result: unknown) => void },
+    options?: {
+      onResult?: (method: string, result: unknown) => void;
+      sourceHelmKey?: string;
+    },
   ) {
     return dispatchWithTrace(
       client,
@@ -196,7 +207,7 @@ export function App() {
       helmConnection.setDebugTrace,
       (resultMethod, result) => {
         options?.onResult?.(resultMethod, result);
-        controllers.handleRpcResult?.(resultMethod, result);
+        controllers.handleRpcResult?.(resultMethod, result, options?.sourceHelmKey);
       },
     );
   }
@@ -235,8 +246,10 @@ export function App() {
   });
   const panelPages = usePanelPages();
   const route = useRouteView();
+  const [dashboardSection, setDashboardSection] = useState<DashboardSection>("overview");
   const [localLoggingSettings, setLocalLoggingSettings] = useState<LocalLoggingSettings | null>(null);
   const [loggingStatus, setLoggingStatus] = useState("");
+  const acknowledgeCompletionRequestsRef = useRef(new Map<string, Promise<void>>());
 
   usePreferencesEffects();
   useEffect(() => {
@@ -310,6 +323,101 @@ export function App() {
       helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
       helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
     );
+  }
+
+  function acknowledgeSessionCompletion(session: SessionSummary) {
+    if (!session.lastCompletedAt) {
+      return;
+    }
+    const currentHelmKey = resolveCurrentHelmKey();
+    const completionKey = `${session.id}\0${session.lastCompletedAt}`;
+    if (acknowledgeCompletionRequestsRef.current.has(completionKey)) {
+      return;
+    }
+    const target = resolveSessionRpcTarget({
+      session,
+      helms: missionView.configuredHelms,
+      currentHelmKey: runtimeState.primaryHelmKeyRef.current ?? currentHelmKey,
+      primaryClient: runtimeState.rpcClientRef.current,
+      clients: runtimeState.helmRpcClientRefs.current,
+      primarySessionIds: new Set(deckData.sessions.map((item) => item.id)),
+    });
+    if (!target) {
+      deckData.addNotification({
+        kind: "warning",
+        source: "session",
+        message: "会话完成状态同步失败：未连接到目标 Helm。",
+        sessionId: session.id,
+        details: {
+          phase: "session/acknowledge_completion",
+          helmKey: session.helmId,
+        },
+      });
+      return;
+    }
+    const request = dispatch(
+      target.client,
+      "session/acknowledge_completion",
+      {
+        sessionId: session.id,
+        completedAt: session.lastCompletedAt,
+      },
+      { sourceHelmKey: target.helmKey },
+    ).then((result) => {
+      if (!result || (result as { ok?: unknown }).ok !== true) {
+        throw new Error("Helm 未确认会话完成状态");
+      }
+    }).catch((error) => {
+      deckData.addNotification({
+        kind: "warning",
+        source: "session",
+        message: `会话完成状态同步失败：${formatRpcError(error)}`,
+        sessionId: session.id,
+        details: {
+          phase: "session/acknowledge_completion",
+          helmKey: target.helmKey,
+        },
+      });
+    }).finally(() => {
+      acknowledgeCompletionRequestsRef.current.delete(completionKey);
+    });
+    acknowledgeCompletionRequestsRef.current.set(completionKey, request);
+    void request;
+  }
+
+  function clearNotificationsFromHelm() {
+    const target = resolveLoggingTarget();
+    if (!target) {
+      deckData.addNotification({
+        kind: "warning",
+        source: "notification",
+        message: "通知清理失败：未连接到目标 Helm。",
+        details: { phase: "notification/clear" },
+      });
+      return;
+    }
+    void dispatch(
+      target.client,
+      "notification/clear",
+      {},
+      { sourceHelmKey: target.helmKey },
+    ).then((result) => {
+      const clearedAt = (result as { clearedAt?: unknown } | null)?.clearedAt;
+      if (typeof clearedAt !== "string") {
+        throw new Error("Helm 未返回通知清理时间");
+      }
+      deckData.applyNotificationClear(clearedAt);
+    }).catch((error) => {
+      deckData.addNotification({
+        kind: "warning",
+        source: "notification",
+        message: `通知清理失败：${formatRpcError(error)}`,
+        details: {
+          phase: "notification/clear",
+          helmKey: target.helmKey,
+        },
+      });
+    });
   }
 
   function resolveCandidateHelmIds() {
@@ -392,7 +500,7 @@ export function App() {
       : null;
   }
 
-  const selection = useSelection({
+  const selectionActions = useSelection({
     projects: deckData.projects,
     agents: deckData.agents,
     sessions: deckData.sessions,
@@ -408,6 +516,17 @@ export function App() {
     setWorktreePickerOpen: runtimeState.setWorktreePickerOpen,
     setAgentPickerOpen: runtimeState.setAgentPickerOpen,
   });
+  const selection = {
+    ...selectionActions,
+    openSession(sessionId: string) {
+      const session = deckData.sessions.find((item) => item.id === sessionId);
+      if (session) {
+        acknowledgeSessionCompletion(session);
+      }
+      selectionActions.openSession(sessionId);
+    },
+    acknowledgeSessionCompletion,
+  };
 
   const missionView = useMissionViewModel({
     runtimeState,
@@ -421,6 +540,135 @@ export function App() {
     activeView: route.activeView,
     hasActiveConversation: Boolean(missionView.activeSession || deckData.draftChatWindow),
   });
+
+  function openNewTaskFromDashboard(request: DashboardQuickCreateRequest): boolean {
+    const currentHelmKey = daemonProfileKey(
+      helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
+      helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
+    );
+    const client = request.helmKey === currentHelmKey
+      ? runtimeState.rpcClientRef.current
+      : runtimeState.helmRpcClientRefs.current.get(request.helmKey);
+    if (!client || client.socket.readyState !== WebSocket.OPEN) {
+      deckData.addNotification({
+        kind: "warning",
+        source: "dashboard",
+        message: "任务未创建：目标 Helm 尚未连接。",
+        details: { helmKey: request.helmKey, phase: "dashboard-quick-create" },
+      });
+      return false;
+    }
+
+    const dispatchDashboardTask = (
+      method: "session/new" | "session/prompt" | "conversation/save" | "conversation/start" | "conversation/delete",
+      params: Record<string, unknown>,
+    ) => dispatch(
+      client,
+      method,
+      params,
+      { sourceHelmKey: request.helmKey },
+    );
+
+    if (request.mode === "new" && (!request.projectId || !request.cwd || !request.agentId)) {
+      void dispatchDashboardTask("conversation/save", {
+        ...(request.preparationId ? { id: request.preparationId } : {}),
+        ...(request.revision !== undefined ? { revision: request.revision } : {}),
+        content: request.prompt,
+        title: request.title,
+        projectId: request.projectId,
+        cwd: request.cwd,
+        agentId: request.agentId,
+      }).catch((error) => {
+        deckData.addNotification({
+          kind: "error",
+          source: "dashboard",
+          message: `准备记录保存失败：${formatRpcError(error)}`,
+          details: { helmKey: request.helmKey, phase: "conversation/save" },
+        });
+      });
+      return true;
+    }
+
+    let launchTask: Promise<string>;
+    if (request.mode === "reuse") {
+      launchTask = launchDashboardTask({
+        sessionId: request.sessionId,
+        prompt: request.prompt,
+        dispatch: dispatchDashboardTask,
+      });
+    } else {
+      launchTask = dispatchDashboardTask("conversation/start", {
+        ...(request.preparationId ? { preparationId: request.preparationId } : {}),
+        ...(request.revision !== undefined ? { revision: request.revision } : {}),
+        content: request.prompt,
+        title: request.title,
+        projectId: request.projectId,
+        cwd: request.cwd,
+        agentId: request.agentId,
+      }).then((result) => {
+        const response = result as {
+          session?: { id?: unknown };
+          titleUpdateFailed?: unknown;
+        } | null;
+        const sessionId = response?.session?.id;
+        if (typeof sessionId !== "string" || !sessionId) {
+          throw new Error("目标 Helm 没有返回会话 id。");
+        }
+        if (typeof response?.titleUpdateFailed === "string" && response.titleUpdateFailed) {
+          deckData.addNotification({
+            kind: "warning",
+            source: "dashboard",
+            message: `会话已创建，但标题更新失败：${response.titleUpdateFailed}`,
+            sessionId,
+            details: { helmKey: request.helmKey, phase: "conversation/start-title" },
+          });
+        }
+        return sessionId;
+      });
+    }
+
+    void launchTask.then(async (sessionId) => {
+      if (request.mode !== "reuse" || !request.preparationId) {
+        return;
+      }
+      try {
+        await finalizeDashboardTaskLaunch({
+          mode: request.mode,
+          preparationId: request.preparationId,
+          revision: request.revision,
+          dispatch: dispatchDashboardTask,
+        });
+      } catch (error) {
+        deckData.addNotification({
+          kind: "warning",
+          source: "dashboard",
+          message: `会话已继续，但准备记录清理失败：${formatRpcError(error)}`,
+          sessionId,
+          details: { helmKey: request.helmKey, phase: "conversation/delete" },
+        });
+      }
+    }).catch((error) => {
+      const launchError = error instanceof DashboardTaskLaunchError ? error : null;
+      const method = launchError?.phase ?? (request.mode === "reuse" ? "session/prompt" : "conversation/start");
+      const failure = launchError?.cause ?? error;
+      deckData.addNotification({
+        kind: "error",
+        source: "dashboard",
+        message: method === "session/prompt"
+          ? `任务 Prompt 发送失败：${formatRpcError(failure)}`
+          : request.preparationId
+            ? `准备任务启动失败：${formatRpcError(failure)}`
+            : `任务创建失败：${formatRpcError(failure)}`,
+        details: {
+          helmKey: request.helmKey,
+          method,
+          phase: "dashboard-quick-create",
+        },
+      });
+    });
+    return true;
+  }
+
   const layoutContext = buildAppLayoutContext(layout);
   const panelContext = buildMissionPanelContext(panelPages);
 
@@ -491,7 +739,10 @@ export function App() {
     route,
     lastFilesScopeKeyRef,
     missionVisualMode,
-    activeProfileId: `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`,
+    activeProfileId: daemonProfileKey(
+      helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
+      helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
+    ),
     requestChatScrollToBottom,
     dispatch,
   });
@@ -552,7 +803,10 @@ export function App() {
     return <MissionAgentIcon agentName={agentName} />;
   }
 
-  const activeProfileId = `${helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST}:${helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT}`;
+  const activeProfileId = daemonProfileKey(
+    helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
+    helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
+  );
   const currentLoggingSettings = resolveLocalLoggingSettings();
   const syncedLoggingSettings = resolveSyncedLoggingSettings();
   const effectiveLoggingSettings = currentLoggingSettings ?? syncedLoggingSettings;
@@ -564,6 +818,7 @@ export function App() {
     route.activeView,
     deckData.deckPreferences.theme,
     deckData.deckPreferences.reduceMotion,
+    dashboardSection,
   );
   const deckTheme = deckData.deckPreferences.theme;
 
@@ -572,12 +827,16 @@ export function App() {
   }, [deckTheme]);
 
   useEffect(() => {
-    if (route.activeView !== "settings") {
+    const settingsVisible =
+      route.activeView === "settings" ||
+      (route.activeView === "dashboard" && dashboardSection === "settings");
+    if (!settingsVisible) {
       return;
     }
     void refreshLoggingSettings();
   }, [
     route.activeView,
+    dashboardSection,
     helmConnection.connection,
     helmConnection.daemonHost,
     helmConnection.daemonPort,
@@ -593,12 +852,15 @@ export function App() {
 
   // 离开设置页面时清空 promptEnhancer 状态消息
   useEffect(() => {
-    if (route.activeView === "settings") {
+    const settingsVisible =
+      route.activeView === "settings" ||
+      (route.activeView === "dashboard" && dashboardSection === "settings");
+    if (settingsVisible) {
       return;
     }
     // 当从设置页面切换到其他页面时，清空状态消息
     promptEnhancerSettings.setStatus("");
-  }, [route.activeView, promptEnhancerSettings]);
+  }, [route.activeView, dashboardSection, promptEnhancerSettings]);
 
   const appShell = (
     <main className={shellClassName}>
@@ -639,6 +901,8 @@ export function App() {
           codeActions,
           helmConnection,
           route,
+          dashboardSection,
+          setDashboardSection,
           activeProfileId,
           copy,
           agentLocked,
@@ -647,6 +911,8 @@ export function App() {
           toggleProjectFileDirectory,
           openDiffDetail,
           toggleExpandedMessage,
+          openNewTaskFromDashboard,
+          clearNotifications: clearNotificationsFromHelm,
           renderMissionAgentIcon,
           loggingSettings: effectiveLoggingSettings,
           loggingStatus,
@@ -671,11 +937,11 @@ export function App() {
         }}
       />
       <RadialMenu
-        activeView={route.activeView}
-        items={V6_RADIAL_ITEMS}
-        onNavigate={route.navigateToView}
-        enabled={true}
-      />
+          activeView={route.activeView}
+          items={V6_RADIAL_ITEMS}
+          onNavigate={route.navigateToView}
+          enabled={route.activeView !== "dashboard"}
+        />
     </main>
   );
 

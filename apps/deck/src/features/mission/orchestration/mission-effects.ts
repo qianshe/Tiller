@@ -3,6 +3,7 @@ import { useEffect } from "react";
 import { useDeckStore } from "../../../store";
 import { readTrustedDeviceCache } from "../../auth/beacon-cache";
 import { useReconnectEffects } from "../../helm-connection/hooks/reconnect-effects";
+import { useHelmLivenessProbe } from "../../helm-connection/hooks/liveness-effects";
 import { usePromptAutosize } from "../hooks/prompt-autosize";
 import { useSnapshotCache } from "../hooks/snapshot-cache";
 import {
@@ -174,6 +175,11 @@ useSnapshotCache({
   setActiveSessionId,
   setSessionAvailableCommands,
   setAgentAvailableCommands,
+});
+useHelmLivenessProbe({
+  connection,
+  missionVisualMode,
+  rpcClientRef,
 });
 useReconnectEffects({
   activeProfileId,

@@ -170,6 +170,29 @@ test("SessionCard can expose a Thinking toggle inside the session menu", () => {
   assert.match(sessionCardsSource, />\s*Thinking\s*</);
 });
 
+test("SessionCard groups dashboard chat actions without duplicating status", () => {
+  const html = renderToStaticMarkup(
+    <SessionCard
+      session={session()}
+      active
+      hideCloseAction
+      onBodyScroll={() => undefined}
+      onFocus={() => undefined}
+      onRename={() => undefined}
+      onClear={() => undefined}
+      onClose={() => undefined}
+    >
+      <div>会话正文</div>
+    </SessionCard>,
+  );
+
+  assert.match(html, /data-slot="session-card-actions"/);
+  assert.match(html, /flex h-7 shrink-0 items-center gap-1/);
+  assert.match(html, /aria-label="更多会话操作"/);
+  assert.doesNotMatch(html, /title="关闭此 session"/);
+  assert.match(sessionCardsSource, /hideCloseAction \? null : <StatusDot/);
+});
+
 test("SessionCard keeps bottom breathing room when no dock is visible", () => {
   const html = renderToStaticMarkup(
     <SessionCard

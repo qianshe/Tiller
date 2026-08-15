@@ -42,6 +42,42 @@ test("mapSessionUpdateNotification maps Claude synthetic authentication errors t
   assert.equal(generic?.events[0]?.type, "message");
 });
 
+test("mapSessionUpdateNotificationBatch keeps Claude Read output out of the thinking track", () => {
+  const mapped = mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "session-claude-read-result",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "call-claude-read-result",
+          title: "Read",
+          kind: "read",
+          status: "completed",
+          rawInput: { filePath: "package.json" },
+          rawOutput: "{\"name\":\"tiller\"}",
+          // Claude may attach a typed thinking block beside a tool result.
+          content: [{ type: "thinking", thinking: "provider metadata" }],
+        },
+      },
+    },
+    { providerId: "claudecode" },
+  );
+
+  assert.ok(mapped);
+  assert.deepEqual(mapped.events.map((event) => event.type), ["tool-call"]);
+  const event = mapped.events[0];
+  assert.equal(event?.type, "tool-call");
+  if (event?.type !== "tool-call") {
+    throw new Error("Expected the Claude Read tool-call event");
+  }
+  assert.equal(event.toolCall.kind, "read");
+  assert.notEqual(event.toolCall.kind, "think");
+  assert.equal(event.toolCall.title, "Read");
+  assert.equal(event.toolCall.output, "{\"name\":\"tiller\"}");
+});
+
 test("mapSessionUpdateNotification maps Claude subagent update metadata to runtime origins", () => {
   const provider = {
     id: "claudecode",

@@ -640,8 +640,15 @@ export class AcpConnection {
       return;
     }
     this.stopIdlePromptObservation(tillerSessionId);
-    void this.state.agent.cancel({ sessionId: session.runtimeSessionId })
-      .catch(() => undefined);
+    // ACP implementations can throw before returning their promise. Keep the
+    // local cancellation event independent from that remote failure.
+    let cancellationResult: unknown;
+    try {
+      cancellationResult = this.state.agent.cancel({ sessionId: session.runtimeSessionId });
+    } catch {
+      cancellationResult = undefined;
+    }
+    void Promise.resolve(cancellationResult).catch(() => undefined);
     session.onEvent({ type: "status", status: "cancelled", message: "Cancelled by remote operator" });
   }
 

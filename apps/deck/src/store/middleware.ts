@@ -33,8 +33,11 @@ type PersistedDeckStore = Pick<
   | "openChatSessionIds"
   | "focusedChatWindowId"
   | "draftChatWindow"
+  | "completedUnreadSessionIds"
+  | "acknowledgedSessionCompletionAt"
   | "dismissedCompletedSessionPlanKeys"
   | "notifications"
+  | "notificationsClearedAt"
 >;
 
 function sanitizeNotification(notification: DeckNotification): DeckNotification {
@@ -73,8 +76,11 @@ export function createDeckStorePersistOptions(): PersistOptions<
       openChatSessionIds: state.openChatSessionIds,
       focusedChatWindowId: state.focusedChatWindowId,
       draftChatWindow: state.draftChatWindow,
+      completedUnreadSessionIds: state.completedUnreadSessionIds,
+      acknowledgedSessionCompletionAt: state.acknowledgedSessionCompletionAt,
       dismissedCompletedSessionPlanKeys: state.dismissedCompletedSessionPlanKeys,
       notifications: (state.notifications ?? []).map(sanitizeNotification),
+      notificationsClearedAt: state.notificationsClearedAt,
     }),
     merge: (persistedState, currentState) => {
       const persisted = persistedState as PersistedDeckStore | undefined;
@@ -94,6 +100,16 @@ export function createDeckStorePersistOptions(): PersistOptions<
         draftChatWindow: isDraftChatWindow(persisted.draftChatWindow)
           ? persisted.draftChatWindow
           : currentState.draftChatWindow,
+        completedUnreadSessionIds: isCompletedUnreadSessionIds(
+          persisted.completedUnreadSessionIds,
+        )
+          ? persisted.completedUnreadSessionIds
+          : currentState.completedUnreadSessionIds,
+        acknowledgedSessionCompletionAt: isStringMap(
+          persisted.acknowledgedSessionCompletionAt,
+        )
+          ? persisted.acknowledgedSessionCompletionAt
+          : currentState.acknowledgedSessionCompletionAt,
         dismissedCompletedSessionPlanKeys: isStringMap(
           persisted.dismissedCompletedSessionPlanKeys,
         )
@@ -101,6 +117,11 @@ export function createDeckStorePersistOptions(): PersistOptions<
           : currentState.dismissedCompletedSessionPlanKeys,
         notifications: normalizePersistedNotifications(persisted.notifications)
           ?? currentState.notifications,
+        notificationsClearedAt:
+          typeof persisted.notificationsClearedAt === "string"
+          || persisted.notificationsClearedAt === null
+            ? persisted.notificationsClearedAt
+            : currentState.notificationsClearedAt,
         preferences: persisted.preferences
           ? {
               ...currentState.preferences,
@@ -233,6 +254,15 @@ function isStringMap(value: unknown): value is Record<string, string> {
   return (
     isRecord(value) &&
     Object.values(value).every((item) => typeof item === "string")
+  );
+}
+
+function isCompletedUnreadSessionIds(
+  value: unknown,
+): value is Record<string, true> {
+  return (
+    isRecord(value) &&
+    Object.values(value).every((item) => item === true)
   );
 }
 

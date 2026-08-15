@@ -2,6 +2,7 @@ export * from "./workspace";
 export * from "./composer";
 export * from "./conversation";
 export * from "./display";
+export { GitGraphPanel } from "./display/git-graph-panel";
 export * from "./inspector";
 export * from "./navigation";
 export { useMissionViewModel } from "./orchestration/mission-view-model";
@@ -36,6 +37,7 @@ export {
   resolveReasoningOptionsForModel,
 } from "./utils/composer-options";
 export { projectFilesKey } from "./utils/project-files-key";
+export { resolveSessionComposerConfiguration } from "./utils/session-composer-configuration";
 export { createMissionVisualFixture, shouldUseMissionVisualFixture } from "./utils/visual-fixture";
 export { MissionAgentIcon } from "./navigation";
 export { SessionCleanupConfirmDialog } from "./ui/session-cleanup-confirm-dialog";

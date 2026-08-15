@@ -1,5 +1,7 @@
 export * from "./types";
+export * from "./conversation-preparation";
 export * from "./session-timeline";
+export * from "./session-activity";
 export * from "./session-live-state";
 export * from "./session-approval";
 export * from "./session-legacy-evidence";

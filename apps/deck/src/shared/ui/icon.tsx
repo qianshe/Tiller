@@ -9,7 +9,11 @@ const PROVIDER_ICON_URLS = {
 
 export type TillerIconName =
   | "home"
+  | "dashboard"
   | "board"
+  | "listChecks"
+  | "chart"
+  | "users"
   | "mission"
   | "fleet"
   | "settings"
@@ -26,15 +30,19 @@ export type TillerIconName =
   | "trash"
   | "copy"
   | "check"
+  | "circleCheck"
   | "search"
   | "globe"
   | "server"
   | "folder"
   | "clock"
+  | "circleAlert"
   | "shield"
   | "activity"
   | "terminal"
   | "branch"
+  | "workflow"
+  | "refresh"
   | "handoff"
   | "fileText"
   | "inspect"
@@ -54,11 +62,41 @@ const ICONS: Record<TillerIconName, ReactNode> = {
     </>
   ),
   home: <path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1V10.5Z" />,
+  dashboard: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m12 12 4-4" />
+      <path d="M12 5v1M5 12h1M18 12h1" />
+    </>
+  ),
   board: (
     <>
       <rect x="3" y="4" width="6" height="16" rx="1" />
       <rect x="11" y="4" width="6" height="10" rx="1" />
       <rect x="19" y="4" width="2" height="13" rx="1" />
+    </>
+  ),
+  listChecks: (
+    <>
+      <path d="M9 6h12M9 12h12M9 18h12" />
+      <path d="m3 6 1.5 1.5L7 5" />
+      <path d="m3 12 1.5 1.5L7 11" />
+      <path d="m3 18 1.5 1.5L7 17" />
+    </>
+  ),
+  chart: (
+    <>
+      <path d="M4 20V4" />
+      <rect x="7" y="12" width="3" height="8" rx="0.75" />
+      <rect x="12" y="8" width="3" height="12" rx="0.75" />
+      <rect x="17" y="5" width="3" height="15" rx="0.75" />
+    </>
+  ),
+  users: (
+    <>
+      <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+      <circle cx="9" cy="7" r="4" />
+      <path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
     </>
   ),
   mission: (
@@ -129,6 +167,12 @@ const ICONS: Record<TillerIconName, ReactNode> = {
     </>
   ),
   check: <path d="m5 12 4 4L19 6" />,
+  circleCheck: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12 2.5 2.5L16 9" />
+    </>
+  ),
   search: (
     <>
       <circle cx="11" cy="11" r="7" />
@@ -158,6 +202,13 @@ const ICONS: Record<TillerIconName, ReactNode> = {
       <polyline points="12 7 12 12 15 14" />
     </>
   ),
+  circleAlert: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 8v4" />
+      <path d="M12 16h.01" />
+    </>
+  ),
   shield: <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
   activity: <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />,
   terminal: (
@@ -172,6 +223,22 @@ const ICONS: Record<TillerIconName, ReactNode> = {
       <circle cx="18" cy="6" r="3" />
       <circle cx="6" cy="18" r="3" />
       <path d="M18 9a9 9 0 0 1-9 9" />
+    </>
+  ),
+  workflow: (
+    <>
+      <rect x="3" y="4" width="6" height="5" rx="1" />
+      <rect x="15" y="15" width="6" height="5" rx="1" />
+      <path d="M9 6.5h3a3 3 0 0 1 3 3v5.5" />
+      <path d="M12 12h3" />
+    </>
+  ),
+  refresh: (
+    <>
+      <path d="M20 11a8 8 0 0 0-14.9-3" />
+      <path d="M4 4v4h4" />
+      <path d="M4 13a8 8 0 0 0 14.9 3" />
+      <path d="M20 20v-4h-4" />
     </>
   ),
   handoff: (

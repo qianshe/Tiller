@@ -1,14 +1,18 @@
 import type { RefObject } from "react";
 import { useEffect, useState } from "react";
-import { Button, Icon } from "@/shared/ui";
+import { Button } from "@/shared/ui";
 import type { PromptEnhancerModelOption } from "../../prompt-enhancer";
 import type { PromptEnhancerPreferences } from "../../prompt-enhancer";
 import type { DeckPreferences, TechnicalPanelPreferences } from "../../preferences";
 import { resolveSettingsCopy } from "../utils/copy";
 import { PromptEnhancerCard } from "./prompt-enhancer-card";
-import { SettingsNavigation } from "./settings-navigation";
 import { SETTINGS_SECTIONS, type SettingsSectionId } from "./settings-sections";
 import { SettingsRow, SettingsSectionFrame, SettingsSwitch } from "./settings-section-frame";
+import {
+  SettingsWorkspaceMobileDetail,
+  SettingsWorkspaceShell,
+  type SettingsPageMode,
+} from "./settings-workspace-shell";
 import type { LoggingLevel, LoggingSettings } from "../types";
 import type { DeckRpcClient } from "../../helm-connection";
 import type { HelmUpdateState } from "../../../store/facade";
@@ -16,6 +20,7 @@ import type { HelmUpdateState } from "../../../store/facade";
 const LOGGING_LEVELS: LoggingLevel[] = ["trace", "debug", "info", "warn", "error", "fatal"];
 
 type SettingsPageProps = {
+  mode?: SettingsPageMode;
   deckPreferences: DeckPreferences;
   technicalPanels: TechnicalPanelPreferences;
   promptModelPickerRef: RefObject<HTMLDivElement | null>;
@@ -67,6 +72,7 @@ function sectionMeta(id: SettingsSectionId) {
 }
 
 export function SettingsPage({
+  mode = "standalone",
   deckPreferences,
   technicalPanels,
   promptModelPickerRef,
@@ -120,7 +126,7 @@ export function SettingsPage({
 
   const renderDetailContent = () => {
     return (
-      <div className="max-w-[640px]">
+      <div className="w-full">
         {activeSection === "appearance" ? (
           <SettingsSectionFrame id={appearance.id} label={appearance.label} desc={appearance.desc}>
             <SettingsRow label={settingsCopy.themeLabel}>
@@ -451,84 +457,44 @@ export function SettingsPage({
     );
   };
 
-  if (isMobile) {
-    if (mobileScreen === "list") {
-      return (
-        <section className="wb-pane flex h-screen min-h-0 flex-col overflow-hidden p-1">
-          <div className="wb-pane-head px-3">
-            <span className="wb-pane-head-eyebrow">设置</span>
-          </div>
-          <div className="flex-1 overflow-auto p-1">
-            <div className="grid gap-0">
-              {SETTINGS_SECTIONS.map((section) => (
-                <button
-                  key={section.id}
-                  type="button"
-                  onClick={() => {
-                    setActiveSection(section.id);
-                    setMobileScreen("detail");
-                  }}
-                  className="flex h-12 w-full items-center gap-2.5 rounded px-2 text-left transition-colors hover:bg-surface-sunken active:bg-surface-emphasis"
-                >
-                  <Icon name={section.icon} size={16} className="text-muted-foreground" />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[14px] text-foreground">{section.label}</div>
-                    <div className="text-2xs text-muted-foreground truncate">{section.desc}</div>
-                  </div>
-                  <Icon name="chevronRight" size={14} className="text-muted-foreground" />
-                </button>
-              ))}
-            </div>
-          </div>
-        </section>
-      );
-    }
-
-    const activeSectionMeta = sectionMeta(activeSection);
+  if (isMobile && mobileScreen === "detail") {
     return (
-      <section className="wb-pane flex h-screen min-h-0 flex-col overflow-hidden p-1">
-        <div className="wb-pane-head">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            type="button"
-            onClick={() => setMobileScreen("list")}
-            title="返回"
-            className="-ml-1 mr-1.5"
-          >
-            <Icon name="chevronLeft" size={12} />
-          </Button>
-          <span className="wb-pane-head-eyebrow">{activeSectionMeta.label}</span>
-          <span className="ml-1.5 text-meta text-muted-foreground hidden sm:inline">{activeSectionMeta.desc}</span>
-          <div className="flex-1" />
-          <Button variant="ghost" size="sm" type="button" title="重置所有 Deck 前端偏好" onClick={resetDeckPreferences}>
-            重置全部
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          {renderDetailContent()}
-        </div>
-      </section>
+      <SettingsWorkspaceMobileDetail
+        activeSection={activeSection}
+        mode={mode}
+        onMobileScreenChange={setMobileScreen}
+        onReset={resetDeckPreferences}
+      >
+        {renderDetailContent()}
+      </SettingsWorkspaceMobileDetail>
+    );
+  }
+
+  if (isMobile) {
+    return (
+      <SettingsWorkspaceShell
+        activeSection={activeSection}
+        mode={mode}
+        mobileScreen="list"
+        onMobileScreenChange={setMobileScreen}
+        onSelectSection={setActiveSection}
+        onReset={resetDeckPreferences}
+      >
+        {renderDetailContent()}
+      </SettingsWorkspaceShell>
     );
   }
 
   return (
-    <section className="settings-v6-page grid h-screen grid-cols-[220px_minmax(0,1fr)] gap-1 p-1">
-      <SettingsNavigation activeId={activeSection} onSelect={setActiveSection} />
-
-      <section className="wb-pane flex min-h-0 flex-col overflow-hidden">
-        <div className="wb-pane-head">
-          <span className="wb-pane-head-eyebrow">{sectionMeta(activeSection).label}</span>
-          <span className="ml-1.5 text-meta text-muted-foreground">{sectionMeta(activeSection).desc}</span>
-          <div className="flex-1" />
-          <Button variant="ghost" size="sm" type="button" title="重置所有 Deck 前端偏好" onClick={resetDeckPreferences}>
-            重置全部
-          </Button>
-        </div>
-        <div className="min-h-0 flex-1 overflow-auto p-4">
-          {renderDetailContent()}
-        </div>
-      </section>
-    </section>
+    <SettingsWorkspaceShell
+      activeSection={activeSection}
+      mode={mode}
+      mobileScreen="detail"
+      onMobileScreenChange={setMobileScreen}
+      onSelectSection={setActiveSection}
+      onReset={resetDeckPreferences}
+    >
+      {renderDetailContent()}
+    </SettingsWorkspaceShell>
   );
 }

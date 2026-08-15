@@ -23,8 +23,13 @@ import {
   applyDeviceResult,
   applyErrorRaised,
   applyNotificationRaised,
+  applyNotificationCleared,
+  applyNotificationResult,
+  applyConversationListResult,
   applyInventoryResult,
+  applyConversationUpdate,
   applySessionResult,
+  applySessionActivitySummary,
   applySessionUpdate,
   applyPromptTraceEvent,
   createDeckSessionUpdateTraceEvent,
@@ -199,7 +204,9 @@ export function createServerEventController(source: any, helpers: any) {
     const current = sourceIsCurrent(sourceHelmKey);
 
     if (applyDeviceResult(method, result, sourceHelmKey, deviceContext())) return;
+    if (applyConversationListResult(method, result, sourceHelmKey)) return;
     if (applyInventoryResult(method, result, sourceHelmKey, current, inventoryContext())) return;
+    if (applyNotificationResult(method, result)) return;
     applySessionResult(method, result, sourceHelmKey, current, sessionContext());
   }
 
@@ -232,6 +239,13 @@ export function createServerEventController(source: any, helpers: any) {
       applyPromptTraceEvent(params as PromptTraceEvent);
       return;
     }
+    if (method === "dashboard/activity_summary") {
+      applySessionActivitySummary(
+        params as import("@tiller/shared").SessionActivitySummary,
+        sourceHelmKey,
+      );
+      return;
+    }
     if (method === "session/update") {
       const sessionUpdateParams = params as SessionUpdateParams;
       applyPromptTraceEvent(createDeckSessionUpdateTraceEvent(sessionUpdateParams, "deck.session_update.received"));
@@ -242,12 +256,20 @@ export function createServerEventController(source: any, helpers: any) {
       }
       return;
     }
+    if (method === "conversation/update") {
+      applyConversationUpdate(sourceHelmKey, params as any);
+      return;
+    }
     if (method === "error/raised") {
       applyErrorRaised(params as any, activityContext());
       return;
     }
     if (method === "notification/raised") {
       applyNotificationRaised(params as any, activityContext());
+      return;
+    }
+    if (method === "notification/cleared") {
+      applyNotificationCleared(params as any);
     }
   }
 

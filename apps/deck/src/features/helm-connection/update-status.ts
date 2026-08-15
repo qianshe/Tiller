@@ -51,8 +51,13 @@ export function resolveHelmUpdateStatus(
     canUpdate: typeof payload.canUpdate === "boolean" ? payload.canUpdate : previous?.canUpdate ?? false,
   };
 
-  if (targetVersion && !targetConfirmed && status !== "failed") {
+  const targetIsExplicit =
+    typeof payload.targetVersion === "string" || Boolean(pendingTarget);
+  if (targetVersion && targetIsExplicit && !targetConfirmed && status !== "failed") {
     return { update, intent: { kind: "write", targetVersion } };
+  }
+  if (targetConfirmed && pendingTarget) {
+    return { update, intent: { kind: "keep" } };
   }
   if (
     targetConfirmed ||

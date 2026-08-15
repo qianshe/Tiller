@@ -134,6 +134,156 @@ test("OpenCode flat tool updates keep subagent identity across sparse completion
   assert.equal(completedCall.toolCall.commandId, "subagent:ses_opencode_flat");
 });
 
+test("OpenCode running metadata updates reuse the initial subagent entities", () => {
+  const sessionId = "session-opencode-running-metadata-reuse";
+  const map = (update: Record<string, unknown>) => mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { sessionId, update },
+    },
+    { providerId: "opencode" },
+  );
+  const initial = (toolCallId: string, prompt: string) => map({
+    sessionUpdate: "tool_call",
+    toolCallId,
+    title: "task",
+    kind: "tool",
+    status: "running",
+    rawInput: {
+      description: prompt,
+      prompt,
+      category: "explore",
+      run_in_background: true,
+    },
+  });
+  const metadataUpdate = (toolCallId: string, prompt: string, taskId: string) => map({
+    sessionUpdate: "tool_call_update",
+    toolCall: {
+      id: toolCallId,
+      kind: "tool",
+      title: "task",
+      status: "running",
+      input: {
+        category: "explore",
+        prompt,
+      },
+      rawOutput: {
+        output: "Background task launched. Status: pending",
+        metadata: {
+          taskId,
+          sessionId: taskId,
+          category: "explore",
+          prompt,
+          run_in_background: true,
+        },
+      },
+    },
+  });
+
+  const firstInitial = initial("first-root", "Find topic subscription setup");
+  const secondInitial = initial("second-root", "Trace session status update flow");
+  const firstUpdate = metadataUpdate(
+    "first-metadata",
+    "Find topic subscription setup",
+    "first-child",
+  );
+  const secondUpdate = metadataUpdate(
+    "second-metadata",
+    "Trace session status update flow",
+    "second-child",
+  );
+  const toolCallFrom = (mapped: ReturnType<typeof map>) => {
+    const event = mapped?.events.find((candidate) => candidate.type === "tool-call");
+    return event?.type === "tool-call" ? event.toolCall : undefined;
+  };
+
+  assert.equal(toolCallFrom(firstInitial)?.id, "first-root");
+  assert.equal(toolCallFrom(secondInitial)?.id, "second-root");
+  assert.equal(toolCallFrom(firstUpdate)?.id, "first-root");
+  assert.equal(toolCallFrom(secondUpdate)?.id, "second-root");
+  assert.equal(toolCallFrom(firstUpdate)?.commandId, "subagent:first-child");
+  assert.equal(toolCallFrom(secondUpdate)?.commandId, "subagent:second-child");
+});
+
+test("OpenCode skill-loaded completion with a new call id reuses the running entity", () => {
+  const sessionId = "session-opencode-skill-completion-reuse";
+  const taskId = "ses_01935f1bbffe78lG6X0Ak409jE";
+  const map = (update: Record<string, unknown>) => mapSessionUpdateNotificationBatch(
+    {
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { sessionId, update },
+    },
+    { providerId: "opencode" },
+  );
+
+  const running = map({
+    sessionUpdate: "tool_call",
+    toolCallId: "call-opencode-skill-running",
+    title: "task",
+    kind: "tool",
+    status: "running",
+    rawInput: {
+      category: "unspecified-high",
+      description: "测试带技能加载的 subagent",
+      load_skills: ["frontend-patterns"],
+      prompt: "测试带技能加载的 subagent",
+      run_in_background: true,
+    },
+  });
+
+  const completed = map({
+    sessionUpdate: "tool_call_update",
+    toolCall: {
+      id: "call-opencode-skill-completed",
+      kind: "tool",
+      title: "task",
+      status: "completed",
+      rawOutput: {
+        output: [
+          "Task completed in 19s.",
+          "Agent: Sisyphus-Junior (category: unspecified-high)",
+          "<task_result>",
+          "技能注入：确认 frontend-patterns 内容已注入上下文",
+          "</task_result>",
+          "<task_metadata>",
+          `session_id: ${taskId}`,
+          `task_id: ${taskId}`,
+          "subagent: Sisyphus-Junior",
+          "category: unspecified-high",
+          "</task_metadata>",
+          `to continue: task(task_id=\"${taskId}\")`,
+        ].join("\\n"),
+        metadata: {
+          taskId,
+          sessionId: taskId,
+          agent: "Sisyphus-Junior",
+          category: "unspecified-high",
+          description: "测试带技能加载的 subagent",
+          load_skills: ["frontend-patterns"],
+          run_in_background: true,
+        },
+      },
+    },
+  });
+
+  const runningCalls = running?.events.filter((event) => event.type === "tool-call") ?? [];
+  const completedCalls = completed?.events.filter((event) => event.type === "tool-call") ?? [];
+  assert.deepEqual(
+    runningCalls.map((event) => event.type === "tool-call" ? event.toolCall.id : undefined),
+    ["call-opencode-skill-running"],
+  );
+  assert.deepEqual(
+    completedCalls.map((event) => event.type === "tool-call" ? event.toolCall.id : undefined),
+    ["call-opencode-skill-running"],
+  );
+  assert.equal(
+    completedCalls[0]?.type === "tool-call" ? completedCalls[0].toolCall.status : undefined,
+    "completed",
+  );
+});
+
 test("mapSessionUpdateNotification applies OpenCode provider live tool classification", () => {
   const mapped = mapSessionUpdateNotification(
     {

@@ -18,4 +18,5 @@ export { createSqliteSessionApprovalStore } from "./session-approval-store";
 export { createSqliteSessionUpdateStore } from "./session-update-store";
 export { createSqliteTimelineBlockStore } from "./timeline-block-store";
 export { createSqliteTimelineBlockIndex } from "./timeline-block-index";
+export { createSqliteNotificationStore } from "./notification-store";
 export type { TimelineBlockEntryRecord, TimelineBlockRecord, TimelineBlockState } from "./timeline-block-index";

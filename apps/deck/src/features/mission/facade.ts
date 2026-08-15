@@ -13,5 +13,6 @@ export {
   summarizeSessionContext,
 } from "./utils/composer-options";
 export { projectFilesKey } from "./utils/project-files-key";
+export { resolveSessionComposerConfiguration } from "./utils/session-composer-configuration";
 export { resolvePermissionCommandDisplay } from "./conversation";
 export type { ProjectFilesEntry, SessionConfigPreferencePatch } from "./types";

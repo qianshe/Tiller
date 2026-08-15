@@ -6,3 +6,4 @@ export * from "./inventory-events";
 export * from "./session-events";
 export * from "./activity-events";
 export * from "./approval-events";
+export * from "./conversation-events";

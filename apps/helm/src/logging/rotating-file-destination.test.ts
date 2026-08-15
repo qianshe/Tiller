@@ -61,3 +61,28 @@ test("rotating destination drops low-priority queue overflow and records the cou
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test("rotating destination disables file writes after an I/O failure", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "tiller-log-write-failure-"));
+  const unhandledRejections: unknown[] = [];
+  const onUnhandledRejection = (reason: unknown) => {
+    unhandledRejections.push(reason);
+  };
+  process.on("unhandledRejection", onUnhandledRejection);
+  try {
+    const destination = createRotatingFileDestination({
+      filePath: directory,
+    });
+
+    destination.write('{"level":"error","event":"write.failure"}\n');
+    await destination.flush();
+    destination.write('{"level":"error","event":"write.failure.again"}\n');
+    await destination.flush();
+
+    assert.equal(unhandledRejections.length, 0);
+    destination.destroy();
+  } finally {
+    process.off("unhandledRejection", onUnhandledRejection);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

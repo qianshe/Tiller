@@ -5,7 +5,10 @@ export type DispatchToHelm = (
   client: DeckRpcClient,
   method: string,
   params: unknown,
-  options?: { onResult?: (method: string, result: unknown) => void },
+  options?: {
+    onResult?: (method: string, result: unknown) => void;
+    sourceHelmKey?: string;
+  },
 ) => Promise<unknown>;
 
 const REQUEST_TIMEOUT_OVERRIDES_MS: Record<string, number> = {
@@ -27,8 +30,18 @@ export async function dispatchWithTrace(
     lastRequestType: method,
   }));
   if (method === "session/cancel") {
-    client.notify(method, params);
-    return;
+    try {
+      const cancelResult = await client.request(method, params);
+      onResult?.(method, cancelResult);
+      return cancelResult;
+    } catch (error) {
+      if (!isMethodNotFound(error)) {
+        throw error;
+      }
+      // 旧 Helm 只把 session/cancel 当通知处理;降级发送,代价是拿不到回执。
+      client.notify(method, params);
+      return;
+    }
   }
   const result = await client.request(method, params, {
     timeoutMs: REQUEST_TIMEOUT_OVERRIDES_MS[method],
@@ -56,6 +69,13 @@ export async function requestInitialSync(
   await dispatch(client, "agent/list", {});
   await dispatch(client, "agent/connections", {});
   try {
+    await dispatch(client, "conversation/list", {});
+  } catch (error) {
+    if (!isMethodNotFound(error)) {
+      throw error;
+    }
+  }
+  try {
     await dispatch(client, "daemon/update/check", {});
   } catch (error) {
     if (isMethodNotFound(error)) {
@@ -75,6 +95,18 @@ export async function requestInitialSync(
   } catch (error) {
     setSessionHistoryState({ hasMore: false, loading: false });
     throw error;
+  }
+  try {
+    await dispatch(client, "notification/list", { limit: 100 });
+  } catch (error) {
+    if (!isMethodNotFound(error)) {
+      throw error;
+    }
+  }
+  try {
+    await dispatch(client, "session/activity_summary", {});
+  } catch {
+    // Dashboard metrics are optional; keep the primary session inventory usable.
   }
   await dispatch(client, "approval/list_pending", {});
   await dispatch(client, "approval/list", { limit: 100 });

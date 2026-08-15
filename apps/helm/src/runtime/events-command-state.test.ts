@@ -259,7 +259,11 @@ test("runtime command-output logs summary metadata without stream text", () => {
   assert.equal(findStructuredLog(capture, "runtime.command_output.chunk"), undefined);
   assert.doesNotMatch(JSON.stringify(commandLog), /SECRET_STREAM_TEXT|with details|more secret output|text|preview/u);
   assert.equal(appendedOutputs.length, 0);
-  assert.equal(capture.broadcasts.length, 0);
+  assert.equal(capture.broadcasts.length, 1);
+  assert.equal((capture.broadcasts[0] as any).method, "session/update");
+  assert.equal((capture.broadcasts[0] as any).params?.sessionId, "session-command-output-summary");
+  assert.equal((capture.broadcasts[0] as any).params?.update?.kind, "session_updated");
+  assert.equal((capture.broadcasts[0] as any).params?.update?.session?.status, "idle");
   assert.equal(
     capture.detailBroadcasts.filter((item: any) => item.params?.update?.kind === "timeline_batch").length,
     2,

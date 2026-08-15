@@ -4,6 +4,7 @@ import {
   type SessionTimelineBatch,
   type SessionTimelineEntry,
 } from "@tiller/shared";
+import { normalizeLegacyPersistedAgentToolCall } from "../normalize.js";
 import { openSessionDatabase, runTransaction } from "./core.js";
 
 type StoredEntryRow = {
@@ -106,7 +107,12 @@ function parseEntry(row: StoredEntryRow): SessionTimelineEntry | undefined {
   try {
     const value = JSON.parse(row.payload_json) as unknown;
     if (isTimelineEntry(value)) {
-      return withFallbackSequence(value, row.first_sequence);
+      const entry = withFallbackSequence(value, row.first_sequence);
+      if (entry.kind !== "tool_call") {
+        return entry;
+      }
+      const toolCall = normalizeLegacyPersistedAgentToolCall(entry.toolCall) ?? entry.toolCall;
+      return toolCall === entry.toolCall ? entry : { ...entry, toolCall };
     }
   } catch {
     return undefined;

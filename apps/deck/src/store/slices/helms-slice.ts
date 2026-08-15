@@ -1,9 +1,11 @@
 import type {
   AcpAgentProvider,
+  ConversationPreparation,
   HelmSummary,
   ProjectSummary,
   SessionStatus,
   SessionSummary,
+  SessionActivitySummary,
   TrustedDeviceSummary,
   WorktreeSummary,
 } from "@tiller/shared";
@@ -30,16 +32,24 @@ export type HelmUpdateState = {
   message?: string;
 };
 
+export type HelmAgentConnectionSummary = {
+  providerId: string;
+  status: string;
+};
+
 export type HelmInventoryBucket = {
   helms?: HelmSummary[];
   projects: ProjectSummary[];
   worktrees: WorktreeSummary[];
   agents: AcpAgentProvider[];
+  agentConnections?: HelmAgentConnectionSummary[];
   sessions: SessionSummary[];
   statuses: Record<string, SessionStatus>;
   trustedDevices: TrustedDeviceSummary[];
   logging?: HelmLoggingSettings;
   update?: HelmUpdateState;
+  activitySummary?: SessionActivitySummary;
+  preparations?: ConversationPreparation[];
 };
 
 export type HelmListUpdater =
@@ -66,6 +76,7 @@ const emptyInventoryBucket: HelmInventoryBucket = {
   sessions: [],
   statuses: {},
   trustedDevices: [],
+  preparations: [],
 };
 
 export const createHelmsSlice: StateCreator<HelmsSlice> = (set) => ({

@@ -35,6 +35,22 @@ export function createRotatingFileDestination(options: {
   let currentBytes = 0;
   let drainPromise: Promise<void> | undefined;
   let closed = false;
+  let fileWritesDisabled = false;
+
+  function disableFileWrites(): void {
+    if (fileWritesDisabled) {
+      return;
+    }
+    fileWritesDisabled = true;
+    queue.length = 0;
+    queuedBytes = 0;
+    droppedDebugInfo = 0;
+    if (fileHandle) {
+      const handle = fileHandle;
+      fileHandle = undefined;
+      void handle.close().catch(() => undefined);
+    }
+  }
 
   async function ensureFileHandle(): Promise<FileHandle> {
     if (fileHandle) {
@@ -120,6 +136,9 @@ export function createRotatingFileDestination(options: {
   }
 
   function enqueue(chunk: string | Buffer): void {
+    if (fileWritesDisabled) {
+      return;
+    }
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
     const droppable = isDroppableLogChunk(buffer);
     if (droppable && queuedBytes + buffer.byteLength > maxQueueBytes) {
@@ -130,8 +149,12 @@ export function createRotatingFileDestination(options: {
       evictDroppableChunks(buffer.byteLength);
       if (queuedBytes + buffer.byteLength > maxQueueBytes) {
         // Preserve warning/error logs when the asynchronous queue is saturated.
-        appendFileSync(options.filePath, buffer);
-        currentBytes += buffer.byteLength;
+        try {
+          appendFileSync(options.filePath, buffer);
+          currentBytes += buffer.byteLength;
+        } catch {
+          disableFileWrites();
+        }
         return;
       }
     }
@@ -153,20 +176,26 @@ export function createRotatingFileDestination(options: {
   }
 
   async function drain(): Promise<void> {
-    while (queue.length > 0 || droppedDebugInfo > 0) {
-      if (droppedDebugInfo > 0) {
-        const dropped = droppedDebugInfo;
-        droppedDebugInfo = 0;
-        await writeBuffer(Buffer.from(
-          `${JSON.stringify({ level: "warn", event: "logging.queue_dropped", droppedDebugInfo: dropped, time: new Date().toISOString() })}\n`,
-        ));
+    try {
+      while (queue.length > 0 || droppedDebugInfo > 0) {
+        if (droppedDebugInfo > 0) {
+          const dropped = droppedDebugInfo;
+          droppedDebugInfo = 0;
+          await writeBuffer(Buffer.from(
+            `${JSON.stringify({ level: "warn", event: "logging.queue_dropped", droppedDebugInfo: dropped, time: new Date().toISOString() })}\n`,
+          ));
+        }
+        const item = queue.shift();
+        if (!item) {
+          continue;
+        }
+        queuedBytes -= item.buffer.byteLength;
+        await writeBuffer(item.buffer);
       }
-      const item = queue.shift();
-      if (!item) {
-        continue;
-      }
-      queuedBytes -= item.buffer.byteLength;
-      await writeBuffer(item.buffer);
+    } catch {
+      // A full or unavailable disk must not turn logger failure into an
+      // unhandled rejection or recursively generate more log writes.
+      disableFileWrites();
     }
   }
 

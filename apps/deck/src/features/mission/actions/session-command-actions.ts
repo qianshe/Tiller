@@ -311,7 +311,21 @@ export function useSessionCommandActions({
       toast.warning("Helm 未连接，无法取消任务。");
       return;
     }
-    void dispatch(client, "session/cancel", { sessionId });
+    // 取消请求可能因半开连接或 Helm 侧异常而无声失败;必须让用户看到,
+    // 否则只会表现为"点了没反应"。响应带回权威状态,即使状态广播丢失
+    // 也能靠它收敛。
+    void dispatch(client, "session/cancel", { sessionId })
+      .then((result) => {
+        const status = (result as { status?: SessionSummary["status"] } | undefined)?.status;
+        if (status) {
+          useDeckStore.getState().setSessionStatus(sessionId, status);
+        }
+      })
+      .catch((error) => {
+        toast.error(
+          `取消任务失败：${error instanceof Error ? error.message : "Helm 未响应"}`,
+        );
+      });
   }
 
   function updateQueuedPrompt(sessionId: string, queueItemId: string, text: string) {

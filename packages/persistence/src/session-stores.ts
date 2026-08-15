@@ -21,6 +21,8 @@ import type { SessionApprovalStore } from "./session-approval-store";
 import type { StoredSessionRuntimeDescriptor } from "./runtime-store";
 import type { SessionTimelinePage, SessionTimelinePageOptions } from "./timeline-store";
 import type { SessionLegacyEvidenceStore } from "./legacy-evidence-store";
+import type { ConversationPreparationStore } from "./conversation-preparation-store";
+import type { NotificationStore } from "./notification-store";
 
 export type StoredSessionArtifacts = {
   outputs: CommandChunk[];
@@ -101,6 +103,8 @@ export type SessionSubagentDetailStore = {
 };
 
 export type SessionStores = {
+  notificationStore: NotificationStore;
+  conversationPreparationStore: ConversationPreparationStore;
   sessionStore: SessionSummaryStore;
   sessionMessageStore: SessionMessageStore;
   sessionArtifactStore: SessionArtifactStore;

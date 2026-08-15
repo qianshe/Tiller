@@ -72,12 +72,15 @@ export function createSocketController(
     client: any,
     method: string,
     params: unknown,
-    optionsOrSourceHelmKey?: { onResult?: (method: string, result: unknown) => void } | string,
+    optionsOrSourceHelmKey?: {
+      onResult?: (method: string, result: unknown) => void;
+      sourceHelmKey?: string;
+    } | string,
     explicitSourceHelmKey?: string,
   ) {
     const sourceHelmKey = typeof optionsOrSourceHelmKey === "string"
       ? optionsOrSourceHelmKey
-      : explicitSourceHelmKey;
+      : optionsOrSourceHelmKey?.sourceHelmKey ?? explicitSourceHelmKey;
     const onResult = typeof optionsOrSourceHelmKey === "object"
       ? optionsOrSourceHelmKey.onResult
       : undefined;

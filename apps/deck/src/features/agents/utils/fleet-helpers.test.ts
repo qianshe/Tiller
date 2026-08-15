@@ -2,7 +2,41 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import type { ProjectSummary, WorktreeSummary } from "@tiller/shared";
 import type { FleetProjectDraft } from "../ui/project-inventory-section";
-import { buildProjectSavePayload, createProjectId, resolveProjectWorktrees } from "./fleet-helpers.js";
+import {
+  buildProjectSavePayload,
+  createProjectId,
+  resolveHelmInventoryCounts,
+  resolveProjectWorktrees,
+} from "./fleet-helpers.js";
+
+test("resolveHelmInventoryCounts uses live selected Helm counts", () => {
+  assert.deepEqual(
+    resolveHelmInventoryCounts({
+      helmKey: "local",
+      selectedHelmKey: "local",
+      selectedCounts: { agents: 2, projects: 3, worktrees: 4 },
+      inventory: { agents: [], projects: [], worktrees: [], sessions: [1] },
+    }),
+    { agents: 2, projects: 3, worktrees: 4, sessions: 1 },
+  );
+});
+
+test("resolveHelmInventoryCounts uses cached inventory for other Helms", () => {
+  assert.deepEqual(
+    resolveHelmInventoryCounts({
+      helmKey: "remote",
+      selectedHelmKey: "local",
+      selectedCounts: { agents: 2, projects: 3, worktrees: 4 },
+      inventory: {
+        agents: [1],
+        projects: [1, 2],
+        worktrees: [1, 2, 3],
+        sessions: [1, 2, 3, 4],
+      },
+    }),
+    { agents: 1, projects: 2, worktrees: 3, sessions: 4 },
+  );
+});
 
 function createProject(overrides: Partial<ProjectSummary> = {}): ProjectSummary {
   return {

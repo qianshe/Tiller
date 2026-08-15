@@ -20,8 +20,10 @@ test("request methods carry a result schema, notifications do not", () => {
   const doc = generateOpenRpcDocument();
   const prompt = doc.methods.find((method) => method.name === "session/prompt");
   const cancel = doc.methods.find((method) => method.name === "session/cancel");
+  const sessionUpdate = doc.methods.find((method) => method.name === "session/update");
   assert.ok(prompt?.result);
-  assert.equal(cancel?.result, undefined);
+  assert.ok(cancel?.result);
+  assert.equal(sessionUpdate?.result, undefined);
   const updateStatus = doc.methods.find((method) => method.name === "daemon/update/status");
   assert.equal(updateStatus?.result, undefined);
 });

@@ -2,6 +2,7 @@ import { useMemo } from "react";
 import { useDeckStore, type DeckNotification } from "../../store";
 import type {
   AcpAgentProvider,
+  ConversationPreparation,
   AgentMessage,
   AgentPlan,
   AgentToolCall,
@@ -67,6 +68,12 @@ export function useDeckData(missionVisualFixture: any) {
   const storedStatuses = useDeckStore((state) => state.statuses);
   const statuses = (missionVisualFixture?.statuses ?? storedStatuses) as Record<string, SessionStatus>;
   const setStatuses = useDeckStore((state) => state.setStatuses);
+  const completedUnreadSessionIds = useDeckStore(
+    (state) => state.completedUnreadSessionIds,
+  );
+  const clearSessionCompletedUnread = useDeckStore(
+    (state) => state.clearSessionCompletedUnread,
+  );
 
   const setMessages = useDeckStore((state) => state.setMessages);
   const storedMessages = useDeckStore((state) => state.messages);
@@ -126,6 +133,7 @@ export function useDeckData(missionVisualFixture: any) {
   const notifications = (missionVisualFixture?.notifications ?? storedNotifications) as DeckNotification[];
   const addNotification = useDeckStore((state) => state.addNotification);
   const clearNotifications = useDeckStore((state) => state.clearNotifications);
+  const applyNotificationClear = useDeckStore((state) => state.applyNotificationClear);
 
   const sessionTitles = useDeckStore((state) => state.sessionTitles);
   const setSessionTitles = useDeckStore((state) => state.setSessionTitles);
@@ -192,6 +200,7 @@ export function useDeckData(missionVisualFixture: any) {
   const removeDaemonProfileFromStore = useDeckStore((state) => state.removeDaemonProfile);
   const selectedHelmKey = useDeckStore((state) => state.selectedHelmKey);
   const selectHelmKey = useDeckStore((state) => state.selectHelmKey);
+  const preparations = (helmInventories[selectedHelmKey ?? ""]?.preparations ?? []) as ConversationPreparation[];
 
   const trustedDevice = useDeckStore((state) => state.trustedDevice);
   const setTrustedDevice = useDeckStore((state) => state.setTrustedDevice);
@@ -218,6 +227,8 @@ export function useDeckData(missionVisualFixture: any) {
     setSessionHistoryState,
     statuses,
     setStatuses,
+    completedUnreadSessionIds,
+    clearSessionCompletedUnread,
     messages,
     sessionTimeline,
     setMessages,
@@ -242,6 +253,7 @@ export function useDeckData(missionVisualFixture: any) {
     notifications,
     addNotification,
     clearNotifications,
+    applyNotificationClear,
     sessionTitles,
     setSessionTitles,
     diffs,
@@ -281,6 +293,7 @@ export function useDeckData(missionVisualFixture: any) {
     removeDaemonProfileFromStore,
     selectedHelmKey,
     selectHelmKey,
+    preparations,
     trustedDevice,
     setTrustedDevice,
     trustedDevices,

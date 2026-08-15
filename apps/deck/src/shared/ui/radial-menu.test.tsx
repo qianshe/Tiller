@@ -81,7 +81,7 @@ test("RadialMenu expands when the pointer enters the radial hover zone", () => {
   assert.match(source, /data-radial-hover-zone/);
   assert.match(source, /onPointerEnter=\{onHoverPointerEnter\}/);
   assert.match(source, /event\.pointerType === \"mouse\"/);
-  assert.match(source, /width: hoverZoneSize,\n\s+height: hoverZoneSize/);
+  assert.match(source, /width: hoverZoneSize,\r?\n\s+height: hoverZoneSize/);
   assert.match(source, /borderRadius: \"50%\"/);
 });
 

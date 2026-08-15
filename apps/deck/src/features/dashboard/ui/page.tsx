@@ -1,14 +1,31 @@
 import type { PermissionDecision } from "@tiller/shared";
-import { Icon, StatusDot } from "../../../shared/ui";
+import { Suspense, useState, type CSSProperties, type ReactNode } from "react";
+import { Icon, SidebarInset, SidebarProvider, SidebarTrigger, StatusDot } from "../../../shared/ui";
 import {
   DashboardActivityStream,
   type DashboardActivityApproval,
   type DashboardActivitySession,
-} from "./activity-stream";
+} from "./activity/stream";
+import { DashboardActivityTrend } from "./activity/trend";
+import { DashboardNotificationList } from "./notification-list";
 import {
-  DashboardNotificationList,
-} from "./notification-list";
-import type { DashboardNotification } from "../orchestration/dashboard-view-model";
+  DashboardSidebar,
+  DASHBOARD_SIDEBAR_DEFAULT_WIDTH,
+  type DashboardNavigationActions,
+} from "./sidebar";
+import { DashboardSessionSearchDialog } from "./sessions/search-dialog";
+import { DashboardQuickCreateDialog, readDraftPrompt } from "./quick-create/dialog";
+import { DashboardTaskWorkspace } from "./tasks/workspace";
+import type { DashboardNotification } from "../orchestration/view-model";
+import type {
+  DashboardActivityTrendPoint,
+  DashboardQuickCreateHelm,
+  DashboardQuickCreateProject,
+  DashboardQuickCreatePreset,
+  DashboardQuickCreateRequest,
+  DashboardSection,
+} from "../types";
+import { cn } from "../../../shared/utils/cn";
 
 type DashboardHelm = {
   id: string;
@@ -31,22 +48,46 @@ type DashboardApproval = DashboardActivityApproval & {
 
 type DashboardSession = DashboardActivitySession;
 
+type DashboardMetricTone = "active" | "idle" | "primary" | "warning";
+
+type DashboardMetric = {
+  label: string;
+  value: string;
+  sub: string;
+  icon: "server" | "activity" | "terminal" | "shield";
+  tone: DashboardMetricTone;
+};
+
 export type DashboardPageProps = {
   activeHelmLabel: string;
   onlineHelmCount: number;
   totalHelmCount: number;
-  activeSessionCount: number;
+  runningAcpCount?: number;
+  totalAcpCount?: number;
+  runningSessionCount: number;
+  totalSessionCount: number;
   pendingApprovalCount: number;
   planSessionCount: number;
   completedPlanSessionCount: number;
-  toolCallCount: number;
   sessions?: DashboardSession[];
+  activityTrend?: DashboardActivityTrendPoint[];
+  activityTrendHourly?: DashboardActivityTrendPoint[];
   helms?: DashboardHelm[];
   approvals?: DashboardApproval[];
   approvalHistory?: DashboardActivityApproval[];
   notifications?: DashboardNotification[];
-  onNavigateAgents: () => void;
+  activeSection?: DashboardSection;
+  onSelectSection?: (section: DashboardSection) => void;
+  onOpenMission?: () => void;
+  embeddedContent?: ReactNode;
+  quickCreateHelms?: DashboardQuickCreateHelm[];
+  quickCreateProjects?: DashboardQuickCreateProject[];
+  onCreateTask?: (request: DashboardQuickCreateRequest) => boolean | void;
+  preparations?: DashboardSession[];
   onOpenSession?: (sessionId: string) => void;
+  onOpenSearchSession?: (sessionId: string) => void;
+  onRenameSession?: (sessionId: string, title: string) => void;
+  onDeleteSession?: (sessionId: string) => void;
   onRespondApproval?: (approvalRequestId: string, decision: PermissionDecision) => void;
   onClearNotifications?: () => void;
   onClearApprovalHistory?: () => void;
@@ -112,220 +153,415 @@ function DashboardApprovalActions({
   );
 }
 
+function DashboardMetricCard({ metric }: { metric: DashboardMetric }) {
+  return (
+    <article className="dashboard-metric-card wb-pane min-w-0 p-2.5 transition-colors hover:bg-surface-emphasis/35">
+      <div className="flex min-w-0 items-center gap-2">
+        <span className="grid size-7 shrink-0 place-items-center rounded-md bg-surface-sunken text-muted-foreground">
+          <Icon name={metric.icon} size={14} />
+        </span>
+        <span className="min-w-0 truncate text-meta font-medium text-muted-foreground">
+          {metric.label}
+        </span>
+      </div>
+      <div className="mt-2 flex min-w-0 items-baseline justify-between gap-2">
+        <strong className="shrink-0 tabular text-display font-semibold leading-none">
+          {metric.value}
+        </strong>
+        <span className="flex min-w-0 items-center gap-1 font-mono text-2xs tabular text-muted-foreground">
+          <StatusDot
+            tone={metric.tone}
+            size={5}
+            pulse={metric.tone === "active" || metric.tone === "primary"}
+          />
+          <span className="truncate">{metric.sub}</span>
+        </span>
+      </div>
+    </article>
+  );
+}
+
+function DashboardApprovalPanel({
+  approvals,
+  pendingApprovalCount,
+  onRespondApproval,
+}: {
+  approvals: DashboardApproval[];
+  pendingApprovalCount: number;
+  onRespondApproval?: (approvalRequestId: string, decision: PermissionDecision) => void;
+}) {
+  return (
+    <section className="wb-pane" aria-labelledby="dashboard-approvals-title">
+      <div className="wb-pane-head min-h-10 px-3">
+        <span id="dashboard-approvals-title" className="wb-pane-head-title">待审批</span>
+        <span className="font-mono text-action font-medium tabular text-warning">{pendingApprovalCount}</span>
+      </div>
+      {approvals.length > 0 ? (
+        <ul className="divide-y divide-border-ghost">
+          {approvals.map((approval) => (
+            <li key={approval.id} className="grid gap-2 px-3 py-3">
+              <div className="flex min-w-0 items-start gap-2.5">
+                <Icon name="shield" size={14} className="mt-0.5 shrink-0 text-warning" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-mono text-action tabular text-foreground">{approval.kind}</p>
+                  <p className="mt-0.5 truncate font-mono text-meta tabular text-muted-foreground">
+                    {formatApprovalScope(approval)}
+                  </p>
+                </div>
+              </div>
+              <DashboardApprovalActions approval={approval} onRespondApproval={onRespondApproval} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="px-3 py-5 font-mono text-meta text-muted-foreground">暂无待处理请求</div>
+      )}
+    </section>
+  );
+}
+
+function DashboardHeader({
+  sectionTitle,
+  showSidebarTrigger = false,
+}: {
+  sectionTitle: string;
+  showSidebarTrigger?: boolean;
+}) {
+  return (
+    <header
+      className="dashboard-site-header flex min-h-12 flex-wrap items-center justify-between gap-3 border-b border-border-ghost px-4 py-2.5"
+      data-slot="site-header"
+    >
+      <div className="flex min-w-0 items-center gap-2 font-mono text-meta tabular text-muted-foreground">
+        {showSidebarTrigger ? <SidebarTrigger className="-ml-2 shrink-0" /> : null}
+        {showSidebarTrigger ? <span className="h-4 w-px bg-border-ghost" aria-hidden="true" /> : null}
+        <span className="hidden sm:inline">Tiller</span>
+        <Icon name="chevronRight" size={12} />
+        <span className="truncate text-foreground">{sectionTitle}</span>
+      </div>
+    </header>
+  );
+}
+
+function DashboardEmbeddedFallback({ section }: { section: "agents" | "settings" | "git" }) {
+  const label = section === "agents" ? " Agents" : section === "git" ? " Git" : "设置";
+  return (
+    <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-6" role="status" aria-live="polite">
+      <span className="font-mono text-meta text-muted-foreground">
+        正在加载{label}...
+      </span>
+    </div>
+  );
+}
+
+function DashboardEmbeddedContent({
+  section,
+  content,
+}: {
+  section: "agents" | "settings" | "git";
+  content?: ReactNode;
+}) {
+  const title = section === "agents" ? "Agents" : section === "git" ? "Git" : "设置";
+  return (
+    <section
+      className="dashboard-embedded-content flex min-h-0 min-w-0 w-full flex-1 overflow-hidden"
+      data-slot="dashboard-embedded-content"
+      data-dashboard-section={section}
+      aria-label={title}
+    >
+      <Suspense fallback={<DashboardEmbeddedFallback section={section} />}>
+        {content}
+      </Suspense>
+    </section>
+  );
+}
+
+function DashboardRoadmapView({ section }: { section: "automations" | "issues" }) {
+  const isAutomation = section === "automations";
+  const title = isAutomation ? "自动化" : "Issues";
+  const description = isAutomation
+    ? "把重复任务编排成可复用的工作流。"
+    : "集中查看并分配需要 Agent 处理的问题。";
+
+  return (
+    <section
+      className="wb-pane flex min-h-64 flex-col items-center justify-center px-6 py-10 text-center"
+      aria-labelledby={`dashboard-${section}-title`}
+    >
+      <span className="grid size-10 place-items-center rounded-md bg-surface-sunken text-muted-foreground">
+        <Icon name={isAutomation ? "workflow" : "fileText"} size={18} />
+      </span>
+      <h1
+        id={`dashboard-${section}-title`}
+        className="mt-4 text-section font-semibold text-foreground"
+      >
+        {title}
+      </h1>
+      <p className="mt-1 max-w-sm text-meta text-muted-foreground">{description}</p>
+      <span className="mt-4 rounded-full border border-border-ghost px-2.5 py-1 font-mono text-2xs text-muted-foreground">
+        即将推出
+      </span>
+    </section>
+  );
+}
+
+function resolveDashboardSectionTitle(section: DashboardSection) {
+  switch (section) {
+    case "tasks":
+      return "任务";
+    case "git":
+      return "Git";
+    case "agents":
+      return "Agents";
+    case "settings":
+      return "设置";
+    case "automations":
+      return "自动化";
+    case "issues":
+      return "Issues";
+    default:
+      return "概览";
+  }
+}
+
 export function DashboardPage({
-  activeHelmLabel,
   onlineHelmCount,
   totalHelmCount,
-  activeSessionCount,
+  runningAcpCount = 0,
+  totalAcpCount = runningAcpCount,
+  runningSessionCount,
+  totalSessionCount,
   pendingApprovalCount,
-  planSessionCount,
-  completedPlanSessionCount,
-  toolCallCount,
   sessions = [],
-  helms = [],
+  activityTrend = [],
+  activityTrendHourly = [],
   approvals = [],
   approvalHistory = approvals,
   notifications = [],
-  onNavigateAgents,
+  activeSection,
+  onSelectSection,
+  onOpenMission,
+  embeddedContent,
+  quickCreateHelms,
+  quickCreateProjects,
+  onCreateTask,
   onOpenSession,
+  onOpenSearchSession,
+  onRenameSession,
+  onDeleteSession,
+  preparations = [],
   onRespondApproval,
   onClearNotifications,
   onClearApprovalHistory,
   isMobile = false,
 }: DashboardPageProps) {
+  const [internalSection, setInternalSection] = useState<DashboardSection>("overview");
+  const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
+  const [quickCreateOpen, setQuickCreateOpen] = useState(false);
+  const [quickCreatePreset, setQuickCreatePreset] = useState<DashboardQuickCreatePreset | null>(null);
+  const [quickCreateHasDraft, setQuickCreateHasDraft] = useState(() =>
+    Boolean(readDraftPrompt().trim()),
+  );
+  const [sidebarWidth, setSidebarWidth] = useState(DASHBOARD_SIDEBAR_DEFAULT_WIDTH);
+  const selectedSection = activeSection ?? internalSection;
+  const selectSection = (section: DashboardSection) => {
+    setInternalSection(section);
+    onSelectSection?.(section);
+  };
+  const createTask = (request: DashboardQuickCreateRequest) => {
+    const accepted = onCreateTask?.(request);
+    if (accepted === false) {
+      return false;
+    }
+    selectSection("tasks");
+    return true;
+  };
+  const openQuickCreate = () => {
+    setQuickCreatePreset(null);
+    setQuickCreateOpen(true);
+  };
+  const configureReadySession = (session: DashboardSession) => {
+    setQuickCreatePreset({
+      projectId: session.projectId,
+      helmKey: session.helmKey,
+      cwd: session.cwd,
+      prompt: session.content ?? session.lastMessagePreview ?? session.title,
+      title: session.title,
+      preparationId: session.preparationId,
+      revision: session.revision,
+      agentId: session.agentId,
+      focusTarget: !session.projectId || !session.cwd ? "project" : !session.agentId ? "agent" : undefined,
+    });
+    setQuickCreateOpen(true);
+  };
+  const sectionTitle = resolveDashboardSectionTitle(selectedSection);
   const approvalRows = approvals;
-  const helmRows = helms.length > 0 ? helms : [
+  const isEmbeddedSection = selectedSection === "agents" || selectedSection === "settings" || selectedSection === "git";
+  const searchSession = onOpenSearchSession ?? onOpenSession;
+
+  const metrics: DashboardMetric[] = [
     {
-      id: "active",
-      name: "workstation",
-      endpoint: activeHelmLabel,
-      agentCount: 0,
-      projectCount: 0,
-      sessionCount: activeSessionCount,
-      status: onlineHelmCount > 0 ? ("active" as const) : ("idle" as const),
+      label: "在线 Helm",
+      value: `${onlineHelmCount} / ${totalHelmCount}`,
+      sub: totalHelmCount > onlineHelmCount
+        ? `${Math.max(totalHelmCount - onlineHelmCount, 0)} 个离线`
+        : "全部在线",
+      icon: "server",
+      tone: onlineHelmCount > 0 ? "active" : "idle",
+    },
+    {
+      label: "ACP Agent",
+      value: `${runningAcpCount} / ${totalAcpCount}`,
+      sub: totalAcpCount > 0 ? "在线/总数" : "暂无 ACP Agent",
+      icon: "terminal",
+      tone: runningAcpCount > 0 ? "primary" : "idle",
+    },
+    {
+      label: "运行中会话",
+      value: `${runningSessionCount} / ${totalSessionCount}`,
+      sub: totalSessionCount > 0 ? "运行中/总数" : "暂无会话",
+      icon: "activity",
+      tone: runningSessionCount > 0 ? "primary" : "idle",
+    },
+    {
+      label: "待审批",
+      value: String(pendingApprovalCount),
+      sub: pendingApprovalCount > 0 ? "需要你处理" : "暂无权限请求",
+      icon: "shield",
+      tone: pendingApprovalCount > 0 ? "warning" : "idle",
     },
   ];
 
-  const kpis = [
-    { label: "在线 Helm", value: `${onlineHelmCount} / ${totalHelmCount}`, sub: `${Math.max(totalHelmCount - onlineHelmCount, 0)} idle`, icon: "server" as const, tone: onlineHelmCount > 0 ? ("active" as const) : ("idle" as const) },
-    { label: "活跃会话", value: String(activeSessionCount), sub: activeSessionCount > 0 ? "streaming" : "idle", icon: "activity" as const, tone: activeSessionCount > 0 ? ("primary" as const) : ("idle" as const) },
-    { label: "待审批", value: String(pendingApprovalCount), sub: "权限请求", icon: "shield" as const, tone: pendingApprovalCount > 0 ? ("warning" as const) : ("idle" as const) },
-    { label: "计划", value: String(planSessionCount), sub: `${completedPlanSessionCount} 已完成 · ${toolCallCount} 工具`, icon: "activity" as const, tone: planSessionCount > completedPlanSessionCount ? ("primary" as const) : ("idle" as const) },
-  ];
+  const navigationActions: DashboardNavigationActions = {
+    activeSection: selectedSection,
+    onSelectSection: selectSection,
+    onOpenMission,
+    onSearchSessions: () => setSessionSearchOpen(true),
+    onOpenQuickCreate: openQuickCreate,
+    quickCreateHelms,
+    quickCreateProjects,
+    quickCreateHasDraft,
+  };
 
-  if (isMobile) {
-    return (
-      <div className="px-3 py-3">
-        {/* KPI · 2x2 */}
-        <div className="grid grid-cols-2 gap-2 mb-3">
-          {kpis.map(m => (
-            <div key={m.label} className="wb-pane p-3">
-              <div className="flex items-center gap-2 mb-2">
-                <div className="w-7 h-7 rounded grid place-items-center bg-surface-sunken text-muted-foreground shrink-0">
-                  <Icon name={m.icon} size={13} />
-                </div>
-                <span className="text-meta text-muted-foreground uppercase tracking-wider truncate">{m.label}</span>
-              </div>
-              <div className="flex items-baseline gap-1.5">
-                <span className="text-[24px] font-semibold tabular leading-none">{m.value}</span>
-                <StatusDot tone={m.tone} size={6} pulse={m.tone === "active" || m.tone === "primary"} />
-              </div>
-              <div className="font-mono text-meta text-muted-foreground tabular mt-1 truncate">{m.sub}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* 待审批 · 移到上方(高优先) */}
-        <section className="wb-pane mb-3">
-          <div className="wb-pane-head min-h-9">
-            <span className="wb-pane-head-title">待审批</span>
-            <span className="ml-1.5 font-mono text-action font-medium text-warning tabular">{pendingApprovalCount}</span>
-            <div className="flex-1" />
-          </div>
-          <ul className="divide-y divide-border-ghost">
-            {approvalRows.map((p, i) => (
-              <li key={p.id || i} className="grid gap-2 px-3 py-2.5">
-                <div className="flex min-w-0 items-center gap-2.5">
-                  <Icon name="shield" size={15} className="text-warning shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="font-mono text-section tabular text-foreground truncate">{p.kind}</div>
-                    <div className="font-mono text-meta text-muted-foreground tabular truncate mt-0.5">
-                      {formatApprovalScope(p)}
-                    </div>
-                  </div>
-                </div>
-                <DashboardApprovalActions approval={p} onRespondApproval={onRespondApproval} />
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <div className="mb-3">
-          <DashboardNotificationList
-            notifications={notifications}
-            onOpenSession={onOpenSession}
-            onClear={onClearNotifications}
-          />
-        </div>
-
-        {/* Helm 矩阵 */}
-        <section className="wb-pane mb-3">
-          <div className="wb-pane-head min-h-9">
-            <span className="wb-pane-head-title">Helm 矩阵</span>
-            <div className="flex-1" />
-            <button onClick={onNavigateAgents} className="text-meta text-muted-foreground active:text-foreground">
-              管理 ›
-            </button>
-          </div>
-          <ul className="divide-y divide-border-ghost">
-            {helmRows.map(h => (
-              <li key={h.id} className="px-3 py-2.5 flex items-center gap-2.5">
-                <StatusDot tone={h.status === "active" ? "active" : "idle"} pulse={h.status === "active"} />
-                <div className="flex-1 min-w-0">
-                  <div className="text-section truncate">{h.name}</div>
-                  <div className="font-mono text-meta text-muted-foreground tabular truncate mt-0.5">{h.endpoint}</div>
-                </div>
-                <div className="font-mono text-meta text-muted-foreground tabular text-right shrink-0 leading-tight">
-                  <div>{h.agentCount}A · {h.projectCount}P</div>
-                  <div>{h.sessionCount} sess</div>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        <DashboardActivityStream
-          sessions={sessions}
-          approvals={approvalHistory}
-          planSessionCount={planSessionCount}
-          toolCallCount={toolCallCount}
-          onOpenSession={onOpenSession}
-          onClearApprovalHistory={onClearApprovalHistory}
-          isMobile
-        />
-      </div>
-    );
-  }
+  const quickCreateDialog = (
+    <DashboardQuickCreateDialog
+      open={quickCreateOpen}
+      helms={quickCreateHelms ?? []}
+      projects={quickCreateProjects ?? []}
+      preset={quickCreatePreset}
+      onOpenChange={setQuickCreateOpen}
+      onDraftChange={setQuickCreateHasDraft}
+      onCreateTask={createTask}
+    />
+  );
 
   return (
-    <section className="dashboard-page mx-auto max-w-[1280px] px-4 py-4" aria-label="Dashboard">
-      <div className="mb-3 grid grid-cols-2 gap-2 lg:grid-cols-4">
-        {kpis.map((kpi) => (
-          <article key={kpi.label} className="wb-pane flex items-start gap-2.5 p-3">
-            <div className="grid h-8 w-8 shrink-0 place-items-center rounded bg-surface-sunken text-muted-foreground">
-              <Icon name={kpi.icon} size={15} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-1.5">
-                <strong className="tabular text-display font-semibold leading-none">{kpi.value}</strong>
-                <StatusDot tone={kpi.tone} size={6} pulse={kpi.tone === "active" || kpi.tone === "primary"} />
-              </div>
-              <p className="mt-1 text-meta uppercase tracking-wider text-muted-foreground">{kpi.label}</p>
-              <p className="mt-0.5 font-mono text-meta tabular text-muted-foreground">{kpi.sub}</p>
-            </div>
-          </article>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
-        <DashboardActivityStream
-          sessions={sessions}
-          approvals={approvalHistory}
-          planSessionCount={planSessionCount}
-          toolCallCount={toolCallCount}
-          notifications={notifications}
-          onOpenSession={onOpenSession}
-          onClearNotifications={onClearNotifications}
-          onClearApprovalHistory={onClearApprovalHistory}
+    <>
+      <SidebarProvider
+        className="dashboard-page h-full min-h-0 overflow-hidden"
+        data-slot="sidebar-provider"
+        style={{ "--sidebar-width": `${sidebarWidth}px` } as CSSProperties}
+      >
+        <DashboardSidebar
+          actions={navigationActions}
+          width={sidebarWidth}
+          onWidthChange={setSidebarWidth}
         />
-
-        <aside className="flex flex-col gap-3">
-          <section className="wb-pane">
-            <div className="wb-pane-head min-h-9">
-              <span className="wb-pane-head-title">Helm 矩阵</span>
-              <button type="button" onClick={onNavigateAgents} className="ml-auto text-meta text-muted-foreground hover:text-foreground">管理 ›</button>
-            </div>
-            <ul className="divide-y divide-border-ghost">
-              {helmRows.map((helm) => (
-                <li key={helm.id} className="flex items-center gap-2.5 px-3 py-2">
-                  <StatusDot tone={helm.status === "active" ? "active" : "idle"} pulse={helm.status === "active"} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-section">{helm.name}</p>
-                    <p className="mt-0.5 truncate font-mono text-meta tabular text-muted-foreground">{helm.endpoint}</p>
+        <SidebarInset className="dashboard-sidebar-inset min-h-0 overflow-hidden md:mr-0!" data-slot="sidebar-inset">
+          <DashboardHeader
+            sectionTitle={sectionTitle}
+            showSidebarTrigger
+          />
+          <div
+            className={cn(
+              "flex min-h-0 min-w-0 w-full flex-1 flex-col",
+              selectedSection === "git"
+                ? "max-w-none gap-0 overflow-hidden px-0 py-0"
+                : isEmbeddedSection
+                ? "max-w-none gap-0 overflow-y-auto overflow-x-hidden px-0 py-0"
+                : isMobile
+                  ? "gap-3 overflow-y-auto overflow-x-hidden px-3 py-3"
+                  : "gap-4 overflow-y-auto overflow-x-hidden px-8 py-5",
+            )}
+            data-slot="dashboard-content"
+            aria-label={sectionTitle}
+          >
+            {selectedSection === "overview" ? (
+              <div className="mx-auto flex w-full max-w-[1440px] flex-col gap-3 lg:gap-4">
+                <div
+                  className="grid grid-cols-2 gap-2 md:grid-cols-4"
+                  data-slot="dashboard-metrics"
+                >
+                  {metrics.map((metric) => <DashboardMetricCard key={metric.label} metric={metric} />)}
+                </div>
+                <DashboardActivityTrend
+                  points={activityTrend}
+                  hourlyPoints={activityTrendHourly}
+                />
+                {isMobile ? (
+                  <>
+                    <DashboardApprovalPanel
+                      approvals={approvalRows}
+                      pendingApprovalCount={pendingApprovalCount}
+                      onRespondApproval={onRespondApproval}
+                    />
+                    <DashboardNotificationList
+                      notifications={notifications}
+                      onOpenSession={onOpenSession}
+                      onClear={onClearNotifications}
+                    />
+                  </>
+                ) : (
+                  <div className="grid min-w-0 grid-cols-1 gap-4 lg:grid-cols-12">
+                    <div className="min-w-0 lg:col-span-8">
+                      <DashboardActivityStream
+                        sessions={sessions}
+                        approvals={approvalHistory}
+                        notifications={notifications}
+                        onOpenSession={onOpenSession}
+                        onClearNotifications={onClearNotifications}
+                        onClearApprovalHistory={onClearApprovalHistory}
+                      />
+                    </div>
+                    <aside className="flex min-w-0 flex-col gap-4 lg:col-span-4">
+                      <DashboardApprovalPanel
+                        approvals={approvalRows}
+                        pendingApprovalCount={pendingApprovalCount}
+                        onRespondApproval={onRespondApproval}
+                      />
+                    </aside>
                   </div>
-                  <div className="text-right font-mono text-meta tabular leading-tight text-muted-foreground">
-                    <p>{helm.agentCount}A · {helm.projectCount}P</p>
-                    <p>{helm.sessionCount} sess</p>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-
-          <section className="wb-pane">
-            <div className="wb-pane-head min-h-9">
-              <span className="wb-pane-head-title">待审批</span>
-              <span className="ml-1.5 font-mono text-action font-medium tabular text-warning">{pendingApprovalCount}</span>
-              <button type="button" className="ml-auto text-meta text-muted-foreground hover:text-foreground">查看全部 ›</button>
-            </div>
-            <ul className="divide-y divide-border-ghost">
-              {approvalRows.map((approval) => (
-                <li key={approval.id} className="flex items-center gap-2.5 px-3 py-2.5">
-                  <Icon name="shield" size={14} className="shrink-0 text-warning" />
-                  <div className="min-w-0 flex-1">
-                    <div className="font-mono text-action tabular text-foreground truncate">{approval.kind}</div>
-                    <p className="mt-0.5 truncate font-mono text-meta tabular text-muted-foreground">
-                      {formatApprovalScope(approval)}
-                    </p>
-                  </div>
-                  <DashboardApprovalActions approval={approval} onRespondApproval={onRespondApproval} />
-                </li>
-              ))}
-            </ul>
-          </section>
-
-        </aside>
-      </div>
-    </section>
+                )}
+              </div>
+            ) : selectedSection === "tasks" ? (
+              <DashboardTaskWorkspace
+                sessions={sessions}
+                preparations={preparations}
+                onOpenSession={onOpenSession}
+                onConfigureReadySession={configureReadySession}
+                onRenameSession={onRenameSession}
+                onDeleteSession={onDeleteSession}
+              />
+            ) : selectedSection === "git" ? (
+              <DashboardEmbeddedContent section="git" content={embeddedContent} />
+            ) : selectedSection === "agents" || selectedSection === "settings" ? (
+              <DashboardEmbeddedContent
+                section={selectedSection}
+                content={embeddedContent}
+              />
+            ) : (
+              <DashboardRoadmapView section={selectedSection} />
+            )}
+          </div>
+        </SidebarInset>
+      </SidebarProvider>
+      <DashboardSessionSearchDialog
+        open={sessionSearchOpen}
+        sessions={sessions}
+        onOpenChange={setSessionSearchOpen}
+        onOpenSession={searchSession}
+      />
+      {quickCreateDialog}
+    </>
   );
 }

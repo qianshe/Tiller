@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { broadcastPromptTrace, broadcastSessionUpdate } from "./notifications.js";
+import {
+  broadcastPromptTrace,
+  broadcastNotificationCleared,
+  broadcastNotificationRaised,
+  broadcastSessionActivitySummary,
+  broadcastSessionUpdate,
+} from "./notifications.js";
 import { createSessionEventPublisher } from "../runtime/session/event/publisher";
 
 const detailUpdates = [
@@ -85,6 +91,88 @@ test("prompt trace debug events use global notification broadcast", () => {
       params: event,
     },
   ]);
+});
+
+test("activity summary updates use the global dashboard notification", () => {
+  const calls: Array<{ method: string; params: unknown }> = [];
+  const summary = {
+    generatedAt: "2026-08-12T00:00:00.000Z",
+    promptCount: 1,
+    recentToolCallCount: 2,
+    toolCallCount: 2,
+    activityTrend: [],
+    activityTrendHourly: [],
+  };
+
+  broadcastSessionActivitySummary(
+    { broadcastNotification: (method, params) => calls.push({ method, params }) },
+    summary,
+  );
+
+  assert.deepEqual(calls, [{ method: "dashboard/activity_summary", params: summary }]);
+});
+
+test("notification broadcasts remain live when history persistence fails", () => {
+  const calls: Array<{ method: string; params: unknown }> = [];
+  const warnings: string[] = [];
+
+  broadcastNotificationRaised({
+    broadcastNotification: (method, params) => calls.push({ method, params }),
+    notificationStore: {
+      append: () => {
+        throw new Error("disk unavailable");
+      },
+      list: () => [],
+    },
+    logWarn: (message) => warnings.push(message),
+  }, {
+    kind: "warning",
+    source: "storage",
+    message: "Storage is temporarily unavailable.",
+  });
+
+  assert.equal(calls[0]?.method, "notification/raised");
+  assert.equal(warnings.length, 1);
+});
+
+test("notification broadcasts use the stable id returned by persistence", () => {
+  const calls: Array<{ method: string; params: unknown }> = [];
+
+  broadcastNotificationRaised({
+    broadcastNotification: (method, params) => calls.push({ method, params }),
+    notificationStore: {
+      append: (notification) => ({ ...notification, id: "notification-1" }),
+      list: () => [],
+    },
+  }, {
+    kind: "info",
+    source: "runtime",
+    message: "Session restored.",
+    occurredAt: "2026-08-15T00:00:00.000Z",
+  });
+
+  assert.deepEqual(calls, [{
+    method: "notification/raised",
+    params: {
+      id: "notification-1",
+      kind: "info",
+      source: "runtime",
+      message: "Session restored.",
+      occurredAt: "2026-08-15T00:00:00.000Z",
+    },
+  }]);
+});
+
+test("notification clear broadcasts the server-authoritative watermark", () => {
+  const calls: Array<{ method: string; params: unknown }> = [];
+  broadcastNotificationCleared({
+    broadcastNotification: (method, params) => calls.push({ method, params }),
+  }, "2026-08-15T00:00:00.000Z");
+
+  assert.deepEqual(calls, [{
+    method: "notification/cleared",
+    params: { clearedAt: "2026-08-15T00:00:00.000Z" },
+  }]);
 });
 
 test("session event publisher preserves notification payloads", () => {

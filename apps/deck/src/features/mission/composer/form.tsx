@@ -12,6 +12,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MutableRefObject,
   type SetStateAction,
+  useLayoutEffect,
   useRef,
   useState,
 } from "react";
@@ -272,7 +273,7 @@ export function MissionComposer({
     : "flex min-w-0 items-center gap-1.5";
   const composerPromptClassName = isMobile
     ? "min-h-8 w-full resize-none rounded-none border-0 bg-transparent px-0.5 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
-    : "min-h-[48px] w-full resize-none rounded-none border-0 bg-transparent px-1 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0";
+    : "min-h-[48px] max-h-[168px] w-full resize-none overflow-y-auto rounded-none border-0 bg-transparent px-1 py-0 text-section shadow-none placeholder:text-muted-foreground focus-visible:ring-0";
   const composerSidecarClassName = isMobile
     ? "mission-composer-sidecar grid min-h-6 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1"
     : "mission-composer-sidecar grid min-h-7 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-1.5";
@@ -355,6 +356,20 @@ export function MissionComposer({
       });
     }
   };
+  // 桌面端 textarea 随内容自动增高（上限由 CSS max-h 兜底，超限内部滚动）；
+  // 移动端保持单行（与 isMobile 布局一致）。useLayoutEffect 保证高度在
+  // 绘制前更新，避免多行输入时跳动。
+  useLayoutEffect(() => {
+    if (isMobile) {
+      return;
+    }
+    const textarea = missionPromptRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [isMobile, prompt]);
   const toggleContextPicker = (picker: "project" | "worktree") => {
     const shouldOpen = contextPicker !== picker || !worktreePickerOpen;
     setAgentPickerOpen(false);

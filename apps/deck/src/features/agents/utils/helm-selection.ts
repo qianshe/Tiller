@@ -121,7 +121,7 @@ export function resolveHelmSelection({
   const selectedHelmInventory = helmInventories[selectedHelm.key];
   const selectedHelmSummary = configuredHelms.find(
     (helm) =>
-      helm.host === selectedHelm.host && String(helm.port) === selectedHelm.port,
+      daemonProfileKey(helm.host, String(helm.port)) === selectedHelm.key,
   );
   const selectedHelmSavedProfile =
     daemonProfiles.find(

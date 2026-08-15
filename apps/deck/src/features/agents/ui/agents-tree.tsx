@@ -1,7 +1,10 @@
 import { Icon, StatusDot, AgentIcon } from "@/shared/ui";
 import { useEffect, useState } from "react";
 import type { ConnectionState, HelmInventoryBucket } from "../utils/helm-selection";
-import { resolveHelmConnectionState } from "../utils/fleet-helpers";
+import {
+  resolveHelmConnectionState,
+  resolveHelmInventoryCounts,
+} from "../utils/fleet-helpers";
 import type { HelmCard } from "./helm-hub";
 
 type AgentsTreeCounts = {
@@ -42,30 +45,6 @@ export function resolveNextAgentsTreeHelmExpansion(
   }
   next.add(helmKey);
   return next;
-}
-
-function countsForHelm(
-  helm: HelmCard,
-  selectedHelm: HelmCard,
-  selectedHelmCounts: AgentsTreeCounts,
-  helmInventories: Record<string, HelmInventoryBucket>,
-) {
-  const inventory = helmInventories[helm.key];
-  const sessionsCount = inventory?.sessions?.length ?? 0;
-  if (helm.key === selectedHelm.key) {
-    return {
-      agents: selectedHelmCounts.agents,
-      projects: selectedHelmCounts.projects,
-      worktrees: selectedHelmCounts.worktrees,
-      sessions: sessionsCount,
-    };
-  }
-  return {
-    agents: inventory?.agents?.length ?? 0,
-    projects: inventory?.projects?.length ?? 0,
-    worktrees: inventory?.worktrees?.length ?? 0,
-    sessions: sessionsCount,
-  };
 }
 
 export function AgentsTree({
@@ -114,7 +93,12 @@ export function AgentsTree({
               connection,
               helmConnectionStates,
             );
-            const counts = countsForHelm(helm, selectedHelm, selectedHelmCounts, helmInventories);
+            const counts = resolveHelmInventoryCounts({
+              helmKey: helm.key,
+              selectedHelmKey: selectedHelm.key,
+              selectedCounts: selectedHelmCounts,
+              inventory: helmInventories[helm.key],
+            });
             return (
               <button
                 key={helm.key}
@@ -171,7 +155,12 @@ export function AgentsTree({
           );
           const active = selectedHelm.key === helm.key;
           const expanded = expandedHelmKeys.has(helm.key);
-          const counts = countsForHelm(helm, selectedHelm, selectedHelmCounts, helmInventories);
+          const counts = resolveHelmInventoryCounts({
+            helmKey: helm.key,
+            selectedHelmKey: selectedHelm.key,
+            selectedCounts: selectedHelmCounts,
+            inventory: helmInventories[helm.key],
+          });
           return (
             <div key={helm.key}>
               <button

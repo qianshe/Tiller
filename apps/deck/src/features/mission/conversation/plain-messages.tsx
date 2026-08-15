@@ -1352,6 +1352,12 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
     (entry) => entry.kind === "context_compaction",
   );
   const timelineMessageIds = collectTimelineMessageIds(timelineItems);
+  const representedLiveAssistantThoughtMessageIds =
+    resolveTimelineRepresentedAssistantMessageIds(
+      timelineItems,
+      messages,
+      "thought",
+    );
   const representedLiveUserMessageIds = resolveTimelineRepresentedUserMessageIds(
     timelineItems,
     messages,
@@ -1378,7 +1384,9 @@ function buildPlainConversationItemsFromTimelineWithLiveMessages(
     if (
       timelineMessageIds.has(message.id) ||
       representedLiveUserMessageIds.has(message.id) ||
-      representedLiveAssistantMessageIds.has(message.id)
+      representedLiveAssistantMessageIds.has(message.id) ||
+      (message.contentKind === "thought" &&
+        representedLiveAssistantThoughtMessageIds.has(message.id))
     ) {
       return [];
     }
@@ -1846,14 +1854,15 @@ function findRepresentedUserMessageIndex(
 function resolveTimelineRepresentedAssistantMessageIds(
   timelineItems: SessionTimelineEntry[],
   messages: AgentMessage[],
+  contentKind: "content" | "thought" = "content",
 ) {
   const candidates = messages.filter((message) =>
     message.role === "assistant" &&
-    message.contentKind !== "thought" &&
+    (message.contentKind ?? "content") === contentKind &&
     Boolean(message.text.trim())
   );
   const represented = new Set<string>();
-  for (const snapshot of collectTimelineAssistantMessageSnapshots(timelineItems)) {
+  for (const snapshot of collectTimelineAssistantMessageSnapshots(timelineItems, contentKind)) {
     const matchIndex = findRepresentedAssistantMessageIndex(candidates, snapshot);
     if (matchIndex === -1) {
       continue;
@@ -1875,15 +1884,17 @@ type TimelineAssistantMessageSnapshot = {
 
 function collectTimelineAssistantMessageSnapshots(
   timelineItems: SessionTimelineEntry[],
+  contentKind: "content" | "thought" = "content",
 ): TimelineAssistantMessageSnapshot[] {
   const snapshots: TimelineAssistantMessageSnapshot[] = [];
+  const timelineChunkKind = contentKind === "thought" ? "thinking" : "content";
   for (const entry of timelineItems) {
     if (entry.kind !== "assistant_message") {
       continue;
     }
     let cumulativeText = "";
     for (const chunk of entry.chunks) {
-      if (chunk.kind !== "content") {
+      if (chunk.kind !== timelineChunkKind) {
         continue;
       }
       cumulativeText += chunk.text;
@@ -2140,13 +2151,16 @@ function mergeThinkingChunks(
   current: SessionTimelineThinkingChunk,
   incoming: SessionTimelineThinkingChunk,
 ): SessionTimelineThinkingChunk {
+  const streamMode = current.id === incoming.id
+    ? incoming.streamMode ?? current.streamMode
+    : "auto";
   return {
     ...current,
     ...incoming,
     id: current.id,
     title: resolveMergedThinkingTitle(current.title, incoming.title),
     status: resolveMergedThinkingStatus(current.status, incoming.status),
-    text: mergeThinkingText(current.text, incoming.text, incoming.streamMode),
+    text: mergeThinkingText(current.text, incoming.text, streamMode),
     timestamp: current.timestamp,
     updatedAt: incoming.updatedAt,
   };

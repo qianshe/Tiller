@@ -96,6 +96,53 @@ test("duplicate notifications merge by source and keep the original timestamp", 
   assert.match(store.getState().notifications[0]?.createdAt ?? "", /^20/);
 });
 
+test("persisted notification ids merge without duplicating history", () => {
+  const store = createTestStore();
+  store.getState().addNotification({
+    id: "notification-1",
+    kind: "warning",
+    message: "Storage unavailable",
+    source: "storage",
+    createdAt: "2026-07-18T12:00:00.000Z",
+  });
+  store.getState().addNotification({
+    id: "notification-1",
+    kind: "warning",
+    message: "Storage unavailable",
+    source: "storage",
+    createdAt: "2026-07-18T12:00:00.000Z",
+  });
+
+  assert.equal(store.getState().notifications.length, 1);
+  assert.equal(store.getState().notifications[0]?.id, "notification-1");
+});
+
+test("clearing notifications keeps older server history dismissed on this device", () => {
+  const store = createTestStore();
+  store.getState().addNotification({
+    id: "notification-old",
+    kind: "info",
+    message: "Old notification",
+    createdAt: "2000-01-01T00:00:00.000Z",
+  });
+  store.getState().clearNotifications();
+  store.getState().addNotification({
+    id: "notification-old",
+    kind: "info",
+    message: "Old notification",
+    createdAt: "2000-01-01T00:00:00.000Z",
+  });
+  store.getState().addNotification({
+    id: "notification-new",
+    kind: "info",
+    message: "New notification",
+    createdAt: "2099-01-01T00:00:00.000Z",
+  });
+
+  assert.match(store.getState().notificationsClearedAt ?? "", /^20/u);
+  assert.deepEqual(store.getState().notifications.map((item) => item.id), ["notification-new"]);
+});
+
 test("notifications are capped and can be cleared", () => {
   const store = createTestStore();
   for (let index = 0; index < MAX_DECK_NOTIFICATIONS + 5; index += 1) {

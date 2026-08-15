@@ -47,6 +47,67 @@ test("session metadata actions update status title and active id", () => {
   assert.equal(store.getState().activeSessionId, "s1");
 });
 
+
+test("completion unread actions mark, clear and prune session ids", () => {
+  const store = createTestStore();
+
+  store.getState().markSessionCompletedUnread("session-1");
+  store.getState().markSessionCompletedUnread("session-2");
+  assert.deepEqual(store.getState().completedUnreadSessionIds, {
+    "session-1": true,
+    "session-2": true,
+  });
+
+  store.getState().clearSessionCompletedUnread("session-1");
+  assert.deepEqual(store.getState().completedUnreadSessionIds, {
+    "session-2": true,
+  });
+
+  store.getState().pruneCompletedUnreadSessionIds(new Set(["session-2"]));
+  assert.deepEqual(store.getState().completedUnreadSessionIds, {
+    "session-2": true,
+  });
+
+  store.getState().pruneCompletedUnreadSessionIds(new Set());
+  assert.deepEqual(store.getState().completedUnreadSessionIds, {});
+});
+
+test("clearing a completion records the server completion version for this device", () => {
+  const store = createTestStore();
+  const completedAt = "2026-05-04T01:00:00.000Z";
+  store.getState().setSessions([{
+    ...session("session-1"),
+    lastCompletedAt: completedAt,
+  }]);
+  store.getState().markSessionCompletedUnread("session-1");
+
+  store.getState().clearSessionCompletedUnread("session-1");
+
+  assert.deepEqual(store.getState().completedUnreadSessionIds, {});
+  assert.equal(
+    store.getState().acknowledgedSessionCompletionAt["session-1"],
+    completedAt,
+  );
+});
+
+test("server completion acknowledgement clears a completion marker", () => {
+  const store = createTestStore();
+  const completedAt = "2026-05-04T01:00:00.000Z";
+  store.getState().setSessions([{
+    ...session("session-1"),
+    lastCompletedAt: completedAt,
+  }]);
+  store.getState().markSessionCompletedUnread("session-1");
+
+  store.getState().applySessionCompletionAcknowledgement("session-1", completedAt);
+
+  assert.deepEqual(store.getState().completedUnreadSessionIds, {});
+  assert.equal(
+    store.getState().acknowledgedSessionCompletionAt["session-1"],
+    completedAt,
+  );
+});
+
 test("chat workbench state tracks opened sessions and focus", () => {
   const store = createTestStore();
 

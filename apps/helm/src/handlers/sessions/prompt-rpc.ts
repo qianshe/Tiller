@@ -5,6 +5,7 @@ import {
   resolveConfigOptionsForSelection,
   resolveConfigReasoningEffortForOptions,
 } from "../../runtime/session/config-options";
+import { updateSessionSummaryAndBroadcast } from "../../runtime/session/event/publisher";
 import { publishCanonicalSessionStateEvent } from "../../runtime/events";
 import { createSessionBootstrapEvents } from "../../runtime/session/event/bootstrap";
 import { sendPromptToSession } from "../../runtime/session/router";
@@ -186,7 +187,7 @@ async function promptRuntimeDraft(
 
 function broadcastPromptFailure(context: HelmHandlerContext, sessionId: string, error: unknown) {
   const message = error instanceof Error ? error.message : "Prompt failed.";
-  context.updateSessionSummary(sessionId, (current) => ({
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
     ...current,
     status: "error",
     updatedAt: new Date().toISOString(),
