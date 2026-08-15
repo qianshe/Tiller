@@ -1,19 +1,59 @@
 import type { AgentToolCall } from "../types";
 
 const DATA_IMAGE_PREFIX = "data:image/";
+const DATA_IMAGE_BASE64_HEADER_PATTERN =
+  /data:image\/[A-Za-z0-9.+-]+;base64,/iu;
+const DATA_IMAGE_BASE64_PATTERN =
+  /data:image\/[A-Za-z0-9.+-]+;base64,[-A-Za-z0-9+/_=]*/giu;
 const IMAGE_CONTENT_OMITTED_LABEL = "[image content omitted from history]";
 
 export function compactBinaryToolCallOutput(toolCall: AgentToolCall): AgentToolCall {
-  if (toolCall.kind !== "read" || !toolCall.output) {
+  if (
+    !toolCall.output ||
+    !DATA_IMAGE_BASE64_HEADER_PATTERN.test(toolCall.output)
+  ) {
     return toolCall;
   }
-  const summary = summarizeInlineImageOutput(toolCall);
-  if (!summary) {
+  const compactedOutput =
+    toolCall.kind === "read"
+      ? summarizeInlineImageOutput(toolCall)
+      : compactInlineImageData(toolCall.output);
+  if (!compactedOutput) {
     return toolCall;
   }
-  return summary === toolCall.output
+  return compactedOutput === toolCall.output
     ? toolCall
-    : { ...toolCall, output: summary };
+    : { ...toolCall, output: compactedOutput };
+}
+
+function compactInlineImageData(output: string): string {
+  const parsed = parseJsonValue(output);
+  if (parsed !== null) {
+    return JSON.stringify(replaceInlineImageData(parsed));
+  }
+  return replaceInlineImageDataInString(output);
+}
+
+function replaceInlineImageData(value: unknown): unknown {
+  if (typeof value === "string") {
+    return replaceInlineImageDataInString(value);
+  }
+  if (Array.isArray(value)) {
+    return value.map(replaceInlineImageData);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        replaceInlineImageData(item),
+      ]),
+    );
+  }
+  return value;
+}
+
+function replaceInlineImageDataInString(value: string): string {
+  return value.replace(DATA_IMAGE_BASE64_PATTERN, IMAGE_CONTENT_OMITTED_LABEL);
 }
 
 function summarizeInlineImageOutput(toolCall: AgentToolCall) {

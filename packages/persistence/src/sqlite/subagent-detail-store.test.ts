@@ -84,6 +84,46 @@ test("sqlite subagent detail store commits timeline batches and removes session 
   }
 });
 
+test("sqlite subagent detail store strips legacy inline image data when reading tool calls", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tiller-subagent-detail-"));
+  const store = createSqliteSessionSubagentDetailStore(join(tempDir, "sessions.sqlite"));
+  try {
+    store.commitBatch("session-1", "root-1", batch(1, [{
+      id: "tool:tool-image",
+      kind: "tool_call",
+      toolCall: {
+        id: "tool-image",
+        kind: "mcp",
+        title: "mcp__image_tool",
+        status: "completed",
+        output: JSON.stringify({
+          data: `data:image/jpeg;base64,${"A".repeat(2048)}`,
+          mimeType: "image/jpeg",
+        }),
+        timestamp: "2026-08-15T06:00:00.000Z",
+        updatedAt: "2026-08-15T06:00:00.000Z",
+        sequence: 1,
+      },
+      timestamp: "2026-08-15T06:00:00.000Z",
+      updatedAt: "2026-08-15T06:00:00.000Z",
+      sequence: 1,
+    }]));
+
+    const detail = store.get("session-1", "root-1");
+    const tool = detail.entries.find((entry) => entry.kind === "tool_call");
+    const output = tool?.kind === "tool_call" ? tool.toolCall.output : undefined;
+
+    assert.equal(output, JSON.stringify({
+      data: "[image content omitted from history]",
+      mimeType: "image/jpeg",
+    }));
+    assert.doesNotMatch(output ?? "", /data:image\/jpeg;base64/u);
+  } finally {
+    store.close();
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+});
+
 function batch(lastSequence: number, entries: SessionTimelineBatch["entries"]): SessionTimelineBatch {
   return {
     replace: false,

@@ -48,3 +48,43 @@ test("compactBinaryToolCallOutput keeps ordinary read output unchanged", () => {
 
   assert.equal(compactBinaryToolCallOutput(toolCall), toolCall);
 });
+
+test("compactBinaryToolCallOutput strips inline image data from MCP output", () => {
+  const toolCall: AgentToolCall = {
+    id: "call-mcp-image",
+    kind: "mcp",
+    title: "mcp__image_tool",
+    status: "completed",
+    output: JSON.stringify({
+      content: [
+        { type: "text", text: "preview ready" },
+        {
+          type: "image",
+          data: `data:image/jpeg;base64,${"A".repeat(2048)}`,
+          mimeType: "image/jpeg",
+        },
+      ],
+      requestId: "request-1",
+    }),
+    timestamp: "2026-08-15T06:00:00.000Z",
+    updatedAt: "2026-08-15T06:00:00.000Z",
+  };
+
+  const compacted = compactBinaryToolCallOutput(toolCall);
+
+  assert.equal(
+    compacted.output,
+    JSON.stringify({
+      content: [
+        { type: "text", text: "preview ready" },
+        {
+          type: "image",
+          data: "[image content omitted from history]",
+          mimeType: "image/jpeg",
+        },
+      ],
+      requestId: "request-1",
+    }),
+  );
+  assert.doesNotMatch(compacted.output ?? "", /data:image\/jpeg;base64/u);
+});

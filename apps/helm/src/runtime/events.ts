@@ -1,4 +1,5 @@
 import { expandAdapterRuntimeEvent, type SessionRuntimeEvent } from "@tiller/acp-runtime";
+import { compactBinaryToolCallOutput } from "@tiller/shared";
 import type { HelmHandlerContext } from "../handlers/context";
 import {
   assertCanonicalTimelinePipeline,
@@ -76,7 +77,17 @@ function expandProviderRuntimeEvents(
   event: SessionRuntimeEvent,
   context: Pick<HelmHandlerContext, "sessions" | "sessionStore">,
 ) {
-  return expandAdapterRuntimeEvent(resolveRuntimeProviderId(sessionId, context), event) ?? [event];
+  return (
+    expandAdapterRuntimeEvent(resolveRuntimeProviderId(sessionId, context), event) ?? [event]
+  ).map(compactRuntimeToolCallEvent);
+}
+
+function compactRuntimeToolCallEvent(event: SessionRuntimeEvent): SessionRuntimeEvent {
+  if (event.type !== "tool-call") {
+    return event;
+  }
+  const toolCall = compactBinaryToolCallOutput(event.toolCall);
+  return toolCall === event.toolCall ? event : { ...event, toolCall };
 }
 
 export function handleRuntimeEvent(
@@ -87,51 +98,57 @@ export function handleRuntimeEvent(
   if (!context.sessions.has(sessionId) && !context.sessionStore.get(sessionId)) {
     return;
   }
+  const compactedEvent = compactRuntimeToolCallEvent(event);
   if (
-    (event.type === "message" || event.type === "tool-call" || event.type === "command-output") &&
-    event.origin?.scope === "subagent"
+    (compactedEvent.type === "message" ||
+      compactedEvent.type === "tool-call" ||
+      compactedEvent.type === "command-output") &&
+    compactedEvent.origin?.scope === "subagent"
   ) {
     context.sessionSubagentDetailService?.handleEvent(
       sessionId,
-      event.origin.parentToolCallId,
-      event,
+      compactedEvent.origin.parentToolCallId,
+      compactedEvent,
     );
     return;
   }
-  if (event.type === "tool-call" && event.toolCall.kind === "subagent") {
-    context.sessionSubagentDetailService?.registerRoot(sessionId, event.toolCall);
+  if (compactedEvent.type === "tool-call" && compactedEvent.toolCall.kind === "subagent") {
+    context.sessionSubagentDetailService?.registerRoot(sessionId, compactedEvent.toolCall);
   }
   if (
-    event.type === "status" &&
-    (event.status === "idle" || event.status === "error" || event.status === "cancelled")
+    compactedEvent.type === "status" &&
+    (compactedEvent.status === "idle" ||
+      compactedEvent.status === "error" ||
+      compactedEvent.status === "cancelled")
   ) {
     context.sessionSubagentDetailService?.flush(sessionId);
   }
   assertCanonicalTimelinePipeline(context);
   ensureLiveEventSequenceForSession(sessionId, context);
-  if (shouldIgnoreLateRuntimeEvent(sessionId, event, context)) {
+  if (shouldIgnoreLateRuntimeEvent(sessionId, compactedEvent, context)) {
     flushIgnoredUserEchoSummary(sessionId, context);
     logRuntimeDebug(context, "runtime.event.ignored_late", {
       ...runtimeLogFields(sessionId, context),
-      seq: sequenceFromRuntimeEvent(event) ?? peekLiveEventSequence(sessionId, context),
-      type: event.type,
+      seq: sequenceFromRuntimeEvent(compactedEvent) ?? peekLiveEventSequence(sessionId, context),
+      type: compactedEvent.type,
     });
     return;
   }
-  if (!isRuntimeUserMessageEvent(event)) {
+  if (!isRuntimeUserMessageEvent(compactedEvent)) {
     flushIgnoredUserEchoSummary(sessionId, context);
   }
-  if (event.type !== "command-output") {
+  if (compactedEvent.type !== "command-output") {
     flushPendingCommandOutput(sessionId, context);
     flushCommandOutputSummaries(sessionId, context);
   }
-  if (event.type !== "tool-call") {
+  if (compactedEvent.type !== "tool-call") {
     flushPendingRunningToolCall(sessionId, context);
   }
-  const expandedEvents = expandProviderRuntimeEvents(sessionId, event, context);
-  const skipPendingCompactionInference = expandedEvents.length !== 1 || expandedEvents[0] !== event;
+  const expandedEvents = expandProviderRuntimeEvents(sessionId, compactedEvent, context);
+  const skipPendingCompactionInference =
+    expandedEvents.length !== 1 || expandedEvents[0] !== compactedEvent;
   if (hasPendingTimelineCompaction(sessionId, context) && !skipPendingCompactionInference) {
-    inferPendingCompactionCompletion(sessionId, event, context);
+    inferPendingCompactionCompletion(sessionId, compactedEvent, context);
   }
   for (const expandedEvent of expandedEvents) {
     dispatchNormalizedRuntimeEvent(sessionId, expandedEvent, context);

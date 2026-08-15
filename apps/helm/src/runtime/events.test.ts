@@ -257,6 +257,30 @@ test("runtime keeps the session cancelled when idle arrives after cancellation",
   assert.equal(capture.sessionUpdates?.length ?? 0, 0);
 });
 
+test("runtime persists the latest completion time when an active session becomes idle", () => {
+  const capture: TestContextCapture = {
+    broadcasts: [],
+    detailBroadcasts: [],
+    persisted: [],
+    summaryUpdates: [],
+  };
+  const context = createTestContext([], capture, "session-completed", {
+    status: "running",
+  });
+
+  handleRuntimeEvent(
+    "session-completed",
+    { type: "status", status: "idle" } satisfies SessionRuntimeEvent,
+    context,
+  );
+
+  const summary = capture.summaryUpdates?.at(-1) as
+    | (SessionSummary & { lastCompletedAt?: string })
+    | undefined;
+  assert.equal(summary?.status, "idle");
+  assert.equal(summary?.lastCompletedAt, summary?.updatedAt);
+});
+
 test("runtime compaction started publishes a canonical timeline batch when the pipeline is available", () => {
   const logs: string[] = [];
   const capture: TestContextCapture = {
@@ -1306,7 +1330,7 @@ test("runtime merges a Claude completion marker with its later transcript summar
   );
 });
 
-test("subagent events bypass all canonical timeline preprocessing", () => {
+test("subagent events bypass canonical timeline after tool output sanitization", () => {
   const context = createTestContext(
     [],
     { broadcasts: [], detailBroadcasts: [], persisted: [] },
@@ -1327,10 +1351,14 @@ test("subagent events bypass all canonical timeline preprocessing", () => {
       type: "tool-call",
       origin: { scope: "subagent", parentToolCallId: "root-subagent" },
       toolCall: {
-        id: "child-read",
-        kind: "read",
-        title: "Read",
+        id: "child-mcp",
+        kind: "mcp",
+        title: "mcp__image_tool",
         status: "running",
+        output: JSON.stringify({
+          data: `data:image/jpeg;base64,${"A".repeat(2048)}`,
+          mimeType: "image/jpeg",
+        }),
         timestamp: "2026-07-22T00:00:00.000Z",
         updatedAt: "2026-07-22T00:00:00.000Z",
       },
@@ -1340,6 +1368,17 @@ test("subagent events bypass all canonical timeline preprocessing", () => {
 
   assert.equal(captured.length, 1);
   assert.equal((captured[0] as unknown[])[1], "root-subagent");
+  const capturedEvent = (captured[0] as unknown[])[2] as SessionRuntimeEvent;
+  assert.equal(capturedEvent.type, "tool-call");
+  if (capturedEvent.type === "tool-call") {
+    assert.equal(
+      capturedEvent.toolCall.output,
+      JSON.stringify({
+        data: "[image content omitted from history]",
+        mimeType: "image/jpeg",
+      }),
+    );
+  }
 });
 
 test("terminal runtime status flushes pending subagent detail before session completion", () => {
