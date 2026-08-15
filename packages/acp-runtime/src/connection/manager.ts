@@ -71,6 +71,8 @@ export function createAcpConnectionManager(options: AcpConnectionManagerOptions 
       }
       emit("connection-replace");
       connections.delete(key);
+      // 崩溃或已关闭的连接可能从未被回收过;只丢引用会泄漏子进程与会话记录。
+      await existing.dispose().catch(() => undefined);
     }
 
     const pending = pendingConnections.get(key);
