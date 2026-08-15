@@ -1,34 +1,39 @@
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-export function createReleasePlan(bump) {
+const PACKAGE_PATH = resolve(fileURLToPath(new URL("../package.json", import.meta.url)));
+const VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-(?:alpha|beta|rc)\.\d+)?$/u;
+
+export function readPackageVersion() {
+  const manifest = JSON.parse(readFileSync(PACKAGE_PATH, "utf8"));
+  if (typeof manifest.version !== "string") {
+    throw new Error("apps/helm/package.json does not declare a version.");
+  }
+  return manifest.version;
+}
+
+export function createReleasePlan(bump, packageVersion = readPackageVersion()) {
   switch (bump) {
+    case "current":
+      if (!VERSION_PATTERN.test(packageVersion)) {
+        throw new Error(`Unsupported package version: ${packageVersion}`);
+      }
+      return {
+        bump,
+        distTag: packageVersion.includes("-") ? "preview" : "latest",
+        npmVersionArgs: [],
+      };
     case "prerelease-alpha":
-      return {
-        bump,
-        distTag: "preview",
-        npmVersionArgs: ["prerelease", "--preid", "alpha"],
-      };
+      return { bump, distTag: "preview", npmVersionArgs: ["prerelease", "--preid", "alpha"] };
     case "prerelease-beta":
-      return {
-        bump,
-        distTag: "preview",
-        npmVersionArgs: ["prerelease", "--preid", "beta"],
-      };
+      return { bump, distTag: "preview", npmVersionArgs: ["prerelease", "--preid", "beta"] };
     case "prerelease-rc":
-      return {
-        bump,
-        distTag: "preview",
-        npmVersionArgs: ["prerelease", "--preid", "rc"],
-      };
+      return { bump, distTag: "preview", npmVersionArgs: ["prerelease", "--preid", "rc"] };
     case "patch":
     case "minor":
     case "major":
-      return {
-        bump,
-        distTag: "latest",
-        npmVersionArgs: [bump],
-      };
+      return { bump, distTag: "latest", npmVersionArgs: [bump] };
     default:
       throw new Error(`Unsupported bump type: ${bump}`);
   }

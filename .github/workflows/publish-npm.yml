@@ -4,11 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       bump:
-        description: "Version bump type"
+        description: "Release version mode"
         required: true
-        default: prerelease-alpha
+        default: patch
         type: choice
         options:
+          - current
           - prerelease-alpha
           - prerelease-beta
           - prerelease-rc
@@ -21,6 +22,10 @@ on:
         default: main
         type: string
 
+concurrency:
+  group: publish-npm-${{ inputs.base_branch }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
@@ -32,6 +37,7 @@ jobs:
       bump: ${{ steps.plan.outputs.bump }}
       dist_tag: ${{ steps.plan.outputs.dist_tag }}
       npm_version_args: ${{ steps.plan.outputs.npm_version_args }}
+      source_sha: ${{ steps.source.outputs.source_sha }}
 
     steps:
       - name: Checkout workflow scripts
@@ -44,9 +50,13 @@ jobs:
         with:
           node-version: 24
 
-      - name: Resolve npm dist-tag and version args
+      - name: Resolve release mode and npm dist-tag
         id: plan
         run: node apps/helm/scripts/release-plan.mjs "${{ inputs.bump }}" >> "$GITHUB_OUTPUT"
+
+      - name: Resolve source commit
+        id: source
+        run: echo "source_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Show release plan
         run: |
@@ -68,7 +78,7 @@ jobs:
       - name: Checkout base branch
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.base_branch }}
+          ref: ${{ needs.release_plan.outputs.source_sha }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -82,18 +92,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Bump package version
+      - name: Resolve package version
         id: version
         shell: bash
         run: |
-          read -r -a VERSION_ARGS <<< "${{ needs.release_plan.outputs.npm_version_args }}"
-          npm --prefix apps/helm version "${VERSION_ARGS[@]}" --no-git-tag-version
+          VERSION_ARGS=( )
+          if [ -n "${{ needs.release_plan.outputs.npm_version_args }}" ]; then
+            read -r -a VERSION_ARGS <<< "${{ needs.release_plan.outputs.npm_version_args }}"
+            npm --prefix apps/helm version "${VERSION_ARGS[@]}" --no-git-tag-version
+          fi
           VERSION="$(node -p "require('./apps/helm/package.json').version")"
           TAG="v${VERSION}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists."
-            exit 1
-          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           if [[ "$VERSION" == *-* ]]; then
@@ -101,6 +110,30 @@ jobs:
           else
             echo "prerelease=false" >> "$GITHUB_OUTPUT"
           fi
+
+      - name: Verify release version is unused
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ steps.version.outputs.version }}
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          git fetch --tags --force origin
+          if git show-ref --verify --quiet "refs/tags/$RELEASE_TAG"; then
+            echo "Tag $RELEASE_TAG already exists."
+            exit 1
+          fi
+          node --input-type=module <<'NODE'
+          const version = process.env.RELEASE_VERSION;
+          const url = `https://registry.npmjs.org/@qianshe%2Ftiller/${encodeURIComponent(version)}`;
+          const response = await fetch(url);
+          if (response.status === 404) process.exit(0);
+          if (response.ok) {
+            console.error(`npm version @qianshe/tiller@${version} already exists.`);
+          } else {
+            console.error(`Unable to verify npm version @qianshe/tiller@${version}: HTTP ${response.status}.`);
+          }
+          process.exit(1);
+          NODE
 
       - name: Typecheck
         run: pnpm typecheck
@@ -156,7 +189,7 @@ jobs:
       - name: Checkout base branch
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.base_branch }}
+          ref: ${{ needs.release_plan.outputs.source_sha }}
           fetch-depth: 0
 
       - name: Setup Node.js
@@ -165,11 +198,14 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Apply verified version bump
+      - name: Resolve package version
         shell: bash
         run: |
-          read -r -a VERSION_ARGS <<< "${{ needs.release_plan.outputs.npm_version_args }}"
-          npm --prefix apps/helm version "${VERSION_ARGS[@]}" --no-git-tag-version
+          VERSION_ARGS=( )
+          if [ -n "${{ needs.release_plan.outputs.npm_version_args }}" ]; then
+            read -r -a VERSION_ARGS <<< "${{ needs.release_plan.outputs.npm_version_args }}"
+            npm --prefix apps/helm version "${VERSION_ARGS[@]}" --no-git-tag-version
+          fi
           VERSION="$(node -p "require('./apps/helm/package.json').version")"
           if [ "$VERSION" != "${{ needs.verify_package.outputs.version }}" ]; then
             echo "Expected version ${{ needs.verify_package.outputs.version }}, got $VERSION."
@@ -181,10 +217,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add apps/helm/package.json
-          git commit -m "chore: release ${{ needs.verify_package.outputs.version }}"
+          if [ "${{ needs.release_plan.outputs.bump }}" != "current" ]; then
+            git add apps/helm/package.json
+            git commit -m "chore: release ${{ needs.verify_package.outputs.version }}"
+            git push origin "HEAD:${{ inputs.base_branch }}"
+          fi
           git tag "${{ needs.verify_package.outputs.tag }}"
-          git push origin "HEAD:${{ inputs.base_branch }}"
           git push origin "${{ needs.verify_package.outputs.tag }}"
 
       - name: Download verified dist package
@@ -211,7 +249,7 @@ jobs:
       - name: Checkout tagged release
         uses: actions/checkout@v6
         with:
-          ref: ${{ inputs.base_branch }}
+          ref: ${{ needs.release_plan.outputs.source_sha }}
           fetch-depth: 0
 
       - name: Download verified dist package
@@ -238,7 +276,7 @@ jobs:
           NOTES_PATH="release-assets/release-notes-${VERSION}.md"
           mkdir -p release-assets
 
-          git fetch origin "${{ inputs.base_branch }}" --tags
+          git fetch origin --tags
           git checkout "$TAG"
 
           (cd apps/helm/dist-package && zip -qr "../../../${ZIP_PATH}" .)

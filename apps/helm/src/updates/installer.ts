@@ -13,10 +13,10 @@ export function buildLatestUpdateCommand(platform = process.platform): UpdateCom
   };
 }
 
-export function resolveUpdateSpawnOptions(
-  platform = process.platform,
-): SpawnOptions {
-  return { stdio: "inherit", shell: platform === "win32" };
+export function resolveUpdateSpawnOptions(platform = process.platform): SpawnOptions {
+  return platform === "win32"
+    ? { stdio: "inherit", shell: true, windowsHide: true }
+    : { stdio: "inherit", shell: false };
 }
 
 export async function runLatestUpdate(): Promise<number> {
