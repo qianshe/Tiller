@@ -1,5 +1,6 @@
 import {
   AlertTriangle,
+  CircleCheck,
   CircleDashed,
   ChevronDown,
   Bot,
@@ -100,6 +101,7 @@ function groupTaskSessions(
 const TASK_COLUMN_ICONS: Record<TaskBoardColumnId, LucideIcon> = {
   ready: CircleDashed,
   running: PlayCircle,
+  completed: CircleCheck,
   attention: AlertTriangle,
   idle: PauseCircle,
 };
@@ -107,6 +109,7 @@ const TASK_COLUMN_ICONS: Record<TaskBoardColumnId, LucideIcon> = {
 const TASK_COLUMN_DOT_TONES: Record<TaskBoardColumnId, "active" | "idle" | "warning" | "danger" | "primary"> = {
   ready: "warning",
   running: "primary",
+  completed: "active",
   attention: "danger",
   idle: "idle",
 };
@@ -114,6 +117,7 @@ const TASK_COLUMN_DOT_TONES: Record<TaskBoardColumnId, "active" | "idle" | "warn
 const TASK_COLUMN_SURFACES: Record<TaskBoardColumnId, string> = {
   ready: "border-l-2 border-l-warning/45 bg-warning/10",
   running: "border-l-2 border-l-primary/75 bg-primary-soft/35",
+  completed: "border-l-2 border-l-success/60 bg-success/10",
   attention: "border-l-2 border-l-destructive/60 bg-destructive/10",
   idle: "border-l-2 border-l-border-ghost bg-surface-sunken/40",
 };
@@ -121,6 +125,7 @@ const TASK_COLUMN_SURFACES: Record<TaskBoardColumnId, string> = {
 const TASK_COLUMN_HEADER_SURFACES: Record<TaskBoardColumnId, string> = {
   ready: "bg-warning/10",
   running: "bg-primary-soft/40",
+  completed: "bg-success/10",
   attention: "bg-destructive/10",
   idle: "bg-surface-sunken/45",
 };
@@ -128,6 +133,7 @@ const TASK_COLUMN_HEADER_SURFACES: Record<TaskBoardColumnId, string> = {
 const TASK_COLUMN_LABEL_COLORS: Record<TaskBoardColumnId, string> = {
   ready: "text-warning",
   running: "text-primary",
+  completed: "text-success",
   attention: "text-destructive",
   idle: "text-muted-foreground",
 };
@@ -182,12 +188,13 @@ function filterTaskSessions(
 function resolveTaskStatus(session: DashboardActivitySession) {
   const column = resolveTaskBoardColumn(session);
   const definition = TASK_BOARD_COLUMNS.find((item) => item.id === column)!;
-  const badge = column === "attention"
-    ? session.status === "waiting_for_permission" ? "warning" as const : "destructive" as const
-    : column === "running" ? "default" as const
-      : column === "ready" ? "outline" as const
-        : "secondary" as const;
-  return { label: definition.label, tone: definition.tone, badge, icon: TASK_COLUMN_ICONS[column] };
+  const iconClassName = column === "attention"
+    ? session.status === "waiting_for_permission" ? "text-warning" : "text-destructive"
+    : column === "running" ? "text-primary"
+      : column === "ready" ? "text-warning"
+        : column === "completed" ? "text-success"
+          : "text-muted-foreground";
+  return { label: definition.label, tone: definition.tone, icon: TASK_COLUMN_ICONS[column], iconClassName };
 }
 
 function resolveTaskAgent(session: DashboardActivitySession) {
@@ -456,7 +463,7 @@ function TaskPanelView({
 
   return (
     <div className="flex min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden pb-1" data-task-view="panel">
-      <div className="grid h-full min-h-0 min-w-max grid-flow-col auto-cols-[minmax(13rem,72vw)] gap-2.5 lg:min-w-0 lg:flex-1 lg:grid-flow-row lg:auto-cols-auto lg:grid-cols-4 lg:gap-3">
+      <div className="grid h-full min-h-0 min-w-max grid-flow-col auto-cols-[minmax(13rem,72vw)] gap-2.5 lg:min-w-0 lg:flex-1 lg:grid-flow-row lg:auto-cols-auto lg:grid-cols-5 lg:gap-3">
         {groups.map((group) => {
           const ColumnIcon = TASK_COLUMN_ICONS[group.id];
           return (
@@ -688,9 +695,9 @@ function TaskTableView({
                     </div>
                   </TableCell>
                   <TableCell className="px-3 py-2.5">
-                    <Badge variant={status.badge} className="inline-flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5">
+                    <Badge variant="secondary" className="inline-flex items-center gap-1.5 whitespace-nowrap px-2 py-0.5">
                       <StatusIcon
-                        className="size-3.5"
+                        className={cn("size-3.5", status.iconClassName)}
                         aria-hidden="true"
                         data-task-status-icon={resolveTaskBoardColumn(session)}
                       />

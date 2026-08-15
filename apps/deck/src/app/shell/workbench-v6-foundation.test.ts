@@ -23,6 +23,8 @@ test("Workbench v6 Tailwind inline color aliases are registered", () => {
     "--color-surface-sunken: var(--surface-sunken);",
     "--color-popover-glass: var(--popover-glass);",
     "--color-accent: var(--accent);",
+    "--color-success-container: var(--success-container);",
+    "--color-on-success-container: var(--on-success-container);",
     "--text-default--line-height: 1.45;",
   ]) {
     assert.match(tokensBundle, new RegExp(token.replace(/[()]/g, "\\$&")));

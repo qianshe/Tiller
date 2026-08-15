@@ -30,6 +30,7 @@ export type TillerIconName =
   | "trash"
   | "copy"
   | "check"
+  | "circleCheck"
   | "search"
   | "globe"
   | "server"
@@ -166,6 +167,12 @@ const ICONS: Record<TillerIconName, ReactNode> = {
     </>
   ),
   check: <path d="m5 12 4 4L19 6" />,
+  circleCheck: (
+    <>
+      <circle cx="12" cy="12" r="9" />
+      <path d="m8 12 2.5 2.5L16 9" />
+    </>
+  ),
   search: (
     <>
       <circle cx="11" cy="11" r="7" />

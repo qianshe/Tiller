@@ -88,7 +88,8 @@ test("DashboardTaskWorkspace renders only the selected task view", () => {
   assert.match(panelHtml, /data-task-column="running"/);
   assert.match(panelHtml, /data-task-column="attention"/);
   assert.match(panelHtml, /data-task-column="idle"/);
-  assert.equal((panelHtml.match(/data-task-column=/g) ?? []).length, 4);
+  assert.match(panelHtml, /data-task-column="completed"/);
+  assert.equal((panelHtml.match(/data-task-column=/g) ?? []).length, 5);
   assert.doesNotMatch(panelHtml, /归档|archived/i);
   assert.doesNotMatch(panelHtml, /已结束|需要关注/);
   assert.match(panelHtml, /梳理后续拆分任务/);
@@ -143,8 +144,18 @@ test("task workspace exposes compact status filters and keeps the active view in
 });
 
 test("task table keeps project and worktree context without an agent", () => {
+  const completedSession = {
+    ...sessions[1],
+    id: "completed-session",
+    title: "已完成任务",
+    completedUnread: true,
+  };
   const html = renderToStaticMarkup(
-    createElement(DashboardTaskWorkspace, { sessions, preparations, defaultView: "table" }),
+    createElement(DashboardTaskWorkspace, {
+      sessions: [...sessions, completedSession],
+      preparations,
+      defaultView: "table",
+    }),
   );
 
   assert.match(html, new RegExp("项目 / 分支"));
@@ -156,7 +167,17 @@ test("task table keeps project and worktree context without an agent", () => {
   assert.match(html, /data-task-status-icon="running"/);
   assert.match(html, /data-task-status-icon="idle"/);
   assert.match(html, /data-task-status-icon="ready"/);
+  assert.match(html, /data-task-status-icon="completed"/);
   assert.match(html, /data-task-status-icon="attention"/);
+  assert.match(html, /bg-surface-emphasis/);
+  assert.match(html, /text-foreground/);
+  assert.match(html, /text-primary/);
+  assert.match(html, /text-warning/);
+  assert.match(html, /text-success/);
+  assert.match(html, /text-muted-foreground/);
+  assert.doesNotMatch(html, /bg-success-container/);
+  assert.doesNotMatch(html, /text-on-success-container/);
+  assert.match(html, /已完成任务/);
   assert.match(html, /data-task-agent-icon="Codex"/);
   assert.match(html, /计划/);
   assert.match(html, /更新时间/);
@@ -218,7 +239,7 @@ test("ready tasks can be promoted from the board and table action menu", () => {
 test("task workspace keeps wide views internally scrollable", () => {
   assert.match(workspaceSource, /overflow-x-auto/);
   assert.match(workspaceSource, /flex min-h-0 min-w-0 max-w-full flex-1 overflow-x-auto overflow-y-hidden/);
-  assert.match(workspaceSource, /grid h-full min-h-0 min-w-max grid-flow-col auto-cols-\[minmax\(13rem,72vw\)\] gap-2\.5 lg:min-w-0 lg:flex-1 lg:grid-flow-row lg:auto-cols-auto lg:grid-cols-4/);
+  assert.match(workspaceSource, /grid h-full min-h-0 min-w-max grid-flow-col auto-cols-\[minmax\(13rem,72vw\)\] gap-2\.5 lg:min-w-0 lg:flex-1 lg:grid-flow-row lg:auto-cols-auto lg:grid-cols-5/);
   assert.match(workspaceSource, /min-h-0 flex-1 divide-y divide-border-ghost overflow-y-auto/);
   assert.match(workspaceSource, /data-task-table-scroll/);
   assert.match(workspaceSource, /items-start justify-center px-3 pt-5/);

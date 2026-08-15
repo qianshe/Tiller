@@ -34,6 +34,7 @@ export type DashboardActivitySession = {
   runtimeSessionId?: string | null;
   lastMessagePreview?: string | null;
   status?: string;
+  completedUnread?: boolean;
   selected?: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -68,6 +69,7 @@ type DashboardActivity = {
     | "已过期"
     | "错误"
     | "已取消"
+    | "已完成"
     | "空闲";
   selected?: boolean;
   detail?: string;
@@ -112,8 +114,14 @@ function formatActivityTimeFromTimestamp(timestampMs: number | null) {
   }).format(new Date(timestampMs));
 }
 
-function resolveSessionActivityState(status: string | undefined): Pick<DashboardActivity, "tone" | "statusLabel"> {
+function resolveSessionActivityState(
+  status: string | undefined,
+  completedUnread = false,
+): Pick<DashboardActivity, "tone" | "statusLabel"> {
   const normalized = (status ?? "").toLowerCase();
+  if (completedUnread && (normalized === "idle" || normalized === "completed")) {
+    return { tone: "active", statusLabel: "已完成" };
+  }
   if (normalized === "running") {
     return { tone: "primary", statusLabel: "运行中" };
   }
@@ -203,7 +211,7 @@ function buildActivities(
   const list: DashboardActivity[] = [];
 
   sessions.forEach((session) => {
-    const state = resolveSessionActivityState(session.status);
+    const state = resolveSessionActivityState(session.status, session.completedUnread);
     const timestampMs = parseActivityTimestamp(session.updatedAt);
     list.push({
       id: `session-${session.id}`,

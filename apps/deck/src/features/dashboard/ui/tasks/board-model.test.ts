@@ -17,15 +17,19 @@ test("task board separates runtime and attention states", () => {
   assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "error" }), "attention");
 });
 
-test("task board places idle work before attention items", () => {
+test("task board places idle work after attention items", () => {
   assert.deepEqual(
     TASK_BOARD_COLUMNS.map((column) => column.id),
-    ["ready", "running", "idle", "attention"],
+    ["ready", "running", "completed", "attention", "idle"],
   );
 });
 
-test("idle, completed, and cancelled sessions share the idle column", () => {
+test("only unread completed sessions enter the completed column", () => {
   assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "idle" }), "idle");
+  assert.equal(
+    resolveTaskBoardColumn({ ...baseSession, status: "idle", completedUnread: true }),
+    "completed",
+  );
   assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "completed" }), "idle");
   assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "cancelled" }), "idle");
   assert.equal(resolveTaskBoardColumn({ ...baseSession, status: "canceled" }), "idle");

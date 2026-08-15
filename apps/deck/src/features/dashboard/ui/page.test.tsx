@@ -274,6 +274,7 @@ test("DashboardPage distinguishes compact activity row states", () => {
         { id: "running", title: "Running session", agentName: "OpenCode", status: "running" },
         { id: "waiting", title: "Waiting session", agentName: "Codex", status: "waiting_for_permission" },
         { id: "failed", title: "Failed session", agentName: "ClaudeCode", status: "error" },
+        { id: "completed", title: "Completed session", agentName: "Codex", status: "idle", completedUnread: true },
         { id: "idle", title: "Idle session", agentName: "Codex", status: "idle" },
       ],
     }),
@@ -285,6 +286,7 @@ test("DashboardPage distinguishes compact activity row states", () => {
   assert.match(html, /会话: Running session. 运行中. OpenCode/);
   assert.match(html, /会话: Waiting session. 等待审批. Codex/);
   assert.match(html, /会话: Failed session. 错误. ClaudeCode/);
+  assert.match(html, /会话: Completed session. 已完成. Codex/);
   assert.match(html, /会话: Idle session. 空闲. Codex/);
   assert.doesNotMatch(html, /已选中|未选中/);
   assert.match(html, /aria-current="true"/);
@@ -292,6 +294,7 @@ test("DashboardPage distinguishes compact activity row states", () => {
   assert.match(html, /bg-primary/);
   assert.match(html, /bg-warning/);
   assert.match(html, /bg-destructive/);
+  assert.match(html, /bg-success/);
   assert.match(html, /bg-muted-foreground/);
 });
 
@@ -603,8 +606,32 @@ test("copyNotificationReport writes the complete report to the clipboard", async
   assert.deepEqual(writes, [formatNotificationReport(commonProps.notifications[0]!)]);
   await assert.rejects(
     copyNotificationReport(commonProps.notifications[0]!, undefined),
-    /Clipboard API is unavailable/,
+    /Clipboard unavailable/,
   );
+});
+
+test("copyNotificationReport falls back to execCommand when the async clipboard is missing", async () => {
+  const originalDocument = globalThis.document;
+  let execCalled = false;
+  globalThis.document = {
+    createElement: () => ({
+      value: "",
+      setAttribute: () => {},
+      style: {},
+      select: () => {},
+    }),
+    body: { appendChild: () => {}, removeChild: () => {} },
+    execCommand: () => {
+      execCalled = true;
+      return true;
+    },
+  } as unknown as Document;
+  try {
+    await copyNotificationReport(commonProps.notifications[0]!, undefined);
+    assert.equal(execCalled, true);
+  } finally {
+    globalThis.document = originalDocument;
+  }
 });
 
 test("DashboardPage delegates activity rendering to the activity stream component", () => {

@@ -40,6 +40,7 @@ type DashboardInput = {
   agentConnectionInventory?: Array<{ providerId?: unknown; status?: string }>;
   projects: unknown[];
   sessions: SessionSummary[];
+  completedUnreadSessionIds?: Readonly<Record<string, true>>;
   preparations?: ConversationPreparation[];
   statuses?: Record<string, SessionStatus | undefined>;
   selectedSessionId?: string | null;
@@ -697,6 +698,7 @@ export function buildDashboardViewModel(input: DashboardInput) {
     runtimeSessionId: session.runtimeSessionId ?? session.resume?.runtimeSessionId,
     lastMessagePreview: session.lastMessagePreview,
     status: input.statuses?.[session.id] ?? session.status,
+    completedUnread: Boolean(input.completedUnreadSessionIds?.[session.id]),
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     selected: session.id === input.selectedSessionId,

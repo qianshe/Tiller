@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Icon, StatusDot } from "../../../shared/ui";
+import { copyTextToClipboard } from "../../../shared/utils/clipboard";
 import type { DashboardNotification } from "../orchestration/view-model";
 
 type DashboardNotificationListProps = {
@@ -126,10 +127,11 @@ export async function copyNotificationReport(
   notification: DashboardNotification,
   clipboard: NotificationClipboard | undefined,
 ): Promise<void> {
-  if (!clipboard?.writeText) {
-    throw new Error("Clipboard API is unavailable.");
-  }
-  await clipboard.writeText(formatNotificationReport(notification));
+  // navigator.clipboard is only available in secure contexts (HTTPS or
+  // localhost). Mobile Web often reaches Helm over a LAN IP via plain HTTP,
+  // where the async clipboard API is missing; copyTextToClipboard falls back
+  // to the execCommand("copy") path so copy keeps working there.
+  await copyTextToClipboard(formatNotificationReport(notification), clipboard);
 }
 
 function NotificationCopyButton({ notification }: { notification: DashboardNotification }) {

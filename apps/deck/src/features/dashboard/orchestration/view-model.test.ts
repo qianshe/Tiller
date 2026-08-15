@@ -172,6 +172,33 @@ test("dashboard session selection is independent from mission window state", () 
   assert.equal(model.sessions.find((session: { id: string }) => session.id === "mission-session")?.selected, false);
 });
 
+test("dashboard session projection preserves completion unread state", () => {
+  const session = {
+    id: "completed-session",
+    title: "Completed session",
+    status: "idle",
+    createdAt: "2026-06-02T10:00:00.000Z",
+    updatedAt: "2026-06-02T10:05:00.000Z",
+  } as SessionSummary;
+  const model = buildDashboardViewModel({
+    connection: "connected",
+    daemonHost: "127.0.0.1",
+    daemonPort: "47631",
+    defaultDaemonHost: "127.0.0.1",
+    defaultDaemonPort: "47631",
+    agents: [],
+    projects: [],
+    sessions: [session],
+    statuses: { [session.id]: "idle" },
+    completedUnreadSessionIds: { [session.id]: true },
+    toolCalls: {},
+    approvalItemsById: {},
+    resolveDisplaySessionTitle: (item: SessionSummary) => item.title ?? item.id,
+  });
+
+  assert.equal(model.sessions[0]?.completedUnread, true);
+});
+
 test("resolveDashboardApprovalDecision prefers allow options", () => {
   const options: PermissionRequestOption[] = [
     { label: "Deny", decision: "deny" },
