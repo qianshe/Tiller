@@ -7,6 +7,8 @@ import {
   applyDeviceResult,
   applyErrorRaised,
   applyNotificationRaised,
+  applyNotificationCleared,
+  applyNotificationResult,
   applyInventoryResult,
   applySessionResult,
   applySessionUpdate,
@@ -37,9 +39,13 @@ function resetStore() {
     messages: {},
     sessionTimeline: {},
     notifications: [],
+    notificationsClearedAt: null,
     trustedDevices: [],
     sessionAvailableCommands: {},
     agentAvailableCommands: {},
+    focusedChatWindowId: null,
+    completedUnreadSessionIds: {},
+    acknowledgedSessionCompletionAt: {},
   });
 }
 
@@ -142,6 +148,47 @@ test("applyNotificationRaised surfaces info notifications as Toasts", () => {
   assert.deepEqual(toast.getSnapshot().map((item) => ({ variant: item.variant, message: item.message })), [
     { variant: "info", message: "[ACP_SESSION_RESTORED] ACP session/load completed for this session." },
   ]);
+});
+
+test("applyNotificationResult hydrates persisted notifications without replaying Toasts", () => {
+  resetStore();
+  const handled = applyNotificationResult("notification/list", {
+    notifications: [{
+      id: "notification-1",
+      kind: "warning",
+      source: "storage",
+      code: "STORAGE_DEGRADED",
+      message: "Storage is temporarily unavailable.",
+      occurredAt: "2026-07-18T12:00:00.000Z",
+    }],
+  });
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().notifications[0], {
+    id: "notification-1",
+    kind: "warning",
+    source: "storage",
+    code: "STORAGE_DEGRADED",
+    message: "Storage is temporarily unavailable.",
+    createdAt: "2026-07-18T12:00:00.000Z",
+  });
+  assert.deepEqual(toast.getSnapshot(), []);
+});
+
+test("notification clear events remove local history and preserve the server watermark", () => {
+  resetStore();
+  useDeckStore.getState().addNotification({
+    kind: "warning",
+    source: "storage",
+    message: "Old notification",
+    createdAt: "2026-07-18T12:00:00.000Z",
+  });
+
+  assert.equal(applyNotificationCleared({ clearedAt: "2026-08-15T00:00:00.000Z" }), true);
+  assert.deepEqual(useDeckStore.getState().notifications, []);
+  assert.equal(useDeckStore.getState().notificationsClearedAt, "2026-08-15T00:00:00.000Z");
+  assert.equal(applyNotificationCleared({ clearedAt: "2026-08-14T00:00:00.000Z" }), true);
+  assert.equal(useDeckStore.getState().notificationsClearedAt, "2026-08-15T00:00:00.000Z");
 });
 
 test("applyDeviceResult syncs device/list RPC results into the current helm", () => {
@@ -308,6 +355,165 @@ test("applySessionUpdate keeps agent_message notifications out of the canonical 
   assert.deepEqual(useDeckStore.getState().sessionTimeline.s1 ?? [], []);
 });
 
+test("applySessionUpdate marks an unfocused session when it completes", () => {
+  resetStore();
+  const runningSession = session("s1");
+  useDeckStore.setState({
+    sessions: [runningSession],
+    statuses: { s1: "running" },
+    focusedChatWindowId: null,
+    completedUnreadSessionIds: {},
+  } as any);
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "session_updated",
+        session: {
+          ...runningSession,
+          status: "idle",
+          updatedAt: "2026-05-04T01:00:00.000Z",
+        },
+      },
+    },
+    {
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      appendUserMessage: () => undefined,
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().statuses.s1, "idle");
+  assert.equal(useDeckStore.getState().completedUnreadSessionIds.s1, true);
+});
+
+test("applySessionUpdate does not create completion unread state for a focused session", () => {
+  resetStore();
+  const runningSession = session("s1");
+  useDeckStore.setState({
+    sessions: [runningSession],
+    statuses: { s1: "running" },
+    focusedChatWindowId: "session:s1",
+    completedUnreadSessionIds: {},
+  } as any);
+
+  applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "session_updated",
+        session: {
+          ...runningSession,
+          status: "idle",
+          updatedAt: "2026-05-04T01:00:00.000Z",
+        },
+      },
+    },
+    {
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      appendUserMessage: () => undefined,
+    } as any,
+  );
+
+  assert.deepEqual(useDeckStore.getState().completedUnreadSessionIds, {});
+});
+
+test("applySessionUpdate clears completion unread state acknowledged by another device", () => {
+  resetStore();
+  const completedAt = "2026-05-04T01:00:00.000Z";
+  const runningSession = {
+    ...session("s1"),
+    status: "running" as const,
+    lastCompletedAt: completedAt,
+  };
+  useDeckStore.setState({
+    sessions: [runningSession],
+    statuses: { s1: "running" },
+    completedUnreadSessionIds: { s1: true },
+    focusedChatWindowId: null,
+  } as any);
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "session_updated",
+        session: {
+          ...runningSession,
+          status: "idle",
+          completionAcknowledgedAt: completedAt,
+          updatedAt: completedAt,
+        },
+      },
+    },
+    {
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      appendUserMessage: () => undefined,
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().completedUnreadSessionIds, {});
+  assert.equal(
+    useDeckStore.getState().acknowledgedSessionCompletionAt.s1,
+    completedAt,
+  );
+});
+
+test("applySessionUpdate clears an existing idle completion marker acknowledged by another device", () => {
+  resetStore();
+  const completedAt = "2026-05-04T01:00:00.000Z";
+  const completedSession = {
+    ...session("s1"),
+    status: "idle" as const,
+    lastCompletedAt: completedAt,
+  };
+  useDeckStore.setState({
+    sessions: [completedSession],
+    statuses: { s1: "idle" },
+    completedUnreadSessionIds: { s1: true },
+    focusedChatWindowId: null,
+  } as any);
+
+  const handled = applySessionUpdate(
+    {
+      sessionId: "s1",
+      update: {
+        kind: "session_updated",
+        session: {
+          ...completedSession,
+          completionAcknowledgedAt: completedAt,
+          updatedAt: completedAt,
+        },
+      },
+    },
+    {
+      pendingPromptRef: { current: null },
+      pendingPromptContentRef: { current: undefined },
+      rpcClientRef: { current: null },
+      assignSessionTitleFromPrompt: () => undefined,
+      appendUserMessage: () => undefined,
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.deepEqual(useDeckStore.getState().completedUnreadSessionIds, {});
+  assert.equal(
+    useDeckStore.getState().acknowledgedSessionCompletionAt.s1,
+    completedAt,
+  );
+});
+
 test("applySessionUpdate caches canonical live-state commands by session and agent", () => {
   resetStore();
   useDeckStore.setState({ sessions: [session("s1")] });
@@ -373,6 +579,38 @@ test("applySessionResult hydrates available commands from persisted session summ
     useDeckStore.getState().agentAvailableCommands.a1?.map((command) => command.name),
     ["review", "compact"],
   );
+});
+
+test("applySessionResult restores an unread completion on a newly opened device", () => {
+  resetStore();
+  useDeckStore.setState({
+    completedUnreadSessionIds: {},
+    acknowledgedSessionCompletionAt: {},
+  } as any);
+
+  const completedSession = {
+    ...session("s1"),
+    status: "idle" as const,
+    updatedAt: "2026-05-04T01:00:00.000Z",
+    lastCompletedAt: "2026-05-04T01:00:00.000Z",
+  };
+  const handled = applySessionResult(
+    "session/list",
+    { sessions: [completedSession], hasMore: false },
+    "helm-1",
+    true,
+    {
+      toolCallsRef: { current: {} },
+      mergeSessionToolCalls: () => undefined,
+      shouldAutoStartSessionResume: () => false,
+      requestSessionResumeStart: () => undefined,
+      setResumeFeedback: () => undefined,
+      resumeStartRequestsRef: { current: new Set<string>() },
+    } as any,
+  );
+
+  assert.equal(handled, true);
+  assert.equal(useDeckStore.getState().completedUnreadSessionIds.s1, true);
 });
 
 test("applyInventoryResult replaces draft config options and clears reasoning when options omit it", () => {
