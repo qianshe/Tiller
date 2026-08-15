@@ -14,6 +14,10 @@ export {
 } from "./daemon-profiles";
 export { resolveDefaultHelmEndpoint, DAEMON_HOST_KEY, DAEMON_PORT_KEY } from "./helm-endpoint";
 export {
+  resolveSessionRpcTarget,
+  type SessionRpcTarget,
+} from "./utils/session-rpc-client";
+export {
   dispatchWithTrace,
   type DispatchToHelm,
 } from "./request-dispatch";

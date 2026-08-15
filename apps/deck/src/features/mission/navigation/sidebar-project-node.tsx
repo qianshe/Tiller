@@ -19,6 +19,7 @@ type SidebarProjectNodeProps = {
   sessionCountsByProject: Record<string, number>;
   setActiveSessionId: Dispatch<SetStateAction<string | null>>;
   statuses: Record<string, SessionStatus>;
+  completedUnreadSessionIds: Readonly<Record<string, true>>;
   copy: { status: Record<SessionStatus, string> };
   activeSessionId: string | null;
   highlightedSessionId: string | null;
@@ -47,6 +48,7 @@ export function SidebarProjectNode({
   sessionCountsByProject,
   setActiveSessionId,
   statuses,
+  completedUnreadSessionIds,
   copy,
   activeSessionId,
   highlightedSessionId,
@@ -122,6 +124,7 @@ export function SidebarProjectNode({
                   project={project}
                   session={session}
                   sessionStatus={sessionStatus}
+                  completedUnread={Boolean(completedUnreadSessionIds[session.id])}
                   isMobile={isMobile}
                   setPendingSessionCleanup={setPendingSessionCleanup}
                 />

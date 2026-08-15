@@ -23,6 +23,11 @@ export type SessionsUpdater =
 export type StatusesUpdater =
   | Record<string, SessionStatus>
   | ((current: Record<string, SessionStatus>) => Record<string, SessionStatus>);
+export type CompletedUnreadSessionIds = Record<string, true>;
+export type AcknowledgedSessionCompletionAt = Record<string, string>;
+export type AcknowledgedSessionCompletionAtUpdater =
+  | AcknowledgedSessionCompletionAt
+  | ((current: AcknowledgedSessionCompletionAt) => AcknowledgedSessionCompletionAt);
 export type SessionTitlesUpdater =
   | Record<string, string>
   | ((current: Record<string, string>) => Record<string, string>);
@@ -83,6 +88,8 @@ export type SessionsSlice = {
   sessions: SessionSummary[];
   sessionHistoryState: SessionHistoryState;
   statuses: Record<string, SessionStatus>;
+  completedUnreadSessionIds: CompletedUnreadSessionIds;
+  acknowledgedSessionCompletionAt: AcknowledgedSessionCompletionAt;
   sessionTitles: Record<string, string>;
   sessionConfigOptions: Record<string, SessionConfigOption[]>;
   sessionAvailableCommands: Record<string, AvailableCommand[]>;
@@ -97,6 +104,10 @@ export type SessionsSlice = {
   setSessions: (updater: SessionsUpdater) => void;
   setStatuses: (updater: StatusesUpdater) => void;
   setSessionStatus: (sessionId: string, status: SessionStatus) => void;
+  markSessionCompletedUnread: (sessionId: string) => void;
+  clearSessionCompletedUnread: (sessionId: string) => void;
+  applySessionCompletionAcknowledgement: (sessionId: string, completedAt: string) => void;
+  pruneCompletedUnreadSessionIds: (sessionIds: ReadonlySet<string>) => void;
   setSessionTitles: (updater: SessionTitlesUpdater) => void;
   setSessionTitle: (sessionId: string, title: string) => void;
   setSessionConfigOptions: (updater: SessionConfigOptionsUpdater) => void;
@@ -206,6 +217,8 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
   sessions: [],
   sessionHistoryState: { hasMore: false, loading: false },
   statuses: {},
+  completedUnreadSessionIds: {},
+  acknowledgedSessionCompletionAt: {},
   sessionTitles: readSessionTitles(),
   sessionConfigOptions: {},
   sessionAvailableCommands: {},
@@ -227,6 +240,74 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
     })),
   setSessionStatus: (sessionId, status) =>
     set((state) => ({ statuses: { ...state.statuses, [sessionId]: status } })),
+  markSessionCompletedUnread: (sessionId) =>
+    set((state) => {
+      if (state.completedUnreadSessionIds[sessionId]) {
+        return {};
+      }
+      return {
+        completedUnreadSessionIds: {
+          ...state.completedUnreadSessionIds,
+          [sessionId]: true,
+        },
+      };
+    }),
+  clearSessionCompletedUnread: (sessionId) =>
+    set((state) => {
+      const completedAt = state.sessions.find((session) => session.id === sessionId)
+        ?.lastCompletedAt;
+      const acknowledgedAt = state.acknowledgedSessionCompletionAt[sessionId];
+      const shouldAcknowledge = isLaterTimestamp(completedAt, acknowledgedAt);
+      if (!state.completedUnreadSessionIds[sessionId] && !shouldAcknowledge) {
+        return {};
+      }
+      const next = { ...state.completedUnreadSessionIds };
+      delete next[sessionId];
+      return {
+        completedUnreadSessionIds: next,
+        ...(shouldAcknowledge && completedAt
+          ? {
+              acknowledgedSessionCompletionAt: {
+                ...state.acknowledgedSessionCompletionAt,
+                [sessionId]: completedAt,
+              },
+            }
+          : {}),
+      };
+    }),
+  applySessionCompletionAcknowledgement: (sessionId, completedAt) =>
+    set((state) => {
+      const currentCompletedAt = state.sessions.find((session) => session.id === sessionId)
+        ?.lastCompletedAt;
+      if (currentCompletedAt && isLaterTimestamp(currentCompletedAt, completedAt)) {
+        return {};
+      }
+      const acknowledgedAt = state.acknowledgedSessionCompletionAt[sessionId];
+      if (!isLaterTimestamp(completedAt, acknowledgedAt) && acknowledgedAt !== completedAt) {
+        return {};
+      }
+      const nextUnread = { ...state.completedUnreadSessionIds };
+      delete nextUnread[sessionId];
+      return {
+        acknowledgedSessionCompletionAt: {
+          ...state.acknowledgedSessionCompletionAt,
+          [sessionId]: completedAt,
+        },
+        completedUnreadSessionIds: nextUnread,
+      };
+    }),
+  pruneCompletedUnreadSessionIds: (sessionIds) =>
+    set((state) => {
+      const next = Object.fromEntries(
+        Object.entries(state.completedUnreadSessionIds).filter(([sessionId]) =>
+          sessionIds.has(sessionId),
+        ),
+      );
+      if (Object.keys(next).length === Object.keys(state.completedUnreadSessionIds).length) {
+        return {};
+      }
+      return { completedUnreadSessionIds: next };
+    }),
   setSessionTitles: (updater) =>
     set((state) => ({
       sessionTitles:
@@ -316,3 +397,15 @@ export const createSessionsSlice: StateCreator<SessionsSlice> = (set) => ({
         typeof updater === "function" ? updater(state.draftChatWindow) : updater,
     })),
 });
+
+function isLaterTimestamp(candidate: string | undefined, current: string | undefined): boolean {
+  if (!candidate) {
+    return false;
+  }
+  const candidateTime = Date.parse(candidate);
+  if (!Number.isFinite(candidateTime)) {
+    return false;
+  }
+  const currentTime = current ? Date.parse(current) : Number.NaN;
+  return !Number.isFinite(currentTime) || candidateTime > currentTime;
+}

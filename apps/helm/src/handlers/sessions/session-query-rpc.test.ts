@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkResume, listSessions, resumeSession } from "./session-query-rpc.js";
+import {
+  acknowledgeSessionCompletion,
+  checkResume,
+  listSessions,
+  resumeSession,
+} from "./session-query-rpc.js";
 import {
   createTestContext,
   type TestContextCapture,
@@ -28,6 +33,65 @@ test("session list returns the persisted canonical live status over a stale summ
   } as any);
 
   assert.equal(result.sessions[0]?.status, "running");
+});
+
+test("acknowledgeSessionCompletion persists the matching completion and broadcasts it", () => {
+  const completedAt = "2026-08-15T01:00:00.000Z";
+  let persisted: import("@tiller/shared").SessionSummary = {
+    id: "s1",
+    projectId: "p1",
+    projectName: "Project",
+    helmId: "helm-1",
+    cwd: "D:/repo",
+    worktreeName: "main",
+    agentId: "codex",
+    agentName: "Codex",
+    status: "idle" as const,
+    createdAt: "2026-08-15T00:00:00.000Z",
+    updatedAt: completedAt,
+    lastCompletedAt: completedAt,
+    messageCount: 1,
+  };
+  const record = { summary: persisted };
+  const broadcasts: Array<{ method: string; params: any }> = [];
+  const result = acknowledgeSessionCompletion(
+    { sessionId: "s1", completedAt },
+    {
+      sessions: new Map([["s1", record]]),
+      sessionStore: { get: () => persisted },
+      updateSessionSummary: (_sessionId: string, mutate: (current: typeof persisted) => typeof persisted) => {
+        persisted = mutate(persisted);
+        record.summary = persisted;
+        return persisted;
+      },
+      broadcastNotification: (method: string, params: unknown) => {
+        broadcasts.push({ method, params });
+      },
+      broadcastSessionTopic: () => undefined,
+    } as any,
+  );
+
+  assert.deepEqual(result, { ok: true });
+  assert.equal(persisted.completionAcknowledgedAt, completedAt);
+  assert.equal(broadcasts[0]?.method, "session/update");
+  assert.equal(broadcasts[0]?.params?.update?.session.completionAcknowledgedAt, completedAt);
+});
+
+test("acknowledgeSessionCompletion rejects an acknowledgement for an older completion", () => {
+  const result = acknowledgeSessionCompletion(
+    { sessionId: "s1", completedAt: "2026-08-15T01:00:00.000Z" },
+    {
+      sessions: new Map(),
+      sessionStore: {
+        get: () => ({
+          id: "s1",
+          lastCompletedAt: "2026-08-15T02:00:00.000Z",
+        }),
+      },
+    } as any,
+  );
+
+  assert.deepEqual(result, { ok: false });
 });
 
 test("resumeSession broadcasts refreshed session_updated from the resume result payload", async () => {

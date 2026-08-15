@@ -29,6 +29,7 @@ export type UseChatWindowActionsOptions = {
   setOpenChatSessionIds: StateSetter<string[]>;
   setFocusedChatWindowId: (windowId: string | null) => void;
   openSession: (sessionId: string) => void;
+  acknowledgeSessionCompletion?: (session: SessionSummary) => void;
   setActiveSessionId: (sessionId: string | null) => void;
   setDraftChatWindow?: LooseSetter;
   setSelectedMissionHelmId: (helmId: string | null) => void;
@@ -75,6 +76,7 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
     setOpenChatSessionIds,
     setFocusedChatWindowId,
     openSession,
+    acknowledgeSessionCompletion,
     setActiveSessionId,
     setDraftChatWindow,
     setSelectedMissionHelmId,
@@ -122,11 +124,15 @@ export function useChatWindowActions(options: UseChatWindowActionsOptions): Chat
   }, [focusedDraftWindow?.projectId, focusedDraftWindow?.cwd, focusedDraftWindow?.agentId, selectedProjectId, selectedCwd, selectedAgentId]);
 
   const focusSessionWindow = useCallback((sessionId: string) => {
+    const session = sessions.find((item) => item.id === sessionId);
+    if (session) {
+      acknowledgeSessionCompletion?.(session);
+    }
     if (isMissionMobile) {
       setSelectedMissionMobilePane("chat");
     }
     setFocusedChatWindowId(`session:${sessionId}`);
-  }, [isMissionMobile, setFocusedChatWindowId, setSelectedMissionMobilePane]);
+  }, [acknowledgeSessionCompletion, activeSessionId, isMissionMobile, sessions, setFocusedChatWindowId, setSelectedMissionMobilePane]);
 
   const openChatSession = (sessionId: string) => {
     setOpenChatSessionIds((current: string[]) => addChatSessionIdToFront(current, sessionId));

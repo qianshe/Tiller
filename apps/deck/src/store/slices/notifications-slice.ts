@@ -28,6 +28,7 @@ export type DeckNotification = {
 };
 
 export type DeckNotificationInput = Omit<DeckNotification, "id" | "createdAt" | "source"> & {
+  id?: string;
   source?: string;
   createdAt?: string;
 };
@@ -50,8 +51,10 @@ const NOTIFICATION_DETAIL_KEYS: Array<keyof DeckNotificationDetails> = [
 
 export type NotificationsSlice = {
   notifications: DeckNotification[];
+  notificationsClearedAt: string | null;
   addNotification: (input: DeckNotificationInput) => void;
   clearNotifications: () => void;
+  applyNotificationClear: (clearedAt: string) => void;
 };
 
 let notificationSequence = 0;
@@ -92,6 +95,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set) => ({
   notifications: [],
+  notificationsClearedAt: null,
   addNotification: (input) => {
     const message = input.message.trim();
     if (!message) {
@@ -99,17 +103,26 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set) 
     }
     set((state) => {
       const now = new Date();
+      const createdAt = input.createdAt ?? now.toISOString();
+      if (isAtOrBefore(createdAt, state.notificationsClearedAt)) {
+        return {};
+      }
       const source = input.source ?? "runtime";
       const context = optionalNotificationContext(input);
-      const duplicateIndex = state.notifications.findIndex((notification) => {
-        const age = now.getTime() - Date.parse(notification.createdAt);
-        return notification.kind === input.kind
-          && notification.source === source
-          && notification.message === message
-          && notification.sessionId === context.sessionId
-          && age >= 0
-          && age <= DUPLICATE_NOTIFICATION_WINDOW_MS;
-      });
+      const stableIdIndex = input.id
+        ? state.notifications.findIndex((notification) => notification.id === input.id)
+        : -1;
+      const duplicateIndex = stableIdIndex >= 0
+        ? stableIdIndex
+        : state.notifications.findIndex((notification) => {
+            const age = now.getTime() - Date.parse(notification.createdAt);
+            return notification.kind === input.kind
+              && notification.source === source
+              && notification.message === message
+              && notification.sessionId === context.sessionId
+              && age >= 0
+              && age <= DUPLICATE_NOTIFICATION_WINDOW_MS;
+          });
       if (duplicateIndex >= 0) {
         const existing = state.notifications[duplicateIndex] as DeckNotification;
         const merged: DeckNotification = {
@@ -135,17 +148,51 @@ export const createNotificationsSlice: StateCreator<NotificationsSlice> = (set) 
       return {
         notifications: [
           {
-            id: createNotificationId(),
+            id: input.id ?? createNotificationId(),
             kind: input.kind,
             message,
             source,
             ...context,
-            createdAt: input.createdAt ?? now.toISOString(),
+            createdAt,
           },
           ...state.notifications,
         ].slice(0, MAX_DECK_NOTIFICATIONS),
       };
     });
   },
-  clearNotifications: () => set({ notifications: [] }),
+  clearNotifications: () => set({
+    notifications: [],
+    notificationsClearedAt: new Date().toISOString(),
+  }),
+  applyNotificationClear: (clearedAt) => set((state) => {
+    if (!isLater(clearedAt, state.notificationsClearedAt)) {
+      return {};
+    }
+    return {
+      notifications: [],
+      notificationsClearedAt: clearedAt,
+    };
+  }),
 });
+
+function isAtOrBefore(candidate: string, boundary: string | null): boolean {
+  if (!boundary) {
+    return false;
+  }
+  const candidateTime = Date.parse(candidate);
+  const boundaryTime = Date.parse(boundary);
+  return Number.isFinite(candidateTime)
+    && Number.isFinite(boundaryTime)
+    && candidateTime <= boundaryTime;
+}
+
+function isLater(candidate: string, previous: string | null): boolean {
+  if (!previous) {
+    return Number.isFinite(Date.parse(candidate));
+  }
+  const candidateTime = Date.parse(candidate);
+  const previousTime = Date.parse(previous);
+  return Number.isFinite(candidateTime)
+    && Number.isFinite(previousTime)
+    && candidateTime > previousTime;
+}

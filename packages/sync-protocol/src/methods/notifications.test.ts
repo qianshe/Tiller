@@ -7,6 +7,9 @@ import * as sessionUnsubscribe from "./session/unsubscribe";
 import * as sessionUpdate from "./session/update";
 import * as errorRaised from "./error/raised";
 import * as notificationRaised from "./notification/raised";
+import * as notificationList from "./notification/list";
+import * as notificationClear from "./notification/clear";
+import * as notificationCleared from "./notification/cleared";
 import * as devicePair from "./device/pair";
 import * as deviceAuthenticate from "./device/authenticate";
 import * as daemonUpdateStatus from "./daemon/update-status";
@@ -20,9 +23,9 @@ test("session/prompt result has stopReason", () => {
   );
 });
 
-test("session/cancel is a notification", () => {
+test("session/cancel is a request so clients can confirm delivery", () => {
   assert.equal(sessionCancel.method, "session/cancel");
-  assert.equal(sessionCancel.descriptor.kind, "notification");
+  assert.equal(sessionCancel.descriptor.kind, "request");
 });
 
 test("session topic subscription methods validate session ids", () => {
@@ -114,6 +117,36 @@ test("daemon/update status carries capability and progress fields", () => {
     checkStatus: "checked",
     manualCommand: "npm install -g @qianshe/tiller@latest",
     occurredAt: "2026-08-02T00:00:00.000Z",
+  });
+});
+
+test("notification/list returns stable persisted notification records", () => {
+  assert.equal(notificationList.method, "notification/list");
+  assert.deepEqual(notificationList.ResultSchema.parse({
+    notifications: [{
+      id: "notification-1",
+      kind: "warning",
+      source: "storage",
+      message: "Storage is temporarily unavailable",
+      occurredAt: "2026-07-18T12:00:00.000Z",
+    }],
+  }).notifications[0]?.id, "notification-1");
+});
+
+test("notification clear and cleared descriptors validate the synchronization contract", () => {
+  assert.equal(notificationClear.method, "notification/clear");
+  assert.equal(notificationCleared.method, "notification/cleared");
+  assert.deepEqual(notificationClear.ResultSchema.parse({
+    ok: true,
+    clearedAt: "2026-08-15T00:00:00.000Z",
+  }), {
+    ok: true,
+    clearedAt: "2026-08-15T00:00:00.000Z",
+  });
+  assert.deepEqual(notificationCleared.ParamsSchema.parse({
+    clearedAt: "2026-08-15T00:00:00.000Z",
+  }), {
+    clearedAt: "2026-08-15T00:00:00.000Z",
   });
 });
 

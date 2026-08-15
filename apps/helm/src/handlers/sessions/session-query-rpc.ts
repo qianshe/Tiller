@@ -69,6 +69,35 @@ export function listSessions(params: { limit?: number; before?: string }, contex
   };
 }
 
+export function acknowledgeSessionCompletion(
+  params: { sessionId: string; completedAt: string },
+  context: HelmHandlerContext,
+) {
+  const current =
+    context.sessions.get(params.sessionId)?.summary ??
+    context.sessionStore.get(params.sessionId);
+  if (!current) {
+    throw new Error("Session not found");
+  }
+  if (current.lastCompletedAt !== params.completedAt) {
+    return { ok: false };
+  }
+  if (current.completionAcknowledgedAt === params.completedAt) {
+    return { ok: true };
+  }
+
+  const updated = updateSessionSummaryAndBroadcast(context, params.sessionId, (summary) => {
+    if (summary.lastCompletedAt !== params.completedAt) {
+      return summary;
+    }
+    return {
+      ...summary,
+      completionAcknowledgedAt: params.completedAt,
+    };
+  });
+  return { ok: updated?.completionAcknowledgedAt === params.completedAt };
+}
+
 export function subscribeSession(params: { sessionId: string }, context: HelmHandlerContext) {
   if (!context.socketId) {
     throw new Error("Session topic subscription requires an authenticated socket");

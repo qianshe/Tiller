@@ -7,17 +7,22 @@ import {
   createHelmOutboundConnectionRegistry,
 } from "../app/transport-composition.js";
 import type { HelmHandlerContext } from "../handlers/context.js";
+import type { SessionSummary } from "@tiller/shared";
 import { broadcastConversationUpdate, broadcastSessionUpdate } from "./notifications.js";
 
 type JsonRpcNotification = {
+  id?: string | number | null;
+  result?: unknown;
+  error?: unknown;
   method?: string;
   params?: {
     sessionId?: string;
     kind?: string;
+    clearedAt?: string;
     preparation?: { id?: string };
     update?: {
       kind?: string;
-      session?: { id?: string; status?: string };
+      session?: { id?: string; status?: string; completionAcknowledgedAt?: string };
     };
   };
 };
@@ -267,6 +272,225 @@ test("global lifecycle updates reach unsubscribed WebSocket clients", async () =
     assert.deepEqual(errors, []);
   } finally {
     await Promise.all([closeSocket(webSocket), closeSocket(secondClient)]);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("completion acknowledgement RPC persists in Helm and reaches every WebSocket client", async () => {
+  const connectedSockets = new Map<WebSocket, string>();
+  const topicSubscribers = new Map<string, Set<string>>();
+  const outboundConnections = createHelmOutboundConnectionRegistry();
+  const connectionIds: string[] = [];
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  let nextSocketId = 0;
+  const completedAt = "2026-08-15T01:00:00.000Z";
+  let persisted: SessionSummary = {
+    id: "session-1",
+    projectId: "project-1",
+    projectName: "Project",
+    helmId: "local-helm",
+    cwd: "D:/repo",
+    worktreeName: "main",
+    agentId: "codex",
+    agentName: "Codex",
+    status: "idle" as const,
+    createdAt: "2026-08-15T00:00:00.000Z",
+    updatedAt: completedAt,
+    lastCompletedAt: completedAt,
+    messageCount: 1,
+  };
+  const sessionRecord = { summary: persisted };
+  const notificationContext = createHandlerNotificationContext({
+    authenticatedSockets: {
+      listAll: () => [...connectedSockets.entries()].map(([socket, socketId]) => ({
+        socket,
+        socketId,
+      })),
+    },
+    getSocketId: (socket) => connectedSockets.get(socket),
+    outboundConnections,
+    sessionTopics: {
+      subscribe: (socketId, sessionId) => {
+        const subscribers = topicSubscribers.get(sessionId) ?? new Set<string>();
+        subscribers.add(socketId);
+        topicSubscribers.set(sessionId, subscribers);
+      },
+      unsubscribe: (socketId, sessionId) => topicSubscribers.get(sessionId)?.delete(socketId),
+      removeSocket: (socketId) => {
+        for (const subscribers of topicSubscribers.values()) subscribers.delete(socketId);
+      },
+      listSubscribers: (sessionId) => [...(topicSubscribers.get(sessionId) ?? [])],
+    },
+  });
+  const context = {
+    ...notificationContext,
+    sessions: new Map([["session-1", sessionRecord]]),
+    sessionStore: { get: () => persisted },
+    updateSessionSummary: (_sessionId: string, mutate: (summary: SessionSummary) => SessionSummary) => {
+      persisted = mutate(persisted);
+      sessionRecord.summary = persisted;
+      return persisted;
+    },
+  } as unknown as HelmHandlerContext;
+
+  server.on("connection", (socket) => {
+    const socketId = `socket-${++nextSocketId}`;
+    connectionIds.push(socketId);
+    connectedSockets.set(socket, socketId);
+    attachHelmRpcConnection({
+      socket,
+      getSocketId: (target) => connectedSockets.get(target),
+      outboundConnections,
+      createHandlerContext: () => context,
+      logError: () => undefined,
+    });
+    socket.once("close", () => {
+      connectedSockets.delete(socket);
+      notificationContext.removeSocketSessionTopics(socketId);
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", () => resolve());
+    server.once("error", reject);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const url = `ws://127.0.0.1:${address.port}`;
+  let sourceClient: WebSocket | undefined;
+  let peerClient: WebSocket | undefined;
+
+  try {
+    sourceClient = new WebSocket(url);
+    peerClient = new WebSocket(url);
+    await Promise.all([waitForOpen(sourceClient), waitForOpen(peerClient)]);
+    await waitForConnectionCount(() => connectionIds.length, 2);
+
+    const sourceResponse = waitForMessage(sourceClient, (message) => message.id === 1);
+    const sourceUpdate = waitForMessage(
+      sourceClient,
+      (message) => message.method === "session/update" && message.params?.update?.kind === "session_updated",
+    );
+    const peerUpdate = waitForMessage(
+      peerClient,
+      (message) => message.method === "session/update" && message.params?.update?.kind === "session_updated",
+    );
+    sourceClient.send(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/acknowledge_completion",
+      params: { sessionId: "session-1", completedAt },
+    }));
+
+    const response = await sourceResponse;
+    assert.deepEqual(response.result, { ok: true });
+    assert.equal(persisted.completionAcknowledgedAt, completedAt);
+    for (const update of await Promise.all([sourceUpdate, peerUpdate])) {
+      assert.equal(update.params?.sessionId, "session-1");
+      assert.equal(update.params?.update?.session?.completionAcknowledgedAt, completedAt);
+    }
+  } finally {
+    await Promise.all([closeSocket(sourceClient), closeSocket(peerClient)]);
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
+
+test("notification clear RPC removes history and reaches every WebSocket client", async () => {
+  const connectedSockets = new Map<WebSocket, string>();
+  const topicSubscribers = new Map<string, Set<string>>();
+  const outboundConnections = createHelmOutboundConnectionRegistry();
+  const connectionIds: string[] = [];
+  const server = new WebSocketServer({ host: "127.0.0.1", port: 0 });
+  let nextSocketId = 0;
+  const clearedAt = "2026-08-15T02:00:00.000Z";
+  const notificationStore = {
+    list: () => [],
+    clear: () => clearedAt,
+    getClearedAt: () => clearedAt,
+  };
+  const notificationContext = createHandlerNotificationContext({
+    authenticatedSockets: {
+      listAll: () => [...connectedSockets.entries()].map(([socket, socketId]) => ({
+        socket,
+        socketId,
+      })),
+    },
+    getSocketId: (socket) => connectedSockets.get(socket),
+    outboundConnections,
+    sessionTopics: {
+      subscribe: (socketId, sessionId) => {
+        const subscribers = topicSubscribers.get(sessionId) ?? new Set<string>();
+        subscribers.add(socketId);
+        topicSubscribers.set(sessionId, subscribers);
+      },
+      unsubscribe: (socketId, sessionId) => topicSubscribers.get(sessionId)?.delete(socketId),
+      removeSocket: (socketId) => {
+        for (const subscribers of topicSubscribers.values()) subscribers.delete(socketId);
+      },
+      listSubscribers: (sessionId) => [...(topicSubscribers.get(sessionId) ?? [])],
+    },
+  });
+  const context = {
+    ...notificationContext,
+    notificationStore,
+  } as unknown as HelmHandlerContext;
+
+  server.on("connection", (socket) => {
+    const socketId = `socket-${++nextSocketId}`;
+    connectionIds.push(socketId);
+    connectedSockets.set(socket, socketId);
+    attachHelmRpcConnection({
+      socket,
+      getSocketId: (target) => connectedSockets.get(target),
+      outboundConnections,
+      createHandlerContext: () => context,
+      logError: () => undefined,
+    });
+    socket.once("close", () => {
+      connectedSockets.delete(socket);
+      notificationContext.removeSocketSessionTopics(socketId);
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("listening", () => resolve());
+    server.once("error", reject);
+  });
+  const address = server.address();
+  assert.ok(address && typeof address === "object");
+  const url = `ws://127.0.0.1:${address.port}`;
+  let sourceClient: WebSocket | undefined;
+  let peerClient: WebSocket | undefined;
+
+  try {
+    sourceClient = new WebSocket(url);
+    peerClient = new WebSocket(url);
+    await Promise.all([waitForOpen(sourceClient), waitForOpen(peerClient)]);
+    await waitForConnectionCount(() => connectionIds.length, 2);
+
+    const sourceResponse = waitForMessage(sourceClient, (message) => message.id === 1);
+    const sourceCleared = waitForMessage(
+      sourceClient,
+      (message) => message.method === "notification/cleared",
+    );
+    const peerCleared = waitForMessage(
+      peerClient,
+      (message) => message.method === "notification/cleared",
+    );
+    sourceClient.send(JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "notification/clear",
+      params: {},
+    }));
+
+    assert.deepEqual((await sourceResponse).result, { ok: true, clearedAt });
+    for (const message of await Promise.all([sourceCleared, peerCleared])) {
+      assert.equal(message.method, "notification/cleared");
+      assert.deepEqual(message.params, { clearedAt });
+    }
+  } finally {
+    await Promise.all([closeSocket(sourceClient), closeSocket(peerClient)]);
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });

@@ -88,6 +88,7 @@ export function renderMissionRoute(
     setExpandedMissionProjectIds,
     setActiveSessionId,
     openSession,
+    acknowledgeSessionCompletion,
     renderMissionAgentIcon,
     resolveDisplaySessionTitle,
     regenerateSessionTitle,
@@ -292,6 +293,7 @@ export function renderMissionRoute(
       setExpandedMissionProjectIds={setExpandedMissionProjectIds}
       setActiveSessionId={setActiveSessionId}
       openSession={openSession}
+      acknowledgeSessionCompletion={acknowledgeSessionCompletion}
       renderMissionAgentIcon={renderMissionAgentIcon}
       resolveDisplaySessionTitle={resolveDisplaySessionTitle}
       regenerateSessionTitle={regenerateSessionTitle}

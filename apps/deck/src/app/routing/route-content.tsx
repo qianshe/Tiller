@@ -116,6 +116,8 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     messages,
     sessionTimeline,
     statuses,
+    completedUnreadSessionIds,
+    acknowledgeSessionCompletion,
     sessionPlans,
     helms,
     notifications,
@@ -238,6 +240,7 @@ export function AppRoutes({ ctx }: { ctx: AppRouteContext }) {
     if (helmKey && targetSession.helmId !== helmKey) {
       return;
     }
+    acknowledgeSessionCompletion?.(targetSession);
     setDashboardSelectedSessionId(sessionId);
     setDashboardMissionSessionId(sessionId);
   };
@@ -259,7 +262,9 @@ function renderOverview() {
       agents={agents}
       sessions={sessions}
       onNavigate={navigateToView}
-      onOpenSession={openSession}
+      onOpenSession={(sessionId) => {
+        openSession(sessionId);
+      }}
       resolveDisplaySessionTitle={resolveDisplaySessionTitle}
       formatRelativeTime={formatRelativeTime}
     />
@@ -288,6 +293,7 @@ function renderDashboard() {
     messages,
     sessionTimeline,
     statuses,
+    completedUnreadSessionIds,
     selectedSessionId: dashboardSelectedSessionId,
     sessionPlans,
     toolCalls,

@@ -48,6 +48,7 @@ function renderSidebar(overrides: Record<string, unknown> = {}) {
       runtimeOverviewItems={[]}
       setActiveSessionId={() => undefined}
       statuses={{}}
+      completedUnreadSessionIds={{}}
       copy={{
         status: {
           idle: "空闲",

@@ -23,6 +23,10 @@ export function isSessionSummary(value: unknown): value is SessionSummary {
     typeof candidate.status === "string" &&
     typeof candidate.createdAt === "string" &&
     typeof candidate.updatedAt === "string" &&
+    (typeof candidate.lastCompletedAt === "string" ||
+      typeof candidate.lastCompletedAt === "undefined") &&
+    (typeof candidate.completionAcknowledgedAt === "string" ||
+      typeof candidate.completionAcknowledgedAt === "undefined") &&
     typeof candidate.messageCount === "number" &&
     (typeof candidate.runtimeSessionId === "string" ||
       typeof candidate.runtimeSessionId === "undefined") &&

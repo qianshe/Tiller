@@ -1,5 +1,8 @@
 import type { WebSocket } from "ws";
-import type { ConversationPreparationStore } from "@tiller/persistence";
+import type {
+  ConversationPreparationStore,
+  NotificationStore,
+} from "@tiller/persistence";
 import type { connectAcpConnection, createAcpRuntime, listAcpConnectionInventory, reconnectAcpConnection } from "@tiller/acp-runtime";
 import type {
   AcpAgentProvider,
@@ -137,6 +140,7 @@ export type HelmHandlerContext = {
   approvalIndex: Map<string, ApprovalRecord>;
   permissionIndex: Map<string, PermissionRecord>;
   sessionStore: any;
+  notificationStore: NotificationStore;
   conversationPreparationStore?: ConversationPreparationStore;
   sessionMessageStore: any;
   sessionArtifactStore: any;

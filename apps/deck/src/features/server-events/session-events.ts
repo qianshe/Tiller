@@ -48,6 +48,10 @@ import {
 } from "./session-list-result";
 import { resolveSessionCleanupToast } from "./session-result-effects";
 import {
+  isSessionCompletionUnreadTransition,
+  isUnacknowledgedSessionCompletion,
+} from "./session-completion";
+import {
   pendingInitialPromptMessageId,
   pendingPromptImages,
 } from "./session-message-history";
@@ -289,6 +293,27 @@ export function applySessionResult(
         }
         pruneTimelineIndexCaches(nextSessions);
         store.setSessions(nextSessions);
+        for (const session of nextSessions) {
+          if (session.completionAcknowledgedAt) {
+            useDeckStore.getState().applySessionCompletionAcknowledgement(
+              session.id,
+              session.completionAcknowledgedAt,
+            );
+          }
+          if (!session.lastCompletedAt) {
+            continue;
+          }
+          const currentState = useDeckStore.getState();
+          const isUnread = isUnacknowledgedSessionCompletion(
+            session.lastCompletedAt,
+            currentState.acknowledgedSessionCompletionAt[session.id],
+          );
+          if (isUnread && currentState.focusedChatWindowId !== `session:${session.id}`) {
+            currentState.markSessionCompletedUnread(session.id);
+          } else {
+            currentState.clearSessionCompletedUnread(session.id);
+          }
+        }
         store.setSessionHistoryState(listResult.historyState);
         store.setStatuses(nextStatuses);
         store.setMessages((current) => pruneSessionScopedMap(current, nextSessions));
@@ -327,6 +352,9 @@ export function applySessionResult(
         );
         store.setSessionLiveStateSequences((current) =>
           pruneSessionScopedMap(current, nextSessions),
+        );
+        store.pruneCompletedUnreadSessionIds(
+          new Set(nextSessions.map((session) => session.id)),
         );
         store.setSessionConfigOptions((current) => ({
           ...pruneSessionScopedMap(current, nextSessions),
@@ -531,6 +559,7 @@ export function applySessionResult(
       store.setStatuses((current) =>
         removeSessionRecord(current, sessionId),
       );
+      store.clearSessionCompletedUnread(sessionId);
       store.setMessages((current) =>
         removeSessionRecord(current, sessionId),
       );
@@ -981,6 +1010,7 @@ export function applySessionUpdate(
   switch (update.kind) {
     case "session_updated": {
       const previousSession = store.sessions.find((session) => session.id === sessionId);
+      const previousStatus = store.statuses[sessionId] ?? previousSession?.status;
       const lifecycleSummary = {
         ...mergeSessionLifecycleSummary(
           update.session,
@@ -998,6 +1028,24 @@ export function applySessionUpdate(
         ...current,
         [lifecycleSummary.id]: lifecycleSummary.status,
       }));
+      if (lifecycleSummary.completionAcknowledgedAt) {
+        useDeckStore.getState().applySessionCompletionAcknowledgement(
+          lifecycleSummary.id,
+          lifecycleSummary.completionAcknowledgedAt,
+        );
+      }
+      const completionWasAcknowledged =
+        lifecycleSummary.lastCompletedAt !== undefined &&
+        lifecycleSummary.completionAcknowledgedAt === lifecycleSummary.lastCompletedAt;
+      if (completionWasAcknowledged) {
+        store.clearSessionCompletedUnread(sessionId);
+      } else if (isSessionCompletionUnreadTransition(previousStatus, lifecycleSummary.status)) {
+        if (store.focusedChatWindowId === `session:${sessionId}`) {
+          store.clearSessionCompletedUnread(sessionId);
+        } else {
+          store.markSessionCompletedUnread(sessionId);
+        }
+      }
       if (
         !store.sessionLiveStateSequences[sessionId] &&
         (lifecycleSummary.configOptions?.length ?? 0) > 0

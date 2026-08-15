@@ -68,6 +68,7 @@ type MissionSidebarProps = {
   runtimeOverviewItems: MissionRuntimeOverviewItem[];
   setActiveSessionId: Dispatch<SetStateAction<string | null>>;
   statuses: Record<string, SessionStatus>;
+  completedUnreadSessionIds: Readonly<Record<string, true>>;
   copy: { status: Record<SessionStatus, string> };
   activeSessionId: string | null;
   highlightedSessionId: string | null;
@@ -110,6 +111,7 @@ export function MissionSidebar({
   runtimeOverviewItems,
   setActiveSessionId,
   statuses,
+  completedUnreadSessionIds,
   copy,
   activeSessionId,
   highlightedSessionId,
@@ -291,6 +293,7 @@ export function MissionSidebar({
                               sessionCountsByProject={sessionCountsByProject}
                               setActiveSessionId={setActiveSessionId}
                               statuses={statuses}
+                              completedUnreadSessionIds={completedUnreadSessionIds}
                               copy={copy}
                               activeSessionId={activeSessionId}
                               highlightedSessionId={highlightedSessionId}

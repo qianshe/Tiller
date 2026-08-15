@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "highlight.js/styles/github-dark.css";
-import type { AgentToolCall } from "@tiller/shared";
+import type { AgentToolCall, SessionSummary } from "@tiller/shared";
 import {
   agentModelOptionsKey,
   readAgentModelOptionsCache,
@@ -19,6 +19,7 @@ import {
   dispatchWithTrace,
   resolveDefaultHelmEndpoint,
   createHelmUpdateActions,
+  resolveSessionRpcTarget,
   type DeckRpcClient,
   useAppControllers,
   useHelmConnection,
@@ -248,6 +249,7 @@ export function App() {
   const [dashboardSection, setDashboardSection] = useState<DashboardSection>("overview");
   const [localLoggingSettings, setLocalLoggingSettings] = useState<LocalLoggingSettings | null>(null);
   const [loggingStatus, setLoggingStatus] = useState("");
+  const acknowledgeCompletionRequestsRef = useRef(new Map<string, Promise<void>>());
 
   usePreferencesEffects();
   useEffect(() => {
@@ -321,6 +323,101 @@ export function App() {
       helmConnection.daemonHost.trim() || DEFAULT_DAEMON_HOST,
       helmConnection.daemonPort.trim() || DEFAULT_DAEMON_PORT,
     );
+  }
+
+  function acknowledgeSessionCompletion(session: SessionSummary) {
+    if (!session.lastCompletedAt) {
+      return;
+    }
+    const currentHelmKey = resolveCurrentHelmKey();
+    const completionKey = `${session.id}\0${session.lastCompletedAt}`;
+    if (acknowledgeCompletionRequestsRef.current.has(completionKey)) {
+      return;
+    }
+    const target = resolveSessionRpcTarget({
+      session,
+      helms: missionView.configuredHelms,
+      currentHelmKey: runtimeState.primaryHelmKeyRef.current ?? currentHelmKey,
+      primaryClient: runtimeState.rpcClientRef.current,
+      clients: runtimeState.helmRpcClientRefs.current,
+      primarySessionIds: new Set(deckData.sessions.map((item) => item.id)),
+    });
+    if (!target) {
+      deckData.addNotification({
+        kind: "warning",
+        source: "session",
+        message: "会话完成状态同步失败：未连接到目标 Helm。",
+        sessionId: session.id,
+        details: {
+          phase: "session/acknowledge_completion",
+          helmKey: session.helmId,
+        },
+      });
+      return;
+    }
+    const request = dispatch(
+      target.client,
+      "session/acknowledge_completion",
+      {
+        sessionId: session.id,
+        completedAt: session.lastCompletedAt,
+      },
+      { sourceHelmKey: target.helmKey },
+    ).then((result) => {
+      if (!result || (result as { ok?: unknown }).ok !== true) {
+        throw new Error("Helm 未确认会话完成状态");
+      }
+    }).catch((error) => {
+      deckData.addNotification({
+        kind: "warning",
+        source: "session",
+        message: `会话完成状态同步失败：${formatRpcError(error)}`,
+        sessionId: session.id,
+        details: {
+          phase: "session/acknowledge_completion",
+          helmKey: target.helmKey,
+        },
+      });
+    }).finally(() => {
+      acknowledgeCompletionRequestsRef.current.delete(completionKey);
+    });
+    acknowledgeCompletionRequestsRef.current.set(completionKey, request);
+    void request;
+  }
+
+  function clearNotificationsFromHelm() {
+    const target = resolveLoggingTarget();
+    if (!target) {
+      deckData.addNotification({
+        kind: "warning",
+        source: "notification",
+        message: "通知清理失败：未连接到目标 Helm。",
+        details: { phase: "notification/clear" },
+      });
+      return;
+    }
+    void dispatch(
+      target.client,
+      "notification/clear",
+      {},
+      { sourceHelmKey: target.helmKey },
+    ).then((result) => {
+      const clearedAt = (result as { clearedAt?: unknown } | null)?.clearedAt;
+      if (typeof clearedAt !== "string") {
+        throw new Error("Helm 未返回通知清理时间");
+      }
+      deckData.applyNotificationClear(clearedAt);
+    }).catch((error) => {
+      deckData.addNotification({
+        kind: "warning",
+        source: "notification",
+        message: `通知清理失败：${formatRpcError(error)}`,
+        details: {
+          phase: "notification/clear",
+          helmKey: target.helmKey,
+        },
+      });
+    });
   }
 
   function resolveCandidateHelmIds() {
@@ -403,7 +500,7 @@ export function App() {
       : null;
   }
 
-  const selection = useSelection({
+  const selectionActions = useSelection({
     projects: deckData.projects,
     agents: deckData.agents,
     sessions: deckData.sessions,
@@ -419,6 +516,17 @@ export function App() {
     setWorktreePickerOpen: runtimeState.setWorktreePickerOpen,
     setAgentPickerOpen: runtimeState.setAgentPickerOpen,
   });
+  const selection = {
+    ...selectionActions,
+    openSession(sessionId: string) {
+      const session = deckData.sessions.find((item) => item.id === sessionId);
+      if (session) {
+        acknowledgeSessionCompletion(session);
+      }
+      selectionActions.openSession(sessionId);
+    },
+    acknowledgeSessionCompletion,
+  };
 
   const missionView = useMissionViewModel({
     runtimeState,
@@ -804,6 +912,7 @@ export function App() {
           openDiffDetail,
           toggleExpandedMessage,
           openNewTaskFromDashboard,
+          clearNotifications: clearNotificationsFromHelm,
           renderMissionAgentIcon,
           loggingSettings: effectiveLoggingSettings,
           loggingStatus,

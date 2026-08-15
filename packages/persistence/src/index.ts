@@ -5,6 +5,7 @@ export * from "./artifact-store";
 export * from "./legacy-json-loader";
 export * from "./legacy-evidence-store";
 export * from "./message-store";
+export * from "./notification-store";
 export * from "./normalize";
 export * from "./output-body-store";
 export * from "./pagination";
@@ -39,4 +40,5 @@ export { createSqliteSessionApprovalStore } from "./sqlite/session-approval-stor
 export { createSqliteSessionUpdateStore } from "./sqlite/session-update-store";
 export { createSqliteSessionSubagentDetailStore } from "./sqlite/subagent-detail-store";
 export { createSqliteConversationPreparationStore } from "./sqlite/conversation-preparation-store";
+export { createSqliteNotificationStore } from "./sqlite/notification-store";
 export { createSqliteTimelineBlockStore } from "./sqlite/timeline-block-store";

@@ -30,6 +30,7 @@ export {
   type SessionRuntimeStore,
   type SessionSummaryStore,
   type SessionUpdateStore,
+  type NotificationStore,
   type StoredSessionArtifacts,
 } from "./store-factory";
 export {

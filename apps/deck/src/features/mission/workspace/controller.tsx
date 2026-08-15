@@ -144,6 +144,7 @@ export function MissionWorktree(props: any) {
     setExpandedMissionProjectIds,
     setActiveSessionId,
     openSession,
+    acknowledgeSessionCompletion,
     renderMissionAgentIcon,
     resolveDisplaySessionTitle,
     regenerateSessionTitle,
@@ -266,6 +267,9 @@ export function MissionWorktree(props: any) {
   const effectiveHideSessionCloseAction =
     hideSessionCloseAction ?? (chatOnly && !onCloseSessionView);
   const sessionLegacyEvidence = useDeckStore((state) => state.sessionLegacyEvidence);
+  const completedUnreadSessionIds = useDeckStore(
+    (state) => state.completedUnreadSessionIds,
+  );
   const setSessionLegacyEvidence = useDeckStore((state) => state.setSessionLegacyEvidence);
   const sessionSubagentDetails = useDeckStore((state) => state.sessionSubagentDetails);
   const setSessionSubagentDetails = useDeckStore((state) => state.setSessionSubagentDetails);
@@ -604,6 +608,7 @@ export function MissionWorktree(props: any) {
     setOpenChatSessionIds,
     setFocusedChatWindowId,
     openSession,
+    acknowledgeSessionCompletion,
     setActiveSessionId,
     setDraftChatWindow,
     setSelectedMissionHelmId,
@@ -1174,6 +1179,7 @@ export function MissionWorktree(props: any) {
               runtimeOverviewItems={runtimeOverviewItems}
               setActiveSessionId={setActiveSessionId}
               statuses={statuses}
+              completedUnreadSessionIds={completedUnreadSessionIds}
               copy={copy}
               activeSessionId={activeSessionId}
               highlightedSessionId={focusedRealSessionId ?? activeSessionId}

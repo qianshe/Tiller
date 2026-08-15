@@ -241,6 +241,17 @@ export function openSessionDatabase(dbPath: string) {
       PRIMARY KEY(session_id, parent_tool_call_id, entry_kind, entry_id)
     );
 
+    CREATE TABLE IF NOT EXISTS helm_notifications(
+      id TEXT PRIMARY KEY,
+      occurred_at TEXT NOT NULL,
+      payload_json TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS helm_notification_state(
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      cleared_at TEXT NOT NULL
+    );
+
     CREATE INDEX IF NOT EXISTS idx_session_summaries_updated_at ON session_summaries(updated_at);
     CREATE INDEX IF NOT EXISTS idx_conversation_preparations_updated_at ON conversation_preparations(updated_at);
     CREATE INDEX IF NOT EXISTS idx_session_outputs_page ON session_outputs(session_id, timestamp, id);
@@ -262,6 +273,7 @@ export function openSessionDatabase(dbPath: string) {
     CREATE INDEX IF NOT EXISTS idx_session_approval_history_status ON session_approval_history(status, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_session_approval_history_session ON session_approval_history(session_id, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_session_subagent_entries_order ON session_subagent_entries(session_id, parent_tool_call_id, first_sequence);
+    CREATE INDEX IF NOT EXISTS idx_helm_notifications_occurred_at ON helm_notifications(occurred_at DESC, id DESC);
   `);
   ensureSessionMessagePositions(db);
   db.exec("DROP INDEX IF EXISTS idx_session_messages_page");

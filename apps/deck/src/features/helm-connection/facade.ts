@@ -8,6 +8,10 @@ export {
   type DaemonProfile,
 } from "./daemon-profiles";
 export {
+  resolveSessionRpcTarget,
+  type SessionRpcTarget,
+} from "./utils/session-rpc-client";
+export {
   dispatchWithTrace,
   requestInitialSync,
   subscribeToSessionTopic,

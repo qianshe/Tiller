@@ -67,6 +67,7 @@ export function buildAppRouteContext(input: any) {
     activeView: input.route.activeView,
     navigateToView: input.route.navigateToView,
     openNewTaskFromDashboard: input.openNewTaskFromDashboard,
+    clearNotifications: input.clearNotifications,
     activeProfileId: input.activeProfileId,
     copy: input.copy,
     agentLocked: input.agentLocked,

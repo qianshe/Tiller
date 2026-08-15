@@ -4,6 +4,7 @@ import {
   type ReactNode,
   type SetStateAction,
 } from "react";
+import { AlertTriangle } from "lucide-react";
 import type { ProjectSummary, SessionStatus, SessionSummary, WorktreeSummary } from "@tiller/shared";
 import {
   Button,
@@ -33,6 +34,7 @@ type SessionRowProps = {
   project: ProjectSummary;
   session: SessionSummary;
   sessionStatus: SessionStatus;
+  completedUnread?: boolean;
   isMobile?: boolean;
   setPendingSessionCleanup: Dispatch<SetStateAction<SessionSummary | null>>;
 };
@@ -51,6 +53,7 @@ export function SessionRow({
   project,
   session,
   sessionStatus,
+  completedUnread = false,
   isMobile = false,
   setPendingSessionCleanup,
 }: SessionRowProps) {
@@ -94,17 +97,13 @@ export function SessionRow({
           <span className="min-w-0 truncate text-action leading-none">{title}</span>
         </span>
         <span className={cn("mission-tree-session-side ml-auto flex shrink-0 items-center", isMobile ? "pr-2" : "pr-0.5")}>
-          {!sessionPending && sessionStatus !== "error" && isWorktreeSessionRow ? (
-            <span className="mission-tree-session-icon mission-tree-worktree-icon grid size-3.5 place-items-center leading-none text-muted-foreground/80">
-              <Icon name="branch" size={12} />
-            </span>
-          ) : sessionStatus === "error" ? (
+          {sessionStatus === "error" ? (
             <span
               className="mission-tree-session-icon mission-tree-session-status mission-tree-session-status-error grid size-3.5 place-items-center leading-none text-destructive"
               title={copy.status[sessionStatus]}
               aria-label={copy.status[sessionStatus]}
             >
-              <Icon name="circleAlert" size={12} className="shrink-0 text-destructive" />
+              <AlertTriangle size={12} className="shrink-0 text-destructive" />
             </span>
           ) : sessionPending ? (
             <span
@@ -117,6 +116,18 @@ export function SessionRow({
               ) : (
                 <span className="size-3 animate-spin rounded-full border-[1.5px] border-border-ghost border-t-primary" />
               )}
+            </span>
+          ) : completedUnread ? (
+            <span
+              className="mission-tree-session-icon mission-tree-session-status mission-tree-session-status-completed grid size-3.5 place-items-center leading-none text-success"
+              title="已完成，尚未查看"
+              aria-label="已完成，尚未查看"
+            >
+              <Icon name="circleCheck" size={12} className="shrink-0 text-success" />
+            </span>
+          ) : isWorktreeSessionRow ? (
+            <span className="mission-tree-session-icon mission-tree-worktree-icon grid size-3.5 place-items-center leading-none text-muted-foreground/80">
+              <Icon name="branch" size={12} />
             </span>
           ) : (
             <span aria-hidden="true" className="mission-tree-session-icon grid size-3.5 place-items-center leading-none" />

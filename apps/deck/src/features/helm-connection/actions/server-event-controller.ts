@@ -23,6 +23,8 @@ import {
   applyDeviceResult,
   applyErrorRaised,
   applyNotificationRaised,
+  applyNotificationCleared,
+  applyNotificationResult,
   applyConversationListResult,
   applyInventoryResult,
   applyConversationUpdate,
@@ -204,6 +206,7 @@ export function createServerEventController(source: any, helpers: any) {
     if (applyDeviceResult(method, result, sourceHelmKey, deviceContext())) return;
     if (applyConversationListResult(method, result, sourceHelmKey)) return;
     if (applyInventoryResult(method, result, sourceHelmKey, current, inventoryContext())) return;
+    if (applyNotificationResult(method, result)) return;
     applySessionResult(method, result, sourceHelmKey, current, sessionContext());
   }
 
@@ -263,6 +266,10 @@ export function createServerEventController(source: any, helpers: any) {
     }
     if (method === "notification/raised") {
       applyNotificationRaised(params as any, activityContext());
+      return;
+    }
+    if (method === "notification/cleared") {
+      applyNotificationCleared(params as any);
     }
   }
 

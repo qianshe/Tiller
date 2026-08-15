@@ -39,6 +39,7 @@ function renderSessionRow(
   overrides: Partial<SessionSummary> = {},
   projectOverrides: Partial<ProjectSummary> = {},
   sessionStatus: SessionStatus = "idle",
+  completedUnread = false,
 ) {
   return renderToStaticMarkup(
     <SessionRow
@@ -55,6 +56,7 @@ function renderSessionRow(
       project={project(projectOverrides)}
       session={session(overrides)}
       sessionStatus={sessionStatus}
+      completedUnread={completedUnread}
       setPendingSessionCleanup={() => undefined}
     />,
   );
@@ -119,7 +121,18 @@ test("SessionRow uses one aligned icon slot for worktree and status indicators",
   assert.match(worktreeHtml, /mission-tree-session-icon mission-tree-worktree-icon[^"]*leading-none/u);
   assert.match(statusHtml, /mission-tree-session-icon mission-tree-session-status[^"]*leading-none/u);
   assert.match(errorHtml, /mission-tree-session-status-error[^>]*>\s*<svg[^>]*text-destructive/u);
+  assert.match(errorHtml, /d="m21\.73 18-8-14/u);
+  assert.doesNotMatch(errorHtml, /<circle cx="12" cy="12" r="9"><\/circle>/u);
   assert.doesNotMatch(errorHtml, /mission-tree-session-status-error[^>]*>\s*!\s*</u);
   assert.doesNotMatch(worktreeHtml, /mission-tree-session-side[^"]*gap-1\.5/u);
   assert.doesNotMatch(statusHtml, /mission-tree-session-side[^"]*gap-1\.5/u);
+});
+
+test("SessionRow shows a completion marker for an unread completed session", () => {
+  const html = renderSessionRow({}, {}, "idle", true);
+
+  assert.match(html, /mission-tree-session-status-completed/u);
+  assert.match(html, /<circle cx="12" cy="12" r="9"><\/circle>/u);
+  assert.match(html, /已完成，尚未查看/u);
+  assert.doesNotMatch(html, /mission-tree-worktree-icon/u);
 });

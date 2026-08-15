@@ -5,6 +5,7 @@ import { handleConfigRpcRequest } from "../handlers/config/rpc";
 import { handleDeviceRpcRequest } from "../handlers/devices-rpc";
 import { handleSessionRpcNotification, handleSessionRpcRequest } from "../handlers/sessions/rpc";
 import { handleConversationRpcRequest } from "../handlers/conversations/rpc";
+import { handleNotificationRpcRequest } from "../handlers/notifications/rpc";
 
 export async function handleHelmRpcRequest(
   method: string,
@@ -16,6 +17,7 @@ export async function handleHelmRpcRequest(
     (await handleApprovalRpcRequest(method, params, context)) ??
     (await handleConfigRpcRequest(method, params, context)) ??
     (await handleDeviceRpcRequest(method, params, context)) ??
+    (await handleNotificationRpcRequest(method, params, context)) ??
     (await handleConversationRpcRequest(method, params, context)) ??
     (await handleSessionRpcRequest(method, params, context));
   if (result === undefined) {
