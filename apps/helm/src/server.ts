@@ -66,10 +66,11 @@ import { resolveTillerRuntimeOptions } from "./runtime/options";
 import { createProjectCatalog } from "./runtime/project/catalog";
 import { createLiveMessageBuffer } from "./runtime/live-message-buffer";
 import { createPromptTraceEmitter } from "./runtime/prompt-trace";
-import { drainPromptQueue } from "./runtime/session/router";
+import { drainPromptQueue, markSessionStalled } from "./runtime/session/router";
 import { createSessionTopicRegistry } from "./runtime/session/topics";
 import { resolveDeckStaticDir } from "./runtime/static-assets";
 import { installWebSocketHeartbeat } from "./runtime/websocket-heartbeat";
+import { startStalledSessionWatchdog } from "./runtime/session/stalled-watchdog";
 import { createTillerLogger } from "./logging/logger";
 import { createRuntimeMetrics } from "./logging/runtime-metrics";
 import { resolveLoggingOptions } from "./logging/options";
@@ -119,6 +120,7 @@ const TILLER_LOG_FILE = logger.logFile;
 const IS_PUBLISHED_RUNTIME = isPublishedRuntime(import.meta.url, TILLER_VERSION);
 
 const {
+  notificationStore,
   sessionStore,
   conversationPreparationStore,
   sessionMessageStore,
@@ -391,6 +393,25 @@ const server = new WebSocketServer({
   perMessageDeflate: { threshold: 1024 },
 });
 const stopWebSocketHeartbeat = installWebSocketHeartbeat(server);
+// ACP 连接可能在崩溃、被替换或进程被杀后消失,依附其上的会话再也收不到运行时
+// 事件,会永远停在 running/waiting。周期性把这些失联会话推进到 error 终态。
+const stopStalledSessionWatchdog = startStalledSessionWatchdog({
+  listSessionSummaries: () => sessionStore.list(),
+  hasRuntimeRecord: (sessionId) => sessions.has(sessionId),
+  listConnections: () => listAcpConnectionInventory(),
+  markStalled: (session) => {
+    logger.warn("session.stalled.reclaimed", {
+      sessionId: session.id,
+      previousStatus: session.status,
+    });
+    markSessionStalled(
+      session.id,
+      "ACP runtime is no longer reachable for this session.",
+      createHandlerContext(),
+    );
+  },
+  logError,
+});
 
 server.on("connection", (socket) => {
   logger.debug("websocket.client.connected");
@@ -439,6 +460,7 @@ async function shutdownHelm(reason: NodeJS.Signals | "rpc") {
   shutdownStarted = true;
   logger.info("server.shutdown.started", { reason });
   stopWebSocketHeartbeat();
+  stopStalledSessionWatchdog();
   server.close();
   httpServer.close();
   await disposeAcpConnections();
@@ -519,6 +541,7 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
     },
     ...handlerCatalogContext,
     trustedDeviceStore,
+    notificationStore,
     authenticatedSockets,
     toTrustedDeviceSummary,
     ...handlerSessionContextFactory.forSocket(socketId),

@@ -38,6 +38,8 @@ export function handleRuntimeStatusEvent(
   event: Extract<SessionRuntimeEvent, { type: "status" }>,
   context: HelmHandlerContext,
 ) {
+  const previousStatus = context.sessions.get(sessionId)?.summary?.status
+    ?? context.sessionStore.get(sessionId)?.status;
   assertCanonicalTimelinePipeline(context);
   emitFirstHelmPromptTrace(context, {
     sessionId,
@@ -65,11 +67,21 @@ export function handleRuntimeStatusEvent(
     status: event.status,
     messageChars: event.message?.length ?? 0,
   });
-  updateSessionSummaryAndBroadcast(context, sessionId, (current) => ({
-    ...current,
-    status: event.status,
-    updatedAt: new Date().toISOString(),
-  }));
+  updateSessionSummaryAndBroadcast(context, sessionId, (current) => {
+    const updatedAt = new Date().toISOString();
+    const completed = event.status === "idle"
+      && (
+        previousStatus === "starting"
+        || previousStatus === "running"
+        || previousStatus === "waiting_for_permission"
+      );
+    return {
+      ...current,
+      status: event.status,
+      updatedAt,
+      ...(completed ? { lastCompletedAt: updatedAt } : {}),
+    };
+  });
   if (event.status === "idle" || event.status === "error" || event.status === "cancelled") {
     context.sessionUpdateStore.compactTail(sessionId);
   }

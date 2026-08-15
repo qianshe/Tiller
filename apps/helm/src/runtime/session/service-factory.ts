@@ -281,7 +281,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logger: options.logger,
     protocolLogging: options.protocolLogging,
     notify: (notification) => broadcastNotificationRaised(
-      { broadcastNotification: options.broadcastNotification },
+      options.createHandlerContext(),
       notification,
     ),
   });
@@ -302,7 +302,7 @@ export function createSessionServiceGraph(options: SessionServicesOptions) {
     logInfo: options.logInfo,
     logError: options.logError,
     notify: (notification) => broadcastNotificationRaised(
-      { broadcastNotification: options.broadcastNotification },
+      options.createHandlerContext(),
       notification,
     ),
     protocolLogging: options.protocolLogging,

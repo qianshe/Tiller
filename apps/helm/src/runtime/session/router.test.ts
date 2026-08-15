@@ -1254,7 +1254,7 @@ test("cancelSessionRuntime canonicalizes active tools while keeping the runtime 
 
   const handled = await cancelSessionRuntime("session-1", context);
 
-  assert.equal(handled, true);
+  assert.equal(handled.ok, true);
   assert.equal(cancelled, true);
   assert.equal(sessions.has("session-1"), true);
   const subagentEntry = timelineEntries.find((entry) =>
@@ -1284,7 +1284,7 @@ test("cancelSessionRuntime keeps the session cancelled when runtime cancellation
 
   const handled = await cancelSessionRuntime("session-1", context);
 
-  assert.equal(handled, true);
+  assert.equal(handled.ok, true);
   assert.equal(context.sessionStore.get("session-1")?.status, "cancelled");
   assert.equal(
     broadcasts.some((item) => item.method === "notification/raised"),
@@ -1298,7 +1298,7 @@ test("cancelSessionRuntime broadcasts an error when the runtime is missing", asy
 
   const handled = await cancelSessionRuntime("missing-session", context);
 
-  assert.equal(handled, true);
+  assert.equal(handled.ok, false);
   assert.equal(broadcasts.at(-1)?.method, "notification/raised");
   assert.equal(broadcasts.at(-1)?.params.message, "Session not found");
 });
@@ -1309,7 +1309,7 @@ test("cancelSessionRuntime treats persisted sessions without live runtime as ide
 
   const handled = await cancelSessionRuntime("session-1", context);
 
-  assert.equal(handled, true);
+  assert.equal(handled.ok, true);
   assert.equal(
     broadcasts.some((item) => item.method === "notification/raised"),
     false,
@@ -1329,7 +1329,7 @@ test("cancelSessionRuntime re-broadcasts terminal status so stale clients reconc
 
   const handled = await cancelSessionRuntime("session-1", context);
 
-  assert.equal(handled, true);
+  assert.equal(handled.ok, true);
   assert.equal(
     broadcasts.some((item) => item.method === "notification/raised"),
     false,
@@ -1339,4 +1339,63 @@ test("cancelSessionRuntime re-broadcasts terminal status so stale clients reconc
     item.method === "session/update" && item.params?.update?.kind === "live_state"
   );
   assert.equal(liveStateUpdates.at(-1)?.params.update.snapshot.status.effectiveStatus, "cancelled");
+});
+
+test("markSessionStalled moves an unreachable active session to error", async () => {
+  // ACP 连接消失后不会再有任何运行时事件,会话必须由看门狗推进到终态,
+  // 否则前端永远显示"运行中"且取消无从生效。
+  const { context, broadcasts, sessions } = createContext({
+    summary: { status: "running" },
+    activeRuntime: { prompt: async () => {} },
+  });
+  const { markSessionStalled } = await import("./router");
+
+  markSessionStalled("session-1", "ACP connection is gone", context);
+
+  assert.equal(context.sessionStore.get("session-1")?.status, "error");
+  assert.equal(sessions.has("session-1"), false);
+  const liveStateUpdates = broadcasts.filter((item) =>
+    item.method === "session/update" && item.params?.update?.kind === "live_state"
+  );
+  assert.equal(liveStateUpdates.at(-1)?.params.update.snapshot.status.effectiveStatus, "error");
+  assert.equal(
+    broadcasts.some(
+      (item) =>
+        item.method === "notification/raised" &&
+        JSON.stringify(item.params).includes("ACP connection is gone"),
+    ),
+    true,
+  );
+});
+
+test("cancelSessionRuntime reports the resulting status so callers can confirm delivery", async () => {
+  // notify 形式的取消没有任何回执;返回权威状态后,即使广播丢失客户端也能收敛。
+  const { context } = createContext({
+    summary: { status: "running" },
+    activeRuntime: { prompt: async () => {} },
+  });
+  const { cancelSessionRuntime } = await import("./router");
+
+  const result = await cancelSessionRuntime("session-1", context);
+
+  assert.deepEqual(result, { sessionId: "session-1", ok: true, status: "cancelled" });
+});
+
+test("cancelSessionRuntime reports the persisted status for a session helm no longer runs", async () => {
+  const { context } = createContext({ summary: { status: "idle" } });
+  const { cancelSessionRuntime } = await import("./router");
+
+  const result = await cancelSessionRuntime("session-1", context);
+
+  assert.deepEqual(result, { sessionId: "session-1", ok: true, status: "idle" });
+});
+
+test("cancelSessionRuntime reports failure for an unknown session", async () => {
+  const { context } = createContext({});
+  const { cancelSessionRuntime } = await import("./router");
+
+  const result = await cancelSessionRuntime("session-missing", context);
+
+  assert.equal(result.ok, false);
+  assert.equal(result.sessionId, "session-missing");
 });
