@@ -22,6 +22,13 @@ test("resolveTillerCliAction returns update for update command", () => {
   assert.deepEqual(resolveTillerCliAction(["update"]), { kind: "update" });
 });
 
+test("resolveTillerCliAction rejects the removed stop command", () => {
+  const action = resolveTillerCliAction(["stop"]);
+
+  assert.equal(action.kind, "error");
+  assert.match(action.message, /Unknown command: stop/u);
+});
+
 test("resolveTillerCliAction gives help and version flags priority over update", () => {
   assert.equal(resolveTillerCliAction(["update", "--help"]).kind, "help");
   assert.equal(resolveTillerCliAction(["update", "--version"]).kind, "version");

@@ -119,7 +119,7 @@ test("start prevents a second updater for the same Helm", async () => {
   });
 
   const result = await service.start(true);
-  assert.equal(result.status, "restarting");
+  assert.equal(result.status, "installing");
   await assert.rejects(
     service.start(true),
     (error: unknown) => {

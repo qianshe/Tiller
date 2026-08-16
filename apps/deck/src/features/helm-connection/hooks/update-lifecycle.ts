@@ -35,7 +35,7 @@ export function useHelmUpdateLifecycle(input: {
   connection: string;
   helmKey: string;
   update: HelmUpdateState | null;
-}) {
+}): void {
   const { connection, helmKey, update } = input;
 
   useEffect(() => {
@@ -49,6 +49,18 @@ export function useHelmUpdateLifecycle(input: {
       return;
     }
     if (decision === "complete") {
+      const current = useDeckStore.getState().helmInventories[helmKey]?.update;
+      if (current?.status === "restarting") {
+        useDeckStore.getState().applyHelmInventory(helmKey, {
+          update: {
+            ...current,
+            status: "up-to-date",
+            targetVersion: undefined,
+            updateAvailable: false,
+            message: "Helm 更新完成。",
+          },
+        });
+      }
       clearHelmUpdateIntent(helmKey);
       return;
     }

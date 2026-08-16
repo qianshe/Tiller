@@ -32,11 +32,21 @@ function createOutboundConnections() {
 
 test("handler notification context routes open-socket notifications through outbound connections", () => {
   const socket = createSocket();
+  const secondSocket = createSocket();
   const closed = createSocket(3);
   const outbound = createOutboundConnections();
   const context = createHandlerNotificationContext({
-    authenticatedSockets: { listAll: () => [{ socketId: "socket-1", socket }] },
-    getSocketId: (target) => target === socket ? "socket-1" : "socket-closed",
+    authenticatedSockets: {
+      listAll: () => [
+        { socketId: "socket-1", socket },
+        { socketId: "socket-2", socket: secondSocket },
+      ],
+    },
+    getSocketId: (target) => target === socket
+      ? "socket-1"
+      : target === secondSocket
+        ? "socket-2"
+        : "socket-closed",
     outboundConnections: outbound.port,
     sessionTopics: {
       subscribe: () => undefined,
@@ -53,6 +63,7 @@ test("handler notification context routes open-socket notifications through outb
   assert.deepEqual(outbound.notifications, [
     { socketId: "socket-1", method: "deck/event", params: { ok: true } },
     { socketId: "socket-1", method: "deck/broadcast", params: { all: true } },
+    { socketId: "socket-2", method: "deck/broadcast", params: { all: true } },
   ]);
 });
 

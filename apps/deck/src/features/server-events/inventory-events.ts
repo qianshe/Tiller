@@ -646,7 +646,9 @@ export function applyInventoryResult(
       {
         const previous = store.helmInventories[sourceHelmKey]?.update;
         const pendingTarget = readHelmUpdateIntent(sourceHelmKey)?.targetVersion;
-        const targetVersion = previous?.status === "restarting"
+        const previousIsUpdating =
+          previous?.status === "installing" || previous?.status === "restarting";
+        const targetVersion = previousIsUpdating
           ? previous.targetVersion ?? pendingTarget
           : pendingTarget;
         const targetConfirmed = Boolean(
@@ -654,8 +656,12 @@ export function applyInventoryResult(
           typeof payload.currentVersion === "string" &&
           isHelmVersionAtLeast(payload.currentVersion, targetVersion),
         );
-        const status = targetVersion
-          ? "restarting"
+        const status = targetConfirmed
+          ? "up-to-date"
+          : targetVersion
+            ? previous?.status === "installing"
+              ? "installing"
+              : "restarting"
           : payload.checkStatus === "unsupported"
             ? "unsupported"
             : payload.checkStatus === "failed"
@@ -675,28 +681,33 @@ export function applyInventoryResult(
             cannotUpdateReason: payload.cannotUpdateReason,
             manualCommand: payload.manualCommand,
             checkedAt: payload.checkedAt,
-            ...(targetVersion ? { targetVersion } : {}),
-            ...(targetConfirmed ? { message: "已连接新 Helm，正在确认版本。" } : {}),
+            targetVersion: targetConfirmed ? undefined : targetVersion,
+            ...(targetConfirmed ? { message: "Helm 更新完成。" } : {}),
           },
         });
-        if (targetVersion && !targetConfirmed && pendingTarget) {
-          writeHelmUpdateIntent(sourceHelmKey, targetVersion);
-        } else if (targetConfirmed && !pendingTarget) {
+        if (targetConfirmed) {
           clearHelmUpdateIntent(sourceHelmKey);
+        } else if (targetVersion && pendingTarget) {
+          writeHelmUpdateIntent(sourceHelmKey, targetVersion);
         }
       }
       return true;
     case "daemon/update/start":
       {
         const previous = store.helmInventories[sourceHelmKey]?.update;
-        const restarting = payload.status === "restarting";
-        const targetVersion = restarting
+        const status = payload.status === "restarting"
+          ? "restarting"
+          : payload.status === "installing"
+            ? "installing"
+            : "up-to-date";
+        const blocking = status === "installing" || status === "restarting";
+        const targetVersion = blocking
           ? payload.latestVersion ?? readHelmUpdateIntent(sourceHelmKey)?.targetVersion
           : undefined;
         store.applyHelmInventory(sourceHelmKey, {
           update: {
             ...previous,
-            status: restarting ? "restarting" : "up-to-date",
+            status,
             currentVersion: payload.currentVersion,
             latestVersion: payload.latestVersion,
             targetVersion,

@@ -92,11 +92,11 @@ test("update actions expose a failed manual check with a manual command", async 
   assert.equal(applied.at(-1)?.update.manualCommand, "npm install -g @qianshe/tiller@latest");
 });
 
-test("update actions start the updater after recording the restart state", async () => {
+test("update actions start the updater in the installing state", async () => {
   const { actions, applied, calls } = createHarness();
 
   await actions.start();
 
-  assert.equal(applied.at(-1)?.update.status, "restarting");
+  assert.equal(applied.at(-1)?.update.status, "installing");
   assert.deepEqual(calls, [{ method: "daemon/update/start", params: {} }]);
 });

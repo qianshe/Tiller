@@ -50,6 +50,7 @@ import type { SessionTimelineWorkerRegistry } from "../runtime/session-timeline/
 import type { TillerLogger } from "../logging/logger";
 import type { SessionSubagentDetailService } from "../runtime/session/subagent-detail-service";
 import type { UpdateService } from "../updates/service";
+import type { GithubIssueClient } from "../integrations/issues/github/client";
 
 export type SessionRecord = {
   summary: SessionSummary;
@@ -115,6 +116,8 @@ export type HelmHandlerContext = {
   };
   requestShutdown?: (reason: "rpc") => void;
   updateService?: UpdateService;
+  /** Optional injection seam for Issue provider tests; production falls back to Helm env. */
+  issueClient?: GithubIssueClient;
   isLocalConnection?: () => boolean;
 
   getHelms: () => HelmSummary[];

@@ -83,7 +83,7 @@ import {
   PREVIEW_UPDATE_COMMAND,
   resolveUpdateOptions,
 } from "./updates/check.js";
-import { isLoopbackAddress, isPublishedRuntime } from "./updates/runtime-policy.js";
+import { isPublishedRuntime, isSameOriginConnection } from "./updates/runtime-policy.js";
 import { createUpdateService } from "./updates/service.js";
 
 // Tiller verification ping by Antigravity 🐾
@@ -392,6 +392,7 @@ const server = new WebSocketServer({
   // 本地少客户端场景下 zlib 上下文的内存开销可以忽略。
   perMessageDeflate: { threshold: 1024 },
 });
+const sameOriginConnections = new WeakMap<WebSocket, boolean>();
 const stopWebSocketHeartbeat = installWebSocketHeartbeat(server);
 // ACP 连接可能在崩溃、被替换或进程被杀后消失,依附其上的会话再也收不到运行时
 // 事件,会永远停在 running/waiting。周期性把这些失联会话推进到 error 终态。
@@ -413,7 +414,14 @@ const stopStalledSessionWatchdog = startStalledSessionWatchdog({
   logError,
 });
 
-server.on("connection", (socket) => {
+server.on("connection", (socket, request) => {
+  sameOriginConnections.set(
+    socket,
+    isSameOriginConnection(
+      typeof request.headers.origin === "string" ? request.headers.origin : undefined,
+      request.headers.host,
+    ),
+  );
   logger.debug("websocket.client.connected");
 
   socket.on("close", () => {
@@ -421,6 +429,7 @@ server.on("connection", (socket) => {
     logger.debug("websocket.client.disconnected", { socketId });
     handlerNotificationContext.removeSocketSessionTopics(socketId);
     authenticatedSockets.remove(socketId);
+    sameOriginConnections.delete(socket);
   });
 
   beginAuthenticationFlow(socket);
@@ -534,10 +543,10 @@ function createHandlerContext(socketId?: string): HelmHandlerContext {
     },
     updateService,
     isLocalConnection: () => {
-      const socket = socketId ? authenticatedSockets.listAll().find((record) => record.socketId === socketId)?.socket : undefined;
-      if (!socket) return false;
-      const remoteAddress = (socket as WebSocket & { _socket?: { remoteAddress?: string } })._socket?.remoteAddress;
-      return Boolean(remoteAddress && isLoopbackAddress(remoteAddress));
+      const socket = socketId
+        ? authenticatedSockets.listAll().find((record) => record.socketId === socketId)?.socket
+        : undefined;
+      return socket ? sameOriginConnections.get(socket) === true : false;
     },
     ...handlerCatalogContext,
     trustedDeviceStore,
@@ -562,6 +571,7 @@ function resolveUpdaterLaunch() {
     host: HOST,
     port: PORT,
     logPath: resolve(LOGS_DIR, "update.log"),
+    interactive: Boolean(process.stdin.isTTY || process.stdout.isTTY || process.stderr.isTTY),
   };
 }
 

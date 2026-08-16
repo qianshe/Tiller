@@ -9,6 +9,7 @@ import {
 test("resolveUpdateExecutable uses npm.cmd on Windows", () => {
   assert.equal(resolveUpdateExecutable("win32"), "npm.cmd");
   assert.equal(resolveUpdateExecutable("linux"), "npm");
+  assert.equal(resolveUpdateExecutable("darwin"), "npm");
 });
 
 test("buildLatestUpdateCommand installs latest Tiller globally", () => {
@@ -20,6 +21,10 @@ test("buildLatestUpdateCommand installs latest Tiller globally", () => {
     command: "npm.cmd",
     args: ["install", "-g", "@qianshe/tiller@latest"],
   });
+  assert.deepEqual(buildLatestUpdateCommand("darwin"), {
+    command: "npm",
+    args: ["install", "-g", "@qianshe/tiller@latest"],
+  });
 });
 
 test("resolveUpdateSpawnOptions uses a shell for Windows npm.cmd shims", () => {
@@ -29,6 +34,10 @@ test("resolveUpdateSpawnOptions uses a shell for Windows npm.cmd shims", () => {
     windowsHide: true,
   });
   assert.deepEqual(resolveUpdateSpawnOptions("linux"), {
+    stdio: "inherit",
+    shell: false,
+  });
+  assert.deepEqual(resolveUpdateSpawnOptions("darwin"), {
     stdio: "inherit",
     shell: false,
   });

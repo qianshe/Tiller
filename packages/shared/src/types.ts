@@ -154,6 +154,72 @@ export type ProjectSummary = {
   gitBranches?: string[];
   /** Current Git branch discovered by Helm for this project root. */
   gitCurrentBranch?: string;
+  /** Optional external Issue repository binding owned by Helm. */
+  issueBinding?: IssueProjectBinding;
+};
+
+export type IssueProvider = "github";
+
+export type IssueProjectBinding = {
+  provider: IssueProvider;
+  /** Stable provider-specific repository key, e.g. `owner/repo`. */
+  remoteKey: string;
+};
+
+export type ExternalIssueRef = {
+  provider: IssueProvider;
+  remoteKey: string;
+  issueId: string;
+  issueNumber?: string;
+};
+
+export type IssueActor = {
+  id: string;
+  displayName: string;
+};
+
+export type IssueLabel = {
+  id: string;
+  name: string;
+  color?: string;
+};
+
+export type IssueState = "open" | "closed";
+export type IssueListState = IssueState | "all";
+
+export type IssueSummary = {
+  ref: ExternalIssueRef;
+  title: string;
+  state: IssueState;
+  author?: IssueActor;
+  assignees: IssueActor[];
+  labels: IssueLabel[];
+  url: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type IssueDetail = IssueSummary & {
+  body?: string;
+};
+
+export type IssueErrorKind =
+  | "project-not-found"
+  | "not-configured"
+  | "missing-token"
+  | "unauthorized"
+  | "forbidden"
+  | "not-found"
+  | "rate-limited"
+  | "unavailable"
+  | "timeout"
+  | "network"
+  | "invalid-response";
+
+export type IssueError = {
+  kind: IssueErrorKind;
+  message: string;
+  retryAfterSeconds?: number;
 };
 
 export type SessionRestoreMethod = "client-reconnect" | "session/load" | "session/resume" | "ui-history";

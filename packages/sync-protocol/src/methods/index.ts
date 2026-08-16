@@ -20,6 +20,8 @@ import * as projectGitCommitDetail from "./project/git-commit-detail";
 import * as projectGitFileDiff from "./project/git-file-diff";
 import * as projectSave from "./project/save";
 import * as projectDelete from "./project/delete";
+import * as issueList from "./issue/list";
+import * as issueGet from "./issue/get";
 import * as agentList from "./agent/list";
 import * as agentTest from "./agent/test";
 import * as agentConnections from "./agent/connections";
@@ -104,6 +106,8 @@ const METHOD_DESCRIPTORS = {
   [projectGitFileDiff.method]: projectGitFileDiff.descriptor,
   [projectSave.method]: projectSave.descriptor,
   [projectDelete.method]: projectDelete.descriptor,
+  [issueList.method]: issueList.descriptor,
+  [issueGet.method]: issueGet.descriptor,
   [agentList.method]: agentList.descriptor,
   [agentTest.method]: agentTest.descriptor,
   [agentConnections.method]: agentConnections.descriptor,
@@ -190,6 +194,8 @@ export const CLIENT_REQUEST_METHODS = [
   projectGitFileDiff.method,
   projectSave.method,
   projectDelete.method,
+  issueList.method,
+  issueGet.method,
   agentList.method,
   agentTest.method,
   agentConnections.method,

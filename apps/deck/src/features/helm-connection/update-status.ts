@@ -17,7 +17,7 @@ export function resolveHelmUpdateStatus(
     ? undefined
     : typeof payload.targetVersion === "string"
       ? payload.targetVersion
-      : previous?.status === "restarting"
+      : previous?.status === "installing" || previous?.status === "restarting"
         ? previous.targetVersion ?? pendingTarget
         : pendingTarget;
   const targetConfirmed = Boolean(
@@ -25,13 +25,17 @@ export function resolveHelmUpdateStatus(
     typeof payload.currentVersion === "string" &&
     isHelmVersionAtLeast(currentVersion, targetVersion),
   );
-  const effectiveStatus = status === "installing"
-    ? "installing"
-    : targetVersion
-      ? targetConfirmed || status !== "failed"
-        ? "restarting"
-        : status
-      : status;
+  const shouldKeepInstalling = previous?.status === "installing"
+    && (status === "checking" || status === "available");
+  const effectiveStatus = targetConfirmed
+    ? "up-to-date"
+    : status === "failed"
+      ? "failed"
+      : status === "installing" || shouldKeepInstalling
+        ? "installing"
+        : targetVersion
+          ? "restarting"
+          : status;
   const update: HelmUpdateState = {
     ...previous,
     status: effectiveStatus,

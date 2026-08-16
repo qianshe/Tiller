@@ -17,7 +17,7 @@ export async function checkDaemonUpdate(
     return await context.updateService.check(
       Boolean(params.force),
       context.isLocalConnection?.() ?? false,
-      createConnectionStatusEmitter(context),
+      createBroadcastStatusEmitter(context),
     );
   } catch (error) {
     throw toRpcError(error);
@@ -31,7 +31,7 @@ export async function startDaemonUpdate(context: HelmHandlerContext) {
   try {
     return await context.updateService.start(
       context.isLocalConnection?.() ?? false,
-      createConnectionStatusEmitter(context),
+      createBroadcastStatusEmitter(context),
     );
   } catch (error) {
     throw toRpcError(error);
@@ -49,15 +49,9 @@ function toRpcError(error: unknown) {
   return rpcError(errorCodes[error.kind], error.message);
 }
 
-function createConnectionStatusEmitter(context: HelmHandlerContext) {
-  const socket = context.socketId
-    ? context.authenticatedSockets.listAll().find((record: { socketId: string }) => record.socketId === context.socketId)?.socket
-    : undefined;
-  if (!socket) {
-    return (_status: UpdateStatusEvent) => undefined;
-  }
+function createBroadcastStatusEmitter(context: HelmHandlerContext) {
   return (status: UpdateStatusEvent) => {
-    context.notify(socket, "daemon/update/status", {
+    context.broadcastNotification("daemon/update/status", {
       ...status,
       occurredAt: new Date().toISOString(),
     });

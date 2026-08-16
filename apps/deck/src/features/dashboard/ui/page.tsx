@@ -243,8 +243,14 @@ function DashboardHeader({
   );
 }
 
-function DashboardEmbeddedFallback({ section }: { section: "agents" | "settings" | "git" }) {
-  const label = section === "agents" ? " Agents" : section === "git" ? " Git" : "设置";
+function DashboardEmbeddedFallback({ section }: { section: "agents" | "settings" | "git" | "issues" }) {
+  const label = section === "agents"
+    ? " Agents"
+    : section === "git"
+      ? " Git"
+      : section === "issues"
+        ? " Issues"
+        : "设置";
   return (
     <div className="flex min-h-0 min-w-0 flex-1 items-center justify-center p-6" role="status" aria-live="polite">
       <span className="font-mono text-meta text-muted-foreground">
@@ -258,10 +264,16 @@ function DashboardEmbeddedContent({
   section,
   content,
 }: {
-  section: "agents" | "settings" | "git";
+  section: "agents" | "settings" | "git" | "issues";
   content?: ReactNode;
 }) {
-  const title = section === "agents" ? "Agents" : section === "git" ? "Git" : "设置";
+  const title = section === "agents"
+    ? "Agents"
+    : section === "git"
+      ? "Git"
+      : section === "issues"
+        ? "Issues"
+        : "设置";
   return (
     <section
       className="dashboard-embedded-content flex min-h-0 min-w-0 w-full flex-1 overflow-hidden"
@@ -276,12 +288,9 @@ function DashboardEmbeddedContent({
   );
 }
 
-function DashboardRoadmapView({ section }: { section: "automations" | "issues" }) {
-  const isAutomation = section === "automations";
-  const title = isAutomation ? "自动化" : "Issues";
-  const description = isAutomation
-    ? "把重复任务编排成可复用的工作流。"
-    : "集中查看并分配需要 Agent 处理的问题。";
+function DashboardRoadmapView({ section }: { section: "automations" }) {
+  const title = "自动化";
+  const description = "把重复任务编排成可复用的工作流。";
 
   return (
     <section
@@ -289,7 +298,7 @@ function DashboardRoadmapView({ section }: { section: "automations" | "issues" }
       aria-labelledby={`dashboard-${section}-title`}
     >
       <span className="grid size-10 place-items-center rounded-md bg-surface-sunken text-muted-foreground">
-        <Icon name={isAutomation ? "workflow" : "fileText"} size={18} />
+        <Icon name="workflow" size={18} />
       </span>
       <h1
         id={`dashboard-${section}-title`}
@@ -396,7 +405,10 @@ export function DashboardPage({
   };
   const sectionTitle = resolveDashboardSectionTitle(selectedSection);
   const approvalRows = approvals;
-  const isEmbeddedSection = selectedSection === "agents" || selectedSection === "settings" || selectedSection === "git";
+  const isEmbeddedSection = selectedSection === "agents"
+    || selectedSection === "settings"
+    || selectedSection === "git"
+    || selectedSection === "issues";
   const searchSession = onOpenSearchSession ?? onOpenSession;
 
   const metrics: DashboardMetric[] = [
@@ -475,7 +487,7 @@ export function DashboardPage({
           <div
             className={cn(
               "flex min-h-0 min-w-0 w-full flex-1 flex-col",
-              selectedSection === "git"
+              selectedSection === "git" || selectedSection === "issues"
                 ? "max-w-none gap-0 overflow-hidden px-0 py-0"
                 : isEmbeddedSection
                 ? "max-w-none gap-0 overflow-y-auto overflow-x-hidden px-0 py-0"
@@ -542,8 +554,8 @@ export function DashboardPage({
                 onRenameSession={onRenameSession}
                 onDeleteSession={onDeleteSession}
               />
-            ) : selectedSection === "git" ? (
-              <DashboardEmbeddedContent section="git" content={embeddedContent} />
+            ) : selectedSection === "git" || selectedSection === "issues" ? (
+              <DashboardEmbeddedContent section={selectedSection} content={embeddedContent} />
             ) : selectedSection === "agents" || selectedSection === "settings" ? (
               <DashboardEmbeddedContent
                 section={selectedSection}

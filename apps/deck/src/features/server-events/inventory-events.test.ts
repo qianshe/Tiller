@@ -35,7 +35,7 @@ test("inventory events clear git status and graph loading state even when RPC re
   );
 });
 
-test("update check preserves the restart target across reconnect inventory sync", () => {
+test("update check completes a restart when the reconnected Helm reached the target", () => {
   const helmKey = "127.0.0.1:47631";
   useDeckStore.setState({ helmInventories: {} });
   useDeckStore.getState().applyHelmInventory(helmKey, {
@@ -51,16 +51,31 @@ test("update check preserves the restart target across reconnect inventory sync"
 
   applyInventoryResult("daemon/update/check", {
     currentVersion: "1.2.0",
-    latestVersion: "1.2.0",
     updateAvailable: false,
     canUpdate: true,
-    checkStatus: "checked",
+    checkStatus: "disabled",
   }, helmKey, true, {} as any);
 
   const update = useDeckStore.getState().helmInventories[helmKey]?.update;
-  assert.equal(update?.status, "restarting");
-  assert.equal(update?.targetVersion, "1.1.0");
+  assert.equal(update?.status, "up-to-date");
+  assert.equal(update?.targetVersion, undefined);
   assert.equal(update?.currentVersion, "1.2.0");
+});
+
+test("update start keeps the installing phase distinct from restart recovery", () => {
+  const helmKey = "127.0.0.1:47631";
+  useDeckStore.setState({ helmInventories: {} });
+
+  applyInventoryResult("daemon/update/start", {
+    status: "installing",
+    currentVersion: "1.0.0",
+    latestVersion: "1.1.0",
+    message: "Helm 正在安装更新。",
+  }, helmKey, true, {} as any);
+
+  const update = useDeckStore.getState().helmInventories[helmKey]?.update;
+  assert.equal(update?.status, "installing");
+  assert.equal(update?.targetVersion, "1.1.0");
 });
 
 test("update check keeps disabled automatic checks distinct from up-to-date", () => {

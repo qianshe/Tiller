@@ -4,6 +4,10 @@ export {
   type HelmUpdateTarget,
 } from "./actions/update-actions";
 export { useHelmUpdateLifecycle } from "./hooks/update-lifecycle";
+export {
+  HelmUpdateBlockingOverlay,
+  isHelmUpdateBlocking,
+} from "./ui/update-blocking-overlay";
 export { useAppControllers } from "./actions/deck-controllers";
 export {
   daemonProfileKey,

@@ -1,12 +1,14 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
 import { fetchTillerNpmDistTags } from "./npm-registry.js";
 import { runLatestUpdate } from "./installer.js";
 import { isVersionGreater } from "./versions.js";
 import {
   appendUpdateLog,
+  resolveReplacementSpawnOptions,
   waitForPortOpen,
   waitForPortRelease,
   waitForProcessExit,
+  waitForReplacementExit,
 } from "./updater-runtime.js";
 
 const UPDATER_LAUNCH_ENV_KEYS = [
@@ -18,6 +20,7 @@ const UPDATER_LAUNCH_ENV_KEYS = [
   "TILLER_UPDATE_HOST",
   "TILLER_UPDATE_PORT",
   "TILLER_UPDATE_LOG",
+  "TILLER_UPDATE_INTERACTIVE",
   "TILLER_UPDATE_TARGET_VERSION",
   "TILLER_UPDATE_CURRENT_VERSION",
 ] as const;
@@ -34,7 +37,8 @@ export type UpdaterDependencies = {
     args: string[];
     cwd: string;
     env: NodeJS.ProcessEnv;
-  }) => void | Promise<void>;
+    interactive: boolean;
+  }) => ChildProcess | void | Promise<ChildProcess | void>;
   send?: (message: { kind: "status" | "shutdown"; status?: string; message?: string }) => Promise<void>;
 };
 
@@ -81,14 +85,19 @@ export async function runOneShotUpdater(
     await send({ kind: "shutdown" });
     await waitForExit(parentPid);
     await waitForPort(host, port);
-    await spawnHelm({
+    const interactive = env.TILLER_UPDATE_INTERACTIVE === "1";
+    const replacement = await spawnHelm({
       nodeExecutable,
       entryPath,
       args,
       cwd,
       env: stripUpdaterEnvironment(env),
+      interactive,
     });
     await waitForReady(host, port);
+    if (interactive && replacement) {
+      await waitForReplacementExit(replacement);
+    }
     return 0;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -108,20 +117,22 @@ async function spawnReplacementHelm(input: {
   args: string[];
   cwd: string;
   env: NodeJS.ProcessEnv;
-}) {
+  interactive: boolean;
+}): Promise<ChildProcess> {
+  const { interactive } = input;
   const child = spawn(input.nodeExecutable, [input.entryPath, ...input.args], {
     cwd: input.cwd,
     env: input.env,
-    detached: true,
-    stdio: "ignore",
-    shell: false,
-    windowsHide: true,
+    ...resolveReplacementSpawnOptions(input.interactive),
   });
-  child.unref();
+  if (!interactive) {
+    child.unref();
+  }
   await new Promise<void>((resolve, reject) => {
     child.once("spawn", () => resolve());
     child.once("error", reject);
   });
+  return child;
 }
 
 function sendProcessMessage(message: { kind: "status" | "shutdown"; status?: string; message?: string }) {

@@ -40,6 +40,11 @@ const DashboardPage = lazy(() =>
     default: module.DashboardPage,
   })),
 );
+const DashboardIssuesWorkspace = lazy(() =>
+  import("../../features/issues").then((module) => ({
+    default: module.IssuesWorkspace,
+  })),
+);
 const AgentsPage = lazy(() =>
   import("../../features/agents/ui/page").then((module) => ({
     default: module.AgentsPage,
@@ -380,6 +385,16 @@ function renderDashboard() {
           ? renderAgents("dashboard")
           : dashboardSection === "settings"
             ? renderSettings("dashboard")
+            : dashboardSection === "issues"
+              ? (
+                <DashboardIssuesWorkspace
+                  currentHelmKey={currentHelmKey}
+                  connection={connection as "connecting" | "connected" | "disconnected"}
+                  projects={projects}
+                  client={rpcClientRef.current}
+                  dispatch={dispatch}
+                />
+              )
             : null
       }
       quickCreateHelms={quickCreateHelms}
