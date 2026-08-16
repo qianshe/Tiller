@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import test from "node:test";
 import { runOneShotUpdater } from "./updater.js";
 
@@ -94,9 +95,39 @@ test("updater installs, requests shutdown, waits, and starts the replacement", a
       TILLER_UPDATE_CHECK: "0",
       TILLER_UPDATE_PREVIEW_HINT: "0",
     },
+    interactive: false,
   });
   assert.deepEqual(messages, [
     { kind: "status", status: "restarting", message: "更新安装完成，等待 Helm 重启。" },
     { kind: "shutdown" },
   ]);
+});
+
+test("interactive updater stays alive until the replacement Helm exits", async () => {
+  const replacement = Object.assign(new EventEmitter(), {
+    exitCode: null,
+    signalCode: null,
+  });
+  let settled = false;
+  const run = runOneShotUpdater({
+    ...baseEnv(),
+    TILLER_UPDATE_INTERACTIVE: "1",
+  }, {
+    fetchTags: async () => ({ latest: "1.1.0" }),
+    install: async () => 0,
+    waitForExit: async () => undefined,
+    waitForPort: async () => undefined,
+    waitForReady: async () => undefined,
+    send: async () => undefined,
+    spawnHelm: async () => replacement as never,
+  }).then((code) => {
+    settled = true;
+    return code;
+  });
+
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(settled, false);
+
+  replacement.emit("exit", 0, null);
+  assert.equal(await run, 0);
 });

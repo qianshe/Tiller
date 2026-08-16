@@ -268,10 +268,10 @@ export function createUpdateService(options: {
         }
       });
       return {
-        status: "restarting" as const,
+        status: "installing" as const,
         currentVersion: result.currentVersion,
         latestVersion: result.latestVersion,
-        message: "Helm 正在安装更新并重启。",
+        message: "Helm 正在安装更新。",
       };
     } catch (error) {
       appendUpdateLog(options.logPath, error instanceof Error ? error.message : String(error));

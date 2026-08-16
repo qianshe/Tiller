@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   encodeUpdaterLaunch,
+  resolveReplacementSpawnOptions,
+  resolveUpdaterSpawnOptions,
   waitForPortOpen,
   waitForPortRelease,
   waitForProcessExit,
@@ -28,6 +30,51 @@ test("encoded updater launch preserves startup arguments and fixed metadata", ()
   assert.equal(encoded.TILLER_UPDATE_HELM_ENTRY, "D:/tiller/index.js");
   assert.deepEqual(JSON.parse(encoded.TILLER_UPDATE_HELM_ARGS ?? ""), ["--host", "127.0.0.1", "--port", "47631"]);
   assert.equal(encoded.TILLER_UPDATE_TARGET_VERSION, "1.1.0");
+});
+
+test("encoded updater launch preserves interactive terminal mode", () => {
+  const encoded = encodeUpdaterLaunch({
+    updaterPath: "D:/tiller/updater.js",
+    nodeExecutable: "node.exe",
+    helmEntryPath: "D:/tiller/index.js",
+    helmArgs: [],
+    cwd: "D:/tiller",
+    env: {},
+    parentPid: 123,
+    host: "127.0.0.1",
+    port: 47631,
+    logPath: "D:/tiller/update.log",
+    interactive: true,
+  });
+
+  assert.equal(encoded.TILLER_UPDATE_INTERACTIVE, "1");
+});
+
+test("interactive updater processes inherit the terminal and stay attached", () => {
+  assert.deepEqual(resolveUpdaterSpawnOptions(true), {
+    detached: false,
+    stdio: ["inherit", "inherit", "inherit", "ipc"],
+    shell: false,
+    windowsHide: false,
+  });
+  assert.deepEqual(resolveUpdaterSpawnOptions(false), {
+    detached: true,
+    stdio: ["ignore", "ignore", "ignore", "ipc"],
+    shell: false,
+    windowsHide: true,
+  });
+  assert.deepEqual(resolveReplacementSpawnOptions(true), {
+    detached: false,
+    stdio: "inherit",
+    shell: false,
+    windowsHide: false,
+  });
+  assert.deepEqual(resolveReplacementSpawnOptions(false), {
+    detached: true,
+    stdio: "ignore",
+    shell: false,
+    windowsHide: true,
+  });
 });
 
 test("waitForProcessExit polls until the old process is gone", async () => {

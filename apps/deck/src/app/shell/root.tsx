@@ -19,6 +19,8 @@ import {
   dispatchWithTrace,
   resolveDefaultHelmEndpoint,
   createHelmUpdateActions,
+  HelmUpdateBlockingOverlay,
+  isHelmUpdateBlocking,
   resolveSessionRpcTarget,
   type DeckRpcClient,
   useAppControllers,
@@ -473,6 +475,7 @@ export function App() {
   const helmUpdateKey = helmUpdateActions.resolveHelmKey();
   const helmUpdateTarget = helmUpdateActions.resolveTarget();
   const helmUpdateState = helmUpdateActions.getState();
+  const helmUpdateBlocking = isHelmUpdateBlocking(helmUpdateState);
 
   function resolveSyncedLoggingSettings() {
     for (const helmId of resolveCandidateHelmIds()) {
@@ -863,7 +866,11 @@ export function App() {
   }, [route.activeView, dashboardSection, promptEnhancerSettings]);
 
   const appShell = (
-    <main className={shellClassName}>
+    <main
+      aria-busy={helmUpdateBlocking}
+      className={shellClassName}
+      inert={helmUpdateBlocking || undefined}
+    >
       <RouteErrorBoundary
         onError={(error, componentStack) => {
           deckData.addNotification({
@@ -948,6 +955,7 @@ export function App() {
   return (
     <div className="mobile-addressbar-scroll-shell">
       {appShell}
+      <HelmUpdateBlockingOverlay update={helmUpdateState} />
     </div>
   );
 }

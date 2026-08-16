@@ -102,10 +102,10 @@ export function createHelmUpdateActions(input: {
       input.inventory.applyHelmInventory(target.helmKey, {
         update: {
           ...previous,
-          status: "restarting",
+          status: "installing",
           targetVersion,
           updateAvailable: false,
-          message: "正在启动 Helm 更新。",
+          message: "正在安装 Helm 更新。",
         },
       });
     }

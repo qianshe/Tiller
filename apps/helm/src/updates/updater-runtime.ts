@@ -1,5 +1,5 @@
 import { appendFileSync } from "node:fs";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { createConnection } from "node:net";
 
 export type OneShotUpdaterLaunch = {
@@ -13,21 +13,64 @@ export type OneShotUpdaterLaunch = {
   host: string;
   port: number;
   logPath: string;
+  interactive?: boolean;
   targetVersion?: string;
   currentVersion?: string;
 };
 
 export function spawnOneShotUpdater(input: OneShotUpdaterLaunch): ChildProcess {
+  const interactive = input.interactive === true;
   const child = spawn(input.nodeExecutable, [input.updaterPath], {
     cwd: input.cwd,
     env: encodeUpdaterLaunch(input),
-    detached: true,
-    stdio: ["ignore", "ignore", "ignore", "ipc"],
-    shell: false,
-    windowsHide: true,
+    ...resolveUpdaterSpawnOptions(interactive),
   });
-  child.unref();
+  if (!interactive) {
+    child.unref();
+  }
   return child;
+}
+
+export function resolveUpdaterSpawnOptions(interactive: boolean): SpawnOptions {
+  return {
+    detached: !interactive,
+    stdio: interactive
+      ? ["inherit", "inherit", "inherit", "ipc"]
+      : ["ignore", "ignore", "ignore", "ipc"],
+    shell: false,
+    windowsHide: !interactive,
+  };
+}
+
+export function resolveReplacementSpawnOptions(interactive: boolean): SpawnOptions {
+  return {
+    detached: !interactive,
+    stdio: interactive ? "inherit" : "ignore",
+    shell: false,
+    windowsHide: !interactive,
+  };
+}
+
+export async function waitForReplacementExit(child: ChildProcess): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) {
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    const cleanup = (): void => {
+      child.off("exit", handleExit);
+      child.off("error", handleError);
+    };
+    const handleExit = (): void => {
+      cleanup();
+      resolve();
+    };
+    const handleError = (error: Error): void => {
+      cleanup();
+      reject(error);
+    };
+    child.once("exit", handleExit);
+    child.once("error", handleError);
+  });
 }
 
 export function encodeUpdaterLaunch(input: OneShotUpdaterLaunch): NodeJS.ProcessEnv {
@@ -41,6 +84,7 @@ export function encodeUpdaterLaunch(input: OneShotUpdaterLaunch): NodeJS.Process
     TILLER_UPDATE_HOST: input.host,
     TILLER_UPDATE_PORT: String(input.port),
     TILLER_UPDATE_LOG: input.logPath,
+    TILLER_UPDATE_INTERACTIVE: input.interactive ? "1" : "0",
     TILLER_UPDATE_TARGET_VERSION: input.targetVersion ?? "",
     TILLER_UPDATE_CURRENT_VERSION: input.currentVersion ?? "",
   };

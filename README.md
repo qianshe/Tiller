@@ -257,6 +257,12 @@ remain read-only; use the manual command above when automatic updating is not
 available. If the replacement does not reconnect, inspect the update log and
 run the manual command.
 
+When Helm was started from an interactive terminal, the replacement process
+inherits that terminal after an update, so its logs remain visible and
+`Ctrl+C` still shuts it down. Non-interactive launches keep the replacement in
+the background; in that case, use the Deck “关闭 Helm” action or the process
+manager that launched Helm.
+
 Disable startup update checks:
 
 ```bash
