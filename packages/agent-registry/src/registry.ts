@@ -469,10 +469,26 @@ function sanitizeProjectYaml(project: ProjectSummary): ProjectSummary {
       : undefined,
     gitCurrentBranch:
       typeof sanitized.gitCurrentBranch === "string" ? sanitized.gitCurrentBranch : undefined,
+    issueBinding: sanitizeIssueBinding(sanitized.issueBinding),
     worktrees: dedupeWorktrees((sanitized.worktrees as WorktreeSummary[] | undefined) ?? []).map(
       sanitizeWorktreeForConfig,
     ),
   };
+}
+
+function sanitizeIssueBinding(value: unknown): ProjectSummary["issueBinding"] {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const binding = value as { provider?: unknown; remoteKey?: unknown };
+  if (binding.provider !== "github" || typeof binding.remoteKey !== "string") {
+    return undefined;
+  }
+  const remoteKey = binding.remoteKey.trim();
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(remoteKey)) {
+    return undefined;
+  }
+  return { provider: "github", remoteKey };
 }
 
 function sanitizeWorktreeForConfig(worktree: WorktreeSummary): WorktreeSummary {

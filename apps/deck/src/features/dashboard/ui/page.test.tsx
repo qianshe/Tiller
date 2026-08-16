@@ -502,7 +502,8 @@ test("DashboardPage exposes Mission mode below session search", () => {
   assert.match(sidebarSource, /<Icon name="mission" \/>/);
   assert.match(sidebarSource, /id: "automations", label: "自动化", icon: "workflow"/);
   assert.match(sidebarSource, /id: "issues", label: "Issues", icon: "fileText"/);
-  assert.match(sidebarSource, /comingSoon/);
+  assert.doesNotMatch(sidebarSource, /id: "issues", label: "Issues", icon: "fileText", comingSoon: true/);
+  assert.match(pageSource, /selectedSection === "git" \|\| selectedSection === "issues"/);
 });
 
 test("DashboardPage exposes session search as a first-class action", () => {

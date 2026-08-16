@@ -155,6 +155,59 @@ test("saveProjectYaml stores generic project ids under the project name", () => 
   assert.equal(readProjectYaml("project-1", configPath).name, "Tiller");
 });
 
+test("saveProjectYaml preserves a valid GitHub Issue repository binding without extra fields", () => {
+  const configPath = createConfigPath();
+
+  const result = saveProjectYaml(
+    {
+      id: "project-issue",
+      name: "Tiller",
+      helmId: "local-helm",
+      issueBinding: {
+        provider: "github",
+        remoteKey: " qianshe/Tiller ",
+      },
+    },
+    configPath,
+  );
+
+  assert.deepEqual(result.project.issueBinding, {
+    provider: "github",
+    remoteKey: "qianshe/Tiller",
+  });
+  assert.deepEqual(readProjectYaml("project-issue", configPath).issueBinding, {
+    provider: "github",
+    remoteKey: "qianshe/Tiller",
+  });
+  assert.equal(readFileSync(result.configPath, "utf8").includes("token"), false);
+});
+
+test("saveProjectYaml drops invalid or non-GitHub Issue bindings", () => {
+  const configPath = createConfigPath();
+
+  const invalid = saveProjectYaml(
+    {
+      id: "project-invalid-issue",
+      name: "Invalid",
+      helmId: "local-helm",
+      issueBinding: { provider: "github", remoteKey: "../../secret" },
+    },
+    configPath,
+  );
+  assert.equal(invalid.project.issueBinding, undefined);
+
+  const unsupported = saveProjectYaml(
+    {
+      id: "project-other-issue",
+      name: "Other",
+      helmId: "local-helm",
+      issueBinding: { provider: "jira", remoteKey: "ORG/PROJ" },
+    } as ProjectSummary,
+    configPath,
+  );
+  assert.equal(unsupported.project.issueBinding, undefined);
+});
+
 test("saveProjectYaml strips generated semantic summaries", () => {
   const configPath = createConfigPath();
   const generatedSummary = [

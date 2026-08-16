@@ -28,6 +28,8 @@ const expectedRequests = [
   "project/git/file_diff",
   "project/save",
   "project/delete",
+  "issue/list",
+  "issue/get",
   "agent/list",
   "agent/test",
   "agent/connections",

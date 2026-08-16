@@ -55,6 +55,14 @@ test("dashboard Git route renders the flattened project scope and history bindin
   assert.doesNotMatch(routeContentSource, /source\.setSelectedCwd\?\.\(scope\.cwd\)/);
 });
 
+test("dashboard Issues route renders the configured Helm scope", () => {
+  assert.match(routeContentSource, /dashboardSection === "issues"/);
+  assert.match(routeContentSource, /<DashboardIssuesWorkspace/);
+  assert.match(routeContentSource, /currentHelmKey=\{currentHelmKey\}/);
+  assert.match(routeContentSource, /client=\{rpcClientRef\.current\}/);
+  assert.match(routeContentSource, /dispatch=\{dispatch\}/);
+});
+
 test("dashboard session actions open an embedded Mission drawer", () => {
   assert.match(routeContentSource, /dashboardMissionSessionId/);
   assert.match(routeContentSource, /setDashboardMissionSessionId/);

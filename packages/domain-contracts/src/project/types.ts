@@ -1,3 +1,5 @@
+import type { IssueProjectBinding } from "@tiller/shared";
+
 export type WorktreeSummary = {
   name: string;
   path: string;
@@ -16,4 +18,5 @@ export type ProjectSummary = {
   gitBranches?: string[];
   gitCurrentBranch?: string;
   worktrees?: WorktreeSummary[];
+  issueBinding?: IssueProjectBinding;
 };
