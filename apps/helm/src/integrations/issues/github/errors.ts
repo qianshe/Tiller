@@ -30,6 +30,6 @@ export function toIssueError(error: unknown): IssueError {
   }
   return {
     kind: "network",
-    message: error instanceof Error ? error.message : "GitHub Issue request failed",
+    message: "GitHub Issue request failed",
   };
 }

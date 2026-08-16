@@ -91,7 +91,7 @@ test("issue handlers return provider errors without leaking credentials", async 
   };
   const context = contextFor([project], {
     list: async () => {
-      throw new Error("network offline");
+      throw new Error("network offline: secret-token");
     },
     get: async () => {
       throw new Error("unused");
@@ -104,7 +104,7 @@ test("issue handlers return provider errors without leaking credentials", async 
     error?: { kind: string };
   };
   assert.equal(result.ok, false);
-  assert.equal(result.message, "network offline");
+  assert.equal(result.message, "GitHub Issue request failed");
   assert.equal(result.error?.kind, "network");
   assert.equal(result.message.includes("secret-token"), false);
 });

@@ -202,7 +202,7 @@ test("saveProjectYaml drops invalid or non-GitHub Issue bindings", () => {
       name: "Other",
       helmId: "local-helm",
       issueBinding: { provider: "jira", remoteKey: "ORG/PROJ" },
-    } as ProjectSummary,
+    } as unknown as ProjectSummary,
     configPath,
   );
   assert.equal(unsupported.project.issueBinding, undefined);
